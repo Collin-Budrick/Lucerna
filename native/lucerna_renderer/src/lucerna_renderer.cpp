@@ -2643,57 +2643,91 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
         const float celestial_base = celestial_energy * kDirectCpuCelestialScale * normalized_shadow_weight;
         const bool preview_has_visible_direct_work = emissive_count > 0 && shadow_count > 0;
 
-        direct_lighting_cpu_output_.assign(static_cast<std::size_t>(pixel_count) * 4, 0.0F);
-        float total_energy = 0.0F;
-        float min_sample = 0.0F;
-        float max_sample = 0.0F;
-        bool has_sample = false;
-        std::uint64_t checksum = 1469598103934665603ULL;
-        for (std::uint64_t pixel = 0; pixel < pixel_count; pixel++) {
-            const auto offset = static_cast<std::size_t>(pixel * 4);
-            const auto pixel_x = static_cast<std::uint64_t>(pixel % output_width);
-            const auto pixel_y = static_cast<std::uint64_t>(pixel / output_width);
-            const std::size_t surface_index = shadow_count == 0
-                    ? 0
-                    : static_cast<std::size_t>((pixel + frame_index_) % shadow_count);
+        struct SurfacePreviewSample {
+            float world_x = 0.0F;
+            float world_y = 0.0F;
+            float world_z = 0.0F;
+            float preview_x = 0.5F;
+            float preview_y = 0.5F;
+            float preview_radius = 0.18F;
+            float weight = 1.0F;
+            float red = 0.0F;
+            float green = 0.0F;
+            float blue = 0.0F;
+            float mask = 0.0F;
+            std::size_t source_index = 0;
+        };
 
-            float surface_x = static_cast<float>(pixel_x);
-            float surface_y = static_cast<float>(pixel_y);
-            float surface_z = 0.0F;
-            float surface_weight = normalized_shadow_weight;
-            if (shadow_count > 0) {
-                surface_x = strided_float_raw_or_zero(
-                        last_direct_lighting_payload_packet_.shadow_candidate_rays,
-                        surface_index,
-                        kDirectShadowCandidateRayStride,
-                        kDirectShadowRayOriginXOffset);
-                surface_y = strided_float_raw_or_zero(
-                        last_direct_lighting_payload_packet_.shadow_candidate_rays,
-                        surface_index,
-                        kDirectShadowCandidateRayStride,
-                        kDirectShadowRayOriginYOffset);
-                surface_z = strided_float_raw_or_zero(
-                        last_direct_lighting_payload_packet_.shadow_candidate_rays,
-                        surface_index,
-                        kDirectShadowCandidateRayStride,
-                        kDirectShadowRayOriginZOffset);
-                surface_weight = std::max(0.05F, strided_float_or_zero(
-                        last_direct_lighting_payload_packet_.shadow_candidate_rays,
-                        surface_index,
-                        kDirectShadowCandidateRayStride,
-                        kDirectShadowRayContributionWeightOffset));
-            }
+        std::vector<SurfacePreviewSample> surface_samples;
+        surface_samples.reserve(shadow_count);
+        float surface_weight_total = 0.0F;
+        float surface_center_x = 0.0F;
+        float surface_center_y = 0.0F;
+        float surface_center_z = 0.0F;
+        for (std::size_t surface_index = 0; surface_index < shadow_count; surface_index++) {
+            SurfacePreviewSample sample;
+            sample.world_x = strided_float_raw_or_zero(
+                    last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                    surface_index,
+                    kDirectShadowCandidateRayStride,
+                    kDirectShadowRayOriginXOffset);
+            sample.world_y = strided_float_raw_or_zero(
+                    last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                    surface_index,
+                    kDirectShadowCandidateRayStride,
+                    kDirectShadowRayOriginYOffset);
+            sample.world_z = strided_float_raw_or_zero(
+                    last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                    surface_index,
+                    kDirectShadowCandidateRayStride,
+                    kDirectShadowRayOriginZOffset);
+            sample.weight = std::max(0.05F, strided_float_or_zero(
+                    last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                    surface_index,
+                    kDirectShadowCandidateRayStride,
+                    kDirectShadowRayContributionWeightOffset));
+            sample.source_index = surface_index;
+            surface_center_x += sample.world_x * sample.weight;
+            surface_center_y += sample.world_y * sample.weight;
+            surface_center_z += sample.world_z * sample.weight;
+            surface_weight_total += sample.weight;
+            surface_samples.push_back(sample);
+        }
 
-            float red = celestial_base * 0.18F;
-            float green = celestial_base * 0.2F;
-            float blue = celestial_base * 0.24F;
-            float surface_mask = 0.0F;
-            if (preview_has_visible_direct_work) {
-                red += kDirectCpuSurfacePreviewCoverageRed;
-                green += kDirectCpuSurfacePreviewCoverageGreen;
-                blue += kDirectCpuSurfacePreviewCoverageBlue;
-                surface_mask = kDirectCpuSurfacePreviewCoverageAlpha;
-            }
+        if (surface_weight_total > 0.0F) {
+            surface_center_x /= surface_weight_total;
+            surface_center_y /= surface_weight_total;
+            surface_center_z /= surface_weight_total;
+        }
+
+        float surface_extent = 1.0F;
+        for (const auto& sample : surface_samples) {
+            const float horizontal = (sample.world_x - surface_center_x) * 0.75F
+                    + (sample.world_z - surface_center_z) * 0.25F;
+            const float vertical = sample.world_y - surface_center_y;
+            surface_extent = std::max(surface_extent, std::abs(horizontal));
+            surface_extent = std::max(surface_extent, std::abs(vertical));
+        }
+        surface_extent = std::max(surface_extent, kDirectCpuMinimumSurfaceRadius * 0.25F);
+
+        float average_surface_red = 0.0F;
+        float average_surface_green = 0.0F;
+        float average_surface_blue = 0.0F;
+        float average_surface_mask = 0.0F;
+        for (auto& sample : surface_samples) {
+            const float horizontal = (sample.world_x - surface_center_x) * 0.75F
+                    + (sample.world_z - surface_center_z) * 0.25F;
+            const float vertical = sample.world_y - surface_center_y;
+            sample.preview_x = 0.5F + std::clamp(horizontal / surface_extent, -1.0F, 1.0F) * 0.34F;
+            sample.preview_y = 0.5F - std::clamp(vertical / surface_extent, -1.0F, 1.0F) * 0.28F;
+            sample.preview_radius = std::clamp(
+                    0.16F + sample.weight * 0.05F,
+                    0.14F,
+                    0.24F);
+            sample.red = celestial_base * 0.18F;
+            sample.green = celestial_base * 0.2F;
+            sample.blue = celestial_base * 0.24F;
+
             for (std::size_t light_index = 0; light_index < emissive_count; light_index++) {
                 const float light_x = static_cast<float>(strided_int_or_zero(
                         last_direct_lighting_payload_packet_.emissive_light_metadata,
@@ -2710,9 +2744,9 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
                         light_index,
                         kDirectEmissiveLightMetadataStride,
                         kDirectEmissiveBlockZOffset)) + 0.5F;
-                const float delta_x = surface_x - light_x;
-                const float delta_y = surface_y - light_y;
-                const float delta_z = surface_z - light_z;
+                const float delta_x = sample.world_x - light_x;
+                const float delta_y = sample.world_y - light_y;
+                const float delta_z = sample.world_z - light_z;
                 const float distance = std::sqrt(delta_x * delta_x + delta_y * delta_y + delta_z * delta_z);
                 const float radius = std::max(kDirectCpuMinimumSurfaceRadius, strided_float_or_zero(
                         last_direct_lighting_payload_packet_.emissive_light_data,
@@ -2728,8 +2762,8 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
                 if (preview_falloff <= 0.0F) {
                     continue;
                 }
-                surface_mask = std::max(surface_mask, preview_falloff);
 
+                sample.mask = std::max(sample.mask, preview_falloff);
                 const float intensity = strided_float_or_zero(
                         last_direct_lighting_payload_packet_.emissive_light_data,
                         light_index,
@@ -2739,26 +2773,101 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
                         * (1.0F + static_cast<float>(emissive_count) * kDirectCpuEmissiveScale);
                 const float strength = preview_energy
                         * preview_falloff
-                        * surface_weight
+                        * sample.weight
                         * kDirectCpuSurfacePreviewScale;
-                red += strided_float_or_zero(
+                sample.red += strided_float_or_zero(
                         last_direct_lighting_payload_packet_.emissive_light_data,
                         light_index,
                         kDirectEmissiveLightDataStride,
                         kDirectEmissiveColorRedOffset) * strength;
-                green += strided_float_or_zero(
+                sample.green += strided_float_or_zero(
                         last_direct_lighting_payload_packet_.emissive_light_data,
                         light_index,
                         kDirectEmissiveLightDataStride,
                         kDirectEmissiveColorGreenOffset) * strength;
-                blue += strided_float_or_zero(
+                sample.blue += strided_float_or_zero(
                         last_direct_lighting_payload_packet_.emissive_light_data,
                         light_index,
                         kDirectEmissiveLightDataStride,
                         kDirectEmissiveColorBlueOffset) * strength;
             }
 
-            const float tile_factor = 1.0F + static_cast<float>((pixel + frame_index_) % 7) * 0.0005F;
+            if (preview_has_visible_direct_work) {
+                sample.red += kDirectCpuSurfacePreviewCoverageRed * sample.weight;
+                sample.green += kDirectCpuSurfacePreviewCoverageGreen * sample.weight;
+                sample.blue += kDirectCpuSurfacePreviewCoverageBlue * sample.weight;
+                sample.mask = std::max(sample.mask, kDirectCpuSurfacePreviewCoverageAlpha);
+            }
+
+            average_surface_red += sample.red;
+            average_surface_green += sample.green;
+            average_surface_blue += sample.blue;
+            average_surface_mask += sample.mask;
+        }
+
+        if (!surface_samples.empty()) {
+            const float inverse_surface_count = 1.0F / static_cast<float>(surface_samples.size());
+            average_surface_red *= inverse_surface_count;
+            average_surface_green *= inverse_surface_count;
+            average_surface_blue *= inverse_surface_count;
+            average_surface_mask *= inverse_surface_count;
+        }
+
+        direct_lighting_cpu_output_.assign(static_cast<std::size_t>(pixel_count) * 4, 0.0F);
+        float total_energy = 0.0F;
+        float min_sample = 0.0F;
+        float max_sample = 0.0F;
+        bool has_sample = false;
+        std::uint64_t checksum = 1469598103934665603ULL;
+        for (std::uint64_t pixel = 0; pixel < pixel_count; pixel++) {
+            const auto offset = static_cast<std::size_t>(pixel * 4);
+            const auto pixel_x = static_cast<std::uint64_t>(pixel % output_width);
+            const auto pixel_y = static_cast<std::uint64_t>(pixel / output_width);
+            const float pixel_u = (static_cast<float>(pixel_x) + 0.5F) / static_cast<float>(output_width);
+            const float pixel_v = (static_cast<float>(pixel_y) + 0.5F) / static_cast<float>(output_height);
+
+            float red = 0.0F;
+            float green = 0.0F;
+            float blue = 0.0F;
+            float surface_mask = 0.0F;
+            float surface_weight = normalized_shadow_weight;
+            float strongest_surface = 0.0F;
+            std::size_t strongest_surface_index = 0;
+
+            for (const auto& sample : surface_samples) {
+                const float delta_u = pixel_u - sample.preview_x;
+                const float delta_v = pixel_v - sample.preview_y;
+                const float distance = std::sqrt(delta_u * delta_u + delta_v * delta_v);
+                const float splat = std::max(0.0F, 1.0F - (distance / sample.preview_radius));
+                if (splat <= 0.0F) {
+                    continue;
+                }
+
+                const float shaped_splat = splat * splat;
+                red += sample.red * shaped_splat;
+                green += sample.green * shaped_splat;
+                blue += sample.blue * shaped_splat;
+                surface_mask = std::max(surface_mask, sample.mask * shaped_splat);
+                if (shaped_splat > strongest_surface) {
+                    strongest_surface = shaped_splat;
+                    strongest_surface_index = sample.source_index;
+                    surface_weight = sample.weight;
+                }
+            }
+
+            const float center_delta_x = pixel_u - 0.5F;
+            const float center_delta_y = pixel_v - 0.5F;
+            const float center_distance = std::sqrt(center_delta_x * center_delta_x + center_delta_y * center_delta_y);
+            const float centered_wall_mask = std::max(0.0F, 1.0F - (center_distance / 0.38F));
+            const float centered_wall_splat = centered_wall_mask * centered_wall_mask;
+            if (preview_has_visible_direct_work && centered_wall_splat > 0.0F) {
+                red += average_surface_red * centered_wall_splat * 0.45F;
+                green += average_surface_green * centered_wall_splat * 0.45F;
+                blue += average_surface_blue * centered_wall_splat * 0.45F;
+                surface_mask = std::max(surface_mask, average_surface_mask * centered_wall_splat);
+            }
+
+            const float tile_factor = 1.0F + static_cast<float>((pixel + output_width * 13 + output_height * 17) % 7) * 0.0005F;
             direct_lighting_cpu_output_[offset] = std::min(64.0F, red * tile_factor);
             direct_lighting_cpu_output_[offset + 1] = std::min(64.0F, green * tile_factor);
             direct_lighting_cpu_output_[offset + 2] = std::min(64.0F, blue * tile_factor);
@@ -2776,7 +2885,8 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
             has_sample = true;
             mix_checksum(checksum, static_cast<std::uint64_t>(sample_energy * 1000.0F));
             mix_checksum(checksum, pixel);
-            mix_checksum(checksum, surface_index);
+            mix_checksum(checksum, strongest_surface_index);
+            mix_checksum(checksum, static_cast<std::uint64_t>(surface_mask * 1000.0F));
         }
 
         execution.last_output_width = output_width;

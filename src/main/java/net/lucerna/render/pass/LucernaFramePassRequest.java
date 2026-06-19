@@ -86,6 +86,24 @@ public record LucernaFramePassRequest(
         );
     }
 
+    public static LucernaFramePassRequest finalWorldColorComposite(
+            long frameIndex,
+            LucernaFramePassTarget target,
+            float strength,
+            float alpha
+    ) {
+        return new LucernaFramePassRequest(
+                LucernaFramePassKind.FINAL_WORLD_COLOR_COMPOSITE,
+                frameIndex,
+                target,
+                strength,
+                strength,
+                strength,
+                alpha,
+                "lucerna-final-world-color-composite"
+        );
+    }
+
     public boolean hasExplicitFrameIndex() {
         return this.frameIndex > 0L;
     }

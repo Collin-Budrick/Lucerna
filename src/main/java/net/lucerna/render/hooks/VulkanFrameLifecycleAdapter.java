@@ -536,6 +536,7 @@ public final class VulkanFrameLifecycleAdapter {
 
     private FramePassIntent intentFor(LucernaFramePassKind kind) {
         return switch (kind) {
+            case FINAL_WORLD_COLOR_COMPOSITE -> FramePassIntent.FINAL_WORLD_COLOR_COMPOSITE_PASS;
             case DIRECT_LIGHT_PREVIEW_COMPOSITE -> FramePassIntent.DIRECT_LIGHT_PREVIEW_COMPOSITE_PASS;
             case FLAT_COMPOSITE -> FramePassIntent.FLAT_COMPOSITE_PASS;
             case NO_OP -> FramePassIntent.NO_OP_FRAME_ATTACHMENT_PASS;

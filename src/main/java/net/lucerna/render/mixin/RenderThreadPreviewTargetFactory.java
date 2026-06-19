@@ -10,6 +10,7 @@ import com.mojang.blaze3d.textures.GpuTextureView;
 import net.lucerna.nativebridge.DirectLightingCpuOutputPayload;
 import net.lucerna.render.preview.DirectLightPreviewTextureUploadResult;
 import net.lucerna.render.preview.DirectLightPreviewTextureUploader;
+import net.lucerna.render.preview.PublicMojangFinalCompositeSubmissionResult;
 import net.lucerna.render.preview.PublicMojangPreviewDrawScaffold;
 import net.lucerna.render.preview.PublicMojangPreviewDrawScaffolds;
 import net.lucerna.render.pass.LucernaFrameAttachmentMetadata;
@@ -28,6 +29,11 @@ public final class RenderThreadPreviewTargetFactory {
             "GameRenderer.renderLevel world color target after level render and before hand/HUD composition.";
     private static final DirectLightPreviewTextureUploader DIRECT_LIGHT_PREVIEW_TEXTURE_UPLOADER =
             new DirectLightPreviewTextureUploader();
+    private static final DirectLightPreviewTextureUploader DIRECT_LIGHT_FINAL_COMPOSITE_TEXTURE_UPLOADER =
+            new DirectLightPreviewTextureUploader(
+                    "lucerna_direct_light_final_composite_rgba",
+                    "direct-light final composite"
+            );
 
     private RenderThreadPreviewTargetFactory() {
     }
@@ -293,6 +299,101 @@ public final class RenderThreadPreviewTargetFactory {
                 target.attachmentMetadata().javaOpaque(),
                 PublicMojangPreviewPassSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
                 "public Mojang sampled direct-light preview render pass submitted; payload: "
+                        + directOutputPayload.debugSummary()
+                        + "; upload: "
+                        + upload.summary()
+                        + "; draw scaffold: "
+                        + drawScaffold.summary()
+        );
+    }
+
+    public static PublicMojangFinalCompositeSubmissionResult submitFinalCompositePublicDraw(
+            LucernaFramePassTarget target,
+            DirectLightingCpuOutputPayload directOutputPayload
+    ) {
+        if (target == null || !target.available()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    false,
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.TARGET_MISSING,
+                    "public Mojang final composite skipped because no frame target is available"
+            );
+        }
+        if (!target.safeForAttachment()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang final composite skipped because the target is not HUD-safe"
+            );
+        }
+        if (!(target.commandEncoder() instanceof CommandEncoder commandEncoder)
+                || !(target.colorTarget() instanceof GpuTextureView colorView)) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    target.attachmentMetadata().javaOpaque()
+                            ? PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT
+                            : PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang final composite skipped because command encoder or color view is unavailable"
+            );
+        }
+        if (directOutputPayload == null) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang final composite skipped because native direct-light RGBA8 payload is unavailable"
+            );
+        }
+        if (!directOutputPayload.readyForPreviewDraw()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang final composite skipped because native direct-light RGBA8 payload is not ready for final composite draw: "
+                            + directOutputPayload.debugSummary()
+            );
+        }
+
+        ByteBuffer directOutputBuffer = directOutputPayload.copyToByteBuffer();
+        DirectLightPreviewTextureUploadResult upload = DIRECT_LIGHT_FINAL_COMPOSITE_TEXTURE_UPLOADER.upload(
+                RenderSystem.getDevice(),
+                commandEncoder,
+                directOutputBuffer,
+                directOutputPayload.width(),
+                directOutputPayload.height()
+        );
+        if (!upload.availableForDraw()) {
+            Reference.reachabilityFence(directOutputBuffer);
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang final composite skipped because direct-light texture upload was unavailable: "
+                            + upload.summary()
+            );
+        }
+
+        PublicMojangPreviewDrawScaffold drawScaffold;
+        try (RenderPass renderPass = commandEncoder.createRenderPass(
+                () -> "lucerna public final composite direct-light draw pass",
+                colorView,
+                Optional.empty()
+        )) {
+            drawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenDirectLightFinalCompositeDraw(
+                    renderPass,
+                    upload.textureView(),
+                    upload.sampler()
+            );
+        }
+        commandEncoder.submit();
+        Reference.reachabilityFence(directOutputBuffer);
+        return PublicMojangFinalCompositeSubmissionResult.submitted(
+                drawScaffold.drawCallsIssued(),
+                target.attachmentMetadata().javaOpaque(),
+                PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
+                "public Mojang final composite direct-light render pass submitted; payload: "
                         + directOutputPayload.debugSummary()
                         + "; upload: "
                         + upload.summary()

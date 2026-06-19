@@ -38,6 +38,7 @@ import net.lucerna.render.pass.LucernaFramePassRequest;
 import net.lucerna.render.pass.LucernaFramePassResult;
 import net.lucerna.render.pass.LucernaFramePassStatus;
 import net.lucerna.render.pass.LucernaFramePassTarget;
+import net.lucerna.render.preview.PublicMojangFinalCompositeSubmissionResult;
 import net.lucerna.render.voxel.VoxelRay;
 import net.lucerna.render.voxel.VoxelRayBudgetConfig;
 import net.lucerna.render.voxel.VoxelSectionSnapshotReference;
@@ -103,6 +104,7 @@ public final class LucernaController {
     private String lastLoggedLightingDispatchKey = "";
     private String lastLoggedDirectPreviewCompositeKey = "";
     private String lastLoggedPublicMojangPreviewPassKey = "";
+    private String lastLoggedPublicMojangFinalCompositeKey = "";
     private String lastLoggedTickNoOpFrameKey = "";
     private boolean renderThreadFrameHookObserved;
     private NativeDirectLightingUploadPacket pendingDirectLightingUpload;
@@ -235,7 +237,7 @@ public final class LucernaController {
         return this.frameHooks;
     }
 
-    public LucernaFramePassResult attachDirectLightPreviewTarget(
+    public LucernaFramePassResult attachFinalWorldColorCompositeTarget(
             LucernaFramePassTarget target,
             float tickDelta
     ) {
@@ -251,7 +253,7 @@ public final class LucernaController {
                     LucernaFramePassStatus.skipped(
                             skippedRequest.kind(),
                             skippedRequest.frameIndex(),
-                            "Direct-light preview target skipped because Lucerna is not active."
+                            "Final world-color composite target skipped because Lucerna is not active."
                     )
             );
         }
@@ -278,10 +280,16 @@ public final class LucernaController {
                     this.nativeBridge.submitDirectLightingPreviewComposite(request);
             this.logDirectPreviewCompositeStatusIfChanged(submission);
             DirectLightingCpuOutputPayload directOutputPayload = this.nativeBridge.directLightingCpuOutputPayload();
-            PublicMojangPreviewPassSubmissionResult publicPassSubmission =
-                    RenderThreadPreviewTargetFactory.submitSampledPublicPreviewDraw(target, directOutputPayload);
-            this.logPublicMojangPreviewPassStatusIfChanged(publicPassSubmission);
-            return this.frameHooks.attachFramePass(request);
+            LucernaFramePassRequest finalCompositeRequest = LucernaFramePassRequest.finalWorldColorComposite(
+                    this.frameHooks.frameIndex(),
+                    target,
+                    0.35F,
+                    0.35F
+            );
+            PublicMojangFinalCompositeSubmissionResult finalCompositeSubmission =
+                    RenderThreadPreviewTargetFactory.submitFinalCompositePublicDraw(target, directOutputPayload);
+            this.logPublicMojangFinalCompositeStatusIfChanged(finalCompositeSubmission);
+            return this.frameHooks.attachFramePass(finalCompositeRequest);
         } finally {
             this.frameHooks.endFrame();
             this.logFrameContextStatusIfChanged();
@@ -937,6 +945,7 @@ public final class LucernaController {
         this.lastLoggedLightingDispatchKey = "";
         this.lastLoggedDirectPreviewCompositeKey = "";
         this.lastLoggedPublicMojangPreviewPassKey = "";
+        this.lastLoggedPublicMojangFinalCompositeKey = "";
         this.lastLoggedTickNoOpFrameKey = "";
         this.renderThreadFrameHookObserved = false;
         this.pendingDirectLightingUpload = null;
@@ -1063,6 +1072,38 @@ public final class LucernaController {
         this.lastLoggedPublicMojangPreviewPassKey = logKey;
         Lucerna.LOGGER.info(
                 "Lucerna public Mojang preview pass: attempted={} submitted={} drawCalls={} javaOpaque={} targetStatus={} reason={}.",
+                result.attempted(),
+                result.submitted(),
+                result.drawCallsIssued(),
+                result.javaOpaqueRenderObjectsPresent(),
+                result.targetStatus(),
+                result.reason()
+        );
+    }
+
+    private void logPublicMojangFinalCompositeStatusIfChanged(PublicMojangFinalCompositeSubmissionResult result) {
+        if (result == null) {
+            return;
+        }
+
+        String logKey = result.attempted()
+                + "|"
+                + result.submitted()
+                + "|"
+                + result.drawCallsIssued()
+                + "|"
+                + result.javaOpaqueRenderObjectsPresent()
+                + "|"
+                + result.targetStatus()
+                + "|"
+                + result.reason();
+        if (logKey.equals(this.lastLoggedPublicMojangFinalCompositeKey)) {
+            return;
+        }
+
+        this.lastLoggedPublicMojangFinalCompositeKey = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna public Mojang final composite: attempted={} submitted={} drawCalls={} javaOpaque={} targetStatus={} reason={}.",
                 result.attempted(),
                 result.submitted(),
                 result.drawCallsIssued(),

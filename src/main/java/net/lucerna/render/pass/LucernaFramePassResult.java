@@ -67,8 +67,7 @@ public record LucernaFramePassResult(
                 )
                 : status;
         boolean canReportDrawCalls = drawCallsIssued
-                && normalizedRequest.kind() == LucernaFramePassKind.DIRECT_LIGHT_PREVIEW_COMPOSITE
-                && normalizedStatus.kind() == LucernaFramePassKind.DIRECT_LIGHT_PREVIEW_COMPOSITE;
+                && canReportDrawCalls(normalizedRequest.kind(), normalizedStatus.kind());
         return new LucernaFramePassResult(
                 normalizedRequest,
                 normalizedStatus,
@@ -106,5 +105,11 @@ public record LucernaFramePassResult(
 
     private static long frameIndexFrom(LucernaFramePassRequest request) {
         return request == null ? 0L : request.frameIndex();
+    }
+
+    private static boolean canReportDrawCalls(LucernaFramePassKind requestKind, LucernaFramePassKind statusKind) {
+        return requestKind == statusKind
+                && (requestKind == LucernaFramePassKind.DIRECT_LIGHT_PREVIEW_COMPOSITE
+                || requestKind == LucernaFramePassKind.FINAL_WORLD_COLOR_COMPOSITE);
     }
 }

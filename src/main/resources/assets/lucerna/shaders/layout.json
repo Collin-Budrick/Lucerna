@@ -1631,6 +1631,11 @@
       "type": "graphics",
       "executionOrder": 400,
       "placeholderShader": "composite/noop.glsl",
+      "shaderResources": {
+        "finalCompositeFragment": "composite/final_composite.frag.glsl",
+        "previewFragment": null,
+        "notes": "The final composite shader resource is named for lucerna.composite.final and is distinct from core/direct_light_preview_*.fsh preview plumbing."
+      },
       "descriptorSets": [
         "frame",
         "history",
@@ -1648,12 +1653,15 @@
       ],
       "pushConstants": "LucernaPassPushConstants",
       "sideEffectFreePlaceholder": true,
-      "handoff": "Flat composite staging output into the borrowed world color target before vanilla HUD and late translucency.",
+      "handoff": "Final composite staging output into the borrowed world color target before vanilla HUD and late translucency.",
       "round5MinimalPath": {
         "baselineDisableMode": "When direct resolve is disabled, do not add lucerna.lighting.direct; preserve the already validated no-op or flat-composite behavior.",
         "enabledDirectMode": "When direct resolve is enabled, sample lucerna.lighting.direct with lucerna.gbuffer.albedoOpacity and write the resolved result to lucerna.composite.worldColor.",
         "directResolveInput": "lucerna.lighting.direct",
         "resolveOutput": "lucerna.composite.worldColor",
+        "finalCompositeShader": "composite/final_composite.frag.glsl",
+        "boundedOutput": "Clamp negative radiance to zero, cap direct and diffuse contribution before composition, and clamp final RGB to the world-color target range.",
+        "previewSeparation": "Do not use core/direct_light_preview_additive.fsh or core/direct_light_preview_diagnostic.fsh as the final composite resource.",
         "forbiddenInputs": [
           "Iris shader-pack color",
           "Iris shader-pack depth",
@@ -1675,7 +1683,7 @@
           "required": true,
           "clearBeforeWrite": false,
           "historySensitive": false,
-          "notes": "Matches LucernaFramePassKind.FLAT_COMPOSITE staging, writes only the borrowed Minecraft/Sodium world color target, and preserves swapchain ownership."
+          "notes": "Matches final composite staging, writes only the borrowed Minecraft/Sodium world color target, preserves swapchain ownership, and keeps preview shaders out of the final composite resource path."
         }
       ]
     }

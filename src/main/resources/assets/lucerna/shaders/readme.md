@@ -8,13 +8,15 @@ These shader files are placeholders for the Sodium Vulkan integration milestones
 - `voxel/`: first-pass voxel occupancy staging from chunk/material dirty-region inputs into G-buffer traversal inputs.
 - `lighting/`: direct sun/moon, emissive sampling, first diffuse GI, cache confidence, variance, and reserved adaptive sampling metadata.
 - `denoise/`: temporal rejection, spatial denoise, variance-aware filtering, and history repair passes.
-- `composite/`: flat-composite staging into the active Minecraft target without corrupting vanilla HUD or late translucency.
+- `composite/`: final composite staging into the active Minecraft target without corrupting vanilla HUD or late translucency.
 - `debug/`: overlays used by controller-run verification: backend state, dirty regions, material ids, timings, native queues, direct-light candidate counts, output/resolve state, cache confidence, variance, adaptive sampling, and label views.
 - `core/`: public Mojang `RenderPipeline` shaders used only for Java-side preview/diagnostic draw plumbing before the native/direct-light texture path is available.
 
 `core/direct_light_preview_diagnostic.fsh` is a temporary diagnostic shader. It proves that Lucerna can set a public Mojang pipeline and issue a bounded draw call against the world color target before HUD composition. It is not the real direct-light resolve, does not sample Lucerna direct-light output, and must not be used as screenshot proof that one emissive block lights one surface.
 
 `core/direct_light_preview_additive.fsh` samples the Java-uploaded native CPU direct-light preview texture through the public Mojang `InSampler` binding and additively blends alpha-masked RGB into the world color target. This is the bridge from diagnostic draw plumbing toward a surface-sample direct-light source texture; it is still preview-readback based and not the final native GPU direct-light resolve.
+
+`composite/final_composite.frag.glsl` is the distinct final composite shader resource for `lucerna.composite.final`. It is not a preview shader and does not replace either `core/direct_light_preview_*.fsh` resource. Its semantics are bounded: negative radiance is clamped away, direct and diffuse contributions are capped before composition, and final RGB is clamped to the borrowed world-color target range.
 
 ## Phase 5 Order
 
@@ -29,6 +31,8 @@ The smallest direct-only resource path is:
 3. `lucerna.composite.final` writes `lucerna.composite.worldColor`.
 
 Baseline/disabled mode skips the direct-light contribution and preserves the validated no-op or flat-composite result. Enabled direct-only mode resolves direct radiance into the borrowed Minecraft/Sodium world color target before vanilla HUD and late translucency. Neither mode may sample Iris shader-pack color, depth, shadow, or lighting resources.
+
+The final composite resource id is `lucerna:shaders/composite/final_composite.frag.glsl`. Preview resources under `core/` remain limited to public Mojang preview/diagnostic plumbing and are not final composite proof.
 
 ## Round 4 Payload Handoffs
 

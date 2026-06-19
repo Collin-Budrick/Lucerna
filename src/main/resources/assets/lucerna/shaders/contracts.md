@@ -23,7 +23,7 @@ The current contract reserves this order:
 4. `lucerna.lighting.gi`: reads G-buffer, direct lighting, voxel occupancy, blue noise, and history, writes half-resolution diffuse GI, cache confidence, current-frame variance, adaptive ray-budget classification, and temporal radiance/variance resources.
 5. `lucerna.denoise.diffuse`: reads lighting, cache confidence, variance, adaptive ray budget, G-buffer, and history, writes full-resolution diffuse lighting plus a rejection mask.
 6. `lucerna.debug.overlay`: reads diagnostic resources, debug labels, cache confidence, variance, and adaptive ray budget before writing the debug overlay target.
-7. `lucerna.composite.final`: currently represents flat-composite staging into the borrowed Minecraft/Sodium world color target before vanilla HUD and late translucency.
+7. `lucerna.composite.final`: represents final composite staging into the borrowed Minecraft/Sodium world color target before vanilla HUD and late translucency.
 
 Debug overlay runs before final composite so `lucerna.composite.final` can blend or ignore `lucerna.debug.overlay` according to the selected overlay mode. `numericId` values remain stable native/debug identifiers and are not used to sort this pipeline.
 
@@ -35,6 +35,7 @@ Debug overlay runs before final composite so `lucerna.composite.final` can blend
 - Denoise writes `lucerna.denoise.diffuse` and `lucerna.denoise.rejectionMask` after clearing them. Both are history-sensitive and depend on cache confidence plus variance metadata.
 - Debug writes `lucerna.debug.overlay` only when overlay mode needs it. It is optional, clear-before-write, and consumes `DebugLabelTable` for stable display names.
 - Composite writes only `lucerna.composite.worldColor`, the borrowed Minecraft/Sodium world color target. It must not own presentation or the swapchain.
+- `composite/final_composite.frag.glsl` is the distinct final composite shader resource. Preview shaders in `core/direct_light_preview_*.fsh` remain preview/diagnostic plumbing only and must not be treated as the final composite path.
 
 ## Round 4 Payload Contracts
 
@@ -66,6 +67,8 @@ The minimal resource path for Q3 is direct-only:
 3. `lucerna.composite.final` resolves into `lucerna.composite.worldColor`, the borrowed Minecraft/Sodium world color target.
 
 Baseline or disabled mode must skip the direct-radiance contribution and preserve the validated no-op or flat-composite behavior. Enabled direct-only mode may add direct radiance from `lucerna.lighting.direct` before vanilla HUD and late translucency. Both modes keep Minecraft/Sodium ownership of the target.
+
+The final composite shader resource uses bounded output semantics: direct and diffuse radiance are clamped to non-negative capped ranges before being multiplied by albedo/opacity, and the resolved RGB is clamped before writing `lucerna.composite.worldColor`. The shader resource intentionally uses semantic sampler/uniform names until the controller/native descriptor tables assign concrete final-composite bindings.
 
 The Round 5 path must not consume Iris shader-pack color, depth, shadow, or lighting resources. Iris remains status/settings-visible only; it is not an input to direct output or composite resolve.
 

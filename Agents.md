@@ -2,13 +2,15 @@
 
 ## Progress Audit
 
-Current controller estimate: **about 94% complete against this file**.
+Current controller estimate: **about 95% complete against this file**.
 
 This percentage is conservative:
 - Rounds 0-3 are mostly implemented and controller-validated.
 - Round 4 has Java/native/shader scaffolding, dirty-region GI inputs, direct shadow candidate planning, compact extracted opaque surface sample metadata, native direct/GI/post handoff DTOs, payload-category telemetry, native dispatch validation, Round 5 direct payload handoff, direct execution/output-marker telemetry, a native CPU direct-light output buffer with energy/checksum telemetry, Java direct-output snapshot/status contracts, HUD-preserving world-color frame target contracts, metadata-only versus Java-opaque versus native-writable attachment contracts, direct-light preview submission result plumbing, a validated render-thread `GameRenderer.renderLevel` target hook, validated public Mojang Java-opaque target capture, validated public Mojang no-draw preview render-pass submission, validated public Mojang diagnostic draw submission, validated public Mojang sampled direct-light preview texture upload/draw submission, validated extracted surface-sample direct-light origins, validated native surface-sample masked direct-light preview generation, staged native runtime loading that avoids the earlier Windows Application Control block, a controller visual-proof harness, and screenshot-validated in-world direct-light debug overlay text, but the first real visible lighting milestone is not complete yet.
 - Latest controller work also adds objective screenshot delta reporting and proves that fully displayable direct-light preview textures are still not producing a clear focused wall-region screenshot delta. The next stage is an authoritative final color-target/composite hook, not more native brightness tuning.
 - Latest controller work also adds a HUD-safe, explicitly labeled Round 5 visual-proof marker gated by the same preview-ready native direct-light CPU payload used by the sampled draw path. This proves screenshot-visible native direct-light readiness, but it is not a substitute for real surface lighting.
+- Latest controller work moves the final world-color composite hook from `GameRenderer.renderLevel` tail to immediately after `LevelRenderer.render(...)`, removes the older sampled public preview draw from that hook, adds final-composite frame/pass intent contracts, and validates final-composite public Mojang draw submission before hand/HUD composition. Screenshot delta still shows no focused wall-region brightening, so real surface lighting remains open.
+- Latest native work replaces the sample-order direct-light CPU preview texture with a centered spatial surface-sample rasterization and compiles through native staging, but controller launch validation for that native tuning is blocked by Windows Application Control rejecting the freshly staged DLL in the latest run. Treat it as build-validated only until the DLL can load in a fresh launch.
 - The remaining work is the hardest part: turning Phase 5 metadata/planning into visible direct light, low-res GI, denoise, composite behavior, and richer debug telemetry.
 
 Legend:
@@ -114,8 +116,9 @@ Legend:
 
 - **Agent M: Direct Lighting** **PARTIAL**
   - Owns sun/moon lighting, emissive block list sampling, voxel shadow ray scaffolding.
-  - ~~Status: Java planning contracts, emissive sampling, bounded direct shadow candidate generation, compact extracted opaque surface sample metadata, surface-sample-preserving section reference merges, extracted surface-origin shadow candidates, native direct-light handoff DTOs, direct payload JNI/native storage, resource-category stage counts, native dispatch metadata, native direct execution output/resolve markers, a native CPU direct-light output buffer with nonzero energy/checksum telemetry, JNI/Java RGBA8 readback, public Mojang texture upload, sampled additive preview draw, and native surface-sample masked preview generation exist and have been validated.~~ **DONE/VALIDATED**
-  - Status: baseline/enabled screenshot proof is still open; controller captured disabled/enabled proof screenshots, but the accepted enabled surface brightening is still too subtle to mark complete.
+  - ~~Status: Java planning contracts, emissive sampling, bounded direct shadow candidate generation, compact extracted opaque surface sample metadata, surface-sample-preserving section reference merges, extracted surface-origin shadow candidates, native direct-light handoff DTOs, direct payload JNI/native storage, resource-category stage counts, native dispatch metadata, native direct execution output/resolve markers, a native CPU direct-light output buffer with nonzero energy/checksum telemetry, JNI/Java RGBA8 readback, public Mojang texture upload, sampled additive preview draw, final-composite public Mojang draw submission, and native surface-sample masked preview generation exist and have been validated.~~ **DONE/VALIDATED**
+  - Status: native centered surface-sample preview rasterization is build/native-staging validated, but launch validation is still open because Windows Application Control blocked the newly staged DLL in the latest run.
+  - Status: baseline/enabled screenshot proof is still open; controller captured disabled/enabled final-composite proof screenshots, but the focused wall region still has `focus.changedPixelPercent=0` and `focus.brighterPixelPercent=0`, so surface brightening is not complete.
 
 - **Agent N: First GI** **PARTIAL**
   - Owns low-res single-bounce diffuse GI, temporal accumulation inputs, and cache confidence output.
@@ -124,7 +127,7 @@ Legend:
 
 - **Agent O: Denoise/Composite** **PARTIAL**
   - Owns edge-aware diffuse denoise, history rejection inputs, and final composite into the world color target.
-  - ~~Status: Java planning contracts, post-processing handoff DTOs, shader/resource contracts, native dispatch metadata, HUD-preserving world-color target contracts, metadata-only versus Java-opaque versus native-writable attachment contracts, conservative direct-light preview submission result plumbing, the render-thread target hook, public Mojang Java-opaque target capture, public Mojang no-draw preview render-pass submission, and public Mojang diagnostic draw submission exist and have been validated.~~ **DONE/VALIDATED**
+  - ~~Status: Java planning contracts, post-processing handoff DTOs, shader/resource contracts, native dispatch metadata, HUD-preserving world-color target contracts, metadata-only versus Java-opaque versus native-writable attachment contracts, conservative direct-light preview/final-composite submission result plumbing, the render-thread final-composite target hook immediately after `LevelRenderer.render(...)`, public Mojang Java-opaque target capture, public Mojang no-draw preview render-pass submission, public Mojang diagnostic draw submission, and public Mojang final-composite draw submission exist and have been validated.~~ **DONE/VALIDATED**
   - Status: real denoise shader/composite output is still open.
 
 - **Agent P: Cache/Adaptive Sampling** **PARTIAL**
@@ -195,6 +198,7 @@ Status:
 ~~The render-thread target factory now captures public Mojang Java-opaque render objects, extent, format, and usage labels while still correctly reporting no native-writable handles.~~ **DONE/VALIDATED**
 ~~A public Mojang `RenderPass` now opens, closes, and submits against the Java-opaque world color target with no draw calls and no visible-lighting claim.~~ **DONE/VALIDATED**
 ~~A public Mojang diagnostic `RenderPass` now sets a Lucerna pipeline and issues a bounded fullscreen draw call against the Java-opaque world color target before HUD composition.~~ **DONE/VALIDATED**
+~~A final world-color composite hook now runs immediately after `LevelRenderer.render(...)`, submits a public Mojang final-composite draw with `drawCalls=true`, and preserves the vanilla HUD in screenshots.~~ **DONE/VALIDATED**
 Visible direct-light output is still open.
 
 Must not own:
@@ -749,6 +753,8 @@ Logs prove candidate reuse and reservoir invalidation behavior.
 - ~~No sub-agent is allowed to "verify" fixes by running tests or build-like checks. They patch, explain, and wait for controller feedback.~~ **DONE/ONGOING**
 
 Latest strong validation evidence:
+- ~~Sodium + Iris + Vulkan enabled launch now submits the after-`LevelRenderer.render(...)` public Mojang final world-color composite draw with `attempted=true submitted=true drawCalls=true`, native direct-light CPU payload ready, and HUD intact in screenshots.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-final-composite-after-level-enabled-20260619-084513.log` and `run/validation-screenshots/round5-final-composite-after-level-enabled-20260619-084513-Enabled.png`**
+- The after-level final-composite screenshot pair still does not meet the visible wall-lighting acceptance threshold: full-frame luma changed, but the focused wall region remains unchanged (`focus.changedPixelPercent=0`, `focus.brighterPixelPercent=0`). **OPEN in `run/validation-logs/round5-final-composite-after-level-delta-20260619-084719.json`**
 - ~~Sodium + Iris + Vulkan enabled launch now captures a screenshot-visible, HUD-safe `R5 visual proof` marker only when the renderer is active and the native direct-light CPU payload is preview-ready; the disabled baseline screenshot does not show the marker.~~ **DONE/VALIDATED in `run/validation-screenshots/round5-proof-payload-overlay-enabled-20260619-081833-Enabled.png`, `run/validation-screenshots/round5-proof-payload-overlay-baseline-20260619-082044-Baseline.png`, `run/validation-logs/latest-round5-proof-payload-overlay-enabled-20260619-081833.log`, and `run/validation-logs/round5-proof-payload-overlay-delta-20260619-082044.json`**
 - The proof marker validates native direct-light readiness in screenshots, not real world-surface illumination; the focused wall region still does not meet the direct/emissive lighting acceptance threshold. **OPEN with `focus.changedPixelPercent=0` and `focus.brighterPixelPercent=0` in `run/validation-logs/round5-proof-payload-overlay-delta-20260619-082044.json`**
 - ~~Controller build/native build passes after native preview visibility diagnostics, Java preview-readiness gating, and image-delta helper changes; enabled launches load the staged DLL, generate preview-ready native CPU output with `displayablePixels=2304` and `peakChannel=255`, upload/draw the sampled public Mojang preview pass, and capture screenshots.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-native-coverage-floor-enabled-20260619-080231.log`, `run/validation-logs/latest-round5-tail-hook-enabled-20260619-080537.log`, `run/validation-screenshots/round5-native-coverage-floor-enabled-20260619-080231-Enabled.png`, and `run/validation-screenshots/round5-tail-hook-enabled-20260619-080537-Enabled.png`**
@@ -797,6 +803,7 @@ Latest strong validation evidence:
   - ~~Public Mojang no-draw preview render-pass submission is compile/build/launch validated before HUD composition.~~ **DONE/VALIDATED**
   - ~~Public Mojang diagnostic fullscreen draw submission is compile/build/launch validated before HUD composition.~~ **DONE/VALIDATED**
   - ~~Public Mojang sampled direct-light preview texture upload/draw is compile/build/launch validated before HUD composition.~~ **DONE/VALIDATED**
+  - ~~Public Mojang final world-color composite draw submission after `LevelRenderer.render(...)` is compile/build/launch validated before hand/HUD composition.~~ **DONE/VALIDATED**
   - ~~Native surface-sample masked direct-light preview generation is compile/build/launch validated before HUD composition.~~ **DONE/VALIDATED**
   - ~~Compact extracted opaque surface samples and surface-origin direct-light shadow candidate planning are compile/build/launch validated with nonzero `surfaceSampleSections` and `surfaceSamples` telemetry.~~ **DONE/VALIDATED**
   - Visible emissive/direct lighting on surfaces, low-res GI, denoise, final composite, and screenshot proof are still open.

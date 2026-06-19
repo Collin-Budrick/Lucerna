@@ -215,6 +215,7 @@ public record LucernaFramePassStatus(
 
     private static boolean canReportDrawCalls(LucernaFramePassStatusCode code, LucernaFramePassKind kind) {
         return code == LucernaFramePassStatusCode.ATTACHED_NO_OP
-                && kind == LucernaFramePassKind.DIRECT_LIGHT_PREVIEW_COMPOSITE;
+                && (kind == LucernaFramePassKind.DIRECT_LIGHT_PREVIEW_COMPOSITE
+                || kind == LucernaFramePassKind.FINAL_WORLD_COLOR_COMPOSITE);
     }
 }

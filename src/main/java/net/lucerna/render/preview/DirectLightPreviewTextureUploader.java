@@ -22,13 +22,25 @@ public final class DirectLightPreviewTextureUploader implements AutoCloseable {
     private static final int MIP_LEVELS = 1;
     private static final int TEXTURE_USAGE = GpuTexture.USAGE_COPY_DST | GpuTexture.USAGE_TEXTURE_BINDING;
     private static final String TEXTURE_LABEL = "lucerna_direct_light_preview_rgba";
+    private static final String UPLOAD_USAGE_LABEL = "direct-light preview";
 
+    private final String textureLabel;
+    private final String uploadUsageLabel;
     private GpuTexture texture;
     private GpuTextureView textureView;
     private GpuSampler sampler;
     private int width;
     private int height;
     private boolean closed;
+
+    public DirectLightPreviewTextureUploader() {
+        this(TEXTURE_LABEL, UPLOAD_USAGE_LABEL);
+    }
+
+    public DirectLightPreviewTextureUploader(String textureLabel, String uploadUsageLabel) {
+        this.textureLabel = normalizedLabel(textureLabel, TEXTURE_LABEL);
+        this.uploadUsageLabel = normalizedLabel(uploadUsageLabel, UPLOAD_USAGE_LABEL);
+    }
 
     public DirectLightPreviewTextureUploadResult upload(
             GpuDevice device,
@@ -38,13 +50,13 @@ public final class DirectLightPreviewTextureUploader implements AutoCloseable {
             int height
     ) {
         if (this.closed) {
-            return unavailable(width, height, "direct-light preview texture uploader is closed");
+            return unavailable(width, height, this.uploadUsageLabel + " texture uploader is closed");
         }
         if (device == null) {
-            return unavailable(width, height, "GpuDevice is not available for direct-light preview texture upload");
+            return unavailable(width, height, "GpuDevice is not available for " + this.uploadUsageLabel + " texture upload");
         }
         if (commandEncoder == null) {
-            return unavailable(width, height, "CommandEncoder is not available for direct-light preview texture upload");
+            return unavailable(width, height, "CommandEncoder is not available for " + this.uploadUsageLabel + " texture upload");
         }
         if (rgbaPixels == null) {
             return invalid(width, height, 0, "RGBA source buffer is not available");
@@ -70,7 +82,7 @@ public final class DirectLightPreviewTextureUploader implements AutoCloseable {
             if (requiresTextureRecreate(width, height)) {
                 closeTextureResource();
                 this.texture = device.createTexture(
-                        TEXTURE_LABEL,
+                        this.textureLabel,
                         TEXTURE_USAGE,
                         FORMAT,
                         width,
@@ -117,7 +129,7 @@ public final class DirectLightPreviewTextureUploader implements AutoCloseable {
                     rgbaPixels.remaining(),
                     this.textureView,
                     this.sampler,
-                    "RGBA direct-light preview image uploaded through public Mojang GpuDevice/CommandEncoder APIs"
+                    "RGBA " + this.uploadUsageLabel + " image uploaded through public Mojang GpuDevice/CommandEncoder APIs"
             );
         } catch (IllegalArgumentException | IllegalStateException | UnsupportedOperationException | LinkageError exception) {
             return result(
@@ -131,7 +143,7 @@ public final class DirectLightPreviewTextureUploader implements AutoCloseable {
                     rgbaPixels.remaining(),
                     this.textureView,
                     this.sampler,
-                    "public Mojang direct-light preview texture upload failed: " + exceptionSummary(exception)
+                    "public Mojang " + this.uploadUsageLabel + " texture upload failed: " + exceptionSummary(exception)
             );
         }
     }
@@ -268,5 +280,12 @@ public final class DirectLightPreviewTextureUploader implements AutoCloseable {
             return exception.getClass().getSimpleName();
         }
         return exception.getClass().getSimpleName() + ": " + message.trim();
+    }
+
+    private static String normalizedLabel(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value.trim();
     }
 }
