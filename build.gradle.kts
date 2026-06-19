@@ -55,6 +55,8 @@ java {
 val nativeSourceDir = layout.projectDirectory.dir("native/lucerna_renderer")
 val nativeBuildDir = layout.buildDirectory.dir("native/lucerna_renderer")
 val nativeRuntimeDir = nativeBuildDir.map { it.dir("RelWithDebInfo") }
+val nativeStagedRuntimeDir = layout.projectDirectory.dir("run/native/lucerna_renderer")
+val nativeStagedLibrary = nativeStagedRuntimeDir.file("lucerna_renderer.dll")
 
 loom {
     runs {
@@ -62,7 +64,8 @@ loom {
             client()
             configName = "Lucerna Fabric Client"
             runDir("run")
-            vmArg("-Djava.library.path=${nativeRuntimeDir.get().asFile.absolutePath}")
+            vmArg("-Djava.library.path=${nativeStagedRuntimeDir.asFile.absolutePath}")
+            vmArg("-Dlucerna.native.path=${nativeStagedLibrary.asFile.absolutePath}")
         }
     }
 }
@@ -78,6 +81,20 @@ tasks.register<Exec>("buildNative") {
     description = "Build the Lucerna native renderer with CMake."
     dependsOn("configureNative")
     commandLine("cmake", "--build", nativeBuildDir.get().asFile.absolutePath, "--config", "RelWithDebInfo")
+}
+
+tasks.register<Copy>("stageNativeRuntime") {
+    group = "lucerna native"
+    description = "Stage the Lucerna native renderer into the runtime directory used by runClient."
+    dependsOn("buildNative")
+    from(nativeRuntimeDir) {
+        include("lucerna_renderer.dll")
+    }
+    into(nativeStagedRuntimeDir)
+}
+
+tasks.named("runClient") {
+    dependsOn("stageNativeRuntime")
 }
 
 publishing {

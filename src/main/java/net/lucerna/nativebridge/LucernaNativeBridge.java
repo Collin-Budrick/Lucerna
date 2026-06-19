@@ -15,6 +15,7 @@ import net.lucerna.upload.NativeUploadPacket;
 
 public final class LucernaNativeBridge {
     private static final String LIBRARY_NAME = "lucerna_renderer";
+    private static final String LIBRARY_PATH_PROPERTY = "lucerna.native.path";
     private static final int FORMAT_TAG_GBUFFER_DEPTH = 10;
     private static final int FORMAT_TAG_GBUFFER_NORMAL_MATERIAL = 11;
     private static final int FORMAT_TAG_GBUFFER_ALBEDO_EMISSIVE = 12;
@@ -288,18 +289,25 @@ public final class LucernaNativeBridge {
 
         this.loadAttempted = true;
 
+        String explicitLibraryPath = System.getProperty(LIBRARY_PATH_PROPERTY, "").trim();
         try {
-            System.loadLibrary(LIBRARY_NAME);
+            if (explicitLibraryPath.isEmpty()) {
+                System.loadLibrary(LIBRARY_NAME);
+                Lucerna.LOGGER.info("Loaded native library {} from java.library.path.", LIBRARY_NAME);
+            } else {
+                System.load(explicitLibraryPath);
+                Lucerna.LOGGER.info("Loaded native library {} from {}.", LIBRARY_NAME, explicitLibraryPath);
+            }
             this.loaded = true;
             this.available = true;
             this.initialized = false;
             this.lastError = "";
-            Lucerna.LOGGER.info("Loaded native library {}.", LIBRARY_NAME);
         } catch (UnsatisfiedLinkError error) {
             this.loaded = false;
             this.available = false;
             this.initialized = false;
-            this.lastError = "Could not load native library " + LIBRARY_NAME + ": " + error.getMessage();
+            String loadTarget = explicitLibraryPath.isEmpty() ? "java.library.path" : explicitLibraryPath;
+            this.lastError = "Could not load native library " + LIBRARY_NAME + " from " + loadTarget + ": " + error.getMessage();
             Lucerna.LOGGER.warn("Lucerna native library is not available yet. Rendering will stay disabled.", error);
         }
     }
