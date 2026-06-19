@@ -59,7 +59,15 @@ The milestone is limited to basic sun/moon, bounded emissive sampling, voxel sha
 
 Round 5 narrows the immediate visible milestone to one direct-lighting proof before later GI quality work. The public output remains `lucerna.lighting.direct`: full-resolution linear RGB direct radiance, with alpha reserved for direct visibility or confidence. The direct pass may use Lucerna-owned frame constants, G-buffer attachments, `MaterialTable`, `VoxelOccupancy`, `BlueNoiseTexture`, and `EmissiveBlockList`.
 
-`lucerna.composite.final` owns the resolve into `lucerna.composite.worldColor`. The resolve must be switchable between baseline/no-op and enabled direct-light modes so the controller can capture paired screenshots from the same test scene. It runs before vanilla HUD and late translucency, preserves Minecraft/Sodium target ownership, and must not sample Iris shader-pack color, depth, shadow, or lighting resources.
+The minimal resource path for Q3 is direct-only:
+
+1. `lucerna.lighting.direct` writes the Lucerna-owned direct output target.
+2. `lucerna.composite.final` reads `lucerna.gbuffer.albedoOpacity` plus `lucerna.lighting.direct`.
+3. `lucerna.composite.final` resolves into `lucerna.composite.worldColor`, the borrowed Minecraft/Sodium world color target.
+
+Baseline or disabled mode must skip the direct-radiance contribution and preserve the validated no-op or flat-composite behavior. Enabled direct-only mode may add direct radiance from `lucerna.lighting.direct` before vanilla HUD and late translucency. Both modes keep Minecraft/Sodium ownership of the target.
+
+The Round 5 path must not consume Iris shader-pack color, depth, shadow, or lighting resources. Iris remains status/settings-visible only; it is not an input to direct output or composite resolve.
 
 Visible direct output is not considered complete from metadata alone. It remains controller-validated only after screenshots show an emissive, sun, or moon candidate brightening a visible surface and logs show native direct dispatch, candidate count, direct output write, direct resolve, and no native errors.
 

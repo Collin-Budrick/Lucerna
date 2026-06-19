@@ -17,6 +17,14 @@ The canonical Phase 5 dependency order is `lucerna.lighting.direct`, `lucerna.li
 
 Round 5 uses the same IDs but narrows the immediate target to visible direct light: `lucerna.lighting.direct` writes a Lucerna-owned direct-light target, and `lucerna.composite.final` resolves it into `lucerna.composite.worldColor` before vanilla HUD and late translucency.
 
+The smallest direct-only resource path is:
+
+1. `lucerna.lighting.direct` produces `lucerna.lighting.direct`.
+2. `lucerna.composite.final` reads `lucerna.gbuffer.albedoOpacity` and `lucerna.lighting.direct`.
+3. `lucerna.composite.final` writes `lucerna.composite.worldColor`.
+
+Baseline/disabled mode skips the direct-light contribution and preserves the validated no-op or flat-composite result. Enabled direct-only mode resolves direct radiance into the borrowed Minecraft/Sodium world color target before vanilla HUD and late translucency. Neither mode may sample Iris shader-pack color, depth, shadow, or lighting resources.
+
 ## Round 4 Payload Handoffs
 
 `layout.json` now separates the first-lighting payload contract from real shader implementation:
@@ -30,7 +38,7 @@ The first lighting milestone is reached only when the controller can observe vis
 
 For the first visible direct-light proof, the controller needs three screenshot markers: baseline/disabled or no-op, enabled direct-light output, and direct-light debug overlay. The enabled shot should show one emissive block, sun, or moon path visibly brightening a surface; the overlay should expose candidate counts, shadow candidate count, dispatch frame, output-buffer status, resolve status, and HUD readability. Metadata in this folder only defines that contract; real visible output remains controller-validated.
 
-Lucerna must not consume Iris shader-pack outputs for this milestone. Iris can remain status/settings-visible, but shader-pack color, depth, shadow, and lighting resources are outside the Lucerna direct-light resolve contract.
+Lucerna must not consume Iris shader-pack outputs for this milestone. Iris can remain status/settings-visible, but shader-pack color, depth, shadow, and lighting resources are outside the Lucerna direct output and composite resolve contract.
 
 ## Naming
 

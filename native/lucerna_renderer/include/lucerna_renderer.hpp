@@ -183,6 +183,41 @@ struct LightingDispatchPacket {
     std::vector<LightingDispatchStageUpload> dispatches;
 };
 
+struct DirectLightingPayloadPacket {
+    std::uint64_t frame_index = 0;
+    std::uint64_t generation = 0;
+    std::uint64_t first_generation = 0;
+    std::uint64_t last_generation = 0;
+    std::uint64_t celestial_generation = 0;
+    std::uint64_t emissive_generation = 0;
+    std::uint64_t shadow_generation = 0;
+    std::uint64_t shadow_candidate_generation = 0;
+    std::uint64_t section_snapshot_generation = 0;
+    std::string dimension_id;
+    std::uint32_t flags = 0;
+    std::int32_t celestial_light_count = 0;
+    float celestial_light_energy = 0.0F;
+    std::int32_t selected_emissive_count = 0;
+    float selected_emissive_energy = 0.0F;
+    std::int32_t shadow_candidate_count = 0;
+    std::int32_t budgeted_shadow_candidate_count = 0;
+    std::int32_t section_snapshot_count = 0;
+    std::vector<std::int32_t> ray_budget;
+    std::vector<std::int32_t> celestial_light_sources;
+    std::vector<std::int32_t> celestial_light_flags;
+    std::vector<float> celestial_light_data;
+    std::vector<std::string> emissive_light_dimensions;
+    std::vector<std::int32_t> emissive_light_metadata;
+    std::vector<float> emissive_light_data;
+    std::vector<std::uint64_t> emissive_light_generations;
+    std::vector<std::int32_t> shadow_candidate_metadata;
+    std::vector<float> shadow_candidate_rays;
+    std::vector<std::uint64_t> shadow_candidate_generations;
+    std::vector<std::string> section_snapshot_dimensions;
+    std::vector<std::int32_t> section_snapshot_metadata;
+    std::vector<std::uint64_t> section_snapshot_generations;
+};
+
 struct BorrowedVulkanContext;
 class ResourceManager;
 
@@ -361,25 +396,52 @@ struct NativeLightingDispatchPayloadCategoryTelemetry {
 };
 
 struct NativeDirectLightingExecutionTelemetry {
+    std::uint64_t payload_packets = 0;
     std::uint64_t attempts = 0;
     std::uint64_t submitted = 0;
     std::uint64_t skipped = 0;
     std::uint64_t output_writes = 0;
     std::uint64_t resolves = 0;
     std::uint64_t last_frame_index = 0;
+    std::uint64_t last_payload_frame_index = 0;
+    std::uint64_t last_payload_generation = 0;
+    std::uint64_t last_payload_first_generation = 0;
+    std::uint64_t last_payload_generation_end = 0;
+    std::uint64_t last_payload_celestial_generation = 0;
+    std::uint64_t last_payload_emissive_generation = 0;
+    std::uint64_t last_payload_shadow_generation = 0;
+    std::uint64_t last_payload_shadow_candidate_generation = 0;
+    std::uint64_t last_payload_section_snapshot_generation = 0;
     std::uint64_t last_packet_generation = 0;
     std::uint64_t last_dispatch_generation = 0;
+    std::uint64_t last_celestial_light_count = 0;
+    std::uint64_t last_emissive_light_count = 0;
+    std::uint64_t last_shadow_candidate_count = 0;
+    std::uint64_t last_budgeted_shadow_candidate_count = 0;
+    std::uint64_t last_section_snapshot_count = 0;
     std::uint64_t last_candidate_count = 0;
     std::uint64_t last_sample_count = 0;
     std::uint64_t last_ray_count = 0;
     std::uint64_t last_output_count = 0;
+    std::uint64_t total_celestial_light_count = 0;
+    std::uint64_t total_emissive_light_count = 0;
+    std::uint64_t total_shadow_candidate_count = 0;
     std::uint64_t total_candidate_count = 0;
     std::uint64_t total_sample_count = 0;
     std::uint64_t total_ray_count = 0;
+    float last_celestial_light_energy = 0.0F;
+    float last_emissive_light_energy = 0.0F;
+    std::uint32_t last_payload_flags = 0;
+    bool last_payload_accepted = false;
+    bool last_payload_validated = false;
+    bool last_payload_has_direct_work = false;
+    bool last_payload_ready_for_shadow_tracing = false;
     bool last_enabled = false;
     bool last_ready = false;
+    bool last_metadata_only = true;
     bool last_output_write_recorded = false;
     bool last_resolve_recorded = false;
+    std::string last_payload_dimension_id;
     std::string last_output_marker;
     std::string last_readiness_reason;
 };
@@ -464,6 +526,7 @@ public:
     void upload_section_snapshots(SectionUploadPacket packet);
     void upload_gbuffer_staging(GBufferStagingPacket packet);
     void upload_lighting_dispatch(LightingDispatchPacket packet);
+    void upload_direct_lighting_payload(DirectLightingPayloadPacket packet);
     void render_lighting();
     void end_frame();
     void adopt_borrowed_context(BorrowedVulkanContext context);
@@ -523,6 +586,7 @@ private:
     SectionUploadPacket last_section_upload_packet_;
     GBufferStagingPacket last_gbuffer_staging_packet_;
     LightingDispatchPacket last_lighting_dispatch_packet_;
+    DirectLightingPayloadPacket last_direct_lighting_payload_packet_;
     float last_tick_delta_ = 0.0F;
     std::uint64_t resize_count_ = 0;
     std::uint64_t begin_frame_count_ = 0;
@@ -531,6 +595,7 @@ private:
     std::uint64_t section_upload_packet_count_ = 0;
     std::uint64_t gbuffer_staging_packet_count_ = 0;
     std::uint64_t lighting_dispatch_packet_count_ = 0;
+    std::uint64_t direct_lighting_payload_packet_count_ = 0;
     std::uint64_t upload_dirty_payload_total_ = 0;
     std::uint64_t upload_material_payload_total_ = 0;
     std::uint64_t section_snapshot_payload_total_ = 0;

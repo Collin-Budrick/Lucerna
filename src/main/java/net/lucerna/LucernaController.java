@@ -92,6 +92,7 @@ public final class LucernaController {
     private String lastLoggedFirstPassPlanKey = "";
     private String lastPreparedLightingDispatchKey = "";
     private String lastLoggedLightingDispatchKey = "";
+    private NativeDirectLightingUploadPacket pendingDirectLightingUpload;
     private long gBufferStagingGeneration;
     private long lightingDispatchGeneration;
     private FrameConstantsCapture frameConstantsCapture = FrameConstantsCapture.unavailable(
@@ -150,6 +151,7 @@ public final class LucernaController {
             this.nativeBridge.uploadWorldDeltas(stagedBatch.worldAndMaterialBatch());
             this.nativeBridge.uploadSectionSnapshots(stagedBatch);
             this.nativeBridge.uploadGBufferStaging(stagedBatch);
+            this.nativeBridge.uploadDirectLighting(this.pendingDirectLightingUpload);
             this.nativeBridge.uploadLightingDispatch(lightingDispatchPacket);
             this.logSectionExtractionStatusIfChanged(sectionExtraction);
             this.logGBufferStagingStatusIfChanged(stagedBatch);
@@ -378,6 +380,7 @@ public final class LucernaController {
             NativeStagedUploadBatch stagedBatch,
             PrimaryVoxelGBufferPassPlan firstPassPlan
     ) {
+        this.pendingDirectLightingUpload = null;
         if (stagedBatch == null || stagedBatch.gBufferStaging().isEmpty()) {
             return null;
         }
@@ -536,6 +539,7 @@ public final class LucernaController {
         );
         StageUpload cacheStage = this.cacheStage(cacheEnabled, dispatchGeneration, diffuseGiUpload);
 
+        this.pendingDirectLightingUpload = directLightingUpload;
         return NativeLightingDispatchUploadPacket.of(
                 dispatchGeneration,
                 metadata,
@@ -846,6 +850,7 @@ public final class LucernaController {
         this.lastLoggedFirstPassPlanKey = "";
         this.lastPreparedLightingDispatchKey = "";
         this.lastLoggedLightingDispatchKey = "";
+        this.pendingDirectLightingUpload = null;
         this.gBufferStagingGeneration = 0L;
         this.lightingDispatchGeneration = 0L;
     }

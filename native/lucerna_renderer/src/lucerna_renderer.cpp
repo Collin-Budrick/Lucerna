@@ -47,6 +47,27 @@ constexpr std::uint32_t kLightingDispatchFlagPlaceholder = 1U << 1U;
 constexpr std::uint32_t kLightingDispatchFlagTemporalHistory = 1U << 2U;
 constexpr std::uint32_t kLightingDispatchFlagDebugOverlay = 1U << 3U;
 constexpr std::uint32_t kLightingDispatchFlagReuseOnly = 1U << 4U;
+constexpr std::uint32_t kDirectPayloadFlagValidated = 1U;
+constexpr std::uint32_t kDirectPayloadFlagHasDirectLightingWork = 1U << 1U;
+constexpr std::uint32_t kDirectPayloadFlagReadyForShadowTracing = 1U << 2U;
+constexpr std::uint32_t kDirectPayloadFlagRequiresOccupancyMasks = 1U << 3U;
+constexpr std::uint32_t kDirectPayloadFlagAllowTranslucentOccluders = 1U << 4U;
+constexpr std::uint32_t kDirectPayloadFlagWorldTimeAvailable = 1U << 5U;
+constexpr std::uint32_t kDirectPayloadKnownFlags =
+        kDirectPayloadFlagValidated
+        | kDirectPayloadFlagHasDirectLightingWork
+        | kDirectPayloadFlagReadyForShadowTracing
+        | kDirectPayloadFlagRequiresOccupancyMasks
+        | kDirectPayloadFlagAllowTranslucentOccluders
+        | kDirectPayloadFlagWorldTimeAvailable;
+constexpr std::size_t kDirectRayBudgetStride = 6;
+constexpr std::size_t kDirectCelestialLightDataStride = 9;
+constexpr std::size_t kDirectEmissiveLightMetadataStride = 5;
+constexpr std::size_t kDirectEmissiveLightDataStride = 6;
+constexpr std::size_t kDirectShadowCandidateMetadataStride = 3;
+constexpr std::size_t kDirectShadowCandidateRayStride = 9;
+constexpr std::size_t kDirectSectionSnapshotMetadataStride = 15;
+constexpr std::size_t kDirectSectionSnapshotGenerationStride = 7;
 constexpr std::size_t kLightingPayloadCategoryDirect = 0;
 constexpr std::size_t kLightingPayloadCategoryGi = 1;
 constexpr std::size_t kLightingPayloadCategoryPost = 2;
@@ -382,15 +403,42 @@ void append_phase5_lighting_status(
         << ",reason=\"" << readiness_reason
         << "\"}"
         << ",direct_execution={attempts=" << lighting.direct_execution.attempts
+        << ",payload_packets=" << lighting.direct_execution.payload_packets
         << ",submitted=" << lighting.direct_execution.submitted
         << ",skipped=" << lighting.direct_execution.skipped
         << ",last_frame=" << lighting.direct_execution.last_frame_index
+        << ",payload_accepted=" << lighting.direct_execution.last_payload_accepted
+        << ",payload_frame=" << lighting.direct_execution.last_payload_frame_index
+        << ",payload_generation=" << lighting.direct_execution.last_payload_generation
+        << ",payload_generation_range=" << lighting.direct_execution.last_payload_first_generation
+        << "-" << lighting.direct_execution.last_payload_generation_end
+        << ",payload_dimension=\"" << lighting.direct_execution.last_payload_dimension_id
+        << "\""
+        << ",payload_flags=" << lighting.direct_execution.last_payload_flags
+        << ",payload_validated=" << lighting.direct_execution.last_payload_validated
+        << ",payload_has_direct_work=" << lighting.direct_execution.last_payload_has_direct_work
+        << ",payload_ready_for_shadow_tracing=" << lighting.direct_execution.last_payload_ready_for_shadow_tracing
+        << ",celestial_generation=" << lighting.direct_execution.last_payload_celestial_generation
+        << ",emissive_generation=" << lighting.direct_execution.last_payload_emissive_generation
+        << ",shadow_generation=" << lighting.direct_execution.last_payload_shadow_generation
+        << ",shadow_candidate_generation=" << lighting.direct_execution.last_payload_shadow_candidate_generation
+        << ",section_snapshot_generation=" << lighting.direct_execution.last_payload_section_snapshot_generation
         << ",packet_generation=" << lighting.direct_execution.last_packet_generation
         << ",dispatch_generation=" << lighting.direct_execution.last_dispatch_generation
+        << ",celestial_count=" << lighting.direct_execution.last_celestial_light_count
+        << ",emissive_count=" << lighting.direct_execution.last_emissive_light_count
+        << ",shadow_candidate_count=" << lighting.direct_execution.last_shadow_candidate_count
+        << ",budgeted_shadow_candidate_count=" << lighting.direct_execution.last_budgeted_shadow_candidate_count
+        << ",section_snapshot_count=" << lighting.direct_execution.last_section_snapshot_count
+        << ",celestial_energy=" << lighting.direct_execution.last_celestial_light_energy
+        << ",emissive_energy=" << lighting.direct_execution.last_emissive_light_energy
         << ",candidate_count=" << lighting.direct_execution.last_candidate_count
         << ",sample_count=" << lighting.direct_execution.last_sample_count
         << ",ray_count=" << lighting.direct_execution.last_ray_count
         << ",output_count=" << lighting.direct_execution.last_output_count
+        << ",total_celestial=" << lighting.direct_execution.total_celestial_light_count
+        << ",total_emissive=" << lighting.direct_execution.total_emissive_light_count
+        << ",total_shadow_candidates=" << lighting.direct_execution.total_shadow_candidate_count
         << ",total_candidates=" << lighting.direct_execution.total_candidate_count
         << ",total_samples=" << lighting.direct_execution.total_sample_count
         << ",total_rays=" << lighting.direct_execution.total_ray_count
@@ -398,6 +446,7 @@ void append_phase5_lighting_status(
         << ",resolves=" << lighting.direct_execution.resolves
         << ",enabled=" << lighting.direct_execution.last_enabled
         << ",ready=" << lighting.direct_execution.last_ready
+        << ",metadata_only=" << lighting.direct_execution.last_metadata_only
         << ",output_write_recorded=" << lighting.direct_execution.last_output_write_recorded
         << ",resolve_recorded=" << lighting.direct_execution.last_resolve_recorded
         << ",output_marker=\"" << lighting.direct_execution.last_output_marker
@@ -479,6 +528,7 @@ void Renderer::init() {
     last_section_upload_packet_ = {};
     last_gbuffer_staging_packet_ = {};
     last_lighting_dispatch_packet_ = {};
+    last_direct_lighting_payload_packet_ = {};
     last_tick_delta_ = 0.0F;
     resize_count_ = 0;
     begin_frame_count_ = 0;
@@ -487,6 +537,7 @@ void Renderer::init() {
     section_upload_packet_count_ = 0;
     gbuffer_staging_packet_count_ = 0;
     lighting_dispatch_packet_count_ = 0;
+    direct_lighting_payload_packet_count_ = 0;
     upload_dirty_payload_total_ = 0;
     upload_material_payload_total_ = 0;
     section_snapshot_payload_total_ = 0;
@@ -531,6 +582,7 @@ void Renderer::shutdown() {
     last_section_upload_packet_ = {};
     last_gbuffer_staging_packet_ = {};
     last_lighting_dispatch_packet_ = {};
+    last_direct_lighting_payload_packet_ = {};
     last_tick_delta_ = 0.0F;
     resize_count_ = 0;
     begin_frame_count_ = 0;
@@ -539,6 +591,7 @@ void Renderer::shutdown() {
     section_upload_packet_count_ = 0;
     gbuffer_staging_packet_count_ = 0;
     lighting_dispatch_packet_count_ = 0;
+    direct_lighting_payload_packet_count_ = 0;
     upload_dirty_payload_total_ = 0;
     upload_material_payload_total_ = 0;
     section_snapshot_payload_total_ = 0;
@@ -1109,6 +1162,112 @@ void Renderer::upload_lighting_dispatch(LightingDispatchPacket packet) {
     clear_error();
 }
 
+void Renderer::upload_direct_lighting_payload(DirectLightingPayloadPacket packet) {
+    if (!initialized_) {
+        return;
+    }
+
+    auto fail = [this](std::string error) {
+        set_error(std::move(error));
+        throw std::invalid_argument(last_error_);
+    };
+    auto require_text = [&fail](const std::string& value, const char* name) {
+        if (is_blank(value)) {
+            fail(std::string(name) + " must not be blank");
+        }
+    };
+    auto require_non_negative = [&fail](std::int32_t value, const char* name) {
+        if (value < 0) {
+            fail(std::string(name) + " must be non-negative");
+        }
+    };
+    auto require_length = [&fail](std::size_t expected, std::size_t actual, const char* name) {
+        if (expected != actual) {
+            std::ostringstream error;
+            error << name << " length must be " << expected << " but was " << actual;
+            fail(error.str());
+        }
+    };
+    auto checked_count = [&require_non_negative](std::int32_t count, const char* name) {
+        require_non_negative(count, name);
+        return static_cast<std::size_t>(count);
+    };
+
+    if (packet.first_generation > packet.last_generation) {
+        fail("direct lighting payload generation bounds are invalid");
+    }
+    if (packet.generation < packet.last_generation) {
+        fail("direct lighting payload generation must include payload generation bounds");
+    }
+    if ((packet.flags & ~kDirectPayloadKnownFlags) != 0) {
+        fail("direct lighting payload flags contain unknown bits");
+    }
+    require_text(packet.dimension_id, "direct lighting dimension id");
+
+    const auto celestial_count = checked_count(packet.celestial_light_count, "direct celestial light count");
+    const auto emissive_count = checked_count(packet.selected_emissive_count, "direct emissive light count");
+    const auto shadow_count = checked_count(packet.shadow_candidate_count, "direct shadow candidate count");
+    const auto section_count = checked_count(packet.section_snapshot_count, "direct section snapshot count");
+    require_non_negative(packet.budgeted_shadow_candidate_count, "direct budgeted shadow candidate count");
+    if (packet.budgeted_shadow_candidate_count > packet.shadow_candidate_count) {
+        fail("direct budgeted shadow candidate count cannot exceed shadow candidate count");
+    }
+
+    require_length(kDirectRayBudgetStride, packet.ray_budget.size(), "direct ray budget");
+    require_length(celestial_count, packet.celestial_light_sources.size(), "direct celestial light sources");
+    require_length(celestial_count, packet.celestial_light_flags.size(), "direct celestial light flags");
+    require_length(celestial_count * kDirectCelestialLightDataStride, packet.celestial_light_data.size(), "direct celestial light data");
+    require_length(emissive_count, packet.emissive_light_dimensions.size(), "direct emissive light dimensions");
+    require_length(emissive_count * kDirectEmissiveLightMetadataStride, packet.emissive_light_metadata.size(), "direct emissive light metadata");
+    require_length(emissive_count * kDirectEmissiveLightDataStride, packet.emissive_light_data.size(), "direct emissive light data");
+    require_length(emissive_count, packet.emissive_light_generations.size(), "direct emissive light generations");
+    require_length(shadow_count * kDirectShadowCandidateMetadataStride, packet.shadow_candidate_metadata.size(), "direct shadow candidate metadata");
+    require_length(shadow_count * kDirectShadowCandidateRayStride, packet.shadow_candidate_rays.size(), "direct shadow candidate rays");
+    require_length(shadow_count, packet.shadow_candidate_generations.size(), "direct shadow candidate generations");
+    require_length(section_count, packet.section_snapshot_dimensions.size(), "direct section snapshot dimensions");
+    require_length(section_count * kDirectSectionSnapshotMetadataStride, packet.section_snapshot_metadata.size(), "direct section snapshot metadata");
+    require_length(section_count * kDirectSectionSnapshotGenerationStride, packet.section_snapshot_generations.size(), "direct section snapshot generations");
+
+    for (const auto& dimension : packet.emissive_light_dimensions) {
+        require_text(dimension, "direct emissive light dimensions");
+    }
+    for (const auto& dimension : packet.section_snapshot_dimensions) {
+        require_text(dimension, "direct section snapshot dimensions");
+    }
+
+    direct_lighting_payload_packet_count_++;
+    auto& execution = staging_.lighting.direct_execution;
+    execution.payload_packets++;
+    execution.last_payload_accepted = true;
+    execution.last_payload_frame_index = packet.frame_index;
+    execution.last_payload_generation = packet.generation;
+    execution.last_payload_first_generation = packet.first_generation;
+    execution.last_payload_generation_end = packet.last_generation;
+    execution.last_payload_celestial_generation = packet.celestial_generation;
+    execution.last_payload_emissive_generation = packet.emissive_generation;
+    execution.last_payload_shadow_generation = packet.shadow_generation;
+    execution.last_payload_shadow_candidate_generation = packet.shadow_candidate_generation;
+    execution.last_payload_section_snapshot_generation = packet.section_snapshot_generation;
+    execution.last_payload_dimension_id = packet.dimension_id;
+    execution.last_payload_flags = packet.flags;
+    execution.last_payload_validated = has_lighting_flag(packet.flags, kDirectPayloadFlagValidated);
+    execution.last_payload_has_direct_work = has_lighting_flag(packet.flags, kDirectPayloadFlagHasDirectLightingWork);
+    execution.last_payload_ready_for_shadow_tracing = has_lighting_flag(packet.flags, kDirectPayloadFlagReadyForShadowTracing);
+    execution.last_celestial_light_count = celestial_count;
+    execution.last_emissive_light_count = emissive_count;
+    execution.last_shadow_candidate_count = shadow_count;
+    execution.last_budgeted_shadow_candidate_count = static_cast<std::uint64_t>(packet.budgeted_shadow_candidate_count);
+    execution.last_section_snapshot_count = section_count;
+    execution.last_celestial_light_energy = packet.celestial_light_energy;
+    execution.last_emissive_light_energy = packet.selected_emissive_energy;
+    execution.total_celestial_light_count = saturated_add(execution.total_celestial_light_count, celestial_count);
+    execution.total_emissive_light_count = saturated_add(execution.total_emissive_light_count, emissive_count);
+    execution.total_shadow_candidate_count = saturated_add(execution.total_shadow_candidate_count, shadow_count);
+    execution.last_metadata_only = true;
+    last_direct_lighting_payload_packet_ = std::move(packet);
+    clear_error();
+}
+
 void Renderer::render_lighting() {
     if (!initialized_) {
         return;
@@ -1244,6 +1403,7 @@ std::string Renderer::status() const {
         << ",section_upload_packets=" << section_upload_packet_count_
         << ",gbuffer_staging_packets=" << gbuffer_staging_packet_count_
         << ",lighting_dispatch_packets=" << lighting_dispatch_packet_count_
+        << ",direct_lighting_payload_packets=" << direct_lighting_payload_packet_count_
         << ",lighting_passes=" << lighting_pass_count_
         << ",context_adopts=" << context_adopt_count_
         << ",context_releases=" << context_release_count_
@@ -1330,6 +1490,14 @@ std::string Renderer::status() const {
         << ",material=" << last_lighting_dispatch_packet_.material_generation
         << ",section=" << last_lighting_dispatch_packet_.section_generation
         << ",gbuffer=" << last_lighting_dispatch_packet_.gbuffer_generation
+        << "}"
+        << " direct_lighting_payload_generation=" << last_direct_lighting_payload_packet_.generation
+        << " direct_lighting_payloads=" << direct_lighting_payload_packet_count_
+        << " direct_lighting_payload_counts={celestial=" << last_direct_lighting_payload_packet_.celestial_light_count
+        << ",emissive=" << last_direct_lighting_payload_packet_.selected_emissive_count
+        << ",shadow=" << last_direct_lighting_payload_packet_.shadow_candidate_count
+        << ",budgeted_shadow=" << last_direct_lighting_payload_packet_.budgeted_shadow_candidate_count
+        << ",sections=" << last_direct_lighting_payload_packet_.section_snapshot_count
         << "}";
     append_phase5_lighting_status(out, staging_.lighting, last_lighting_dispatch_packet_);
     out
@@ -1463,15 +1631,42 @@ std::string Renderer::status() const {
             : staging_.lighting.last_readiness_reason)
         << "\"}"
         << ",direct_execution={attempts=" << staging_.lighting.direct_execution.attempts
+        << ",payload_packets=" << staging_.lighting.direct_execution.payload_packets
         << ",submitted=" << staging_.lighting.direct_execution.submitted
         << ",skipped=" << staging_.lighting.direct_execution.skipped
         << ",last_frame=" << staging_.lighting.direct_execution.last_frame_index
+        << ",payload_accepted=" << staging_.lighting.direct_execution.last_payload_accepted
+        << ",payload_frame=" << staging_.lighting.direct_execution.last_payload_frame_index
+        << ",payload_generation=" << staging_.lighting.direct_execution.last_payload_generation
+        << ",payload_generation_range=" << staging_.lighting.direct_execution.last_payload_first_generation
+        << "-" << staging_.lighting.direct_execution.last_payload_generation_end
+        << ",payload_dimension=\"" << staging_.lighting.direct_execution.last_payload_dimension_id
+        << "\""
+        << ",payload_flags=" << staging_.lighting.direct_execution.last_payload_flags
+        << ",payload_validated=" << staging_.lighting.direct_execution.last_payload_validated
+        << ",payload_has_direct_work=" << staging_.lighting.direct_execution.last_payload_has_direct_work
+        << ",payload_ready_for_shadow_tracing=" << staging_.lighting.direct_execution.last_payload_ready_for_shadow_tracing
+        << ",celestial_generation=" << staging_.lighting.direct_execution.last_payload_celestial_generation
+        << ",emissive_generation=" << staging_.lighting.direct_execution.last_payload_emissive_generation
+        << ",shadow_generation=" << staging_.lighting.direct_execution.last_payload_shadow_generation
+        << ",shadow_candidate_generation=" << staging_.lighting.direct_execution.last_payload_shadow_candidate_generation
+        << ",section_snapshot_generation=" << staging_.lighting.direct_execution.last_payload_section_snapshot_generation
         << ",packet_generation=" << staging_.lighting.direct_execution.last_packet_generation
         << ",dispatch_generation=" << staging_.lighting.direct_execution.last_dispatch_generation
+        << ",celestial_count=" << staging_.lighting.direct_execution.last_celestial_light_count
+        << ",emissive_count=" << staging_.lighting.direct_execution.last_emissive_light_count
+        << ",shadow_candidate_count=" << staging_.lighting.direct_execution.last_shadow_candidate_count
+        << ",budgeted_shadow_candidate_count=" << staging_.lighting.direct_execution.last_budgeted_shadow_candidate_count
+        << ",section_snapshot_count=" << staging_.lighting.direct_execution.last_section_snapshot_count
+        << ",celestial_energy=" << staging_.lighting.direct_execution.last_celestial_light_energy
+        << ",emissive_energy=" << staging_.lighting.direct_execution.last_emissive_light_energy
         << ",candidate_count=" << staging_.lighting.direct_execution.last_candidate_count
         << ",sample_count=" << staging_.lighting.direct_execution.last_sample_count
         << ",ray_count=" << staging_.lighting.direct_execution.last_ray_count
         << ",output_count=" << staging_.lighting.direct_execution.last_output_count
+        << ",total_celestial=" << staging_.lighting.direct_execution.total_celestial_light_count
+        << ",total_emissive=" << staging_.lighting.direct_execution.total_emissive_light_count
+        << ",total_shadow_candidates=" << staging_.lighting.direct_execution.total_shadow_candidate_count
         << ",total_candidates=" << staging_.lighting.direct_execution.total_candidate_count
         << ",total_samples=" << staging_.lighting.direct_execution.total_sample_count
         << ",total_rays=" << staging_.lighting.direct_execution.total_ray_count
@@ -1479,6 +1674,7 @@ std::string Renderer::status() const {
         << ",resolves=" << staging_.lighting.direct_execution.resolves
         << ",enabled=" << staging_.lighting.direct_execution.last_enabled
         << ",ready=" << staging_.lighting.direct_execution.last_ready
+        << ",metadata_only=" << staging_.lighting.direct_execution.last_metadata_only
         << ",output_write_recorded=" << staging_.lighting.direct_execution.last_output_write_recorded
         << ",resolve_recorded=" << staging_.lighting.direct_execution.last_resolve_recorded
         << ",output_marker=\"" << staging_.lighting.direct_execution.last_output_marker
@@ -2201,6 +2397,7 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
     execution.last_ray_count = static_cast<std::uint64_t>(direct_stage.last_ray_count);
     execution.last_output_count = static_cast<std::uint64_t>(direct_stage.last_output_count);
     execution.last_enabled = direct_stage.enabled_this_packet;
+    execution.last_metadata_only = true;
     execution.last_output_write_recorded = false;
     execution.last_resolve_recorded = false;
     execution.last_output_marker.clear();
@@ -2268,8 +2465,8 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
         ? "direct_light_output_write_resolve_recorded"
         : "direct_light_resolve_recorded_without_output";
     execution.last_readiness_reason = direct_stage.last_placeholder
-        ? "direct_lighting_validated_placeholder_scaffold_executed"
-        : "direct_lighting_scaffold_executed";
+        ? "direct_lighting_validated_placeholder_scaffold_executed_metadata_only"
+        : "direct_lighting_scaffold_executed_metadata_only";
     return recorded_resources;
 }
 

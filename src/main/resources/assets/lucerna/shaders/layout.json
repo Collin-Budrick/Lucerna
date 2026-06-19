@@ -334,6 +334,35 @@
         "resolveTarget": "lucerna.composite.worldColor",
         "baselineMode": "Lucerna disabled or direct-light resolve disabled must leave the borrowed world color target visually equivalent to the validated no-op or flat-composite path.",
         "enabledMode": "Direct-light resolve samples lucerna.lighting.direct and current albedo/opacity to make one nearby surface visibly brighter when a bounded emissive, sun, or moon candidate is present.",
+        "minimalResourcePath": {
+          "producer": "lucerna.lighting.direct",
+          "directOutputTarget": "lucerna.lighting.direct",
+          "requiredDirectInputs": [
+            "lucerna.gbuffer.depth",
+            "lucerna.gbuffer.normalRoughness",
+            "lucerna.gbuffer.albedoOpacity",
+            "lucerna.gbuffer.materialId",
+            "lucerna.gbuffer.emissive",
+            "LucernaFrameConstants",
+            "MaterialTable",
+            "VoxelOccupancy",
+            "EmissiveBlockList"
+          ],
+          "resolveConsumer": "lucerna.composite.final",
+          "resolveInputs": [
+            "lucerna.gbuffer.albedoOpacity",
+            "lucerna.lighting.direct"
+          ],
+          "resolveOutput": "lucerna.composite.worldColor",
+          "baselineDisableBehavior": "If Lucerna, direct lighting, or direct resolve is disabled, composite must not add direct radiance and must preserve the borrowed world color target as the validated no-op or flat-composite baseline.",
+          "enabledBehavior": "When enabled, composite may add the direct radiance from lucerna.lighting.direct to the current albedo/world color path before vanilla HUD and late translucency.",
+          "forbiddenInputs": [
+            "Iris shader-pack color",
+            "Iris shader-pack depth",
+            "Iris shader-pack shadow",
+            "Iris shader-pack lighting"
+          ]
+        },
         "outputMarkers": [
           "native direct lighting dispatch logged for the current frame",
           "emissive candidate count is greater than zero when a glowstone, lamp, lava, or torch candidate is near the viewed wall",
@@ -458,6 +487,42 @@
           "Resolve must preserve Minecraft/Sodium ownership of the world color target.",
           "Resolve must be disableable so controller screenshots can compare baseline and enabled frames from the same scene.",
           "Resolve must not consume Iris shader-pack color, depth, shadow, or lighting textures."
+        ],
+        "modeStates": [
+          {
+            "key": "baseline_disabled",
+            "directResolveEnabled": false,
+            "reads": [
+              "lucerna.gbuffer.albedoOpacity"
+            ],
+            "writes": [
+              "lucerna.composite.worldColor"
+            ],
+            "expectedVisualResult": "World color remains visually equivalent to the validated no-op or flat-composite baseline."
+          },
+          {
+            "key": "enabled_direct_only",
+            "directResolveEnabled": true,
+            "reads": [
+              "lucerna.gbuffer.albedoOpacity",
+              "lucerna.lighting.direct"
+            ],
+            "writes": [
+              "lucerna.composite.worldColor"
+            ],
+            "expectedVisualResult": "A bounded emissive, sun, or moon candidate can visibly brighten a nearby surface before HUD and late translucency."
+          },
+          {
+            "key": "iris_isolated",
+            "directResolveEnabled": true,
+            "forbiddenReads": [
+              "Iris shader-pack color",
+              "Iris shader-pack depth",
+              "Iris shader-pack shadow",
+              "Iris shader-pack lighting"
+            ],
+            "expectedVisualResult": "Iris remains settings/status-visible only and does not provide resolve input."
+          }
         ]
       },
       "handoffBoundary": [
@@ -1343,6 +1408,13 @@
       "pushConstants": "LucernaPassPushConstants",
       "sideEffectFreePlaceholder": true,
       "handoff": "Direct sun, moon, and emissive block lighting target for Round 5 direct-light resolve.",
+      "round5MinimalPath": {
+        "directOutputTarget": "lucerna.lighting.direct",
+        "consumerPass": "lucerna.composite.final",
+        "consumerOutput": "lucerna.composite.worldColor",
+        "baselineDisableMode": "No write to Minecraft/Sodium color targets from this pass; disabling direct resolve leaves the composite baseline unchanged.",
+        "irisIsolation": "This pass reads only Lucerna-owned G-buffer, world/material, voxel, frame, and emissive resources."
+      },
       "dependsOn": [
         "lucerna.gbuffer.main"
       ],
@@ -1577,6 +1649,18 @@
       "pushConstants": "LucernaPassPushConstants",
       "sideEffectFreePlaceholder": true,
       "handoff": "Flat composite staging output into the borrowed world color target before vanilla HUD and late translucency.",
+      "round5MinimalPath": {
+        "baselineDisableMode": "When direct resolve is disabled, do not add lucerna.lighting.direct; preserve the already validated no-op or flat-composite behavior.",
+        "enabledDirectMode": "When direct resolve is enabled, sample lucerna.lighting.direct with lucerna.gbuffer.albedoOpacity and write the resolved result to lucerna.composite.worldColor.",
+        "directResolveInput": "lucerna.lighting.direct",
+        "resolveOutput": "lucerna.composite.worldColor",
+        "forbiddenInputs": [
+          "Iris shader-pack color",
+          "Iris shader-pack depth",
+          "Iris shader-pack shadow",
+          "Iris shader-pack lighting"
+        ]
+      },
       "dependsOn": [
         "lucerna.lighting.direct",
         "lucerna.lighting.gi",

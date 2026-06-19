@@ -2,6 +2,7 @@ package net.lucerna.nativebridge;
 
 import net.lucerna.Lucerna;
 import net.lucerna.render.gbuffer.GBufferTargetContract;
+import net.lucerna.upload.NativeDirectLightingUploadPacket;
 import net.lucerna.upload.NativeGBufferStagingUploadPacket;
 import net.lucerna.upload.NativeLightingDispatchUploadPacket;
 import net.lucerna.upload.NativeSectionSnapshotUploadPacket;
@@ -24,8 +25,10 @@ public final class LucernaNativeBridge {
     private String lastError = "Native library has not been loaded.";
     private long lastLoggedSectionSnapshotGeneration;
     private long lastLoggedGBufferStagingGeneration;
+    private long lastLoggedDirectLightingUploadGeneration;
     private long lastLoggedLightingDispatchGeneration;
     private String lastLoggedDirectLightingExecutionKey = "";
+    private boolean directLightingUploadUnavailableLogged;
 
     public synchronized boolean hasLoadAttempted() {
         return this.loadAttempted;
@@ -96,8 +99,10 @@ public final class LucernaNativeBridge {
 
         this.lastLoggedSectionSnapshotGeneration = 0L;
         this.lastLoggedGBufferStagingGeneration = 0L;
+        this.lastLoggedDirectLightingUploadGeneration = 0L;
         this.lastLoggedLightingDispatchGeneration = 0L;
         this.lastLoggedDirectLightingExecutionKey = "";
+        this.directLightingUploadUnavailableLogged = false;
         this.initialized = true;
         return true;
     }
@@ -114,8 +119,10 @@ public final class LucernaNativeBridge {
         }
         this.lastLoggedSectionSnapshotGeneration = 0L;
         this.lastLoggedGBufferStagingGeneration = 0L;
+        this.lastLoggedDirectLightingUploadGeneration = 0L;
         this.lastLoggedLightingDispatchGeneration = 0L;
         this.lastLoggedDirectLightingExecutionKey = "";
+        this.directLightingUploadUnavailableLogged = false;
         this.initialized = false;
     }
 
@@ -258,6 +265,78 @@ public final class LucernaNativeBridge {
                         lastValue(packet.heights())
                 );
             }
+        }
+    }
+
+    public synchronized void uploadDirectLighting(NativeDirectLightingUploadPacket packet) {
+        if (!this.isOperational() || packet == null || !packet.hasPayloads()) {
+            return;
+        }
+
+        try {
+            boolean accepted = nativeUploadDirectLighting(
+                    packet.frameIndex(),
+                    packet.generation(),
+                    packet.firstGeneration(),
+                    packet.lastGeneration(),
+                    packet.celestialGeneration(),
+                    packet.emissiveGeneration(),
+                    packet.shadowGeneration(),
+                    packet.shadowCandidateGeneration(),
+                    packet.sectionSnapshotGeneration(),
+                    packet.dimensionId(),
+                    packet.flags(),
+                    packet.celestialLightCount(),
+                    packet.celestialLightEnergy(),
+                    packet.selectedEmissiveCount(),
+                    packet.selectedEmissiveEnergy(),
+                    packet.shadowCandidateCount(),
+                    packet.budgetedShadowCandidateCount(),
+                    packet.sectionSnapshotCount(),
+                    packet.rayBudget(),
+                    packet.celestialLightSources(),
+                    packet.celestialLightFlags(),
+                    packet.celestialLightData(),
+                    packet.emissiveLightDimensions(),
+                    packet.emissiveLightMetadata(),
+                    packet.emissiveLightData(),
+                    packet.emissiveLightGenerations(),
+                    packet.shadowCandidateMetadata(),
+                    packet.shadowCandidateRays(),
+                    packet.shadowCandidateGenerations(),
+                    packet.sectionSnapshotDimensions(),
+                    packet.sectionSnapshotMetadata(),
+                    packet.sectionSnapshotGenerations()
+            );
+            if (!accepted) {
+                this.disableFromNativeFailure("uploadDirectLighting", true);
+                return;
+            }
+
+            this.lastError = "";
+            if (packet.generation() != this.lastLoggedDirectLightingUploadGeneration) {
+                this.lastLoggedDirectLightingUploadGeneration = packet.generation();
+                Lucerna.LOGGER.info(
+                        "Lucerna native direct lighting payload accepted: generation={} frame={} celestial={} emissive={} shadowCandidates={} budgetedShadowCandidates={} sections={} flags=0x{}.",
+                        packet.generation(),
+                        packet.frameIndex(),
+                        packet.celestialLightCount(),
+                        packet.selectedEmissiveCount(),
+                        packet.shadowCandidateCount(),
+                        packet.budgetedShadowCandidateCount(),
+                        packet.sectionSnapshotCount(),
+                        Integer.toHexString(packet.flags())
+                );
+            }
+        } catch (UnsatisfiedLinkError error) {
+            if (!this.directLightingUploadUnavailableLogged) {
+                this.directLightingUploadUnavailableLogged = true;
+                Lucerna.LOGGER.warn(
+                        "Lucerna native direct lighting payload upload is not implemented by the loaded native library yet; continuing with dispatch metadata only."
+                );
+            }
+        } catch (Throwable throwable) {
+            this.disableFromThrowable("uploadDirectLighting", true, throwable);
         }
     }
 
@@ -708,6 +787,41 @@ public final class LucernaNativeBridge {
             int[] attachmentHeights,
             int[] attachmentSamples,
             int[] attachmentEnabled
+    );
+
+    private static native boolean nativeUploadDirectLighting(
+            long frameIndex,
+            long generation,
+            long firstGeneration,
+            long lastGeneration,
+            long celestialGeneration,
+            long emissiveGeneration,
+            long shadowGeneration,
+            long shadowCandidateGeneration,
+            long sectionSnapshotGeneration,
+            String dimensionId,
+            int flags,
+            int celestialLightCount,
+            float celestialLightEnergy,
+            int selectedEmissiveCount,
+            float selectedEmissiveEnergy,
+            int shadowCandidateCount,
+            int budgetedShadowCandidateCount,
+            int sectionSnapshotCount,
+            int[] rayBudget,
+            int[] celestialLightSources,
+            int[] celestialLightFlags,
+            float[] celestialLightData,
+            String[] emissiveLightDimensions,
+            int[] emissiveLightMetadata,
+            float[] emissiveLightData,
+            long[] emissiveLightGenerations,
+            int[] shadowCandidateMetadata,
+            float[] shadowCandidateRays,
+            long[] shadowCandidateGenerations,
+            String[] sectionSnapshotDimensions,
+            int[] sectionSnapshotMetadata,
+            long[] sectionSnapshotGenerations
     );
 
     private static native boolean nativeUploadLightingDispatch(
