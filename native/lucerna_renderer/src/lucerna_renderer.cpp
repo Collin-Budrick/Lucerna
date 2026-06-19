@@ -33,9 +33,21 @@ constexpr std::int32_t kMaxGBufferAttachments = 32;
 constexpr std::int32_t kMaxGBufferSamples = 64;
 constexpr std::int32_t kLucernaGBufferMainPassId = 100;
 constexpr const char* kLucernaGBufferMainPassName = "lucerna.gbuffer.main";
+constexpr std::int32_t kMaxLightingDispatchDimension = 32768;
+constexpr std::int32_t kMaxLightingDispatchGroups = 1048576;
+constexpr std::int32_t kMaxLightingWorkgroupSize = 1024;
+constexpr std::int32_t kMaxLightingIoCount = 64;
+constexpr std::int32_t kMaxLightingSamples = 4096;
+constexpr std::int32_t kMaxLightingRays = 16777216;
+constexpr std::int32_t kMaxLightingCacheRecords = 16777216;
+constexpr std::uint64_t kEstimatedLightingDispatchGroupBytes = 64;
 
 std::size_t pass_index(NativeRenderPass pass) {
     return static_cast<std::size_t>(pass);
+}
+
+std::size_t lighting_stage_index(NativeLightingDispatchStage stage) {
+    return static_cast<std::size_t>(stage);
 }
 
 bool is_valid_pass_id(std::int32_t pass_id) {
@@ -44,6 +56,23 @@ bool is_valid_pass_id(std::int32_t pass_id) {
 
 NativeRenderPass pass_from_id(std::int32_t pass_id) {
     return static_cast<NativeRenderPass>(pass_id);
+}
+
+NativeResourceIntentStage resource_stage_for_lighting_stage(NativeLightingDispatchStage stage) {
+    switch (stage) {
+        case NativeLightingDispatchStage::DirectLighting:
+            return NativeResourceIntentStage::DirectLighting;
+        case NativeLightingDispatchStage::DiffuseGi:
+            return NativeResourceIntentStage::DiffuseGi;
+        case NativeLightingDispatchStage::Denoise:
+            return NativeResourceIntentStage::Denoise;
+        case NativeLightingDispatchStage::Composite:
+            return NativeResourceIntentStage::Composite;
+        case NativeLightingDispatchStage::Cache:
+            return NativeResourceIntentStage::LightingCache;
+    }
+
+    return NativeResourceIntentStage::DirectLighting;
 }
 
 bool is_power_of_two(std::int32_t value) {
@@ -147,8 +176,26 @@ const char* to_string(NativeRenderPassState state) {
     return "unknown";
 }
 
+const char* to_string(NativeLightingDispatchStage stage) {
+    switch (stage) {
+        case NativeLightingDispatchStage::DirectLighting:
+            return "direct_lighting";
+        case NativeLightingDispatchStage::DiffuseGi:
+            return "diffuse_gi";
+        case NativeLightingDispatchStage::Denoise:
+            return "denoise";
+        case NativeLightingDispatchStage::Composite:
+            return "composite";
+        case NativeLightingDispatchStage::Cache:
+            return "cache";
+    }
+
+    return "unknown";
+}
+
 Renderer::Renderer() {
     reset_pass_counters();
+    reset_staging_telemetry();
 }
 
 Renderer::~Renderer() {
@@ -173,6 +220,7 @@ void Renderer::init() {
     frame_index_ = 0;
     last_section_upload_packet_ = {};
     last_gbuffer_staging_packet_ = {};
+    last_lighting_dispatch_packet_ = {};
     last_tick_delta_ = 0.0F;
     resize_count_ = 0;
     begin_frame_count_ = 0;
@@ -180,6 +228,7 @@ void Renderer::init() {
     upload_packet_count_ = 0;
     section_upload_packet_count_ = 0;
     gbuffer_staging_packet_count_ = 0;
+    lighting_dispatch_packet_count_ = 0;
     upload_dirty_payload_total_ = 0;
     upload_material_payload_total_ = 0;
     section_snapshot_payload_total_ = 0;
@@ -199,7 +248,7 @@ void Renderer::init() {
     end_frame_without_context_count_ = 0;
     end_frame_without_lighting_count_ = 0;
     reset_pass_counters();
-    staging_ = {};
+    reset_staging_telemetry();
     clear_error();
 }
 
@@ -223,6 +272,7 @@ void Renderer::shutdown() {
     last_upload_packet_ = {};
     last_section_upload_packet_ = {};
     last_gbuffer_staging_packet_ = {};
+    last_lighting_dispatch_packet_ = {};
     last_tick_delta_ = 0.0F;
     resize_count_ = 0;
     begin_frame_count_ = 0;
@@ -230,6 +280,7 @@ void Renderer::shutdown() {
     upload_packet_count_ = 0;
     section_upload_packet_count_ = 0;
     gbuffer_staging_packet_count_ = 0;
+    lighting_dispatch_packet_count_ = 0;
     upload_dirty_payload_total_ = 0;
     upload_material_payload_total_ = 0;
     section_snapshot_payload_total_ = 0;
@@ -249,7 +300,7 @@ void Renderer::shutdown() {
     end_frame_without_context_count_ = 0;
     end_frame_without_lighting_count_ = 0;
     reset_pass_counters();
-    staging_ = {};
+    reset_staging_telemetry();
     clear_error();
 }
 
@@ -675,6 +726,131 @@ void Renderer::upload_gbuffer_staging(GBufferStagingPacket packet) {
     clear_error();
 }
 
+void Renderer::upload_lighting_dispatch(LightingDispatchPacket packet) {
+    if (!initialized_) {
+        return;
+    }
+
+    auto fail = [this](std::string error) {
+        set_error(std::move(error));
+        throw std::invalid_argument(last_error_);
+    };
+    auto require_text = [&fail](const std::string& value, const char* name) {
+        if (is_blank(value)) {
+            fail(std::string(name) + " must not be blank");
+        }
+    };
+    auto require_range = [&fail](std::int32_t value, std::int32_t minimum, std::int32_t maximum, const char* name) {
+        if (value < minimum || value > maximum) {
+            std::ostringstream error;
+            error << name << " must be between " << minimum << " and " << maximum;
+            fail(error.str());
+        }
+    };
+
+    if (packet.dispatch_count < 0) {
+        fail("lighting dispatch count must be non-negative");
+    }
+    if (packet.first_dispatch_generation > packet.last_dispatch_generation) {
+        fail("lighting dispatch generation bounds are invalid");
+    }
+    if (packet.dispatches.empty()) {
+        if (packet.dispatch_count != 0) {
+            fail("empty lighting dispatch payload must advertise zero dispatches");
+        }
+        if (packet.first_dispatch_generation != 0 || packet.last_dispatch_generation != 0) {
+            fail("empty lighting dispatch payload must use zero dispatch generation bounds");
+        }
+    } else {
+        if (packet.dispatch_count != static_cast<std::int32_t>(kNativeLightingDispatchStageCount)) {
+            fail("lighting dispatch packet must advertise direct, GI, denoise, composite, and cache stages");
+        }
+        if (packet.dispatches.size() != kNativeLightingDispatchStageCount) {
+            fail("lighting dispatch payload must include direct, GI, denoise, composite, and cache metadata");
+        }
+    }
+
+    std::array<bool, kNativeLightingDispatchStageCount> seen_stages{};
+    std::uint64_t first_generation = 0;
+    std::uint64_t last_generation = 0;
+
+    for (const auto& dispatch : packet.dispatches) {
+        const auto stage_index = lighting_stage_index(dispatch.stage);
+        if (stage_index >= kNativeLightingDispatchStageCount) {
+            fail("lighting dispatch stage id is invalid");
+        }
+        if (seen_stages[stage_index]) {
+            fail("lighting dispatch stages must not contain duplicates");
+        }
+        seen_stages[stage_index] = true;
+
+        require_text(dispatch.stage_name, "lighting dispatch stage name");
+        if (dispatch.stage_name != to_string(dispatch.stage)) {
+            fail("lighting dispatch stage name must match the stage id");
+        }
+        if (dispatch.generation == 0) {
+            fail("lighting dispatch stage generation must be positive");
+        }
+        if (first_generation == 0 || dispatch.generation < first_generation) {
+            first_generation = dispatch.generation;
+        }
+        if (dispatch.generation > last_generation) {
+            last_generation = dispatch.generation;
+        }
+
+        const auto minimum_dimension = dispatch.enabled && dispatch.stage != NativeLightingDispatchStage::Cache ? 1 : 0;
+        const auto minimum_dispatch = dispatch.enabled ? 1 : 0;
+        const auto minimum_workgroup = dispatch.enabled ? 1 : 0;
+
+        require_range(dispatch.width, minimum_dimension, kMaxLightingDispatchDimension, "lighting dispatch width");
+        require_range(dispatch.height, minimum_dimension, kMaxLightingDispatchDimension, "lighting dispatch height");
+        require_range(dispatch.dispatch_x, minimum_dispatch, kMaxLightingDispatchGroups, "lighting dispatch group x");
+        require_range(dispatch.dispatch_y, minimum_dispatch, kMaxLightingDispatchGroups, "lighting dispatch group y");
+        require_range(dispatch.dispatch_z, minimum_dispatch, kMaxLightingDispatchGroups, "lighting dispatch group z");
+        require_range(dispatch.workgroup_size_x, minimum_workgroup, kMaxLightingWorkgroupSize, "lighting workgroup size x");
+        require_range(dispatch.workgroup_size_y, minimum_workgroup, kMaxLightingWorkgroupSize, "lighting workgroup size y");
+        require_range(dispatch.workgroup_size_z, minimum_workgroup, kMaxLightingWorkgroupSize, "lighting workgroup size z");
+        require_range(dispatch.input_count, 0, kMaxLightingIoCount, "lighting dispatch input count");
+        require_range(dispatch.output_count, 0, kMaxLightingIoCount, "lighting dispatch output count");
+        require_range(dispatch.sample_count, 0, kMaxLightingSamples, "lighting dispatch sample count");
+        require_range(dispatch.ray_count, 0, kMaxLightingRays, "lighting dispatch ray count");
+        require_range(dispatch.cache_read_count, 0, kMaxLightingCacheRecords, "lighting dispatch cache read count");
+        require_range(dispatch.cache_write_count, 0, kMaxLightingCacheRecords, "lighting dispatch cache write count");
+
+        if (dispatch.enabled && dispatch.stage == NativeLightingDispatchStage::Composite && dispatch.output_count == 0) {
+            fail("enabled composite lighting dispatch must advertise at least one output");
+        }
+        if (dispatch.enabled && dispatch.stage == NativeLightingDispatchStage::Cache
+                && dispatch.cache_read_count == 0 && dispatch.cache_write_count == 0) {
+            fail("enabled lighting cache dispatch must advertise cache reads or writes");
+        }
+    }
+
+    if (!packet.dispatches.empty()) {
+        for (std::size_t index = 0; index < seen_stages.size(); index++) {
+            if (!seen_stages[index]) {
+                fail("lighting dispatch payload must include every Phase 5 stage");
+            }
+        }
+
+        if (packet.generation == 0) {
+            fail("lighting dispatch packet generation must be positive when payload is present");
+        }
+        if (packet.first_dispatch_generation != first_generation
+                || packet.last_dispatch_generation != last_generation) {
+            fail("lighting dispatch generations do not match packet bounds");
+        }
+        if (packet.generation < packet.last_dispatch_generation) {
+            fail("lighting dispatch packet generation must include dispatch generation bounds");
+        }
+    }
+
+    lighting_dispatch_packet_count_++;
+    track_lighting_dispatch_upload(packet);
+    last_lighting_dispatch_packet_ = std::move(packet);
+    clear_error();
+}
+
 void Renderer::render_lighting() {
     if (!initialized_) {
         return;
@@ -807,6 +983,7 @@ std::string Renderer::status() const {
         << ",upload_packets=" << upload_packet_count_
         << ",section_upload_packets=" << section_upload_packet_count_
         << ",gbuffer_staging_packets=" << gbuffer_staging_packet_count_
+        << ",lighting_dispatch_packets=" << lighting_dispatch_packet_count_
         << ",lighting_passes=" << lighting_pass_count_
         << ",context_adopts=" << context_adopt_count_
         << ",context_releases=" << context_release_count_
@@ -884,6 +1061,16 @@ std::string Renderer::status() const {
         << " last_gbuffer_pass=\"" << staging_.gbuffer.last_pass_id
         << "\""
         << " last_gbuffer_numeric_pass=" << staging_.gbuffer.last_numeric_pass_id
+        << " lighting_dispatch_generation=" << last_lighting_dispatch_packet_.generation
+        << " lighting_dispatches=" << last_lighting_dispatch_packet_.dispatch_count
+        << " lighting_dispatch_payloads=" << last_lighting_dispatch_packet_.dispatches.size()
+        << " lighting_dispatch_generation_range=" << last_lighting_dispatch_packet_.first_dispatch_generation
+        << "-" << last_lighting_dispatch_packet_.last_dispatch_generation
+        << " lighting_dependencies={world=" << last_lighting_dispatch_packet_.world_generation
+        << ",material=" << last_lighting_dispatch_packet_.material_generation
+        << ",section=" << last_lighting_dispatch_packet_.section_generation
+        << ",gbuffer=" << last_lighting_dispatch_packet_.gbuffer_generation
+        << "}"
         << " staging={section={packets=" << staging_.section.packets
         << ",advertised_dirty_regions=" << staging_.section.advertised_dirty_regions
         << ",payload_dirty_regions=" << staging_.section.payload_dirty_regions
@@ -951,7 +1138,52 @@ std::string Renderer::status() const {
         << ",total_estimated_bytes=" << staging_.gbuffer.total_estimated_bytes
         << ",planned_this_frame=" << staging_.gbuffer.planned_this_frame
         << ",last_payload_recorded_this_frame=" << staging_.gbuffer.last_payload_recorded_this_frame
-        << "}}";
+        << "},lighting={packets=" << staging_.lighting.packets
+        << ",advertised_dispatches=" << staging_.lighting.advertised_dispatches
+        << ",payload_dispatches=" << staging_.lighting.payload_dispatches
+        << ",enabled_dispatches=" << staging_.lighting.enabled_dispatches
+        << ",disabled_dispatches=" << staging_.lighting.disabled_dispatches
+        << ",allocation_intents=" << staging_.lighting.allocation_intents
+        << ",placeholder_buffers=" << staging_.lighting.placeholder_buffers
+        << ",last_packet_generation=" << staging_.lighting.last_packet_generation
+        << ",last_generation_range=" << staging_.lighting.last_first_generation
+        << "-" << staging_.lighting.last_generation
+        << ",last_dependencies={world=" << staging_.lighting.last_world_generation
+        << ",material=" << staging_.lighting.last_material_generation
+        << ",section=" << staging_.lighting.last_section_generation
+        << ",gbuffer=" << staging_.lighting.last_gbuffer_generation
+        << "}"
+        << ",last_estimated_bytes=" << staging_.lighting.last_estimated_bytes
+        << ",total_estimated_bytes=" << staging_.lighting.total_estimated_bytes
+        << ",last_payload_recorded_this_frame=" << staging_.lighting.last_payload_recorded_this_frame
+        << ",stages=[";
+    for (std::size_t index = 0; index < staging_.lighting.stages.size(); index++) {
+        if (index != 0) {
+            out << "; ";
+        }
+        const auto& stage = staging_.lighting.stages[index];
+        out << "{id=" << to_string(stage.stage)
+            << ",packets=" << stage.packets
+            << ",enabled_count=" << stage.enabled_count
+            << ",disabled_count=" << stage.disabled_count
+            << ",allocation_intents=" << stage.allocation_intents
+            << ",placeholder_buffers=" << stage.placeholder_buffers
+            << ",last_generation=" << stage.last_generation
+            << ",last_size=" << stage.last_width << "x" << stage.last_height
+            << ",last_dispatch=" << stage.last_dispatch_x << "x" << stage.last_dispatch_y << "x" << stage.last_dispatch_z
+            << ",last_workgroup=" << stage.last_workgroup_size_x << "x" << stage.last_workgroup_size_y << "x" << stage.last_workgroup_size_z
+            << ",last_io=" << stage.last_input_count << "/" << stage.last_output_count
+            << ",last_samples=" << stage.last_sample_count
+            << ",last_rays=" << stage.last_ray_count
+            << ",last_cache=" << stage.last_cache_read_count << "/" << stage.last_cache_write_count
+            << ",last_flags=" << stage.last_flags
+            << ",last_estimated_bytes=" << stage.last_estimated_bytes
+            << ",total_estimated_bytes=" << stage.total_estimated_bytes
+            << ",enabled_this_packet=" << stage.enabled_this_packet
+            << ",recorded_this_frame=" << stage.recorded_this_frame
+            << "}";
+    }
+    out << "]}}";
     if (resources_ != nullptr) {
         const auto resource_stats = resources_->stats();
         out << " resource_ring_stats={frames_in_flight=" << resource_stats.frames_in_flight
@@ -1043,6 +1275,42 @@ std::uint64_t Renderer::estimate_gbuffer_attachment_bytes(const GBufferAttachmen
             attachment.height,
             estimate_bytes_per_pixel(attachment.format_tag))
         * static_cast<std::uint64_t>(attachment.samples);
+}
+
+std::uint64_t Renderer::estimate_lighting_dispatch_bytes(const LightingDispatchStageUpload& dispatch) const {
+    if (!dispatch.enabled) {
+        return 0;
+    }
+    if (dispatch.estimated_bytes != 0) {
+        return dispatch.estimated_bytes;
+    }
+    if (dispatch.dispatch_x <= 0 || dispatch.dispatch_y <= 0 || dispatch.dispatch_z <= 0) {
+        return 0;
+    }
+
+    auto saturated_multiply = [](std::uint64_t left, std::uint64_t right) {
+        constexpr std::uint64_t maximum = ~std::uint64_t{0};
+        if (left != 0 && right > maximum / left) {
+            return maximum;
+        }
+        return left * right;
+    };
+    auto saturated_add = [](std::uint64_t left, std::uint64_t right) {
+        constexpr std::uint64_t maximum = ~std::uint64_t{0};
+        if (right > maximum - left) {
+            return maximum;
+        }
+        return left + right;
+    };
+
+    const auto group_count = saturated_multiply(
+            saturated_multiply(
+                    static_cast<std::uint64_t>(dispatch.dispatch_x),
+                    static_cast<std::uint64_t>(dispatch.dispatch_y)),
+            static_cast<std::uint64_t>(dispatch.dispatch_z));
+    const auto metadata_bytes = saturated_multiply(group_count, kEstimatedLightingDispatchGroupBytes);
+    const auto io_bytes = static_cast<std::uint64_t>(dispatch.input_count + dispatch.output_count) * 32;
+    return saturated_add(metadata_bytes, io_bytes);
 }
 
 void Renderer::track_upload_staging_placeholder(const UploadPacket& packet) {
@@ -1263,6 +1531,99 @@ void Renderer::track_gbuffer_staging_upload(const GBufferStagingPacket& packet) 
     staging_.gbuffer.last_pass_id = std::move(last_pass_id);
 }
 
+void Renderer::track_lighting_dispatch_upload(const LightingDispatchPacket& packet) {
+    const bool can_record_resource_intents = resources_ != nullptr && frame_open_;
+    auto saturated_add = [](std::uint64_t left, std::uint64_t right) {
+        constexpr std::uint64_t maximum = ~std::uint64_t{0};
+        if (right > maximum - left) {
+            return maximum;
+        }
+        return left + right;
+    };
+    std::uint64_t enabled_dispatches = 0;
+    std::uint64_t disabled_dispatches = 0;
+    std::uint64_t estimated_bytes = 0;
+    bool recorded_this_frame = false;
+
+    if (packet.dispatches.empty()) {
+        for (auto& stage : staging_.lighting.stages) {
+            stage.enabled_this_packet = false;
+            stage.recorded_this_frame = false;
+        }
+    }
+
+    for (const auto& dispatch : packet.dispatches) {
+        auto& stage = lighting_stage_telemetry(dispatch.stage);
+        const auto dispatch_bytes = estimate_lighting_dispatch_bytes(dispatch);
+
+        stage.packets++;
+        stage.enabled_this_packet = dispatch.enabled;
+        stage.recorded_this_frame = false;
+        stage.last_generation = dispatch.generation;
+        stage.last_estimated_bytes = dispatch_bytes;
+        stage.total_estimated_bytes = saturated_add(stage.total_estimated_bytes, dispatch_bytes);
+        stage.last_width = dispatch.width;
+        stage.last_height = dispatch.height;
+        stage.last_dispatch_x = dispatch.dispatch_x;
+        stage.last_dispatch_y = dispatch.dispatch_y;
+        stage.last_dispatch_z = dispatch.dispatch_z;
+        stage.last_workgroup_size_x = dispatch.workgroup_size_x;
+        stage.last_workgroup_size_y = dispatch.workgroup_size_y;
+        stage.last_workgroup_size_z = dispatch.workgroup_size_z;
+        stage.last_input_count = dispatch.input_count;
+        stage.last_output_count = dispatch.output_count;
+        stage.last_sample_count = dispatch.sample_count;
+        stage.last_ray_count = dispatch.ray_count;
+        stage.last_cache_read_count = dispatch.cache_read_count;
+        stage.last_cache_write_count = dispatch.cache_write_count;
+        stage.last_flags = dispatch.flags;
+
+        if (dispatch.enabled) {
+            enabled_dispatches++;
+            stage.enabled_count++;
+        } else {
+            disabled_dispatches++;
+            stage.disabled_count++;
+            continue;
+        }
+
+        estimated_bytes = saturated_add(estimated_bytes, dispatch_bytes);
+        if (can_record_resource_intents && dispatch_bytes != 0) {
+            const auto label = std::string("lighting:")
+                + dispatch.stage_name
+                + ":dispatch-metadata";
+            resources_->track_buffer_allocation_intent(
+                    frame_index_,
+                    dispatch_bytes,
+                    label + "-intent",
+                    resource_stage_for_lighting_stage(dispatch.stage));
+            resources_->track_transient_buffer(frame_index_, 0, dispatch_bytes, label);
+            stage.allocation_intents++;
+            stage.placeholder_buffers++;
+            stage.recorded_this_frame = true;
+            staging_.lighting.allocation_intents++;
+            staging_.lighting.placeholder_buffers++;
+            recorded_this_frame = true;
+        }
+    }
+
+    staging_.lighting.packets++;
+    staging_.lighting.advertised_dispatches += static_cast<std::uint64_t>(packet.dispatch_count);
+    staging_.lighting.payload_dispatches += static_cast<std::uint64_t>(packet.dispatches.size());
+    staging_.lighting.enabled_dispatches += enabled_dispatches;
+    staging_.lighting.disabled_dispatches += disabled_dispatches;
+    staging_.lighting.last_packet_generation = packet.generation;
+    staging_.lighting.last_first_generation = packet.first_dispatch_generation;
+    staging_.lighting.last_generation = packet.last_dispatch_generation;
+    staging_.lighting.last_world_generation = packet.world_generation;
+    staging_.lighting.last_material_generation = packet.material_generation;
+    staging_.lighting.last_section_generation = packet.section_generation;
+    staging_.lighting.last_gbuffer_generation = packet.gbuffer_generation;
+    staging_.lighting.last_estimated_bytes = estimated_bytes;
+    staging_.lighting.total_estimated_bytes = saturated_add(staging_.lighting.total_estimated_bytes, estimated_bytes);
+    staging_.lighting.last_payload_recorded_this_frame = recorded_this_frame;
+}
+
 void Renderer::track_gbuffer_placeholder_intent() {
     staging_.gbuffer.frames_planned++;
     staging_.gbuffer.last_width = width_;
@@ -1329,6 +1690,13 @@ std::uint64_t Renderer::track_flat_composite_placeholder() {
 
     resources_->track_transient_image(frame_index_, 0, width_, height_, kNoopCompositeFormatTag, "render:noop-composite-target");
     return 1;
+}
+
+void Renderer::reset_staging_telemetry() {
+    staging_ = {};
+    for (std::size_t index = 0; index < staging_.lighting.stages.size(); index++) {
+        staging_.lighting.stages[index].stage = static_cast<NativeLightingDispatchStage>(index);
+    }
 }
 
 void Renderer::reset_pass_counters() {
@@ -1399,6 +1767,14 @@ NativeRenderPassCounters& Renderer::pass_counters(NativeRenderPass pass) {
 
 const NativeRenderPassCounters& Renderer::pass_counters(NativeRenderPass pass) const {
     return pass_counters_.at(pass_index(pass));
+}
+
+NativeLightingDispatchStageTelemetry& Renderer::lighting_stage_telemetry(NativeLightingDispatchStage stage) {
+    return staging_.lighting.stages.at(lighting_stage_index(stage));
+}
+
+const NativeLightingDispatchStageTelemetry& Renderer::lighting_stage_telemetry(NativeLightingDispatchStage stage) const {
+    return staging_.lighting.stages.at(lighting_stage_index(stage));
 }
 
 } // namespace lucerna

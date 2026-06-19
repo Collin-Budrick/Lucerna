@@ -71,6 +71,16 @@ const char* to_string(NativeResourceIntentStage stage) {
             return "voxel_upload";
         case NativeResourceIntentStage::FutureGBuffer:
             return "future_gbuffer";
+        case NativeResourceIntentStage::DirectLighting:
+            return "direct_lighting";
+        case NativeResourceIntentStage::DiffuseGi:
+            return "diffuse_gi";
+        case NativeResourceIntentStage::Denoise:
+            return "denoise";
+        case NativeResourceIntentStage::Composite:
+            return "composite";
+        case NativeResourceIntentStage::LightingCache:
+            return "lighting_cache";
     }
 
     return "unknown";

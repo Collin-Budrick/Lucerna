@@ -3,6 +3,7 @@ package net.lucerna.nativebridge;
 import net.lucerna.Lucerna;
 import net.lucerna.render.gbuffer.GBufferTargetContract;
 import net.lucerna.upload.NativeGBufferStagingUploadPacket;
+import net.lucerna.upload.NativeLightingDispatchUploadPacket;
 import net.lucerna.upload.NativeSectionSnapshotUploadPacket;
 import net.lucerna.upload.NativeStagedUploadBatch;
 import net.lucerna.upload.NativeUploadBatch;
@@ -23,6 +24,7 @@ public final class LucernaNativeBridge {
     private String lastError = "Native library has not been loaded.";
     private long lastLoggedSectionSnapshotGeneration;
     private long lastLoggedGBufferStagingGeneration;
+    private long lastLoggedLightingDispatchGeneration;
 
     public synchronized boolean hasLoadAttempted() {
         return this.loadAttempted;
@@ -93,6 +95,7 @@ public final class LucernaNativeBridge {
 
         this.lastLoggedSectionSnapshotGeneration = 0L;
         this.lastLoggedGBufferStagingGeneration = 0L;
+        this.lastLoggedLightingDispatchGeneration = 0L;
         this.initialized = true;
         return true;
     }
@@ -109,6 +112,7 @@ public final class LucernaNativeBridge {
         }
         this.lastLoggedSectionSnapshotGeneration = 0L;
         this.lastLoggedGBufferStagingGeneration = 0L;
+        this.lastLoggedLightingDispatchGeneration = 0L;
         this.initialized = false;
     }
 
@@ -249,6 +253,44 @@ public final class LucernaNativeBridge {
                         packet.attachmentPayloadCount(),
                         lastValue(packet.widths()),
                         lastValue(packet.heights())
+                );
+            }
+        }
+    }
+
+    public synchronized void uploadLightingDispatch(NativeLightingDispatchUploadPacket packet) {
+        if (this.isOperational() && packet != null) {
+            boolean accepted = this.invokeNative("uploadLightingDispatch", () -> nativeUploadLightingDispatch(
+                    packet.generation(),
+                    packet.dispatchCount(),
+                    packet.firstDispatchGeneration(),
+                    packet.lastDispatchGeneration(),
+                    packet.worldGeneration(),
+                    packet.materialGeneration(),
+                    packet.sectionGeneration(),
+                    packet.gBufferGeneration(),
+                    packet.stageIds(),
+                    packet.stageNames(),
+                    packet.stageEnabled(),
+                    packet.stageGenerations(),
+                    packet.stageDimensions(),
+                    packet.stageDispatchGroups(),
+                    packet.stageWorkgroupSizes(),
+                    packet.stageIoCounts(),
+                    packet.stageSampleRayCounts(),
+                    packet.stageCacheCounts(),
+                    packet.stageEstimatedBytes(),
+                    packet.stageFlags()
+            ), true);
+            if (accepted && packet.lastDispatchGeneration() != this.lastLoggedLightingDispatchGeneration) {
+                this.lastLoggedLightingDispatchGeneration = packet.lastDispatchGeneration();
+                Lucerna.LOGGER.info(
+                        "Lucerna native lighting dispatch accepted: generation={} stages={} enabled={} gBufferGeneration={} sectionGeneration={}.",
+                        packet.generation(),
+                        packet.dispatchCount(),
+                        packet.enabledStageCount(),
+                        packet.gBufferGeneration(),
+                        packet.sectionGeneration()
                 );
             }
         }
@@ -541,6 +583,29 @@ public final class LucernaNativeBridge {
             int[] attachmentHeights,
             int[] attachmentSamples,
             int[] attachmentEnabled
+    );
+
+    private static native boolean nativeUploadLightingDispatch(
+            long generation,
+            int dispatchCount,
+            long firstDispatchGeneration,
+            long lastDispatchGeneration,
+            long worldGeneration,
+            long materialGeneration,
+            long sectionGeneration,
+            long gBufferGeneration,
+            int[] stageIds,
+            String[] stageNames,
+            int[] stageEnabled,
+            long[] stageGenerations,
+            int[] stageDimensions,
+            int[] stageDispatchGroups,
+            int[] stageWorkgroupSizes,
+            int[] stageIoCounts,
+            int[] stageSampleRayCounts,
+            int[] stageCacheCounts,
+            long[] stageEstimatedBytes,
+            int[] stageFlags
     );
 
     private static native boolean nativeRenderLighting();

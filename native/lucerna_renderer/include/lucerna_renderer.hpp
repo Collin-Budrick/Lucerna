@@ -137,6 +137,51 @@ struct GBufferStagingPacket {
     std::vector<GBufferStagingUpload> gbuffers;
 };
 
+enum class NativeLightingDispatchStage : std::uint8_t {
+    DirectLighting = 0,
+    DiffuseGi = 1,
+    Denoise = 2,
+    Composite = 3,
+    Cache = 4
+};
+
+inline constexpr std::size_t kNativeLightingDispatchStageCount = 5;
+
+struct LightingDispatchStageUpload {
+    NativeLightingDispatchStage stage = NativeLightingDispatchStage::DirectLighting;
+    std::string stage_name;
+    bool enabled = false;
+    std::uint64_t generation = 0;
+    std::int32_t width = 0;
+    std::int32_t height = 0;
+    std::int32_t dispatch_x = 0;
+    std::int32_t dispatch_y = 0;
+    std::int32_t dispatch_z = 0;
+    std::int32_t workgroup_size_x = 0;
+    std::int32_t workgroup_size_y = 0;
+    std::int32_t workgroup_size_z = 0;
+    std::int32_t input_count = 0;
+    std::int32_t output_count = 0;
+    std::int32_t sample_count = 0;
+    std::int32_t ray_count = 0;
+    std::int32_t cache_read_count = 0;
+    std::int32_t cache_write_count = 0;
+    std::uint64_t estimated_bytes = 0;
+    std::uint32_t flags = 0;
+};
+
+struct LightingDispatchPacket {
+    std::uint64_t generation = 0;
+    std::int32_t dispatch_count = 0;
+    std::uint64_t first_dispatch_generation = 0;
+    std::uint64_t last_dispatch_generation = 0;
+    std::uint64_t world_generation = 0;
+    std::uint64_t material_generation = 0;
+    std::uint64_t section_generation = 0;
+    std::uint64_t gbuffer_generation = 0;
+    std::vector<LightingDispatchStageUpload> dispatches;
+};
+
 struct BorrowedVulkanContext;
 class ResourceManager;
 
@@ -254,10 +299,61 @@ struct NativeGBufferStagingTelemetry {
     std::string last_pass_id;
 };
 
+struct NativeLightingDispatchStageTelemetry {
+    NativeLightingDispatchStage stage = NativeLightingDispatchStage::DirectLighting;
+    std::uint64_t packets = 0;
+    std::uint64_t enabled_count = 0;
+    std::uint64_t disabled_count = 0;
+    std::uint64_t allocation_intents = 0;
+    std::uint64_t placeholder_buffers = 0;
+    std::uint64_t last_generation = 0;
+    std::uint64_t last_estimated_bytes = 0;
+    std::uint64_t total_estimated_bytes = 0;
+    std::int32_t last_width = 0;
+    std::int32_t last_height = 0;
+    std::int32_t last_dispatch_x = 0;
+    std::int32_t last_dispatch_y = 0;
+    std::int32_t last_dispatch_z = 0;
+    std::int32_t last_workgroup_size_x = 0;
+    std::int32_t last_workgroup_size_y = 0;
+    std::int32_t last_workgroup_size_z = 0;
+    std::int32_t last_input_count = 0;
+    std::int32_t last_output_count = 0;
+    std::int32_t last_sample_count = 0;
+    std::int32_t last_ray_count = 0;
+    std::int32_t last_cache_read_count = 0;
+    std::int32_t last_cache_write_count = 0;
+    std::uint32_t last_flags = 0;
+    bool enabled_this_packet = false;
+    bool recorded_this_frame = false;
+};
+
+struct NativeLightingDispatchTelemetry {
+    std::uint64_t packets = 0;
+    std::uint64_t advertised_dispatches = 0;
+    std::uint64_t payload_dispatches = 0;
+    std::uint64_t enabled_dispatches = 0;
+    std::uint64_t disabled_dispatches = 0;
+    std::uint64_t allocation_intents = 0;
+    std::uint64_t placeholder_buffers = 0;
+    std::uint64_t last_packet_generation = 0;
+    std::uint64_t last_first_generation = 0;
+    std::uint64_t last_generation = 0;
+    std::uint64_t last_world_generation = 0;
+    std::uint64_t last_material_generation = 0;
+    std::uint64_t last_section_generation = 0;
+    std::uint64_t last_gbuffer_generation = 0;
+    std::uint64_t last_estimated_bytes = 0;
+    std::uint64_t total_estimated_bytes = 0;
+    bool last_payload_recorded_this_frame = false;
+    std::array<NativeLightingDispatchStageTelemetry, kNativeLightingDispatchStageCount> stages;
+};
+
 struct NativeStagingTelemetry {
     NativeSectionStagingTelemetry section;
     NativeVoxelStagingTelemetry voxel;
     NativeGBufferStagingTelemetry gbuffer;
+    NativeLightingDispatchTelemetry lighting;
 };
 
 class Renderer {
@@ -275,6 +371,7 @@ public:
     void upload_world_deltas(UploadPacket packet);
     void upload_section_snapshots(SectionUploadPacket packet);
     void upload_gbuffer_staging(GBufferStagingPacket packet);
+    void upload_lighting_dispatch(LightingDispatchPacket packet);
     void render_lighting();
     void end_frame();
     void adopt_borrowed_context(BorrowedVulkanContext context);
@@ -294,12 +391,15 @@ private:
     [[nodiscard]] std::uint64_t estimate_voxel_staging_bytes(std::uint64_t dirty_section_count) const;
     [[nodiscard]] std::uint64_t estimate_gbuffer_attachment_bytes(std::int32_t width, std::int32_t height, std::uint32_t bytes_per_pixel) const;
     [[nodiscard]] std::uint64_t estimate_gbuffer_attachment_bytes(const GBufferAttachmentUpload& attachment) const;
+    [[nodiscard]] std::uint64_t estimate_lighting_dispatch_bytes(const LightingDispatchStageUpload& dispatch) const;
     void track_upload_staging_placeholder(const UploadPacket& packet);
     void track_section_snapshot_staging_placeholder(const SectionUploadPacket& packet);
     void track_gbuffer_staging_upload(const GBufferStagingPacket& packet);
+    void track_lighting_dispatch_upload(const LightingDispatchPacket& packet);
     void track_gbuffer_placeholder_intent();
     [[nodiscard]] std::uint64_t track_noop_lighting_placeholder();
     [[nodiscard]] std::uint64_t track_flat_composite_placeholder();
+    void reset_staging_telemetry();
     void reset_pass_counters();
     void prepare_frame_passes();
     void mark_pass_not_wired(NativeRenderPass pass);
@@ -307,6 +407,8 @@ private:
     void mark_pass_skipped(NativeRenderPass pass, NativeRenderPassState state, bool missing_context);
     [[nodiscard]] NativeRenderPassCounters& pass_counters(NativeRenderPass pass);
     [[nodiscard]] const NativeRenderPassCounters& pass_counters(NativeRenderPass pass) const;
+    [[nodiscard]] NativeLightingDispatchStageTelemetry& lighting_stage_telemetry(NativeLightingDispatchStage stage);
+    [[nodiscard]] const NativeLightingDispatchStageTelemetry& lighting_stage_telemetry(NativeLightingDispatchStage stage) const;
 
     std::unique_ptr<ResourceManager> resources_;
     std::array<NativeRenderPassCounters, kNativeRenderPassCount> pass_counters_;
@@ -327,6 +429,7 @@ private:
     UploadPacket last_upload_packet_;
     SectionUploadPacket last_section_upload_packet_;
     GBufferStagingPacket last_gbuffer_staging_packet_;
+    LightingDispatchPacket last_lighting_dispatch_packet_;
     float last_tick_delta_ = 0.0F;
     std::uint64_t resize_count_ = 0;
     std::uint64_t begin_frame_count_ = 0;
@@ -334,6 +437,7 @@ private:
     std::uint64_t upload_packet_count_ = 0;
     std::uint64_t section_upload_packet_count_ = 0;
     std::uint64_t gbuffer_staging_packet_count_ = 0;
+    std::uint64_t lighting_dispatch_packet_count_ = 0;
     std::uint64_t upload_dirty_payload_total_ = 0;
     std::uint64_t upload_material_payload_total_ = 0;
     std::uint64_t section_snapshot_payload_total_ = 0;
@@ -356,5 +460,6 @@ private:
 
 [[nodiscard]] const char* to_string(NativeRenderPass pass);
 [[nodiscard]] const char* to_string(NativeRenderPassState state);
+[[nodiscard]] const char* to_string(NativeLightingDispatchStage stage);
 
 } // namespace lucerna

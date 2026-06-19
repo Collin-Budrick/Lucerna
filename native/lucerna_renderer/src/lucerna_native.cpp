@@ -595,6 +595,120 @@ lucerna::GBufferStagingPacket make_gbuffer_staging_packet(
     return packet;
 }
 
+lucerna::LightingDispatchPacket make_lighting_dispatch_packet(
+        JNIEnv* env,
+        jlong generation,
+        jint dispatch_count,
+        jlong first_dispatch_generation,
+        jlong last_dispatch_generation,
+        jlong world_generation,
+        jlong material_generation,
+        jlong section_generation,
+        jlong gbuffer_generation,
+        jintArray stage_ids,
+        jobjectArray stage_names,
+        jintArray stage_enabled,
+        jlongArray stage_generations,
+        jintArray stage_dimensions,
+        jintArray stage_dispatch_groups,
+        jintArray stage_workgroup_sizes,
+        jintArray stage_io_counts,
+        jintArray stage_sample_ray_counts,
+        jintArray stage_cache_counts,
+        jlongArray stage_estimated_bytes,
+        jintArray stage_flags) {
+    constexpr std::size_t dimension_stride = 2;
+    constexpr std::size_t dispatch_group_stride = 3;
+    constexpr std::size_t workgroup_size_stride = 3;
+    constexpr std::size_t io_count_stride = 2;
+    constexpr std::size_t sample_ray_stride = 2;
+    constexpr std::size_t cache_count_stride = 2;
+
+    auto stage_id_values = read_int_array(env, stage_ids, "lightingStageIds");
+    const auto payload_count = stage_id_values.size();
+    require_payload_not_larger_than_count(payload_count, dispatch_count, "lighting dispatch");
+
+    auto stage_name_values = read_string_array(env, stage_names, "lightingStageNames");
+    auto stage_enabled_values = read_int_array(env, stage_enabled, "lightingStageEnabled");
+    auto stage_generation_values = read_long_array(env, stage_generations, "lightingStageGenerations");
+    auto stage_dimension_values = read_int_array(env, stage_dimensions, "lightingStageDimensions");
+    auto stage_dispatch_group_values = read_int_array(env, stage_dispatch_groups, "lightingStageDispatchGroups");
+    auto stage_workgroup_size_values = read_int_array(env, stage_workgroup_sizes, "lightingStageWorkgroupSizes");
+    auto stage_io_count_values = read_int_array(env, stage_io_counts, "lightingStageIoCounts");
+    auto stage_sample_ray_values = read_int_array(env, stage_sample_ray_counts, "lightingStageSampleRayCounts");
+    auto stage_cache_count_values = read_int_array(env, stage_cache_counts, "lightingStageCacheCounts");
+    auto stage_estimated_byte_values = read_long_array(env, stage_estimated_bytes, "lightingStageEstimatedBytes");
+    auto stage_flag_values = read_int_array(env, stage_flags, "lightingStageFlags");
+
+    require_length(payload_count, stage_name_values.size(), "lightingStageNames");
+    require_length(payload_count, stage_enabled_values.size(), "lightingStageEnabled");
+    require_length(payload_count, stage_generation_values.size(), "lightingStageGenerations");
+    require_length(payload_count * dimension_stride, stage_dimension_values.size(), "lightingStageDimensions");
+    require_length(payload_count * dispatch_group_stride, stage_dispatch_group_values.size(), "lightingStageDispatchGroups");
+    require_length(payload_count * workgroup_size_stride, stage_workgroup_size_values.size(), "lightingStageWorkgroupSizes");
+    require_length(payload_count * io_count_stride, stage_io_count_values.size(), "lightingStageIoCounts");
+    require_length(payload_count * sample_ray_stride, stage_sample_ray_values.size(), "lightingStageSampleRayCounts");
+    require_length(payload_count * cache_count_stride, stage_cache_count_values.size(), "lightingStageCacheCounts");
+    require_length(payload_count, stage_estimated_byte_values.size(), "lightingStageEstimatedBytes");
+    require_length(payload_count, stage_flag_values.size(), "lightingStageFlags");
+
+    lucerna::LightingDispatchPacket packet{
+        to_non_negative_uint64(generation, "generation"),
+        dispatch_count,
+        to_non_negative_uint64(first_dispatch_generation, "firstDispatchGeneration"),
+        to_non_negative_uint64(last_dispatch_generation, "lastDispatchGeneration"),
+        to_non_negative_uint64(world_generation, "worldGeneration"),
+        to_non_negative_uint64(material_generation, "materialGeneration"),
+        to_non_negative_uint64(section_generation, "sectionGeneration"),
+        to_non_negative_uint64(gbuffer_generation, "gbufferGeneration"),
+        {}
+    };
+
+    packet.dispatches.reserve(payload_count);
+    for (std::size_t index = 0; index < payload_count; index++) {
+        const auto stage_id = stage_id_values[index];
+        if (stage_id < 0 || static_cast<std::size_t>(stage_id) >= lucerna::kNativeLightingDispatchStageCount) {
+            throw std::invalid_argument("lightingStageIds entries must identify a Phase 5 lighting stage");
+        }
+        const auto enabled = stage_enabled_values[index];
+        if (enabled != 0 && enabled != 1) {
+            throw std::invalid_argument("lightingStageEnabled entries must be 0 or 1");
+        }
+
+        const auto dimension_offset = index * dimension_stride;
+        const auto dispatch_group_offset = index * dispatch_group_stride;
+        const auto workgroup_size_offset = index * workgroup_size_stride;
+        const auto io_count_offset = index * io_count_stride;
+        const auto sample_ray_offset = index * sample_ray_stride;
+        const auto cache_count_offset = index * cache_count_stride;
+
+        packet.dispatches.push_back(lucerna::LightingDispatchStageUpload{
+            static_cast<lucerna::NativeLightingDispatchStage>(stage_id),
+            std::move(stage_name_values[index]),
+            enabled != 0,
+            stage_generation_values[index],
+            stage_dimension_values[dimension_offset],
+            stage_dimension_values[dimension_offset + 1],
+            stage_dispatch_group_values[dispatch_group_offset],
+            stage_dispatch_group_values[dispatch_group_offset + 1],
+            stage_dispatch_group_values[dispatch_group_offset + 2],
+            stage_workgroup_size_values[workgroup_size_offset],
+            stage_workgroup_size_values[workgroup_size_offset + 1],
+            stage_workgroup_size_values[workgroup_size_offset + 2],
+            stage_io_count_values[io_count_offset],
+            stage_io_count_values[io_count_offset + 1],
+            stage_sample_ray_values[sample_ray_offset],
+            stage_sample_ray_values[sample_ray_offset + 1],
+            stage_cache_count_values[cache_count_offset],
+            stage_cache_count_values[cache_count_offset + 1],
+            stage_estimated_byte_values[index],
+            static_cast<std::uint32_t>(stage_flag_values[index])
+        });
+    }
+
+    return packet;
+}
+
 std::string last_error_locked() {
     if (!g_last_error.empty()) {
         return g_last_error;
@@ -839,6 +953,58 @@ Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeUploadGBufferStaging(
                 attachment_heights,
                 attachment_samples,
                 attachment_enabled
+        ));
+    });
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeUploadLightingDispatch(
+        JNIEnv* env,
+        jclass,
+        jlong generation,
+        jint dispatch_count,
+        jlong first_dispatch_generation,
+        jlong last_dispatch_generation,
+        jlong world_generation,
+        jlong material_generation,
+        jlong section_generation,
+        jlong gbuffer_generation,
+        jintArray stage_ids,
+        jobjectArray stage_names,
+        jintArray stage_enabled,
+        jlongArray stage_generations,
+        jintArray stage_dimensions,
+        jintArray stage_dispatch_groups,
+        jintArray stage_workgroup_sizes,
+        jintArray stage_io_counts,
+        jintArray stage_sample_ray_counts,
+        jintArray stage_cache_counts,
+        jlongArray stage_estimated_bytes,
+        jintArray stage_flags) {
+    std::lock_guard lock(g_renderer_mutex);
+    return call_initialized_renderer("uploadLightingDispatch", [=](lucerna::Renderer& renderer) {
+        renderer.upload_lighting_dispatch(make_lighting_dispatch_packet(
+                env,
+                generation,
+                dispatch_count,
+                first_dispatch_generation,
+                last_dispatch_generation,
+                world_generation,
+                material_generation,
+                section_generation,
+                gbuffer_generation,
+                stage_ids,
+                stage_names,
+                stage_enabled,
+                stage_generations,
+                stage_dimensions,
+                stage_dispatch_groups,
+                stage_workgroup_sizes,
+                stage_io_counts,
+                stage_sample_ray_counts,
+                stage_cache_counts,
+                stage_estimated_bytes,
+                stage_flags
         ));
     });
 }

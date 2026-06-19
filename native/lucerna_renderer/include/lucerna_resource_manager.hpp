@@ -29,7 +29,12 @@ enum class NativeResourceIntentStage : std::uint8_t {
     WorldDeltaUpload,
     SectionUpload,
     VoxelUpload,
-    FutureGBuffer
+    FutureGBuffer,
+    DirectLighting,
+    DiffuseGi,
+    Denoise,
+    Composite,
+    LightingCache
 };
 
 struct BorrowedVulkanContext {

@@ -11,6 +11,7 @@ import net.lucerna.material.MaterialRegistry;
 import net.lucerna.material.extract.LucernaMaterialExtractionService;
 import net.lucerna.material.extract.MaterialTableRefreshResult;
 import net.lucerna.nativebridge.LucernaNativeBridge;
+import net.lucerna.render.GBufferDescriptor;
 import net.lucerna.render.gbuffer.GBufferWriteIntent;
 import net.lucerna.render.gbuffer.PrimaryVoxelGBufferPassPlan;
 import net.lucerna.render.LucernaFrameHooks;
@@ -19,10 +20,22 @@ import net.lucerna.render.frame.FrameConstantsCapture;
 import net.lucerna.render.frame.FrameRenderFlags;
 import net.lucerna.render.frame.LucernaFrameConstantsCollector;
 import net.lucerna.render.frame.LucernaFrameConstants;
+import net.lucerna.render.lighting.direct.DirectLightingPlan;
+import net.lucerna.render.lighting.direct.DirectShadowRayPlan;
+import net.lucerna.render.lighting.gi.DiffuseGiSettings;
+import net.lucerna.render.lighting.gi.GiCacheSnapshot;
+import net.lucerna.render.lighting.gi.LowResDiffuseGiPlan;
+import net.lucerna.render.lighting.gi.LowResDiffuseGiPlanner;
+import net.lucerna.render.lighting.post.PostProcessingPipelinePlan;
+import net.lucerna.render.lighting.post.PostProcessingPlanBuilder;
 import net.lucerna.render.voxel.VoxelRay;
+import net.lucerna.render.voxel.VoxelRayBudgetConfig;
 import net.lucerna.render.voxel.VoxelSectionSnapshotReference;
 import net.lucerna.render.voxel.VoxelTraversalRequest;
 import net.lucerna.upload.NativeGBufferStagingUpload;
+import net.lucerna.upload.NativeLightingDispatchUploadPacket;
+import net.lucerna.upload.NativeLightingDispatchUploadPacket.Phase5Stage;
+import net.lucerna.upload.NativeLightingDispatchUploadPacket.StageUpload;
 import net.lucerna.telemetry.LucernaTelemetry;
 import net.lucerna.upload.NativeSectionSnapshotUpload;
 import net.lucerna.upload.NativeStagedUploadBatch;
@@ -71,7 +84,10 @@ public final class LucernaController {
     private String lastPreparedGBufferStagingKey = "";
     private String lastLoggedGBufferStagingKey = "";
     private String lastLoggedFirstPassPlanKey = "";
+    private String lastPreparedLightingDispatchKey = "";
+    private String lastLoggedLightingDispatchKey = "";
     private long gBufferStagingGeneration;
+    private long lightingDispatchGeneration;
     private FrameConstantsCapture frameConstantsCapture = FrameConstantsCapture.unavailable(
             "Frame constants have not been captured by Fabric level extraction yet."
     );
@@ -119,12 +135,20 @@ public final class LucernaController {
                     gBufferUploads
             );
             var firstPassPlan = this.buildPrimaryGBufferPassPlan(stagedBatch);
+            var lightingDispatchPacket = this.prepareLightingDispatchPacket(
+                    client,
+                    sectionExtraction,
+                    stagedBatch,
+                    firstPassPlan
+            );
             this.nativeBridge.uploadWorldDeltas(stagedBatch.worldAndMaterialBatch());
             this.nativeBridge.uploadSectionSnapshots(stagedBatch);
             this.nativeBridge.uploadGBufferStaging(stagedBatch);
+            this.nativeBridge.uploadLightingDispatch(lightingDispatchPacket);
             this.logSectionExtractionStatusIfChanged(sectionExtraction);
             this.logGBufferStagingStatusIfChanged(stagedBatch);
             this.logFirstPassPlanIfChanged(firstPassPlan);
+            this.logLightingDispatchStatusIfChanged(lightingDispatchPacket);
             this.submitNoOpFrame(0.0F);
         }
     }
@@ -342,6 +366,320 @@ public final class LucernaController {
         return PrimaryVoxelGBufferPassPlan.from(writeIntent, traversalRequest, sectionReferences);
     }
 
+    private NativeLightingDispatchUploadPacket prepareLightingDispatchPacket(
+            Minecraft client,
+            ChunkSectionSnapshotExtractionResult sectionExtraction,
+            NativeStagedUploadBatch stagedBatch,
+            PrimaryVoxelGBufferPassPlan firstPassPlan
+    ) {
+        if (stagedBatch == null || stagedBatch.gBufferStaging().isEmpty()) {
+            return null;
+        }
+
+        NativeGBufferStagingUpload gBufferUpload = stagedBatch.gBufferStaging().get(stagedBatch.gBufferStaging().size() - 1);
+        if (gBufferUpload.width() <= 0 || gBufferUpload.height() <= 0) {
+            return null;
+        }
+
+        int[] dimensions = this.currentViewportDimensions(client);
+        int width = dimensions[0] > 0 ? dimensions[0] : gBufferUpload.width();
+        int height = dimensions[1] > 0 ? dimensions[1] : gBufferUpload.height();
+        var metadata = stagedBatch.metadata();
+        LucernaFrameConstants frameConstants = this.frameConstants();
+        GBufferWriteIntent writeIntent = firstPassPlan == null
+                ? GBufferWriteIntent.lucernaMain(gBufferUpload.width(), gBufferUpload.height(), gBufferUpload.generation())
+                : firstPassPlan.writeIntent();
+        List<VoxelSectionSnapshotReference> sectionReferences = firstPassPlan == null
+                ? this.uniqueSectionReferences(stagedBatch.sectionSnapshots())
+                : firstPassPlan.sectionSnapshots();
+        DirectLightingPlan directLightingPlan = this.buildDirectLightingPlan(
+                sectionExtraction,
+                sectionReferences,
+                frameConstants
+        );
+        LowResDiffuseGiPlan diffuseGiPlan = LowResDiffuseGiPlanner.plan(
+                frameConstants,
+                writeIntent,
+                this.frameConstantsCapture.matrixHistory(),
+                GiCacheSnapshot.empty(),
+                DiffuseGiSettings.fromQuality(this.getConfig().qualityPreset(), 2)
+        );
+
+        long sourceGeneration = Math.max(
+                metadata.generation(),
+                Math.max(gBufferUpload.generation(), Math.max(this.frameHooks.frameIndex(), frameConstants.frameIndex()))
+        );
+        boolean directEnabled = directLightingPlan.hasDirectLightingWork() && writeIntent.dimensionsAvailable();
+        boolean diffuseGiEnabled = diffuseGiPlan.readyForScheduling();
+        PostProcessingPipelinePlan postPlan = this.buildPostProcessingPlan(
+                frameConstants,
+                width,
+                height,
+                sourceGeneration,
+                directEnabled,
+                diffuseGiEnabled
+        );
+        boolean denoiseEnabled = postPlan.denoiseScheduled();
+        boolean compositeEnabled = postPlan.readyForNativeHandoff();
+        boolean cacheEnabled = diffuseGiPlan.cacheSnapshot().hasSurfaceRecords()
+                || diffuseGiPlan.cacheSnapshot().hasRadianceRecords();
+        int cacheRecordCount = diffuseGiPlan.cacheSnapshot().surfaceRecordCount()
+                + diffuseGiPlan.cacheSnapshot().radianceRecordCount();
+
+        String dispatchKey = width
+                + "x"
+                + height
+                + "|"
+                + metadata.generation()
+                + "|"
+                + gBufferUpload.generation()
+                + "|"
+                + frameConstants.frameIndex()
+                + "|"
+                + directEnabled
+                + "|"
+                + diffuseGiEnabled
+                + "|"
+                + denoiseEnabled
+                + "|"
+                + compositeEnabled
+                + "|"
+                + cacheRecordCount;
+        if (dispatchKey.equals(this.lastPreparedLightingDispatchKey)) {
+            return null;
+        }
+
+        this.lastPreparedLightingDispatchKey = dispatchKey;
+        this.lightingDispatchGeneration = Math.max(this.lightingDispatchGeneration + 1L, Math.max(1L, sourceGeneration));
+        long dispatchGeneration = this.lightingDispatchGeneration;
+
+        StageUpload directStage = this.fullResolutionStage(
+                Phase5Stage.DIRECT_LIGHTING,
+                directEnabled,
+                dispatchGeneration,
+                width,
+                height,
+                3,
+                1,
+                directLightingPlan.celestialLighting().activeLightCount()
+                        + directLightingPlan.emissiveBlockList().selectedLightCount(),
+                directLightingPlan.shadowRayPlan().budgetedCandidateCount(),
+                NativeLightingDispatchUploadPacket.FLAG_PLACEHOLDER
+                        | (directLightingPlan.valid() ? NativeLightingDispatchUploadPacket.FLAG_VALIDATED : 0)
+        );
+        StageUpload diffuseGiStage = this.diffuseGiStage(diffuseGiEnabled, dispatchGeneration, diffuseGiPlan);
+        StageUpload denoiseStage = this.fullResolutionStage(
+                Phase5Stage.DENOISE,
+                denoiseEnabled,
+                dispatchGeneration,
+                width,
+                height,
+                postPlan.denoisePlan().readResources().size(),
+                postPlan.denoisePlan().writeResources().size(),
+                postPlan.denoisePlan().settings().sampleDiameterPixels()
+                        * Math.max(1, postPlan.denoisePlan().settings().iterationCount()),
+                0,
+                NativeLightingDispatchUploadPacket.FLAG_PLACEHOLDER
+                        | (postPlan.denoisePlan().validationReport().valid()
+                        ? NativeLightingDispatchUploadPacket.FLAG_VALIDATED
+                        : 0)
+                        | (postPlan.denoisePlan().temporalReuseAllowed()
+                        ? NativeLightingDispatchUploadPacket.FLAG_TEMPORAL_HISTORY
+                        : 0)
+        );
+        StageUpload compositeStage = this.fullResolutionStage(
+                Phase5Stage.COMPOSITE,
+                compositeEnabled,
+                dispatchGeneration,
+                width,
+                height,
+                postPlan.compositeHandoff().readResources().size(),
+                postPlan.compositeHandoff().writeResources().size(),
+                1,
+                0,
+                NativeLightingDispatchUploadPacket.FLAG_PLACEHOLDER
+                        | (postPlan.valid() ? NativeLightingDispatchUploadPacket.FLAG_VALIDATED : 0)
+                        | (this.getConfig().debugOverlay() != DebugOverlay.OFF
+                        ? NativeLightingDispatchUploadPacket.FLAG_DEBUG_OVERLAY
+                        : 0)
+        );
+        StageUpload cacheStage = this.cacheStage(cacheEnabled, dispatchGeneration, cacheRecordCount);
+
+        return NativeLightingDispatchUploadPacket.of(
+                dispatchGeneration,
+                metadata,
+                directStage,
+                diffuseGiStage,
+                denoiseStage,
+                compositeStage,
+                cacheStage
+        );
+    }
+
+    private DirectLightingPlan buildDirectLightingPlan(
+            ChunkSectionSnapshotExtractionResult sectionExtraction,
+            List<VoxelSectionSnapshotReference> sectionReferences,
+            LucernaFrameConstants frameConstants
+    ) {
+        long frameIndex = frameConstants == null ? 0L : frameConstants.frameIndex();
+        DirectShadowRayPlan shadowRayPlan = DirectShadowRayPlan.fromCandidates(
+                frameIndex,
+                List.of(),
+                new VoxelRayBudgetConfig(0, 1, 0, this.shadowRayBudget(), 512, 64),
+                sectionReferences
+        );
+        return DirectLightingPlan.builder()
+                .frameConstants(frameConstants == null ? LucernaFrameConstants.unavailable() : frameConstants)
+                .emissiveBlockListFromSectionSnapshots(
+                        sectionExtraction == null ? List.of() : sectionExtraction.snapshots(),
+                        this.maxSelectedEmissiveLights()
+                )
+                .shadowRayPlan(shadowRayPlan)
+                .build();
+    }
+
+    private PostProcessingPipelinePlan buildPostProcessingPlan(
+            LucernaFrameConstants frameConstants,
+            int width,
+            int height,
+            long sourceGeneration,
+            boolean directLightingAvailable,
+            boolean diffuseGiAvailable
+    ) {
+        return PostProcessingPlanBuilder.create()
+                .qualityPreset(this.getConfig().qualityPreset())
+                .frameInputs(
+                        frameConstants == null ? LucernaFrameConstants.unavailable() : frameConstants,
+                        this.frameConstantsCapture.matrixHistory(),
+                        GBufferDescriptor.lucernaMain(width, height),
+                        directLightingAvailable,
+                        diffuseGiAvailable,
+                        diffuseGiAvailable,
+                        sourceGeneration,
+                        sourceGeneration,
+                        this.frameConstantsCapture.matrixHistory().previousFrameIndex()
+                )
+                .outputGeneration(sourceGeneration)
+                .debugOverlayAvailable(this.getConfig().debugOverlay() != DebugOverlay.OFF)
+                .borrowedWorldColorTarget(true)
+                .beforeHudAndLateTranslucency(true)
+                .build();
+    }
+
+    private StageUpload fullResolutionStage(
+            Phase5Stage stage,
+            boolean enabled,
+            long generation,
+            int width,
+            int height,
+            int inputCount,
+            int outputCount,
+            int sampleCount,
+            int rayCount,
+            int flags
+    ) {
+        return this.stageUpload(
+                stage,
+                enabled,
+                generation,
+                width,
+                height,
+                8,
+                8,
+                inputCount,
+                outputCount,
+                sampleCount,
+                rayCount,
+                0,
+                0,
+                flags
+        );
+    }
+
+    private StageUpload diffuseGiStage(boolean enabled, long generation, LowResDiffuseGiPlan plan) {
+        var grid = plan.frameInput().lowResolutionGrid();
+        int width = grid.available() ? grid.width() : 0;
+        int height = grid.available() ? grid.height() : 0;
+        int flags = NativeLightingDispatchUploadPacket.FLAG_PLACEHOLDER
+                | (plan.validationReport().valid() ? NativeLightingDispatchUploadPacket.FLAG_VALIDATED : 0)
+                | (plan.reusesTemporalHistory() ? NativeLightingDispatchUploadPacket.FLAG_TEMPORAL_HISTORY : 0)
+                | (plan.rayBudget().reuseOnly() ? NativeLightingDispatchUploadPacket.FLAG_REUSE_ONLY : 0);
+        return this.stageUpload(
+                Phase5Stage.DIFFUSE_GI,
+                enabled,
+                generation,
+                width,
+                height,
+                8,
+                8,
+                plan.frameInput().requiredGBufferAttachments().size(),
+                2,
+                plan.frameInput().settings().samplesPerCell(),
+                plan.rayBudget().cappedRays(),
+                plan.cacheSnapshot().surfaceRecordCount() + plan.cacheSnapshot().radianceRecordCount(),
+                plan.cacheSnapshot().radianceRecordCount(),
+                flags
+        );
+    }
+
+    private StageUpload cacheStage(boolean enabled, long generation, int cacheRecordCount) {
+        return this.stageUpload(
+                Phase5Stage.CACHE,
+                enabled,
+                generation,
+                enabled ? 1 : 0,
+                enabled ? 1 : 0,
+                1,
+                1,
+                enabled ? 1 : 0,
+                enabled ? 1 : 0,
+                0,
+                0,
+                cacheRecordCount,
+                cacheRecordCount,
+                NativeLightingDispatchUploadPacket.FLAG_PLACEHOLDER
+        );
+    }
+
+    private StageUpload stageUpload(
+            Phase5Stage stage,
+            boolean enabled,
+            long generation,
+            int width,
+            int height,
+            int workgroupSizeX,
+            int workgroupSizeY,
+            int inputCount,
+            int outputCount,
+            int sampleCount,
+            int rayCount,
+            int cacheReadCount,
+            int cacheWriteCount,
+            int flags
+    ) {
+        return new StageUpload(
+                stage,
+                enabled,
+                generation,
+                width,
+                height,
+                enabled ? ceilDiv(Math.max(1, width), workgroupSizeX) : 0,
+                enabled ? ceilDiv(Math.max(1, height), workgroupSizeY) : 0,
+                enabled ? 1 : 0,
+                enabled ? workgroupSizeX : 0,
+                enabled ? workgroupSizeY : 0,
+                enabled ? 1 : 0,
+                inputCount,
+                outputCount,
+                sampleCount,
+                rayCount,
+                cacheReadCount,
+                cacheWriteCount,
+                0L,
+                flags
+        );
+    }
+
     private List<VoxelSectionSnapshotReference> uniqueSectionReferences(List<NativeSectionSnapshotUpload> sectionUploads) {
         var referencesByKey = new LinkedHashMap<String, VoxelSectionSnapshotReference>();
         for (NativeSectionSnapshotUpload sectionUpload : sectionUploads) {
@@ -371,11 +709,39 @@ public final class LucernaController {
                 .orElse(0L);
     }
 
+    private int maxSelectedEmissiveLights() {
+        return switch (this.getConfig().qualityPreset()) {
+            case PERFORMANCE -> 64;
+            case BALANCED -> 128;
+            case QUALITY -> 256;
+            case EXPERIMENTAL -> 512;
+        };
+    }
+
+    private int shadowRayBudget() {
+        return switch (this.getConfig().qualityPreset()) {
+            case PERFORMANCE -> 2048;
+            case BALANCED -> 4096;
+            case QUALITY -> 8192;
+            case EXPERIMENTAL -> 16384;
+        };
+    }
+
+    private static int ceilDiv(int value, int divisor) {
+        if (divisor <= 0) {
+            return 0;
+        }
+        return (value + divisor - 1) / divisor;
+    }
+
     private void resetGBufferPlanning() {
         this.lastPreparedGBufferStagingKey = "";
         this.lastLoggedGBufferStagingKey = "";
         this.lastLoggedFirstPassPlanKey = "";
+        this.lastPreparedLightingDispatchKey = "";
+        this.lastLoggedLightingDispatchKey = "";
         this.gBufferStagingGeneration = 0L;
+        this.lightingDispatchGeneration = 0L;
     }
 
     private FrameRenderFlags currentFrameRenderFlags() {
@@ -544,6 +910,39 @@ public final class LucernaController {
                 metadata.emissivePayloadSectionCount(),
                 metadata.expectedAttachmentWriteCount(),
                 plan.findings().size()
+        );
+    }
+
+    private void logLightingDispatchStatusIfChanged(NativeLightingDispatchUploadPacket packet) {
+        if (packet == null) {
+            return;
+        }
+
+        String logKey = packet.generation()
+                + "|"
+                + packet.dispatchCount()
+                + "|"
+                + packet.enabledStageCount()
+                + "|"
+                + packet.gBufferGeneration()
+                + "|"
+                + packet.sectionGeneration()
+                + "|"
+                + packet.materialGeneration();
+        if (logKey.equals(this.lastLoggedLightingDispatchKey)) {
+            return;
+        }
+
+        this.lastLoggedLightingDispatchKey = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna Phase 5 lighting dispatch prepared: generation={} stages={} enabled={} worldGeneration={} materialGeneration={} sectionGeneration={} gBufferGeneration={}.",
+                packet.generation(),
+                packet.dispatchCount(),
+                packet.enabledStageCount(),
+                packet.worldGeneration(),
+                packet.materialGeneration(),
+                packet.sectionGeneration(),
+                packet.gBufferGeneration()
         );
     }
 }

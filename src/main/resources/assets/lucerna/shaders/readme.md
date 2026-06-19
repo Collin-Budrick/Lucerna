@@ -6,10 +6,10 @@ These shader files are placeholders for the Sodium Vulkan integration milestones
 
 - `gbuffer/`: Lucerna-controlled visibility outputs: depth-compatible data, normals, albedo, material id, emissive, and motion/history metadata.
 - `voxel/`: first-pass voxel occupancy staging from chunk/material dirty-region inputs into G-buffer traversal inputs.
-- `lighting/`: direct sun/moon, emissive sampling, first diffuse GI, and cache confidence passes.
+- `lighting/`: direct sun/moon, emissive sampling, first diffuse GI, cache confidence, variance, and reserved adaptive sampling metadata.
 - `denoise/`: temporal rejection, spatial denoise, variance-aware filtering, and history repair passes.
 - `composite/`: flat-composite staging into the active Minecraft target without corrupting vanilla HUD or late translucency.
-- `debug/`: overlays used by controller-run verification: backend state, dirty regions, material ids, timings, native queues, and cache views.
+- `debug/`: overlays used by controller-run verification: backend state, dirty regions, material ids, timings, native queues, cache confidence, variance, adaptive sampling, and label views.
 
 ## Naming
 
@@ -23,13 +23,15 @@ Keep placeholder files side-effect free. Sub-agents may add or refine shader ass
 
 `lucerna.gbuffer.main` must keep its attachment names aligned with `GBufferTargetContract`: `lucerna.gbuffer.depth`, `lucerna.gbuffer.normalRoughness`, `lucerna.gbuffer.albedoOpacity`, `lucerna.gbuffer.materialId`, `lucerna.gbuffer.emissive`, and `lucerna.gbuffer.motionHistory`.
 
+Phase 5 lighting metadata adds these public handoff targets: `lucerna.lighting.direct`, `lucerna.lighting.diffuseGi`, `lucerna.lighting.cacheConfidence`, `lucerna.lighting.variance`, `lucerna.lighting.rayBudget`, `lucerna.denoise.diffuse`, `lucerna.denoise.rejectionMask`, `lucerna.debug.overlay`, and `lucerna.composite.worldColor`. Keep their write semantics aligned with `layout.json`.
+
 ## Descriptor Contract
 
 `layout.json` reserves four descriptor sets for future native integration:
 
 - `set 0`: frame constants, camera history, quality constants, samplers, blue-noise texture.
 - `set 1`: material table, chunk/section metadata, read/write voxel occupancy, dirty-region queue, emissive block list, upload scratch.
-- `set 2`: previous-frame resources, temporal radiance, variance/confidence, motion history.
+- `set 2`: previous-frame resources, temporal radiance, variance/confidence, and motion history.
 - `set 3`: debug constants, timing readback, native queue telemetry, debug overlay target, debug labels.
 
-Resource workers should update `layout.json` when adding a pass, dependency, target, descriptor binding, push constant use, attachment write semantic, attachment format, barrier, or expected controller-run validation scenario. Additive changes are preferred; renaming existing ids or bindings requires controller coordination.
+Resource workers should update `layout.json` when adding a pass, dependency, target, descriptor binding, push constant use, attachment write semantic, attachment format, barrier, debug label, or expected controller-run validation scenario. Additive changes are preferred; renaming existing ids or bindings requires controller coordination.
