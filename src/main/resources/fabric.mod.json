@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "lucerna",
+  "version": "${version}",
+  "name": "Lucerna",
+  "description": "A Sodium Vulkan renderer experiment for Minecraft with a C++ native core.",
+  "authors": [
+    "Collin"
+  ],
+  "contact": {
+    "sources": "https://github.com/Collin/Lucerna",
+    "issues": "https://github.com/Collin/Lucerna/issues"
+  },
+  "license": "All-Rights-Reserved",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "net.lucerna.LucernaClient"
+    ],
+    "sodium:config_api_user": [
+      "net.lucerna.compat.sodium.LucernaSodiumConfigEntrypoint"
+    ]
+  },
+  "depends": {
+    "fabricloader": ">=0.19.2",
+    "fabric-api": "*",
+    "minecraft": ">=26.2",
+    "java": ">=21"
+  },
+  "suggests": {
+    "sodium": ">=0.9.0",
+    "iris": "*"
+  },
+  "breaks": {
+    "vulkanmod": "*",
+    "canvas": "*",
+    "optifabric": "*"
+  },
+  "custom": {
+    "modmenu": {
+      "links": {
+        "modmenu.github": "https://github.com/Collin/Lucerna"
+      }
+    }
+  }
+}

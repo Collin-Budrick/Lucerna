@@ -1,0 +1,11 @@
+{
+  "lucerna.name": "Lucerna",
+  "lucerna.options.title": "Lucerna",
+  "lucerna.options.status": "Status",
+  "lucerna.options.renderer_enabled": "Renderer enabled",
+  "lucerna.options.quality": "Quality",
+  "lucerna.options.debug_overlay": "Debug overlay",
+  "lucerna.status.active": "Lucerna Vulkan renderer active",
+  "lucerna.status.disabled": "Lucerna disabled",
+  "lucerna.status.iris_disabled": "Iris shader packs are disabled while Lucerna is active"
+}

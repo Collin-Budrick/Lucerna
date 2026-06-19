@@ -1,0 +1,150 @@
+package net.lucerna;
+
+import net.lucerna.compat.BackendKind;
+import net.lucerna.compat.BackendStatus;
+import net.lucerna.compat.iris.IrisCompat;
+import net.lucerna.compat.sodium.LucernaBackendDetector;
+import net.lucerna.config.LucernaConfig;
+import net.lucerna.config.LucernaConfigManager;
+import net.lucerna.material.MaterialRegistry;
+import net.lucerna.nativebridge.LucernaNativeBridge;
+import net.lucerna.render.LucernaFrameHooks;
+import net.lucerna.telemetry.LucernaTelemetry;
+import net.lucerna.upload.NativeUploadQueue;
+import net.lucerna.world.LucernaWorldFeed;
+
+public final class LucernaController {
+    private static final LucernaController INSTANCE = new LucernaController();
+
+    private final LucernaConfigManager configManager = new LucernaConfigManager();
+    private final LucernaBackendDetector backendDetector = new LucernaBackendDetector();
+    private final IrisCompat irisCompat = new IrisCompat();
+    private final LucernaNativeBridge nativeBridge = new LucernaNativeBridge();
+    private final LucernaWorldFeed worldFeed = new LucernaWorldFeed();
+    private final MaterialRegistry materialRegistry = new MaterialRegistry();
+    private final NativeUploadQueue uploadQueue = new NativeUploadQueue();
+    private final LucernaTelemetry telemetry = new LucernaTelemetry();
+    private final LucernaFrameHooks frameHooks = new LucernaFrameHooks(nativeBridge, telemetry);
+
+    private BackendStatus backendStatus = BackendStatus.disabled(BackendKind.UNKNOWN, "Lucerna has not checked the renderer backend yet.");
+    private boolean initialized;
+    private boolean nativeInitialized;
+
+    private LucernaController() {
+    }
+
+    public static LucernaController getInstance() {
+        return INSTANCE;
+    }
+
+    public void initialize() {
+        if (this.initialized) {
+            return;
+        }
+
+        this.initialized = true;
+        this.configManager.load();
+        this.refreshBackendStatus();
+        Lucerna.LOGGER.info("Lucerna initialized: {}", this.backendStatus.userMessage());
+    }
+
+    public void tick() {
+        if (!this.initialized) {
+            return;
+        }
+
+        this.refreshBackendStatus();
+        this.activateOrDeactivateNative();
+
+        if (this.isRendererActive()) {
+            this.irisCompat.disableIrisShadersForLucerna();
+            var dirtyRegions = this.worldFeed.drainDirtyRegionBatch();
+            var materialUpdates = this.materialRegistry.snapshotUpdatesAfter(this.uploadQueue.lastMaterialGeneration());
+            var batch = this.uploadQueue.acceptWorldAndMaterialDeltas(dirtyRegions, materialUpdates);
+            this.nativeBridge.uploadWorldDeltas(batch);
+        }
+    }
+
+    public void shutdown() {
+        if (this.nativeInitialized) {
+            this.nativeBridge.shutdown();
+            this.nativeInitialized = false;
+        }
+        this.telemetry.clear();
+        Lucerna.LOGGER.info("Lucerna shutdown complete.");
+    }
+
+    public boolean isRendererActive() {
+        return this.getConfig().rendererEnabled()
+                && this.backendStatus.active()
+                && this.backendStatus.kind() == BackendKind.SODIUM_VULKAN
+                && this.nativeBridge.isAvailable();
+    }
+
+    public LucernaConfig getConfig() {
+        return this.configManager.config();
+    }
+
+    public LucernaConfigManager configManager() {
+        return this.configManager;
+    }
+
+    public BackendStatus backendStatus() {
+        return this.backendStatus;
+    }
+
+    public IrisCompat irisCompat() {
+        return this.irisCompat;
+    }
+
+    public LucernaWorldFeed worldFeed() {
+        return this.worldFeed;
+    }
+
+    public MaterialRegistry materialRegistry() {
+        return this.materialRegistry;
+    }
+
+    public NativeUploadQueue uploadQueue() {
+        return this.uploadQueue;
+    }
+
+    public LucernaTelemetry telemetry() {
+        return this.telemetry;
+    }
+
+    public LucernaFrameHooks frameHooks() {
+        return this.frameHooks;
+    }
+
+    private void refreshBackendStatus() {
+        this.backendStatus = this.backendDetector.detect();
+    }
+
+    private void activateOrDeactivateNative() {
+        if (!this.getConfig().rendererEnabled() || !this.backendStatus.active()) {
+            if (this.nativeInitialized) {
+                this.nativeBridge.shutdown();
+                this.nativeInitialized = false;
+            }
+            return;
+        }
+
+        if (this.backendStatus.kind() != BackendKind.SODIUM_VULKAN) {
+            return;
+        }
+
+        if (!this.nativeBridge.isLoaded()) {
+            this.nativeBridge.load();
+        }
+
+        if (!this.nativeBridge.isAvailable() || this.nativeInitialized) {
+            return;
+        }
+
+        this.nativeInitialized = this.nativeBridge.init();
+        if (!this.nativeInitialized) {
+            Lucerna.LOGGER.warn("Lucerna native renderer did not initialize: {}", this.nativeBridge.lastError());
+        }
+    }
+}

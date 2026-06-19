@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "descriptorSets": [
+    {
+      "set": 0,
+      "name": "frame",
+      "reservedFor": [
+        "camera matrices",
+        "frame index",
+        "quality preset",
+        "debug overlay mode"
+      ]
+    },
+    {
+      "set": 1,
+      "name": "world",
+      "reservedFor": [
+        "material table",
+        "chunk and section metadata",
+        "voxel occupancy",
+        "dirty-region upload buffers"
+      ]
+    },
+    {
+      "set": 2,
+      "name": "history",
+      "reservedFor": [
+        "previous depth",
+        "previous normals",
+        "temporal radiance",
+        "variance and confidence"
+      ]
+    },
+    {
+      "set": 3,
+      "name": "debug",
+      "reservedFor": [
+        "overlay constants",
+        "timing readback",
+        "native queue telemetry",
+        "controller diagnostics"
+      ]
+    }
+  ],
+  "passes": [
+    {
+      "name": "gbuffer",
+      "directory": "gbuffer",
+      "stage": "placeholder",
+      "outputs": [
+        "depth-compatible data",
+        "normals",
+        "albedo",
+        "material id",
+        "emissive",
+        "motion/history metadata"
+      ]
+    },
+    {
+      "name": "lighting",
+      "directory": "lighting",
+      "stage": "placeholder",
+      "outputs": [
+        "direct lighting",
+        "low-res diffuse GI",
+        "cache confidence"
+      ]
+    },
+    {
+      "name": "denoise",
+      "directory": "denoise",
+      "stage": "placeholder",
+      "outputs": [
+        "edge-aware diffuse lighting",
+        "history rejection mask"
+      ]
+    },
+    {
+      "name": "composite",
+      "directory": "composite",
+      "stage": "placeholder",
+      "outputs": [
+        "world color target"
+      ]
+    },
+    {
+      "name": "debug",
+      "directory": "debug",
+      "stage": "placeholder",
+      "outputs": [
+        "backend overlay",
+        "dirty-region overlay",
+        "material-id overlay",
+        "timing overlay",
+        "native queue overlay"
+      ]
+    }
+  ],
+  "subAgentRule": "Do not run shader compilation, Gradle checks, Minecraft launches, render smoke tests, or builds used as verification."
+}
