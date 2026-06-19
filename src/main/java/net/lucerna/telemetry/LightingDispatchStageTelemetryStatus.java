@@ -238,27 +238,37 @@ public record LightingDispatchStageTelemetryStatus(
         Boolean cpuOutputGenerated = parseBoolean(firstPresent(
                 normalizedFields,
                 "cpu_output_generated",
-                "direct_cpu_output_generated"
+                "direct_cpu_output_generated",
+                "gi_cpu_output_generated",
+                "native_gi_output_generated"
         ));
         String outputDimensions = xyLabel(
-                firstPresent(normalizedFields, "output_width", "direct_output_width"),
-                firstPresent(normalizedFields, "output_height", "direct_output_height")
+                firstPresent(normalizedFields, "output_width", "direct_output_width", "gi_output_width", "native_gi_output_width"),
+                firstPresent(normalizedFields, "output_height", "direct_output_height", "gi_output_height", "native_gi_output_height")
         );
         Long outputPixelCount = parseLong(firstPresent(
                 normalizedFields,
                 "output_pixels",
                 "output_pixel_count",
-                "direct_output_pixels"
+                "direct_output_pixels",
+                "gi_output_pixels",
+                "gi_output_pixel_count",
+                "native_gi_output_pixels",
+                "native_gi_output_pixel_count"
         ));
         String outputEnergy = firstPresent(
                 normalizedFields,
                 "output_energy",
-                "direct_output_energy"
+                "direct_output_energy",
+                "gi_output_energy",
+                "native_gi_output_energy"
         );
         Long outputChecksum = parseLong(firstPresent(
                 normalizedFields,
                 "output_checksum",
-                "direct_output_checksum"
+                "direct_output_checksum",
+                "gi_output_checksum",
+                "native_gi_output_checksum"
         ));
         Boolean payloadValidated = parseBoolean(firstPresent(
                 normalizedFields,

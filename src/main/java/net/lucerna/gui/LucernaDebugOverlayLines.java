@@ -184,6 +184,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Overlay state: " + snapshot.debugOverlay().name()
                 + " | Renderer: " + snapshot.rendererStateLabel()
                 + " | Native: " + snapshot.nativeBridgeLabel()));
+        lines.add(Component.literal("Overlay scope: Round 5 direct lighting; Round 6 GI status is listed separately below."));
 
         if (!lightingDispatch.hasLightingDispatchStatus()) {
             lines.add(Component.literal("Lighting dispatch: unavailable"));
@@ -234,7 +235,7 @@ public final class LucernaDebugOverlayLines {
                 + " checksum=" + valueOrUnknown(directStage.outputChecksum())));
         lines.add(Component.literal("Direct R5 CPU output generated: " + yesNoUnknown(directStage.cpuOutputGenerated())
                 + " | evidence=" + directOutputEvidenceLabel(directStage)));
-        lines.add(Component.literal("Direct R5 visible composite: not attached yet; CPU output telemetry only"));
+        lines.add(Component.literal("Direct R5 composite: direct-light proof/status only; not Round 6 diffuse GI output"));
         lines.add(Component.literal("Direct native: attempts=" + detailOrUnknown(directStage, "attempts")
                 + " submitted=" + detailOrUnknown(directStage, "submitted")
                 + " skipped=" + detailOrUnknown(directStage, "skipped")
@@ -262,7 +263,8 @@ public final class LucernaDebugOverlayLines {
                 "sparse_voxel_radiance_cache"
         );
 
-        lines.add(Component.literal("Round 6 GI/cache: " + roundSixSummary(snapshot)));
+        lines.add(Component.literal("Round 6 GI/cache status: " + roundSixSummary(snapshot)));
+        lines.add(Component.literal("Round 6 scope: low-res diffuse GI output/cache; separate from Direct Lighting overlay."));
         if (!lightingDispatch.hasLightingDispatchStatus()) {
             lines.add(Component.literal("Round 6 source: lighting dispatch telemetry unavailable"));
             lines.add(Component.literal("Round 6 reason: " + shorten(lightingDispatch.message(), 96)));
@@ -284,6 +286,13 @@ public final class LucernaDebugOverlayLines {
             lines.add(Component.literal("Low-res GI IO: " + valueOrUnknown(diffuseGiStage.ioCounts())
                     + " | inputs=" + firstDetailOrUnknown(diffuseGiStage, "inputs", "input_count", "last_input_count")
                     + " outputs=" + firstDetailOrUnknown(diffuseGiStage, "outputs", "output_count", "last_output_count")));
+            lines.add(Component.literal("Low-res GI output: source=" + giOutputSourceLabel(diffuseGiStage)
+                    + " generated=" + yesNoUnknown(diffuseGiStage.cpuOutputGenerated())
+                    + " size=" + valueOrUnknown(diffuseGiStage.outputDimensions())
+                    + " pixels=" + valueOrUnknown(diffuseGiStage.outputPixelCount())));
+            lines.add(Component.literal("Low-res GI evidence: energy=" + evidenceValueLabel(diffuseGiStage.outputEnergy())
+                    + " checksum=" + evidenceValueLabel(diffuseGiStage.outputChecksum())
+                    + " temporaryDirectSource=" + giTemporaryDirectSourceLabel(diffuseGiStage)));
             lines.add(Component.literal("Diffuse GI readiness reason: " + readinessReason(diffuseGiStage)));
         }
 
@@ -363,6 +372,32 @@ public final class LucernaDebugOverlayLines {
         return "gi=" + stageSummary(diffuseGiStage)
                 + " cache=" + stageSummary(cacheStage)
                 + " dirtyPending=" + snapshot.pendingDirtyRegionCount();
+    }
+
+    private static String giOutputSourceLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "output_source",
+                "output_source_label",
+                "source",
+                "source_label",
+                "preview_source",
+                "native_output_source",
+                "native_gi_output_source"
+        );
+    }
+
+    private static String giTemporaryDirectSourceLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "temporary_direct_source",
+                "temporary_direct_light_source",
+                "temporary_direct_light_source_ready",
+                "temporary_source_ready",
+                "uses_direct_light_payload",
+                "using_direct_light_payload",
+                "direct_light_payload_source"
+        );
     }
 
     private static String stageSummary(LightingDispatchStageTelemetryStatus stage) {

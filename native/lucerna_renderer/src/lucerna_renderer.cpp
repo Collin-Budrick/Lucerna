@@ -504,6 +504,23 @@ void append_round6_execution_status(
         << ",visible_signal_ray_factor=" << execution.last_visible_signal_ray_factor
         << ",visible_signal_checksum=" << execution.last_visible_signal_checksum
         << ",cpu_output_checksum=" << execution.last_cpu_output_checksum
+        << ",scene_inputs={recorded=" << execution.last_scene_inputs_recorded
+        << ",dimension=\"" << execution.last_scene_dimension_id
+        << "\""
+        << ",payload_generation=" << execution.last_scene_payload_generation
+        << ",celestial_generation=" << execution.last_scene_celestial_generation
+        << ",emissive_generation=" << execution.last_scene_emissive_generation
+        << ",shadow_generation=" << execution.last_scene_shadow_generation
+        << ",shadow_candidate_generation=" << execution.last_scene_shadow_candidate_generation
+        << ",section_snapshot_generation=" << execution.last_scene_section_snapshot_generation
+        << ",celestial_count=" << execution.last_scene_celestial_light_count
+        << ",emissive_count=" << execution.last_scene_emissive_light_count
+        << ",shadow_candidates=" << execution.last_scene_shadow_candidate_count
+        << ",budgeted_shadow_candidates=" << execution.last_scene_budgeted_shadow_candidate_count
+        << ",section_snapshots=" << execution.last_scene_section_snapshot_count
+        << ",celestial_energy=" << execution.last_scene_celestial_light_energy
+        << ",emissive_energy=" << execution.last_scene_emissive_light_energy
+        << "}"
         << ",flags=" << execution.last_flags
         << ",enabled=" << execution.last_enabled
         << ",validated=" << execution.last_validated
@@ -522,9 +539,15 @@ void append_round6_execution_status(
         << ",visible_signal_generated=" << execution.last_visible_signal_generated
         << ",visible_signal_cache_backed=" << execution.last_visible_signal_cache_backed
         << ",cpu_output_generated=" << execution.last_cpu_output_generated
+        << ",cpu_output_energy_nonzero=" << execution.last_cpu_output_energy_nonzero
+        << ",cpu_output_checksum_nonzero=" << execution.last_cpu_output_checksum_nonzero
+        << ",cpu_output_nonzero=" << execution.last_cpu_output_nonzero
+        << ",cpu_output_marker_recorded=" << execution.last_cpu_output_marker_recorded
         << ",marker=\"" << execution.last_marker
         << "\""
         << ",output_marker=\"" << execution.last_output_marker
+        << "\""
+        << ",cpu_output_marker=\"" << execution.last_cpu_output_marker
         << "\""
         << ",cache_marker=\"" << execution.last_cache_marker
         << "\""
@@ -3094,18 +3117,38 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_cpu_output_height = 0;
     execution.last_cpu_output_pixel_count = 0;
     execution.last_cpu_output_checksum = 0;
+    execution.last_scene_payload_generation = 0;
+    execution.last_scene_celestial_generation = 0;
+    execution.last_scene_emissive_generation = 0;
+    execution.last_scene_shadow_generation = 0;
+    execution.last_scene_shadow_candidate_generation = 0;
+    execution.last_scene_section_snapshot_generation = 0;
+    execution.last_scene_celestial_light_count = 0;
+    execution.last_scene_emissive_light_count = 0;
+    execution.last_scene_shadow_candidate_count = 0;
+    execution.last_scene_budgeted_shadow_candidate_count = 0;
+    execution.last_scene_section_snapshot_count = 0;
     execution.last_visible_signal_energy = 0.0F;
     execution.last_visible_signal_min_sample = 0.0F;
     execution.last_visible_signal_max_sample = 0.0F;
     execution.last_cpu_output_energy = 0.0F;
+    execution.last_scene_celestial_light_energy = 0.0F;
+    execution.last_scene_emissive_light_energy = 0.0F;
     execution.last_visible_signal_cache_factor = 0.0F;
     execution.last_visible_signal_ray_factor = 0.0F;
     execution.last_visible_signal_generated = false;
     execution.last_visible_signal_cache_backed = false;
     execution.last_cpu_output_generated = false;
+    execution.last_cpu_output_energy_nonzero = false;
+    execution.last_cpu_output_checksum_nonzero = false;
+    execution.last_cpu_output_nonzero = false;
+    execution.last_cpu_output_marker_recorded = false;
+    execution.last_scene_inputs_recorded = false;
     execution.last_marker.clear();
     execution.last_output_marker.clear();
+    execution.last_cpu_output_marker.clear();
     execution.last_cache_marker.clear();
+    execution.last_scene_dimension_id.clear();
     if (dispatch_stage == NativeLightingDispatchStage::DiffuseGi) {
         diffuse_gi_cpu_output_.clear();
     }
@@ -3151,6 +3194,44 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     }
 
     if (dispatch_stage == NativeLightingDispatchStage::DiffuseGi) {
+        execution.last_scene_payload_generation = last_direct_lighting_payload_packet_.generation;
+        execution.last_scene_celestial_generation = last_direct_lighting_payload_packet_.celestial_generation;
+        execution.last_scene_emissive_generation = last_direct_lighting_payload_packet_.emissive_generation;
+        execution.last_scene_shadow_generation = last_direct_lighting_payload_packet_.shadow_generation;
+        execution.last_scene_shadow_candidate_generation =
+                last_direct_lighting_payload_packet_.shadow_candidate_generation;
+        execution.last_scene_section_snapshot_generation =
+                last_direct_lighting_payload_packet_.section_snapshot_generation;
+        execution.last_scene_dimension_id = last_direct_lighting_payload_packet_.dimension_id;
+        execution.last_scene_celestial_light_count = non_negative_u64(
+                last_direct_lighting_payload_packet_.celestial_light_count);
+        execution.last_scene_emissive_light_count = non_negative_u64(
+                last_direct_lighting_payload_packet_.selected_emissive_count);
+        execution.last_scene_shadow_candidate_count = non_negative_u64(
+                last_direct_lighting_payload_packet_.shadow_candidate_count);
+        execution.last_scene_budgeted_shadow_candidate_count = non_negative_u64(
+                last_direct_lighting_payload_packet_.budgeted_shadow_candidate_count);
+        execution.last_scene_section_snapshot_count = non_negative_u64(
+                last_direct_lighting_payload_packet_.section_snapshot_count);
+        execution.last_scene_celestial_light_energy =
+                finite_non_negative(last_direct_lighting_payload_packet_.celestial_light_energy);
+        execution.last_scene_emissive_light_energy =
+                finite_non_negative(last_direct_lighting_payload_packet_.selected_emissive_energy);
+        execution.last_scene_inputs_recorded =
+                execution.last_scene_payload_generation != 0
+                || execution.last_scene_celestial_generation != 0
+                || execution.last_scene_emissive_generation != 0
+                || execution.last_scene_shadow_generation != 0
+                || execution.last_scene_shadow_candidate_generation != 0
+                || execution.last_scene_section_snapshot_generation != 0
+                || execution.last_scene_celestial_light_count != 0
+                || execution.last_scene_emissive_light_count != 0
+                || execution.last_scene_shadow_candidate_count != 0
+                || execution.last_scene_section_snapshot_count != 0
+                || execution.last_scene_celestial_light_energy > 0.0F
+                || execution.last_scene_emissive_light_energy > 0.0F
+                || !execution.last_scene_dimension_id.empty();
+
         if (execution.last_output_count != 0 && execution.last_width != 0 && execution.last_height != 0) {
             const auto pixel_count = saturated_multiply(execution.last_width, execution.last_height);
             execution.last_placeholder_output_population_count = saturated_multiply(
@@ -3415,6 +3496,15 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                     execution.last_cpu_output_energy = preview_energy;
                     execution.last_cpu_output_checksum = preview_checksum;
                     execution.last_cpu_output_generated = true;
+                    execution.last_cpu_output_energy_nonzero = preview_energy > 0.0F;
+                    execution.last_cpu_output_checksum_nonzero = preview_checksum != 0;
+                    execution.last_cpu_output_nonzero =
+                            execution.last_cpu_output_energy_nonzero
+                            && execution.last_cpu_output_checksum_nonzero;
+                    execution.last_cpu_output_marker_recorded = execution.last_cpu_output_nonzero;
+                    execution.last_cpu_output_marker = execution.last_cpu_output_nonzero
+                            ? "diffuse_gi_deterministic_cpu_output_generated_nonzero"
+                            : "diffuse_gi_deterministic_cpu_output_generated_zero_signal";
                 }
 
                 if (resources_ != nullptr && frame_open_ && resources_->has_context()) {
@@ -3483,9 +3573,25 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
         execution.last_cache_marker = "lighting_cache_write_marker_absent_zero_writes";
     }
 
-    execution.last_readiness_reason = execution.last_resource_marker_recorded
-        ? std::string(to_string(dispatch_stage)) + "_dispatch_accepted_metadata_marker_recorded"
-        : std::string(to_string(dispatch_stage)) + "_dispatch_accepted_without_resource_marker";
+    if (dispatch_stage == NativeLightingDispatchStage::DiffuseGi && execution.last_cpu_output_generated) {
+        if (execution.last_cpu_output_nonzero && execution.last_scene_inputs_recorded) {
+            execution.last_readiness_reason =
+                    "diffuse_gi_deterministic_cpu_output_generated_nonzero_scene_inputs_recorded";
+        } else if (execution.last_cpu_output_nonzero) {
+            execution.last_readiness_reason =
+                    "diffuse_gi_deterministic_cpu_output_generated_nonzero_scene_inputs_missing";
+        } else if (execution.last_scene_inputs_recorded) {
+            execution.last_readiness_reason =
+                    "diffuse_gi_deterministic_cpu_output_generated_zero_signal_scene_inputs_recorded";
+        } else {
+            execution.last_readiness_reason =
+                    "diffuse_gi_deterministic_cpu_output_generated_zero_signal_scene_inputs_missing";
+        }
+    } else {
+        execution.last_readiness_reason = execution.last_resource_marker_recorded
+            ? std::string(to_string(dispatch_stage)) + "_dispatch_accepted_metadata_marker_recorded"
+            : std::string(to_string(dispatch_stage)) + "_dispatch_accepted_without_resource_marker";
+    }
     return recorded_resources;
 }
 

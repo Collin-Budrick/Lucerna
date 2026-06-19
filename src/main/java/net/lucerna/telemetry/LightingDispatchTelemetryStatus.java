@@ -31,7 +31,16 @@ public record LightingDispatchTelemetryStatus(
                     + "celestial_count|emissive_count|payload_accepted|payload_generation|payload_generation_range|"
                     + "payload_frame|payload_frame_index|payload_validated|payload_has_direct_work|"
                     + "payload_ready_for_shadow_tracing|payload_metadata_only|cpu_output_generated|"
-                    + "output_width|output_height|output_pixels|output_pixel_count|output_energy|output_checksum|"
+                    + "gi_cpu_output_generated|native_gi_output_generated|"
+                    + "output_width|output_height|gi_output_width|gi_output_height|native_gi_output_width|"
+                    + "native_gi_output_height|output_pixels|output_pixel_count|gi_output_pixels|"
+                    + "gi_output_pixel_count|native_gi_output_pixels|native_gi_output_pixel_count|"
+                    + "output_energy|gi_output_energy|native_gi_output_energy|output_checksum|"
+                    + "gi_output_checksum|native_gi_output_checksum|"
+                    + "output_source|output_source_label|source|source_label|preview_source|native_output_source|"
+                    + "native_gi_output_source|temporary_direct_source|temporary_direct_light_source|"
+                    + "temporary_direct_light_source_ready|temporary_source_ready|uses_direct_light_payload|"
+                    + "using_direct_light_payload|direct_light_payload_source|"
                     + "cache|last_cache|cache_counts|cache_reads|cache_writes|cache_read_count|cache_write_count|"
                     + "last_flags|flags|stage_flags|placeholder|metadata_only|validated|valid|debug_overlay|debug|"
                     + "ready_for_native_execution|native_ready|ready|executable|readiness_reason|ready_reason|"
@@ -685,6 +694,13 @@ public record LightingDispatchTelemetryStatus(
             case "section_snapshots" -> "section_snapshot_count";
             case "payload_frame_index" -> "payload_frame";
             case "payload_metadata_only" -> "metadata_only";
+            case "gi_cpu_output_generated", "native_gi_output_generated" -> "cpu_output_generated";
+            case "gi_output_width", "native_gi_output_width" -> "output_width";
+            case "gi_output_height", "native_gi_output_height" -> "output_height";
+            case "gi_output_pixels", "gi_output_pixel_count", "native_gi_output_pixels",
+                    "native_gi_output_pixel_count" -> "output_pixels";
+            case "gi_output_energy", "native_gi_output_energy" -> "output_energy";
+            case "gi_output_checksum", "native_gi_output_checksum" -> "output_checksum";
             case "cache", "cache_counts" -> "last_cache";
             case "cache_reads", "cache_read_count" -> "cache_reads";
             case "cache_writes", "cache_write_count" -> "cache_writes";

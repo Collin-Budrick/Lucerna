@@ -498,10 +498,23 @@ struct NativeRound6DispatchExecutionTelemetry {
     std::uint64_t last_cpu_output_height = 0;
     std::uint64_t last_cpu_output_pixel_count = 0;
     std::uint64_t last_cpu_output_checksum = 0;
+    std::uint64_t last_scene_payload_generation = 0;
+    std::uint64_t last_scene_celestial_generation = 0;
+    std::uint64_t last_scene_emissive_generation = 0;
+    std::uint64_t last_scene_shadow_generation = 0;
+    std::uint64_t last_scene_shadow_candidate_generation = 0;
+    std::uint64_t last_scene_section_snapshot_generation = 0;
+    std::uint64_t last_scene_celestial_light_count = 0;
+    std::uint64_t last_scene_emissive_light_count = 0;
+    std::uint64_t last_scene_shadow_candidate_count = 0;
+    std::uint64_t last_scene_budgeted_shadow_candidate_count = 0;
+    std::uint64_t last_scene_section_snapshot_count = 0;
     float last_visible_signal_energy = 0.0F;
     float last_visible_signal_min_sample = 0.0F;
     float last_visible_signal_max_sample = 0.0F;
     float last_cpu_output_energy = 0.0F;
+    float last_scene_celestial_light_energy = 0.0F;
+    float last_scene_emissive_light_energy = 0.0F;
     float last_visible_signal_cache_factor = 0.0F;
     float last_visible_signal_ray_factor = 0.0F;
     std::uint32_t last_flags = 0;
@@ -522,10 +535,17 @@ struct NativeRound6DispatchExecutionTelemetry {
     bool last_visible_signal_generated = false;
     bool last_visible_signal_cache_backed = false;
     bool last_cpu_output_generated = false;
+    bool last_cpu_output_energy_nonzero = false;
+    bool last_cpu_output_checksum_nonzero = false;
+    bool last_cpu_output_nonzero = false;
+    bool last_cpu_output_marker_recorded = false;
+    bool last_scene_inputs_recorded = false;
     std::string last_marker;
     std::string last_output_marker;
+    std::string last_cpu_output_marker;
     std::string last_cache_marker;
     std::string last_readiness_reason;
+    std::string last_scene_dimension_id;
 };
 
 struct NativeLightingDispatchTelemetry {
