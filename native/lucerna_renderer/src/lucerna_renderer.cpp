@@ -3351,6 +3351,12 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                             12));
                     const auto celestial_count = static_cast<std::size_t>(non_negative_u64(
                             last_direct_lighting_payload_packet_.celestial_light_count));
+                    const auto shadow_count = static_cast<std::size_t>(std::min<std::uint64_t>(
+                            non_negative_u64(last_direct_lighting_payload_packet_.shadow_candidate_count),
+                            32));
+                    const auto section_count = static_cast<std::size_t>(std::min<std::uint64_t>(
+                            non_negative_u64(last_direct_lighting_payload_packet_.section_snapshot_count),
+                            32));
                     const float payload_celestial_energy = std::max(
                             finite_non_negative(last_direct_lighting_payload_packet_.celestial_light_energy),
                             sum_strided_float_field(
@@ -3377,23 +3383,70 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                             0.0F,
                             18.0F);
                     const float cache_signal = std::clamp(
-                            cache_tint * (6.0F + static_cast<float>(execution.last_cache_write_count != 0) * 6.0F),
+                            cache_tint * (8.0F + static_cast<float>(execution.last_cache_write_count != 0) * 8.0F),
                             0.0F,
-                            14.0F);
+                            20.0F);
                     const float emissive_signal = std::clamp(
                             (payload_emissive_energy * 0.018F)
-                                    + (static_cast<float>(emissive_count) * 1.35F),
+                                    + (static_cast<float>(emissive_count) * 2.10F),
                             0.0F,
-                            28.0F);
+                            40.0F);
+                    float emissive_red = 0.0F;
+                    float emissive_green = 0.0F;
+                    float emissive_blue = 0.0F;
+                    float emissive_weight = 0.0F;
+                    for (std::size_t light_index = 0; light_index < emissive_count; light_index++) {
+                        const float intensity = std::max(
+                                1.0F,
+                                strided_float_or_zero(
+                                        last_direct_lighting_payload_packet_.emissive_light_data,
+                                        light_index,
+                                        kDirectEmissiveLightDataStride,
+                                        kDirectEmissiveIntensityOffset));
+                        const float radius_weight = std::clamp(
+                                strided_float_or_zero(
+                                        last_direct_lighting_payload_packet_.emissive_light_data,
+                                        light_index,
+                                        kDirectEmissiveLightDataStride,
+                                        kDirectEmissiveInfluenceRadiusOffset) / 24.0F,
+                                0.50F,
+                                3.0F);
+                        const float weight = intensity * radius_weight;
+                        emissive_red += strided_float_or_zero(
+                                last_direct_lighting_payload_packet_.emissive_light_data,
+                                light_index,
+                                kDirectEmissiveLightDataStride,
+                                kDirectEmissiveColorRedOffset) * weight;
+                        emissive_green += strided_float_or_zero(
+                                last_direct_lighting_payload_packet_.emissive_light_data,
+                                light_index,
+                                kDirectEmissiveLightDataStride,
+                                kDirectEmissiveColorGreenOffset) * weight;
+                        emissive_blue += strided_float_or_zero(
+                                last_direct_lighting_payload_packet_.emissive_light_data,
+                                light_index,
+                                kDirectEmissiveLightDataStride,
+                                kDirectEmissiveColorBlueOffset) * weight;
+                        emissive_weight += weight;
+                    }
+                    if (emissive_weight > 0.0F) {
+                        emissive_red /= emissive_weight;
+                        emissive_green /= emissive_weight;
+                        emissive_blue /= emissive_weight;
+                    } else {
+                        emissive_red = 1.0F;
+                        emissive_green = 0.92F;
+                        emissive_blue = 0.78F;
+                    }
                     const float preview_base = std::clamp(
                             (normalized_signal * 0.12F)
                                     + (execution.last_visible_signal_max_sample * 0.18F)
-                                    + (base_signal * 0.20F)
-                                    + (sky_signal * 0.25F)
-                                    + (cache_signal * 0.20F)
-                                    + (emissive_signal * 0.35F),
+                                    + (base_signal * 0.24F)
+                                    + (sky_signal * 0.34F)
+                                    + (cache_signal * 0.34F)
+                                    + (emissive_signal * 0.52F),
                             0.01F,
-                            64.0F);
+                            92.0F);
                     for (std::uint64_t pixel = 0; pixel < preview_pixel_count; pixel++) {
                         const auto offset = static_cast<std::size_t>(pixel * 4);
                         const auto pixel_x = pixel % preview_width;
@@ -3409,28 +3462,66 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                         * 0.012F;
                         const float sky_gradient = std::max(0.0F, 1.0F - v);
                         const float cache_gradient = (0.55F + (cache_tint * 0.35F)) * (0.75F + cache_cell * 0.25F);
-                        const float center_wall_x = std::clamp(1.0F - (std::abs(u - 0.50F) / 0.50F), 0.0F, 1.0F);
-                        const float center_wall_y = std::clamp(1.0F - (std::abs(v - 0.54F) / 0.46F), 0.0F, 1.0F);
-                        const float proof_wall_band = std::clamp(
-                                (center_wall_x * 0.55F) + (center_wall_y * 0.45F),
-                                0.0F,
-                                1.0F);
+                        const float cache_band = 0.72F
+                                + static_cast<float>(
+                                        ((pixel_x / 11) ^ (pixel_y / 7) ^ execution.last_cache_read_count) % 17)
+                                        * 0.018F;
+                        const float section_band = section_count == 0
+                                ? 0.0F
+                                : static_cast<float>(
+                                        ((pixel_x / 19) + (pixel_y / 13) + section_count) % 5)
+                                        * 0.08F;
+                        float surface_projection = section_count == 0 ? 0.18F : 0.34F + section_band;
+                        const auto candidate_limit = std::min<std::size_t>(shadow_count, 24);
+                        for (std::size_t candidate_index = 0; candidate_index < candidate_limit; candidate_index++) {
+                            const float origin_x = strided_float_or_zero(
+                                    last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                                    candidate_index,
+                                    kDirectShadowCandidateRayStride,
+                                    kDirectShadowRayOriginXOffset);
+                            const float origin_y = strided_float_or_zero(
+                                    last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                                    candidate_index,
+                                    kDirectShadowCandidateRayStride,
+                                    kDirectShadowRayOriginYOffset);
+                            const float origin_z = strided_float_or_zero(
+                                    last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                                    candidate_index,
+                                    kDirectShadowCandidateRayStride,
+                                    kDirectShadowRayOriginZOffset);
+                            const float candidate_u = static_cast<float>(
+                                    std::abs(static_cast<std::int32_t>(origin_x + origin_z)) % 113) / 112.0F;
+                            const float candidate_v = 1.0F - (static_cast<float>(
+                                    std::abs(static_cast<std::int32_t>(origin_y)) % 79) / 78.0F);
+                            const float delta_u = u - candidate_u;
+                            const float delta_v = v - candidate_v;
+                            const float distance = std::sqrt(delta_u * delta_u + delta_v * delta_v);
+                            const float weight = finite_non_negative(strided_float_or_zero(
+                                    last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                                    candidate_index,
+                                    kDirectShadowCandidateRayStride,
+                                    kDirectShadowRayContributionWeightOffset));
+                            const float radius = 0.18F + std::clamp(weight * 0.04F, 0.0F, 0.22F);
+                            const float falloff = std::max(0.0F, 1.0F - distance / radius);
+                            surface_projection += falloff * falloff * (0.26F + ray_tint * 0.36F);
+                        }
+                        surface_projection = std::clamp(surface_projection, 0.0F, 1.85F);
                         const float broad_projection_signal = std::clamp(
-                                (preview_base * 0.42F)
-                                        + (emissive_signal * 0.42F)
-                                        + (cache_signal * 0.18F)
-                                        + (sky_signal * 0.12F),
-                                2.0F,
-                                48.0F);
-                        float red = (preview_base * (0.36F + cache_gradient * 0.18F))
-                                + (sky_signal * (0.16F + sky_gradient * 0.12F))
-                                + (broad_projection_signal * (0.34F + proof_wall_band * 0.58F));
-                        float green = (preview_base * (0.42F + ray_tint * 0.18F))
-                                + (sky_signal * (0.22F + sky_gradient * 0.18F))
-                                + (broad_projection_signal * (0.40F + proof_wall_band * 0.64F));
-                        float blue = (preview_base * (0.28F + sky_gradient * 0.24F))
-                                + (sky_signal * (0.34F + sky_gradient * 0.30F))
-                                + (broad_projection_signal * (0.24F + proof_wall_band * 0.42F));
+                                (preview_base * (0.62F + surface_projection * 0.52F))
+                                        + (emissive_signal * (0.58F + surface_projection * 0.42F))
+                                        + (cache_signal * (0.32F + cache_gradient * 0.34F))
+                                        + (sky_signal * (0.18F + sky_gradient * 0.26F)),
+                                4.0F,
+                                96.0F);
+                        float red = (preview_base * (0.34F + cache_gradient * 0.20F))
+                                + (sky_signal * (0.15F + sky_gradient * 0.14F))
+                                + (broad_projection_signal * (0.36F + emissive_red * 0.52F));
+                        float green = (preview_base * (0.39F + ray_tint * 0.20F))
+                                + (sky_signal * (0.22F + sky_gradient * 0.20F))
+                                + (broad_projection_signal * (0.38F + emissive_green * 0.50F));
+                        float blue = (preview_base * (0.26F + sky_gradient * 0.26F))
+                                + (sky_signal * (0.35F + sky_gradient * 0.34F))
+                                + (broad_projection_signal * (0.22F + emissive_blue * 0.46F));
                         for (std::size_t light_index = 0; light_index < emissive_count; light_index++) {
                             const auto block_x = strided_int_or_zero(
                                     last_direct_lighting_payload_packet_.emissive_light_metadata,
@@ -3474,7 +3565,9 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                             light_index,
                                             kDirectEmissiveLightDataStride,
                                             kDirectEmissiveIntensityOffset));
-                            const float strength = std::min(52.0F, intensity * bounce * (0.70F + ray_tint * 0.50F));
+                            const float strength = std::min(
+                                    84.0F,
+                                    intensity * bounce * (0.92F + ray_tint * 0.62F + surface_projection * 0.24F));
                             red += strided_float_or_zero(
                                     last_direct_lighting_payload_packet_.emissive_light_data,
                                     light_index,
@@ -3491,11 +3584,11 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                     kDirectEmissiveLightDataStride,
                                     kDirectEmissiveColorBlueOffset) * strength;
                         }
-                        red = std::min(128.0F, red * low_frequency_noise * 1.55F);
-                        green = std::min(128.0F, green * low_frequency_noise * 1.55F);
-                        blue = std::min(128.0F, blue * low_frequency_noise * 1.55F);
+                        red = std::min(192.0F, red * low_frequency_noise * cache_band * 1.72F);
+                        green = std::min(192.0F, green * low_frequency_noise * cache_band * 1.72F);
+                        blue = std::min(192.0F, blue * low_frequency_noise * cache_band * 1.72F);
                         const float alpha = std::clamp(
-                                0.68F + (proof_wall_band * 0.14F) + (cache_tint * 0.18F) + (ray_tint * 0.14F)
+                                0.72F + (surface_projection * 0.10F) + (cache_tint * 0.20F) + (ray_tint * 0.16F)
                                         + (emissive_count == 0 ? 0.0F : 0.20F),
                                 0.0F,
                                 1.0F);

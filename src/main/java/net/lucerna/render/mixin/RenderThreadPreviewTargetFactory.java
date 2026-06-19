@@ -38,8 +38,8 @@ public final class RenderThreadPreviewTargetFactory {
             );
     private static final DirectLightPreviewTextureUploader ROUND6_DIFFUSE_GI_FINAL_COMPOSITE_TEXTURE_UPLOADER =
             new DirectLightPreviewTextureUploader(
-                    "lucerna_round6_diffuse_gi_preview_rgba",
-                    "Round 6 diffuse GI final composite preview"
+                    "lucerna_round6_diffuse_gi_final_composite_rgba",
+                    "Round 6 native diffuse GI final composite"
             );
 
     private RenderThreadPreviewTargetFactory() {
@@ -497,7 +497,7 @@ public final class RenderThreadPreviewTargetFactory {
 
         PublicMojangPreviewDrawScaffold drawScaffold;
         try (RenderPass renderPass = commandEncoder.createRenderPass(
-                () -> "lucerna public Round 6 diffuse GI final composite preview draw pass",
+                () -> "lucerna public Round 6 native diffuse GI final composite draw pass",
                 colorView,
                 Optional.empty()
         )) {
@@ -513,7 +513,7 @@ public final class RenderThreadPreviewTargetFactory {
                 drawScaffold.drawCallsIssued(),
                 target.attachmentMetadata().javaOpaque(),
                 PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
-                "public Mojang Round 6 diffuse GI output final composite preview render pass submitted; readiness: "
+                "public Mojang Round 6 native diffuse GI output final composite render pass submitted; readiness: "
                         + previewState.summary()
                         + "; native diffuse GI output payload: "
                         + diffuseGiPayload.debugSummary()

@@ -69,6 +69,13 @@ public final class LucernaDebugOverlayLines {
         return lines;
     }
 
+    public static List<Component> roundSixEvidenceOverlay(LucernaStatusSnapshot snapshot) {
+        List<Component> lines = new ArrayList<>();
+        lines.add(Component.literal("Debug overlay: Round 6 GI/cache evidence"));
+        addRoundSixEvidenceLines(lines, snapshot);
+        return lines;
+    }
+
     public static List<Component> validationLines(LucernaStatusSnapshot snapshot) {
         List<Component> lines = new ArrayList<>();
         lines.add(statusLine(snapshot));
@@ -184,7 +191,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Overlay state: " + snapshot.debugOverlay().name()
                 + " | Renderer: " + snapshot.rendererStateLabel()
                 + " | Native: " + snapshot.nativeBridgeLabel()));
-        lines.add(Component.literal("Overlay scope: Round 5 direct lighting; Round 6 GI status is listed separately below."));
+        lines.add(Component.literal("Overlay scope: Round 5 direct lighting; Round 6 GI status uses a separate evidence panel."));
 
         if (!lightingDispatch.hasLightingDispatchStatus()) {
             lines.add(Component.literal("Lighting dispatch: unavailable"));
@@ -243,10 +250,14 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Direct flags: " + directFlagLabel(directStage)));
         String reason = directStage.readinessReason().isBlank() ? lightingDispatch.message() : directStage.readinessReason();
         lines.add(Component.literal("Direct readiness: " + shorten(reason, 96)));
-        addRoundSixStatusLines(lines, snapshot);
+        lines.add(Component.literal("Round 6 GI/cache: rendered in separate evidence panel for screenshots."));
     }
 
     private static void addRoundSixStatusLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        addRoundSixEvidenceLines(lines, snapshot);
+    }
+
+    private static void addRoundSixEvidenceLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
         LightingDispatchTelemetryStatus lightingDispatch = snapshot.lightingDispatchStatus();
         LightingDispatchStageTelemetryStatus diffuseGiStage = firstStage(
                 lightingDispatch,

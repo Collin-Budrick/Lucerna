@@ -16,6 +16,9 @@ public final class LucernaHudDebugOverlay {
     private static final int TOP = 6;
     private static final int LINE_HEIGHT = 10;
     private static final int MAX_LINES = 16;
+    private static final int ROUND6_MAX_LINES = 10;
+    private static final int PANEL_GUTTER = 8;
+    private static final int MIN_SECONDARY_PANEL_WIDTH = 220;
     private static final int TEXT_COLOR = 0xFFE5F0FF;
     private static final int BACKGROUND_COLOR = 0xA0000000;
     private static final int PROOF_WIDTH = 128;
@@ -42,7 +45,7 @@ public final class LucernaHudDebugOverlay {
 
         boolean debugOverlayVisible = controller.getConfig().debugOverlay() != DebugOverlay.OFF;
         boolean proofOverlayVisible = shouldRenderDirectLightProofOverlay(snapshot);
-        boolean round6GiProofVisible = shouldRenderRound6GiProofOverlay(snapshot);
+        boolean round6GiProofVisible = debugOverlayVisible && shouldRenderRound6GiProofOverlay(snapshot);
         if (!debugOverlayVisible && !proofOverlayVisible && !round6GiProofVisible) {
             return;
         }
@@ -65,14 +68,75 @@ public final class LucernaHudDebugOverlay {
         }
 
         int maxWidth = Math.min(420, Math.max(160, graphics.guiWidth() - 12));
-        int lineCount = Math.min(MAX_LINES, lines.size());
+        int lineCount = renderLinePanel(graphics, client, lines, LEFT, TOP, maxWidth, MAX_LINES);
+        if (snapshot.debugOverlay() == DebugOverlay.DIRECT_LIGHTING) {
+            renderRoundSixEvidencePanel(graphics, client, snapshot, maxWidth, lineCount);
+        }
+    }
+
+    private static void renderRoundSixEvidencePanel(
+            GuiGraphicsExtractor graphics,
+            Minecraft client,
+            LucernaStatusSnapshot snapshot,
+            int primaryWidth,
+            int primaryLineCount
+    ) {
+        List<Component> lines = LucernaDebugOverlayLines.roundSixEvidenceOverlay(snapshot);
+        if (lines.isEmpty()) {
+            return;
+        }
+
+        int rightColumnLeft = LEFT + primaryWidth + PANEL_GUTTER;
+        int rightColumnWidth = graphics.guiWidth() - rightColumnLeft - PANEL_GUTTER;
+        if (rightColumnWidth >= MIN_SECONDARY_PANEL_WIDTH) {
+            int lineCount = Math.min(ROUND6_MAX_LINES, lines.size());
+            int panelHeight = lineCount * LINE_HEIGHT + 6;
+            int top = Math.max(
+                    TOP + PROOF_HEIGHT + (PROOF_MARGIN * 2),
+                    graphics.guiHeight() - panelHeight - PANEL_GUTTER
+            );
+            renderLinePanel(
+                    graphics,
+                    client,
+                    lines,
+                    rightColumnLeft,
+                    top,
+                    Math.min(360, rightColumnWidth),
+                    ROUND6_MAX_LINES
+            );
+            return;
+        }
+
+        int belowTop = TOP + (primaryLineCount * LINE_HEIGHT) + PANEL_GUTTER + 6;
+        int availableHeight = graphics.guiHeight() - belowTop - PANEL_GUTTER;
+        if (availableHeight < LINE_HEIGHT + 6) {
+            return;
+        }
+        int maxLines = Math.max(1, Math.min(ROUND6_MAX_LINES, (availableHeight - 6) / LINE_HEIGHT));
+        renderLinePanel(graphics, client, lines, LEFT, belowTop, primaryWidth, maxLines);
+    }
+
+    private static int renderLinePanel(
+            GuiGraphicsExtractor graphics,
+            Minecraft client,
+            List<Component> lines,
+            int left,
+            int top,
+            int maxWidth,
+            int maxLines
+    ) {
+        int lineCount = Math.min(maxLines, lines.size());
+        if (lineCount <= 0) {
+            return 0;
+        }
         int backgroundHeight = lineCount * LINE_HEIGHT + 6;
-        graphics.fill(LEFT - 3, TOP - 3, LEFT + maxWidth + 3, TOP + backgroundHeight, BACKGROUND_COLOR);
-        int y = TOP;
+        graphics.fill(left - 3, top - 3, left + maxWidth + 3, top + backgroundHeight, BACKGROUND_COLOR);
+        int y = top;
         for (int index = 0; index < lineCount; index++) {
-            graphics.text(client.font, fitLine(client, lines.get(index), maxWidth), LEFT, y, TEXT_COLOR);
+            graphics.text(client.font, fitLine(client, lines.get(index), maxWidth), left, y, TEXT_COLOR);
             y += LINE_HEIGHT;
         }
+        return lineCount;
     }
 
     private static void renderDirectLightProofOverlay(

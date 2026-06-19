@@ -21,7 +21,7 @@ public final class PublicMojangPreviewDrawScaffolds {
     private static final String TEXTURED_FULLSCREEN_MODE = "surface-sample-masked-direct-light-additive";
     private static final String FINAL_COMPOSITE_FULLSCREEN_MODE = "final-composite-direct-light-focus-window-additive";
     private static final String ROUND6_DIFFUSE_GI_FINAL_COMPOSITE_FULLSCREEN_MODE =
-            "round6-diffuse-gi-focus-window-additive";
+            "round6-native-diffuse-gi-surface-additive";
     private static final String DIAGNOSTIC_FULLSCREEN_MODE = "diagnostic-fullscreen-warm-additive";
     private static final int FULLSCREEN_TRIANGLE_FIRST_VERTEX = 0;
     private static final int FULLSCREEN_TRIANGLE_VERTEX_COUNT = 3;
@@ -71,7 +71,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                     .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
                     .withFragmentShader(Identifier.fromNamespaceAndPath(
                             "lucerna",
-                            "core/direct_light_final_composite_focus"
+                            "core/round6_native_diffuse_gi_surface"
                     ))
                     .withBindGroupLayout(BindGroupLayouts.IN_SAMPLER)
                     .withColorTargetState(new ColorTargetState(
@@ -276,7 +276,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                     FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                     SINGLE_INSTANCE_COUNT,
                     FIRST_INSTANCE,
-                    "public Mojang Round 6 diffuse GI final composite APIs are present, but no native diffuse GI output texture view is available"
+                    "public Mojang Round 6 native diffuse GI surface composite APIs are present, but no native diffuse GI output texture view is available"
             );
         }
 
@@ -288,7 +288,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang Round 6 diffuse GI final composite can bind a native diffuse GI output texture and issue one bounded per-pixel additive draw"
+                "public Mojang Round 6 diffuse GI final composite can bind the native diffuse GI output texture and issue one bounded surface-mapped additive draw"
         );
     }
 
@@ -330,7 +330,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang Round 6 diffuse GI final composite per-pixel additive draw issued"
+                "public Mojang Round 6 native diffuse GI surface-mapped additive draw issued"
         );
     }
 
