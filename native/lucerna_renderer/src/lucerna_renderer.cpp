@@ -14,10 +14,13 @@ namespace {
 constexpr std::uint64_t kEstimatedDirtyRegionUploadBytes = 64;
 constexpr std::uint64_t kEstimatedMaterialUploadBytes = 128;
 constexpr std::uint64_t kEstimatedSectionMetadataBytes = 96;
+constexpr std::uint64_t kEstimatedSectionSnapshotMetadataBytes = 160;
 constexpr std::uint64_t kSectionVoxelCount = 16 * 16 * 16;
 constexpr std::uint64_t kVoxelOccupancyWordCount = kSectionVoxelCount / 64;
 constexpr std::uint64_t kVoxelOccupancyBytesPerSection = kVoxelOccupancyWordCount * sizeof(std::uint64_t);
 constexpr std::uint64_t kVoxelMaterialIndexBytesPerSection = kSectionVoxelCount * sizeof(std::uint16_t);
+constexpr std::uint64_t kSectionEmissiveEntryBytes =
+        (sizeof(std::int32_t) * 3) + sizeof(std::uint64_t);
 constexpr std::uint64_t kLightingConstantsBytes = 256;
 constexpr std::uint32_t kNoopCompositeFormatTag = 1;
 constexpr std::uint32_t kGBufferDepthFormatTag = 10;
@@ -30,7 +33,49 @@ std::size_t pass_index(NativeRenderPass pass) {
     return static_cast<std::size_t>(pass);
 }
 
+bool is_blank(const std::string& value) {
+    return value.find_first_not_of(" \t\n\r\f\v") == std::string::npos;
+}
+
+std::uint64_t max_generation(
+        std::uint64_t first,
+        std::uint64_t second,
+        std::uint64_t third,
+        std::uint64_t fourth,
+        std::uint64_t fifth) {
+    std::uint64_t result = first;
+    if (second > result) {
+        result = second;
+    }
+    if (third > result) {
+        result = third;
+    }
+    if (fourth > result) {
+        result = fourth;
+    }
+    if (fifth > result) {
+        result = fifth;
+    }
+    return result;
+}
+
 } // namespace
+
+std::uint64_t SectionSnapshotUpload::combined_generation() const {
+    return max_generation(
+            section_generation,
+            material_generation,
+            occupancy_generation,
+            emissive_generation,
+            dirty_region.generation);
+}
+
+bool SectionSnapshotUpload::has_section_payload() const {
+    return occupied_voxel_count > 0
+        || occupancy_mask_word_count > 0
+        || !material_palette_ids.empty()
+        || !emissive_entries.empty();
+}
 
 const char* to_string(NativeRenderPass pass) {
     switch (pass) {
@@ -92,13 +137,16 @@ void Renderer::init() {
     last_render_lighting_order_valid_ = true;
     last_end_frame_order_valid_ = true;
     frame_index_ = 0;
+    last_section_upload_packet_ = {};
     last_tick_delta_ = 0.0F;
     resize_count_ = 0;
     begin_frame_count_ = 0;
     end_frame_count_ = 0;
     upload_packet_count_ = 0;
+    section_upload_packet_count_ = 0;
     upload_dirty_payload_total_ = 0;
     upload_material_payload_total_ = 0;
+    section_snapshot_payload_total_ = 0;
     lighting_pass_count_ = 0;
     context_adopt_count_ = 0;
     context_release_count_ = 0;
@@ -137,13 +185,16 @@ void Renderer::shutdown() {
     height_ = 0;
     frame_index_ = 0;
     last_upload_packet_ = {};
+    last_section_upload_packet_ = {};
     last_tick_delta_ = 0.0F;
     resize_count_ = 0;
     begin_frame_count_ = 0;
     end_frame_count_ = 0;
     upload_packet_count_ = 0;
+    section_upload_packet_count_ = 0;
     upload_dirty_payload_total_ = 0;
     upload_material_payload_total_ = 0;
+    section_snapshot_payload_total_ = 0;
     lighting_pass_count_ = 0;
     context_adopt_count_ = 0;
     context_release_count_ = 0;
@@ -266,6 +317,208 @@ void Renderer::upload_world_deltas(UploadPacket packet) {
     upload_material_payload_total_ += static_cast<std::uint64_t>(packet.material_updates.size());
     track_upload_staging_placeholder(packet);
     last_upload_packet_ = std::move(packet);
+    clear_error();
+}
+
+void Renderer::upload_section_snapshots(SectionUploadPacket packet) {
+    if (!initialized_) {
+        return;
+    }
+
+    auto fail = [this](std::string error) {
+        set_error(std::move(error));
+        throw std::invalid_argument(last_error_);
+    };
+    auto require_text = [&fail](const std::string& value, const char* name) {
+        if (is_blank(value)) {
+            fail(std::string(name) + " must not be blank");
+        }
+    };
+    auto require_voxel_count = [&fail](std::int32_t value, const char* name) {
+        if (value < 0 || static_cast<std::uint64_t>(value) > kSectionVoxelCount) {
+            std::ostringstream error;
+            error << name << " must be between 0 and " << kSectionVoxelCount;
+            fail(error.str());
+        }
+    };
+
+    if (packet.section_snapshot_count < 0) {
+        fail("section snapshot count must be non-negative");
+    }
+    if (packet.first_section_snapshot_generation > packet.last_section_snapshot_generation) {
+        fail("section snapshot generation bounds are invalid");
+    }
+    if (packet.snapshots.size() > static_cast<std::size_t>(packet.section_snapshot_count)) {
+        fail("section snapshot payload count exceeds advertised count");
+    }
+    if (packet.snapshots.empty()
+            && (packet.first_section_snapshot_generation != 0 || packet.last_section_snapshot_generation != 0)) {
+        fail("empty section snapshot payload must use zero section generation bounds");
+    }
+    if (packet.section_snapshot_count == 0 && !packet.snapshots.empty()) {
+        fail("section snapshot payload count requires a positive advertised count");
+    }
+
+    std::uint64_t first_combined_generation = 0;
+    std::uint64_t last_combined_generation = 0;
+    std::uint64_t max_section_generation = 0;
+    std::uint64_t max_material_generation = 0;
+    std::uint64_t max_occupancy_generation = 0;
+    std::uint64_t max_emissive_generation = 0;
+    std::uint64_t max_dirty_region_generation = 0;
+
+    for (const auto& snapshot : packet.snapshots) {
+        require_text(snapshot.dimension, "section dimension");
+        require_text(snapshot.dirty_region.type_name, "dirty region type name");
+        require_text(snapshot.dirty_region.dimension, "dirty region dimension");
+        require_text(snapshot.occupancy_bit_order_name, "occupancy bit order name");
+
+        if (snapshot.dirty_region.type_id <= 0) {
+            fail("section dirty region type id must be positive");
+        }
+        if (snapshot.dirty_region.generation == 0) {
+            fail("section dirty region generation must be positive");
+        }
+        if (snapshot.dirty_region.section_scoped
+                && (snapshot.dirty_region.dimension != snapshot.dimension
+                    || snapshot.dirty_region.section_x != snapshot.section_x
+                    || snapshot.dirty_region.section_y != snapshot.section_y
+                    || snapshot.dirty_region.section_z != snapshot.section_z)) {
+            fail("section dirty region handoff must match the section origin");
+        }
+
+        require_voxel_count(snapshot.occupied_voxel_count, "occupied voxel count");
+        require_voxel_count(snapshot.opaque_voxel_count, "opaque voxel count");
+        require_voxel_count(snapshot.translucent_voxel_count, "translucent voxel count");
+        require_voxel_count(snapshot.fluid_voxel_count, "fluid voxel count");
+        require_voxel_count(snapshot.emissive_voxel_count, "emissive voxel count");
+        if (snapshot.opaque_voxel_count + snapshot.translucent_voxel_count > snapshot.occupied_voxel_count) {
+            fail("opaque and translucent voxel counts cannot exceed occupied voxel count");
+        }
+        if (snapshot.fluid_voxel_count > snapshot.occupied_voxel_count) {
+            fail("fluid voxel count cannot exceed occupied voxel count");
+        }
+        if (snapshot.emissive_voxel_count > snapshot.occupied_voxel_count) {
+            fail("emissive voxel count cannot exceed occupied voxel count");
+        }
+
+        if (snapshot.occupancy_bit_order_id <= 0) {
+            fail("occupancy bit order id must be positive");
+        }
+        if (snapshot.occupancy_mask_word_offset < 0) {
+            fail("occupancy mask word offset must be non-negative");
+        }
+        if (snapshot.occupancy_mask_word_count < 0
+                || static_cast<std::uint64_t>(snapshot.occupancy_mask_word_count) > kVoxelOccupancyWordCount) {
+            std::ostringstream error;
+            error << "occupancy mask word count must be between 0 and " << kVoxelOccupancyWordCount;
+            fail(error.str());
+        }
+        if (snapshot.occupancy_mask_bit_count < 0
+                || static_cast<std::uint64_t>(snapshot.occupancy_mask_bit_count) > kSectionVoxelCount) {
+            std::ostringstream error;
+            error << "occupancy mask bit count must be between 0 and " << kSectionVoxelCount;
+            fail(error.str());
+        }
+        if (snapshot.occupancy_mask_bit_count > snapshot.occupancy_mask_word_count * 64) {
+            fail("occupancy mask bit count cannot exceed the occupancy mask word capacity");
+        }
+        if (snapshot.occupancy_generation < snapshot.occupancy_mask_generation) {
+            fail("section occupancy generation must include the occupancy mask generation");
+        }
+
+        if (snapshot.material_palette_offset < 0) {
+            fail("material palette offset must be non-negative");
+        }
+        if (snapshot.material_generation < snapshot.material_palette_generation) {
+            fail("section material generation must include the material palette generation");
+        }
+        for (const auto material_id : snapshot.material_palette_ids) {
+            if (material_id <= 0) {
+                fail("material palette ids must be positive");
+            }
+        }
+
+        if (snapshot.emissive_entries.size() > static_cast<std::size_t>(snapshot.emissive_voxel_count)) {
+            fail("emissive entry payload count cannot exceed emissive voxel count");
+        }
+        std::uint64_t max_emissive_entry_generation = 0;
+        for (const auto& emissive : snapshot.emissive_entries) {
+            if (emissive.voxel_index < 0 || static_cast<std::uint64_t>(emissive.voxel_index) >= kSectionVoxelCount) {
+                fail("emissive voxel indices must be section voxel indices");
+            }
+            if (emissive.material_id <= 0) {
+                fail("emissive material ids must be positive");
+            }
+            if (emissive.block_light_level < 0 || emissive.block_light_level > 15) {
+                fail("emissive block light levels must be between 0 and 15");
+            }
+            if (emissive.generation > max_emissive_entry_generation) {
+                max_emissive_entry_generation = emissive.generation;
+            }
+        }
+        if (snapshot.emissive_generation < max_emissive_entry_generation) {
+            fail("section emissive generation must include all emissive entries");
+        }
+
+        const auto combined_generation = snapshot.combined_generation();
+        if (first_combined_generation == 0 || combined_generation < first_combined_generation) {
+            first_combined_generation = combined_generation;
+        }
+        if (combined_generation > last_combined_generation) {
+            last_combined_generation = combined_generation;
+        }
+        if (snapshot.section_generation > max_section_generation) {
+            max_section_generation = snapshot.section_generation;
+        }
+        if (snapshot.material_generation > max_material_generation) {
+            max_material_generation = snapshot.material_generation;
+        }
+        if (snapshot.occupancy_generation > max_occupancy_generation) {
+            max_occupancy_generation = snapshot.occupancy_generation;
+        }
+        if (snapshot.emissive_generation > max_emissive_generation) {
+            max_emissive_generation = snapshot.emissive_generation;
+        }
+        if (snapshot.dirty_region.generation > max_dirty_region_generation) {
+            max_dirty_region_generation = snapshot.dirty_region.generation;
+        }
+    }
+
+    if (!packet.snapshots.empty()) {
+        if (packet.first_section_snapshot_generation != first_combined_generation
+                || packet.last_section_snapshot_generation != last_combined_generation) {
+            fail("section snapshot generations do not match upload bounds");
+        }
+        if (packet.section_generation < max_section_generation) {
+            fail("section generation does not include the section snapshot payload");
+        }
+        if (packet.section_material_generation < max_material_generation) {
+            fail("section material generation does not include the section snapshot payload");
+        }
+        if (packet.section_occupancy_generation < max_occupancy_generation) {
+            fail("section occupancy generation does not include the section snapshot payload");
+        }
+        if (packet.section_emissive_generation < max_emissive_generation) {
+            fail("section emissive generation does not include the section snapshot payload");
+        }
+        if (packet.section_dirty_region_generation < max_dirty_region_generation) {
+            fail("section dirty region generation does not include the section snapshot payload");
+        }
+        if (packet.generation < max_generation(
+                max_section_generation,
+                max_material_generation,
+                max_occupancy_generation,
+                max_emissive_generation,
+                max_dirty_region_generation)) {
+            fail("section upload generation does not include the section snapshot payload");
+        }
+    }
+
+    section_upload_packet_count_++;
+    section_snapshot_payload_total_ += static_cast<std::uint64_t>(packet.snapshots.size());
+    track_section_snapshot_staging_placeholder(packet);
+    last_section_upload_packet_ = std::move(packet);
     clear_error();
 }
 
@@ -399,6 +652,7 @@ std::string Renderer::status() const {
         << ",begin_frames=" << begin_frame_count_
         << ",end_frames=" << end_frame_count_
         << ",upload_packets=" << upload_packet_count_
+        << ",section_upload_packets=" << section_upload_packet_count_
         << ",lighting_passes=" << lighting_pass_count_
         << ",context_adopts=" << context_adopt_count_
         << ",context_releases=" << context_release_count_
@@ -453,9 +707,21 @@ std::string Renderer::status() const {
         << " material_payloads=" << last_upload_packet_.material_updates.size()
         << " upload_payload_totals={dirty=" << upload_dirty_payload_total_
         << ",materials=" << upload_material_payload_total_
+        << ",section_snapshots=" << section_snapshot_payload_total_
         << "}"
         << " world_generation=" << last_upload_packet_.first_world_generation << "-" << last_upload_packet_.last_world_generation
         << " material_generation=" << last_upload_packet_.material_generation
+        << " section_upload_generation=" << last_section_upload_packet_.generation
+        << " section_snapshots=" << last_section_upload_packet_.section_snapshot_count
+        << " section_snapshot_payloads=" << last_section_upload_packet_.snapshots.size()
+        << " section_snapshot_generation=" << last_section_upload_packet_.first_section_snapshot_generation
+        << "-" << last_section_upload_packet_.last_section_snapshot_generation
+        << " section_generations={section=" << last_section_upload_packet_.section_generation
+        << ",material=" << last_section_upload_packet_.section_material_generation
+        << ",occupancy=" << last_section_upload_packet_.section_occupancy_generation
+        << ",emissive=" << last_section_upload_packet_.section_emissive_generation
+        << ",dirty=" << last_section_upload_packet_.section_dirty_region_generation
+        << "}"
         << " staging={section={packets=" << staging_.section.packets
         << ",advertised_dirty_regions=" << staging_.section.advertised_dirty_regions
         << ",payload_dirty_regions=" << staging_.section.payload_dirty_regions
@@ -466,6 +732,22 @@ std::string Renderer::status() const {
         << ",last_estimated_bytes=" << staging_.section.last_estimated_bytes
         << ",total_estimated_bytes=" << staging_.section.total_estimated_bytes
         << ",placeholder_buffers=" << staging_.section.placeholder_buffers
+        << ",snapshot_packets=" << staging_.section.snapshot_packets
+        << ",advertised_snapshots=" << staging_.section.advertised_snapshots
+        << ",payload_snapshots=" << staging_.section.payload_snapshots
+        << ",payload_sections=" << staging_.section.payload_sections
+        << ",last_snapshot_packet_generation=" << staging_.section.last_snapshot_packet_generation
+        << ",last_snapshot_generation_range=" << staging_.section.last_snapshot_first_generation
+        << "-" << staging_.section.last_snapshot_generation
+        << ",last_section_generation=" << staging_.section.last_section_generation
+        << ",last_material_generation=" << staging_.section.last_material_generation
+        << ",last_occupancy_generation=" << staging_.section.last_occupancy_generation
+        << ",last_emissive_generation=" << staging_.section.last_emissive_generation
+        << ",last_dirty_region_generation=" << staging_.section.last_dirty_region_generation
+        << ",last_occupied_voxels=" << staging_.section.last_occupied_voxels
+        << ",total_occupied_voxels=" << staging_.section.total_occupied_voxels
+        << ",last_snapshot_payload_bytes=" << staging_.section.last_snapshot_payload_bytes
+        << ",total_snapshot_payload_bytes=" << staging_.section.total_snapshot_payload_bytes
         << "},voxel={packets=" << staging_.voxel.packets
         << ",dirty_sections=" << staging_.voxel.dirty_sections
         << ",last_dirty_sections=" << staging_.voxel.last_dirty_sections
@@ -475,6 +757,17 @@ std::string Renderer::status() const {
         << ",last_estimated_bytes=" << staging_.voxel.last_estimated_bytes
         << ",total_estimated_bytes=" << staging_.voxel.total_estimated_bytes
         << ",placeholder_buffers=" << staging_.voxel.placeholder_buffers
+        << ",snapshot_packets=" << staging_.voxel.snapshot_packets
+        << ",payload_sections=" << staging_.voxel.payload_sections
+        << ",last_payload_sections=" << staging_.voxel.last_payload_sections
+        << ",occupancy_words=" << staging_.voxel.occupancy_words
+        << ",last_occupancy_payload_words=" << staging_.voxel.last_occupancy_payload_words
+        << ",material_palette_entries=" << staging_.voxel.material_palette_entries
+        << ",last_material_palette_entries=" << staging_.voxel.last_material_palette_entries
+        << ",emissive_entries=" << staging_.voxel.emissive_entries
+        << ",last_emissive_entries=" << staging_.voxel.last_emissive_entries
+        << ",last_snapshot_estimated_bytes=" << staging_.voxel.last_snapshot_estimated_bytes
+        << ",total_snapshot_estimated_bytes=" << staging_.voxel.total_snapshot_estimated_bytes
         << "},gbuffer={frames_planned=" << staging_.gbuffer.frames_planned
         << ",allocation_intents=" << staging_.gbuffer.allocation_intents
         << ",attachment_intents=" << staging_.gbuffer.attachment_intents
@@ -534,6 +827,16 @@ std::uint64_t Renderer::estimate_upload_staging_bytes(const UploadPacket& packet
     const auto dirty_bytes = static_cast<std::uint64_t>(packet.dirty_regions.size()) * kEstimatedDirtyRegionUploadBytes;
     const auto material_bytes = static_cast<std::uint64_t>(packet.material_updates.size()) * kEstimatedMaterialUploadBytes;
     return dirty_bytes + material_bytes;
+}
+
+std::uint64_t Renderer::estimate_section_snapshot_staging_bytes(const SectionUploadPacket& packet) const {
+    std::uint64_t bytes = static_cast<std::uint64_t>(packet.snapshots.size()) * kEstimatedSectionSnapshotMetadataBytes;
+    for (const auto& snapshot : packet.snapshots) {
+        bytes += static_cast<std::uint64_t>(snapshot.occupancy_mask_word_count) * sizeof(std::uint64_t);
+        bytes += static_cast<std::uint64_t>(snapshot.material_palette_ids.size()) * sizeof(std::int32_t);
+        bytes += static_cast<std::uint64_t>(snapshot.emissive_entries.size()) * kSectionEmissiveEntryBytes;
+    }
+    return bytes;
 }
 
 std::uint64_t Renderer::estimate_section_staging_bytes(std::uint64_t dirty_section_count) const {
@@ -619,6 +922,81 @@ void Renderer::track_upload_staging_placeholder(const UploadPacket& packet) {
                 "upload:voxel-occupancy-material-staging-intent",
                 NativeResourceIntentStage::VoxelUpload);
         resources_->track_transient_buffer(frame_index_, 0, voxel_staging_bytes, "upload:voxel-occupancy-material-staging");
+        staging_.voxel.placeholder_buffers++;
+    }
+}
+
+void Renderer::track_section_snapshot_staging_placeholder(const SectionUploadPacket& packet) {
+    std::uint64_t payload_sections = 0;
+    std::uint64_t occupied_voxels = 0;
+    std::uint64_t occupancy_words = 0;
+    std::uint64_t material_palette_entries = 0;
+    std::uint64_t emissive_entries = 0;
+    for (const auto& snapshot : packet.snapshots) {
+        if (snapshot.has_section_payload()) {
+            payload_sections++;
+        }
+        occupied_voxels += static_cast<std::uint64_t>(snapshot.occupied_voxel_count);
+        occupancy_words += static_cast<std::uint64_t>(snapshot.occupancy_mask_word_count);
+        material_palette_entries += static_cast<std::uint64_t>(snapshot.material_palette_ids.size());
+        emissive_entries += static_cast<std::uint64_t>(snapshot.emissive_entries.size());
+    }
+
+    const auto payload_snapshots = static_cast<std::uint64_t>(packet.snapshots.size());
+    const auto section_metadata_bytes = payload_snapshots * kEstimatedSectionSnapshotMetadataBytes;
+    const auto total_payload_bytes = estimate_section_snapshot_staging_bytes(packet);
+    const auto voxel_payload_bytes = total_payload_bytes - section_metadata_bytes;
+
+    staging_.section.snapshot_packets++;
+    staging_.section.advertised_snapshots += static_cast<std::uint64_t>(packet.section_snapshot_count);
+    staging_.section.payload_snapshots += payload_snapshots;
+    staging_.section.payload_sections += payload_sections;
+    staging_.section.last_snapshot_packet_generation = packet.generation;
+    staging_.section.last_snapshot_first_generation = packet.first_section_snapshot_generation;
+    staging_.section.last_snapshot_generation = packet.last_section_snapshot_generation;
+    staging_.section.last_section_generation = packet.section_generation;
+    staging_.section.last_material_generation = packet.section_material_generation;
+    staging_.section.last_occupancy_generation = packet.section_occupancy_generation;
+    staging_.section.last_emissive_generation = packet.section_emissive_generation;
+    staging_.section.last_dirty_region_generation = packet.section_dirty_region_generation;
+    staging_.section.last_occupied_voxels = occupied_voxels;
+    staging_.section.total_occupied_voxels += occupied_voxels;
+    staging_.section.last_snapshot_payload_bytes = total_payload_bytes;
+    staging_.section.total_snapshot_payload_bytes += total_payload_bytes;
+
+    staging_.voxel.snapshot_packets++;
+    staging_.voxel.payload_sections += payload_sections;
+    staging_.voxel.last_payload_sections = payload_sections;
+    staging_.voxel.occupancy_words += occupancy_words;
+    staging_.voxel.last_occupancy_payload_words = occupancy_words;
+    staging_.voxel.material_palette_entries += material_palette_entries;
+    staging_.voxel.last_material_palette_entries = material_palette_entries;
+    staging_.voxel.emissive_entries += emissive_entries;
+    staging_.voxel.last_emissive_entries = emissive_entries;
+    staging_.voxel.last_snapshot_estimated_bytes = voxel_payload_bytes;
+    staging_.voxel.total_snapshot_estimated_bytes += voxel_payload_bytes;
+
+    if (resources_ == nullptr || !frame_open_) {
+        return;
+    }
+
+    if (section_metadata_bytes != 0) {
+        resources_->track_buffer_allocation_intent(
+                frame_index_,
+                section_metadata_bytes,
+                "upload:section-snapshot-metadata-intent",
+                NativeResourceIntentStage::SectionUpload);
+        resources_->track_transient_buffer(frame_index_, 0, section_metadata_bytes, "upload:section-snapshot-metadata");
+        staging_.section.placeholder_buffers++;
+    }
+
+    if (voxel_payload_bytes != 0) {
+        resources_->track_buffer_allocation_intent(
+                frame_index_,
+                voxel_payload_bytes,
+                "upload:section-voxel-payload-intent",
+                NativeResourceIntentStage::VoxelUpload);
+        resources_->track_transient_buffer(frame_index_, 0, voxel_payload_bytes, "upload:section-voxel-payload");
         staging_.voxel.placeholder_buffers++;
     }
 }

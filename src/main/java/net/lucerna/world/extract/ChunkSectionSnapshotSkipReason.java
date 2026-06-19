@@ -1,0 +1,12 @@
+package net.lucerna.world.extract;
+
+public enum ChunkSectionSnapshotSkipReason {
+    NO_CLIENT_LEVEL,
+    NON_SECTION_SCOPED_REGION,
+    DIMENSION_MISMATCH,
+    CHUNK_UNLOADED,
+    MISSING_CHUNK,
+    SECTION_OUTSIDE_LEVEL_HEIGHT,
+    SECTION_INDEX_OUT_OF_RANGE,
+    SECTION_UNAVAILABLE
+}

@@ -1,6 +1,8 @@
 package net.lucerna.nativebridge;
 
 import net.lucerna.Lucerna;
+import net.lucerna.upload.NativeSectionSnapshotUploadPacket;
+import net.lucerna.upload.NativeStagedUploadBatch;
 import net.lucerna.upload.NativeUploadBatch;
 import net.lucerna.upload.NativeUploadPacket;
 
@@ -12,6 +14,7 @@ public final class LucernaNativeBridge {
     private boolean available;
     private boolean initialized;
     private String lastError = "Native library has not been loaded.";
+    private long lastLoggedSectionSnapshotGeneration;
 
     public synchronized boolean hasLoadAttempted() {
         return this.loadAttempted;
@@ -80,6 +83,7 @@ public final class LucernaNativeBridge {
             return false;
         }
 
+        this.lastLoggedSectionSnapshotGeneration = 0L;
         this.initialized = true;
         return true;
     }
@@ -94,6 +98,7 @@ public final class LucernaNativeBridge {
             this.available = this.loaded;
             this.lastError = "";
         }
+        this.lastLoggedSectionSnapshotGeneration = 0L;
         this.initialized = false;
     }
 
@@ -134,6 +139,70 @@ public final class LucernaNativeBridge {
                     packet.materialProperties(),
                     packet.materialFlags()
             ), true);
+        }
+    }
+
+    public synchronized void uploadSectionSnapshots(NativeStagedUploadBatch batch) {
+        if (this.isOperational() && batch != null && batch.hasStagingPayloads()) {
+            NativeSectionSnapshotUploadPacket packet = batch.toSectionSnapshotPacket();
+            if (!packet.hasPayloads()) {
+                return;
+            }
+
+            boolean accepted = this.invokeNative("uploadSectionSnapshots", () -> nativeUploadSectionSnapshots(
+                    packet.generation(),
+                    packet.sectionSnapshotCount(),
+                    packet.firstSectionSnapshotGeneration(),
+                    packet.lastSectionSnapshotGeneration(),
+                    packet.sectionGeneration(),
+                    packet.sectionMaterialGeneration(),
+                    packet.sectionOccupancyGeneration(),
+                    packet.sectionEmissiveGeneration(),
+                    packet.sectionDirtyRegionGeneration(),
+                    packet.dirtyRegionTypeIds(),
+                    packet.dirtyRegionTypeNames(),
+                    packet.dirtyRegionDimensions(),
+                    packet.dirtyRegionSectionXs(),
+                    packet.dirtyRegionSectionYs(),
+                    packet.dirtyRegionSectionZs(),
+                    packet.dirtyRegionSectionScoped(),
+                    packet.dirtyRegionGenerations(),
+                    packet.sectionDimensions(),
+                    packet.sectionXs(),
+                    packet.sectionYs(),
+                    packet.sectionZs(),
+                    packet.sectionGenerations(),
+                    packet.sectionMaterialGenerations(),
+                    packet.sectionOccupancyGenerations(),
+                    packet.sectionEmissiveGenerations(),
+                    packet.voxelCounts(),
+                    packet.occupancyBitOrderIds(),
+                    packet.occupancyBitOrderNames(),
+                    packet.occupancyMaskWordOffsets(),
+                    packet.occupancyMaskWordCounts(),
+                    packet.occupancyMaskBitCounts(),
+                    packet.occupancyMaskGenerations(),
+                    packet.materialPaletteOffsets(),
+                    packet.materialPaletteGenerations(),
+                    packet.materialPalettePayloadCounts(),
+                    packet.materialPaletteIds(),
+                    packet.emissivePayloadCounts(),
+                    packet.emissiveVoxelIndices(),
+                    packet.emissiveMaterialIds(),
+                    packet.emissiveBlockLightLevels(),
+                    packet.emissiveEntryGenerations()
+            ), true);
+            if (accepted && packet.lastSectionSnapshotGeneration() != this.lastLoggedSectionSnapshotGeneration) {
+                this.lastLoggedSectionSnapshotGeneration = packet.lastSectionSnapshotGeneration();
+                Lucerna.LOGGER.info(
+                        "Lucerna native section upload accepted: sections={} sectionGeneration={} dirtyRegionGeneration={} palettePayloads={} emissivePayloads={}.",
+                        packet.sectionSnapshotCount(),
+                        packet.sectionGeneration(),
+                        packet.sectionDirtyRegionGeneration(),
+                        packet.materialPalettePayloadCount(),
+                        packet.emissivePayloadCount()
+                );
+            }
         }
     }
 
@@ -288,6 +357,50 @@ public final class LucernaNativeBridge {
             int[] materialAlbedoTextureIndices,
             float[] materialProperties,
             int[] materialFlags
+    );
+
+    private static native boolean nativeUploadSectionSnapshots(
+            long generation,
+            int sectionSnapshotCount,
+            long firstSectionSnapshotGeneration,
+            long lastSectionSnapshotGeneration,
+            long sectionGeneration,
+            long sectionMaterialGeneration,
+            long sectionOccupancyGeneration,
+            long sectionEmissiveGeneration,
+            long sectionDirtyRegionGeneration,
+            int[] dirtyRegionTypeIds,
+            String[] dirtyRegionTypeNames,
+            String[] dirtyRegionDimensions,
+            int[] dirtyRegionSectionXs,
+            int[] dirtyRegionSectionYs,
+            int[] dirtyRegionSectionZs,
+            int[] dirtyRegionSectionScoped,
+            long[] dirtyRegionGenerations,
+            String[] sectionDimensions,
+            int[] sectionXs,
+            int[] sectionYs,
+            int[] sectionZs,
+            long[] sectionGenerations,
+            long[] materialGenerations,
+            long[] occupancyGenerations,
+            long[] sectionEmissiveGenerations,
+            int[] voxelCounts,
+            int[] occupancyBitOrderIds,
+            String[] occupancyBitOrderNames,
+            int[] occupancyMaskWordOffsets,
+            int[] occupancyMaskWordCounts,
+            int[] occupancyMaskBitCounts,
+            long[] occupancyMaskGenerations,
+            int[] materialPaletteOffsets,
+            long[] materialPaletteGenerations,
+            int[] materialPaletteCounts,
+            int[] materialPaletteIds,
+            int[] emissiveEntryCounts,
+            int[] emissiveVoxelIndices,
+            int[] emissiveMaterialIds,
+            int[] emissiveBlockLightLevels,
+            long[] emissiveEntryGenerations
     );
 
     private static native boolean nativeRenderLighting();

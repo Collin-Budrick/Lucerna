@@ -28,6 +28,10 @@ public final class LucernaDebugOverlayLines {
                 + " worldGen=" + snapshot.worldGeneration()
                 + " | Upload: worldGen=" + snapshot.uploadWorldGeneration()
                 + " materialGen=" + snapshot.uploadMaterialGeneration()));
+        lines.add(Component.literal("Staging: sections=" + snapshot.stagedSectionSnapshotCount()
+                + " sectionGen=" + snapshot.uploadSectionGeneration()
+                + " | G-buffer: count=" + snapshot.stagedGBufferStagingCount()
+                + " gen=" + snapshot.uploadGBufferStagingGeneration()));
         lines.add(Component.literal("Frame: stage=" + snapshot.frameStage()
                 + " context=" + snapshot.frameLifecycle().contextStatus()
                 + " source=" + snapshot.frameContextAcquisition().source()));
@@ -77,6 +81,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Frame context message: " + snapshot.frameLifecycle().contextMessage()));
         lines.add(Component.literal("Frame constants: " + snapshot.frameConstants().stateLabel()
                 + " | " + snapshot.frameConstants().message()));
+        lines.add(Component.literal("Native status: " + snapshot.nativeBridge().nativeStatus()));
         lines.add(Component.literal("Iris: " + snapshot.irisLabel() + " (" + snapshot.iris().shaderPackState() + ")"));
     }
 
@@ -86,11 +91,14 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Last uploaded world generation: " + snapshot.uploadWorldGeneration()));
         lines.add(Component.literal("Pending world upload lag: " + snapshot.pendingWorldUploadLag()));
         lines.add(Component.literal("Last uploaded material generation: " + snapshot.uploadMaterialGeneration()));
+        lines.add(Component.literal("Section snapshots: " + snapshot.sectionSnapshotStagingLabel()));
+        lines.add(Component.literal("G-buffer staging: " + snapshot.gBufferStagingLabel()));
     }
 
     private static void addMaterialLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
         lines.add(Component.literal("Material id overlay awaiting extraction data."));
         lines.add(Component.literal("Last uploaded material generation: " + snapshot.uploadMaterialGeneration()));
+        lines.add(Component.literal("Section material generation: " + snapshot.uploadSectionMaterialGeneration()));
         lines.add(Component.literal("Combined upload generation: " + snapshot.uploadGeneration()));
     }
 
@@ -130,13 +138,18 @@ public final class LucernaDebugOverlayLines {
                 + " available=" + yesNo(snapshot.nativeBridge().available())
                 + " initialized=" + yesNo(snapshot.nativeBridge().initialized())));
         lines.add(Component.literal("Native status: " + snapshot.nativeBridge().nativeStatus()));
-        lines.add(Component.literal("Native last error: " + snapshot.nativeBridge().diagnosticMessage()));
+        lines.add(Component.literal("Native diagnostic: " + snapshot.nativeBridge().diagnosticMessage()));
         lines.add(Component.literal("Frame context: " + snapshot.frameLifecycle().contextStatus()
                 + " | " + snapshot.frameLifecycle().contextMessage()));
         lines.add(Component.literal("Upload generation: " + snapshot.uploadGeneration()));
         lines.add(Component.literal("Upload world=" + snapshot.uploadWorldGeneration()
                 + " material=" + snapshot.uploadMaterialGeneration()
                 + " pendingDirty=" + snapshot.pendingDirtyRegionCount()));
+        lines.add(Component.literal("Upload generations: " + snapshot.uploadGenerationLabel()));
+        lines.add(Component.literal("Section generations: " + snapshot.sectionGenerationLabel()));
+        lines.add(Component.literal("Section snapshots: " + snapshot.sectionSnapshotStagingLabel()));
+        lines.add(Component.literal("G-buffer staging: " + snapshot.gBufferStagingLabel()));
+        lines.add(Component.literal("Staging payloads: " + snapshot.stagingPayloadLabel()));
     }
 
     private static String formatMillis(double millis) {

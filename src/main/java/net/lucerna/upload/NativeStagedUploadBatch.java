@@ -55,4 +55,8 @@ public record NativeStagedUploadBatch(
     public NativeUploadPacket toWorldMaterialPacket() {
         return this.worldAndMaterialBatch.toPacket();
     }
+
+    public NativeSectionSnapshotUploadPacket toSectionSnapshotPacket() {
+        return NativeSectionSnapshotUploadPacket.from(this);
+    }
 }

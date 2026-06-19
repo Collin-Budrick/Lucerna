@@ -193,6 +193,17 @@ void require_payload_not_larger_than_count(std::size_t payload_count, jint adver
     }
 }
 
+std::size_t sum_counts(const std::vector<std::int32_t>& counts, const char* name) {
+    std::size_t total = 0;
+    for (const auto count : counts) {
+        if (count < 0) {
+            throw std::invalid_argument(std::string(name) + " entries must be non-negative");
+        }
+        total += static_cast<std::size_t>(count);
+    }
+    return total;
+}
+
 lucerna::UploadPacket make_upload_packet(
         JNIEnv* env,
         jlong generation,
@@ -292,6 +303,204 @@ lucerna::UploadPacket make_upload_packet(
             material_property_values[property_offset + 5],
             material_flag_values[index]
         });
+    }
+
+    return packet;
+}
+
+lucerna::SectionUploadPacket make_section_upload_packet(
+        JNIEnv* env,
+        jlong generation,
+        jint section_snapshot_count,
+        jlong first_section_snapshot_generation,
+        jlong last_section_snapshot_generation,
+        jlong section_generation,
+        jlong section_material_generation,
+        jlong section_occupancy_generation,
+        jlong section_emissive_generation,
+        jlong section_dirty_region_generation,
+        jintArray dirty_region_type_ids,
+        jobjectArray dirty_region_type_names,
+        jobjectArray dirty_region_dimensions,
+        jintArray dirty_region_section_xs,
+        jintArray dirty_region_section_ys,
+        jintArray dirty_region_section_zs,
+        jintArray dirty_region_section_scoped,
+        jlongArray dirty_region_generations,
+        jobjectArray section_dimensions,
+        jintArray section_xs,
+        jintArray section_ys,
+        jintArray section_zs,
+        jlongArray section_generations,
+        jlongArray material_generations,
+        jlongArray occupancy_generations,
+        jlongArray section_emissive_generations,
+        jintArray voxel_counts,
+        jintArray occupancy_bit_order_ids,
+        jobjectArray occupancy_bit_order_names,
+        jintArray occupancy_mask_word_offsets,
+        jintArray occupancy_mask_word_counts,
+        jintArray occupancy_mask_bit_counts,
+        jlongArray occupancy_mask_generations,
+        jintArray material_palette_offsets,
+        jlongArray material_palette_generations,
+        jintArray material_palette_counts,
+        jintArray material_palette_ids,
+        jintArray emissive_entry_counts,
+        jintArray emissive_voxel_indices,
+        jintArray emissive_material_ids,
+        jintArray emissive_block_light_levels,
+        jlongArray emissive_entry_generations) {
+    constexpr std::size_t voxel_count_stride = 5;
+
+    auto section_dimension_values = read_string_array(env, section_dimensions, "sectionDimensions");
+    const auto payload_count = section_dimension_values.size();
+    require_payload_not_larger_than_count(payload_count, section_snapshot_count, "section snapshot");
+
+    auto dirty_type_ids = read_int_array(env, dirty_region_type_ids, "sectionDirtyRegionTypeIds");
+    auto dirty_type_names = read_string_array(env, dirty_region_type_names, "sectionDirtyRegionTypeNames");
+    auto dirty_dimensions = read_string_array(env, dirty_region_dimensions, "sectionDirtyRegionDimensions");
+    auto dirty_section_xs = read_int_array(env, dirty_region_section_xs, "sectionDirtyRegionSectionXs");
+    auto dirty_section_ys = read_int_array(env, dirty_region_section_ys, "sectionDirtyRegionSectionYs");
+    auto dirty_section_zs = read_int_array(env, dirty_region_section_zs, "sectionDirtyRegionSectionZs");
+    auto dirty_section_scoped = read_int_array(env, dirty_region_section_scoped, "sectionDirtyRegionSectionScoped");
+    auto dirty_generations = read_long_array(env, dirty_region_generations, "sectionDirtyRegionGenerations");
+
+    require_length(payload_count, dirty_type_ids.size(), "sectionDirtyRegionTypeIds");
+    require_length(payload_count, dirty_type_names.size(), "sectionDirtyRegionTypeNames");
+    require_length(payload_count, dirty_dimensions.size(), "sectionDirtyRegionDimensions");
+    require_length(payload_count, dirty_section_xs.size(), "sectionDirtyRegionSectionXs");
+    require_length(payload_count, dirty_section_ys.size(), "sectionDirtyRegionSectionYs");
+    require_length(payload_count, dirty_section_zs.size(), "sectionDirtyRegionSectionZs");
+    require_length(payload_count, dirty_section_scoped.size(), "sectionDirtyRegionSectionScoped");
+    require_length(payload_count, dirty_generations.size(), "sectionDirtyRegionGenerations");
+
+    auto section_x_values = read_int_array(env, section_xs, "sectionXs");
+    auto section_y_values = read_int_array(env, section_ys, "sectionYs");
+    auto section_z_values = read_int_array(env, section_zs, "sectionZs");
+    auto section_generation_values = read_long_array(env, section_generations, "sectionGenerations");
+    auto material_generation_values = read_long_array(env, material_generations, "sectionMaterialGenerations");
+    auto occupancy_generation_values = read_long_array(env, occupancy_generations, "sectionOccupancyGenerations");
+    auto emissive_generation_values = read_long_array(env, section_emissive_generations, "sectionEmissiveGenerations");
+    auto voxel_count_values = read_int_array(env, voxel_counts, "sectionVoxelCounts");
+    auto occupancy_bit_order_id_values = read_int_array(env, occupancy_bit_order_ids, "occupancyBitOrderIds");
+    auto occupancy_bit_order_name_values = read_string_array(env, occupancy_bit_order_names, "occupancyBitOrderNames");
+    auto occupancy_mask_word_offset_values = read_int_array(env, occupancy_mask_word_offsets, "occupancyMaskWordOffsets");
+    auto occupancy_mask_word_count_values = read_int_array(env, occupancy_mask_word_counts, "occupancyMaskWordCounts");
+    auto occupancy_mask_bit_count_values = read_int_array(env, occupancy_mask_bit_counts, "occupancyMaskBitCounts");
+    auto occupancy_mask_generation_values = read_long_array(env, occupancy_mask_generations, "occupancyMaskGenerations");
+    auto material_palette_offset_values = read_int_array(env, material_palette_offsets, "materialPaletteOffsets");
+    auto material_palette_generation_values = read_long_array(env, material_palette_generations, "materialPaletteGenerations");
+    auto material_palette_count_values = read_int_array(env, material_palette_counts, "materialPaletteCounts");
+    auto material_palette_id_values = read_int_array(env, material_palette_ids, "materialPaletteIds");
+    auto emissive_entry_count_values = read_int_array(env, emissive_entry_counts, "emissiveEntryCounts");
+    auto emissive_voxel_index_values = read_int_array(env, emissive_voxel_indices, "emissiveVoxelIndices");
+    auto emissive_material_id_values = read_int_array(env, emissive_material_ids, "emissiveMaterialIds");
+    auto emissive_block_light_level_values = read_int_array(env, emissive_block_light_levels, "emissiveBlockLightLevels");
+    auto emissive_entry_generation_values = read_long_array(env, emissive_entry_generations, "emissiveEntryGenerations");
+
+    require_length(payload_count, section_x_values.size(), "sectionXs");
+    require_length(payload_count, section_y_values.size(), "sectionYs");
+    require_length(payload_count, section_z_values.size(), "sectionZs");
+    require_length(payload_count, section_generation_values.size(), "sectionGenerations");
+    require_length(payload_count, material_generation_values.size(), "sectionMaterialGenerations");
+    require_length(payload_count, occupancy_generation_values.size(), "sectionOccupancyGenerations");
+    require_length(payload_count, emissive_generation_values.size(), "sectionEmissiveGenerations");
+    require_length(payload_count * voxel_count_stride, voxel_count_values.size(), "sectionVoxelCounts");
+    require_length(payload_count, occupancy_bit_order_id_values.size(), "occupancyBitOrderIds");
+    require_length(payload_count, occupancy_bit_order_name_values.size(), "occupancyBitOrderNames");
+    require_length(payload_count, occupancy_mask_word_offset_values.size(), "occupancyMaskWordOffsets");
+    require_length(payload_count, occupancy_mask_word_count_values.size(), "occupancyMaskWordCounts");
+    require_length(payload_count, occupancy_mask_bit_count_values.size(), "occupancyMaskBitCounts");
+    require_length(payload_count, occupancy_mask_generation_values.size(), "occupancyMaskGenerations");
+    require_length(payload_count, material_palette_offset_values.size(), "materialPaletteOffsets");
+    require_length(payload_count, material_palette_generation_values.size(), "materialPaletteGenerations");
+    require_length(payload_count, material_palette_count_values.size(), "materialPaletteCounts");
+    require_length(payload_count, emissive_entry_count_values.size(), "emissiveEntryCounts");
+
+    const auto material_palette_payload_count = sum_counts(material_palette_count_values, "materialPaletteCounts");
+    require_length(material_palette_payload_count, material_palette_id_values.size(), "materialPaletteIds");
+
+    const auto emissive_payload_count = sum_counts(emissive_entry_count_values, "emissiveEntryCounts");
+    require_length(emissive_payload_count, emissive_voxel_index_values.size(), "emissiveVoxelIndices");
+    require_length(emissive_payload_count, emissive_material_id_values.size(), "emissiveMaterialIds");
+    require_length(emissive_payload_count, emissive_block_light_level_values.size(), "emissiveBlockLightLevels");
+    require_length(emissive_payload_count, emissive_entry_generation_values.size(), "emissiveEntryGenerations");
+
+    lucerna::SectionUploadPacket packet{
+        to_non_negative_uint64(generation, "generation"),
+        section_snapshot_count,
+        to_non_negative_uint64(first_section_snapshot_generation, "firstSectionSnapshotGeneration"),
+        to_non_negative_uint64(last_section_snapshot_generation, "lastSectionSnapshotGeneration"),
+        to_non_negative_uint64(section_generation, "sectionGeneration"),
+        to_non_negative_uint64(section_material_generation, "sectionMaterialGeneration"),
+        to_non_negative_uint64(section_occupancy_generation, "sectionOccupancyGeneration"),
+        to_non_negative_uint64(section_emissive_generation, "sectionEmissiveGeneration"),
+        to_non_negative_uint64(section_dirty_region_generation, "sectionDirtyRegionGeneration"),
+        {}
+    };
+
+    packet.snapshots.reserve(payload_count);
+    std::size_t material_cursor = 0;
+    std::size_t emissive_cursor = 0;
+    for (std::size_t index = 0; index < payload_count; index++) {
+        lucerna::SectionSnapshotUpload snapshot;
+        snapshot.dirty_region = lucerna::SectionDirtyRegionHandoff{
+            dirty_type_ids[index],
+            std::move(dirty_type_names[index]),
+            std::move(dirty_dimensions[index]),
+            dirty_section_xs[index],
+            dirty_section_ys[index],
+            dirty_section_zs[index],
+            dirty_section_scoped[index] != 0,
+            dirty_generations[index]
+        };
+        snapshot.dimension = std::move(section_dimension_values[index]);
+        snapshot.section_x = section_x_values[index];
+        snapshot.section_y = section_y_values[index];
+        snapshot.section_z = section_z_values[index];
+        snapshot.section_generation = section_generation_values[index];
+        snapshot.material_generation = material_generation_values[index];
+        snapshot.occupancy_generation = occupancy_generation_values[index];
+        snapshot.emissive_generation = emissive_generation_values[index];
+
+        const auto voxel_count_offset = index * voxel_count_stride;
+        snapshot.occupied_voxel_count = voxel_count_values[voxel_count_offset];
+        snapshot.opaque_voxel_count = voxel_count_values[voxel_count_offset + 1];
+        snapshot.translucent_voxel_count = voxel_count_values[voxel_count_offset + 2];
+        snapshot.fluid_voxel_count = voxel_count_values[voxel_count_offset + 3];
+        snapshot.emissive_voxel_count = voxel_count_values[voxel_count_offset + 4];
+
+        snapshot.occupancy_bit_order_id = occupancy_bit_order_id_values[index];
+        snapshot.occupancy_bit_order_name = std::move(occupancy_bit_order_name_values[index]);
+        snapshot.occupancy_mask_word_offset = occupancy_mask_word_offset_values[index];
+        snapshot.occupancy_mask_word_count = occupancy_mask_word_count_values[index];
+        snapshot.occupancy_mask_bit_count = occupancy_mask_bit_count_values[index];
+        snapshot.occupancy_mask_generation = occupancy_mask_generation_values[index];
+        snapshot.material_palette_offset = material_palette_offset_values[index];
+        snapshot.material_palette_generation = material_palette_generation_values[index];
+
+        const auto material_count = static_cast<std::size_t>(material_palette_count_values[index]);
+        snapshot.material_palette_ids.reserve(material_count);
+        for (std::size_t material_index = 0; material_index < material_count; material_index++) {
+            snapshot.material_palette_ids.push_back(material_palette_id_values[material_cursor + material_index]);
+        }
+        material_cursor += material_count;
+
+        const auto emissive_count = static_cast<std::size_t>(emissive_entry_count_values[index]);
+        snapshot.emissive_entries.reserve(emissive_count);
+        for (std::size_t emissive_index = 0; emissive_index < emissive_count; emissive_index++) {
+            const auto packed_index = emissive_cursor + emissive_index;
+            snapshot.emissive_entries.push_back(lucerna::SectionEmissiveEntryUpload{
+                emissive_voxel_index_values[packed_index],
+                emissive_material_id_values[packed_index],
+                emissive_block_light_level_values[packed_index],
+                emissive_entry_generation_values[packed_index]
+            });
+        }
+        emissive_cursor += emissive_count;
+
+        packet.snapshots.push_back(std::move(snapshot));
     }
 
     return packet;
@@ -405,6 +614,100 @@ Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeUploadWorldDeltas(
                 material_albedo_texture_indices,
                 material_properties,
                 material_flags
+        ));
+    });
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeUploadSectionSnapshots(
+        JNIEnv* env,
+        jclass,
+        jlong generation,
+        jint section_snapshot_count,
+        jlong first_section_snapshot_generation,
+        jlong last_section_snapshot_generation,
+        jlong section_generation,
+        jlong section_material_generation,
+        jlong section_occupancy_generation,
+        jlong section_emissive_generation,
+        jlong section_dirty_region_generation,
+        jintArray dirty_region_type_ids,
+        jobjectArray dirty_region_type_names,
+        jobjectArray dirty_region_dimensions,
+        jintArray dirty_region_section_xs,
+        jintArray dirty_region_section_ys,
+        jintArray dirty_region_section_zs,
+        jintArray dirty_region_section_scoped,
+        jlongArray dirty_region_generations,
+        jobjectArray section_dimensions,
+        jintArray section_xs,
+        jintArray section_ys,
+        jintArray section_zs,
+        jlongArray section_generations,
+        jlongArray material_generations,
+        jlongArray occupancy_generations,
+        jlongArray section_emissive_generations,
+        jintArray voxel_counts,
+        jintArray occupancy_bit_order_ids,
+        jobjectArray occupancy_bit_order_names,
+        jintArray occupancy_mask_word_offsets,
+        jintArray occupancy_mask_word_counts,
+        jintArray occupancy_mask_bit_counts,
+        jlongArray occupancy_mask_generations,
+        jintArray material_palette_offsets,
+        jlongArray material_palette_generations,
+        jintArray material_palette_counts,
+        jintArray material_palette_ids,
+        jintArray emissive_entry_counts,
+        jintArray emissive_voxel_indices,
+        jintArray emissive_material_ids,
+        jintArray emissive_block_light_levels,
+        jlongArray emissive_entry_generations) {
+    std::lock_guard lock(g_renderer_mutex);
+    return call_initialized_renderer("uploadSectionSnapshots", [=](lucerna::Renderer& renderer) {
+        renderer.upload_section_snapshots(make_section_upload_packet(
+                env,
+                generation,
+                section_snapshot_count,
+                first_section_snapshot_generation,
+                last_section_snapshot_generation,
+                section_generation,
+                section_material_generation,
+                section_occupancy_generation,
+                section_emissive_generation,
+                section_dirty_region_generation,
+                dirty_region_type_ids,
+                dirty_region_type_names,
+                dirty_region_dimensions,
+                dirty_region_section_xs,
+                dirty_region_section_ys,
+                dirty_region_section_zs,
+                dirty_region_section_scoped,
+                dirty_region_generations,
+                section_dimensions,
+                section_xs,
+                section_ys,
+                section_zs,
+                section_generations,
+                material_generations,
+                occupancy_generations,
+                section_emissive_generations,
+                voxel_counts,
+                occupancy_bit_order_ids,
+                occupancy_bit_order_names,
+                occupancy_mask_word_offsets,
+                occupancy_mask_word_counts,
+                occupancy_mask_bit_counts,
+                occupancy_mask_generations,
+                material_palette_offsets,
+                material_palette_generations,
+                material_palette_counts,
+                material_palette_ids,
+                emissive_entry_counts,
+                emissive_voxel_indices,
+                emissive_material_ids,
+                emissive_block_light_levels,
+                emissive_entry_generations
         ));
     });
 }

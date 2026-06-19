@@ -39,6 +39,54 @@ struct MaterialUpload {
     std::int32_t flags = 0;
 };
 
+struct SectionDirtyRegionHandoff {
+    std::int32_t type_id = 0;
+    std::string type_name;
+    std::string dimension;
+    std::int32_t section_x = 0;
+    std::int32_t section_y = 0;
+    std::int32_t section_z = 0;
+    bool section_scoped = false;
+    std::uint64_t generation = 0;
+};
+
+struct SectionEmissiveEntryUpload {
+    std::int32_t voxel_index = 0;
+    std::int32_t material_id = 0;
+    std::int32_t block_light_level = 0;
+    std::uint64_t generation = 0;
+};
+
+struct SectionSnapshotUpload {
+    SectionDirtyRegionHandoff dirty_region;
+    std::string dimension;
+    std::int32_t section_x = 0;
+    std::int32_t section_y = 0;
+    std::int32_t section_z = 0;
+    std::uint64_t section_generation = 0;
+    std::uint64_t material_generation = 0;
+    std::uint64_t occupancy_generation = 0;
+    std::uint64_t emissive_generation = 0;
+    std::int32_t occupied_voxel_count = 0;
+    std::int32_t opaque_voxel_count = 0;
+    std::int32_t translucent_voxel_count = 0;
+    std::int32_t fluid_voxel_count = 0;
+    std::int32_t emissive_voxel_count = 0;
+    std::int32_t occupancy_bit_order_id = 0;
+    std::string occupancy_bit_order_name;
+    std::int32_t occupancy_mask_word_offset = 0;
+    std::int32_t occupancy_mask_word_count = 0;
+    std::int32_t occupancy_mask_bit_count = 0;
+    std::uint64_t occupancy_mask_generation = 0;
+    std::int32_t material_palette_offset = 0;
+    std::uint64_t material_palette_generation = 0;
+    std::vector<std::int32_t> material_palette_ids;
+    std::vector<SectionEmissiveEntryUpload> emissive_entries;
+
+    [[nodiscard]] std::uint64_t combined_generation() const;
+    [[nodiscard]] bool has_section_payload() const;
+};
+
 struct UploadPacket {
     std::uint64_t generation = 0;
     std::int32_t dirty_region_count = 0;
@@ -48,6 +96,19 @@ struct UploadPacket {
     std::uint64_t material_generation = 0;
     std::vector<DirtyRegionUpload> dirty_regions;
     std::vector<MaterialUpload> material_updates;
+};
+
+struct SectionUploadPacket {
+    std::uint64_t generation = 0;
+    std::int32_t section_snapshot_count = 0;
+    std::uint64_t first_section_snapshot_generation = 0;
+    std::uint64_t last_section_snapshot_generation = 0;
+    std::uint64_t section_generation = 0;
+    std::uint64_t section_material_generation = 0;
+    std::uint64_t section_occupancy_generation = 0;
+    std::uint64_t section_emissive_generation = 0;
+    std::uint64_t section_dirty_region_generation = 0;
+    std::vector<SectionSnapshotUpload> snapshots;
 };
 
 struct BorrowedVulkanContext;
@@ -99,6 +160,22 @@ struct NativeSectionStagingTelemetry {
     std::uint64_t last_estimated_bytes = 0;
     std::uint64_t total_estimated_bytes = 0;
     std::uint64_t placeholder_buffers = 0;
+    std::uint64_t snapshot_packets = 0;
+    std::uint64_t advertised_snapshots = 0;
+    std::uint64_t payload_snapshots = 0;
+    std::uint64_t payload_sections = 0;
+    std::uint64_t last_snapshot_packet_generation = 0;
+    std::uint64_t last_snapshot_first_generation = 0;
+    std::uint64_t last_snapshot_generation = 0;
+    std::uint64_t last_section_generation = 0;
+    std::uint64_t last_material_generation = 0;
+    std::uint64_t last_occupancy_generation = 0;
+    std::uint64_t last_emissive_generation = 0;
+    std::uint64_t last_dirty_region_generation = 0;
+    std::uint64_t last_occupied_voxels = 0;
+    std::uint64_t total_occupied_voxels = 0;
+    std::uint64_t last_snapshot_payload_bytes = 0;
+    std::uint64_t total_snapshot_payload_bytes = 0;
 };
 
 struct NativeVoxelStagingTelemetry {
@@ -111,6 +188,17 @@ struct NativeVoxelStagingTelemetry {
     std::uint64_t last_estimated_bytes = 0;
     std::uint64_t total_estimated_bytes = 0;
     std::uint64_t placeholder_buffers = 0;
+    std::uint64_t snapshot_packets = 0;
+    std::uint64_t payload_sections = 0;
+    std::uint64_t last_payload_sections = 0;
+    std::uint64_t occupancy_words = 0;
+    std::uint64_t last_occupancy_payload_words = 0;
+    std::uint64_t material_palette_entries = 0;
+    std::uint64_t last_material_palette_entries = 0;
+    std::uint64_t emissive_entries = 0;
+    std::uint64_t last_emissive_entries = 0;
+    std::uint64_t last_snapshot_estimated_bytes = 0;
+    std::uint64_t total_snapshot_estimated_bytes = 0;
 };
 
 struct NativeGBufferStagingTelemetry {
@@ -144,6 +232,7 @@ public:
     void resize(std::int32_t width, std::int32_t height);
     void begin_frame(FrameInfo info);
     void upload_world_deltas(UploadPacket packet);
+    void upload_section_snapshots(SectionUploadPacket packet);
     void render_lighting();
     void end_frame();
     void adopt_borrowed_context(BorrowedVulkanContext context);
@@ -158,10 +247,12 @@ private:
     void clear_error();
     void set_error(std::string error);
     [[nodiscard]] std::uint64_t estimate_upload_staging_bytes(const UploadPacket& packet) const;
+    [[nodiscard]] std::uint64_t estimate_section_snapshot_staging_bytes(const SectionUploadPacket& packet) const;
     [[nodiscard]] std::uint64_t estimate_section_staging_bytes(std::uint64_t dirty_section_count) const;
     [[nodiscard]] std::uint64_t estimate_voxel_staging_bytes(std::uint64_t dirty_section_count) const;
     [[nodiscard]] std::uint64_t estimate_gbuffer_attachment_bytes(std::int32_t width, std::int32_t height, std::uint32_t bytes_per_pixel) const;
     void track_upload_staging_placeholder(const UploadPacket& packet);
+    void track_section_snapshot_staging_placeholder(const SectionUploadPacket& packet);
     void track_gbuffer_placeholder_intent();
     [[nodiscard]] std::uint64_t track_noop_lighting_placeholder();
     [[nodiscard]] std::uint64_t track_flat_composite_placeholder();
@@ -190,13 +281,16 @@ private:
     std::int32_t height_ = 0;
     std::uint64_t frame_index_ = 0;
     UploadPacket last_upload_packet_;
+    SectionUploadPacket last_section_upload_packet_;
     float last_tick_delta_ = 0.0F;
     std::uint64_t resize_count_ = 0;
     std::uint64_t begin_frame_count_ = 0;
     std::uint64_t end_frame_count_ = 0;
     std::uint64_t upload_packet_count_ = 0;
+    std::uint64_t section_upload_packet_count_ = 0;
     std::uint64_t upload_dirty_payload_total_ = 0;
     std::uint64_t upload_material_payload_total_ = 0;
+    std::uint64_t section_snapshot_payload_total_ = 0;
     std::uint64_t lighting_pass_count_ = 0;
     std::uint64_t context_adopt_count_ = 0;
     std::uint64_t context_release_count_ = 0;

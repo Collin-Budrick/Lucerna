@@ -50,7 +50,7 @@ public record LucernaStatusSnapshot(
             dirtyRegions = new DirtyRegionTelemetryStatus(0L, 0);
         }
         if (uploads == null) {
-            uploads = new UploadGenerationTelemetryStatus(0L, 0L, 0L);
+            uploads = UploadGenerationTelemetryStatus.empty();
         }
         if (frameLifecycle == null) {
             frameLifecycle = emptyFrameLifecycle();
@@ -174,6 +174,62 @@ public record LucernaStatusSnapshot(
         return this.uploads.lastMaterialGeneration();
     }
 
+    public long uploadSectionGeneration() {
+        return this.uploads.lastSectionGeneration();
+    }
+
+    public long uploadSectionMaterialGeneration() {
+        return this.uploads.lastSectionMaterialGeneration();
+    }
+
+    public long uploadSectionOccupancyGeneration() {
+        return this.uploads.lastSectionOccupancyGeneration();
+    }
+
+    public long uploadSectionEmissiveGeneration() {
+        return this.uploads.lastSectionEmissiveGeneration();
+    }
+
+    public long uploadSectionDirtyRegionGeneration() {
+        return this.uploads.lastSectionDirtyRegionGeneration();
+    }
+
+    public long uploadGBufferStagingGeneration() {
+        return this.uploads.lastGBufferStagingGeneration();
+    }
+
+    public long uploadStagingGeneration() {
+        return this.uploads.stagingGeneration();
+    }
+
+    public int stagedSectionSnapshotCount() {
+        return this.uploads.stagedSectionSnapshotCount();
+    }
+
+    public int stagedGBufferStagingCount() {
+        return this.uploads.stagedGBufferStagingCount();
+    }
+
+    public String uploadGenerationLabel() {
+        return this.uploads.compactGenerationLabel();
+    }
+
+    public String sectionGenerationLabel() {
+        return this.uploads.compactSectionGenerationLabel();
+    }
+
+    public String sectionSnapshotStagingLabel() {
+        return this.uploads.compactSectionSnapshotLabel();
+    }
+
+    public String gBufferStagingLabel() {
+        return this.uploads.compactGBufferStagingLabel();
+    }
+
+    public String stagingPayloadLabel() {
+        return this.uploads.compactStagingPayloadLabel();
+    }
+
     public long pendingWorldUploadLag() {
         return this.dirtyRegions.pendingUploadLag(this.uploads);
     }
@@ -223,7 +279,7 @@ public record LucernaStatusSnapshot(
     }
 
     public String compactStatusLine() {
-        return "Lucerna renderer=%s backend=%s native=%s iris=%s context=%s frameStage=%s constants=%s dirty=%d worldGen=%d uploadWorldGen=%d uploadMatGen=%d cpuScopes=%d gpuScopes=%d"
+        return "Lucerna renderer=%s backend=%s native=%s iris=%s context=%s frameStage=%s constants=%s dirty=%d worldGen=%d uploadWorldGen=%d uploadMatGen=%d sectionGen=%d gbufferGen=%d cpuScopes=%d gpuScopes=%d"
                 .formatted(
                         this.rendererStateLabel(),
                         this.backend.kind().name(),
@@ -236,6 +292,8 @@ public record LucernaStatusSnapshot(
                         this.worldGeneration(),
                         this.uploadWorldGeneration(),
                         this.uploadMaterialGeneration(),
+                        this.uploadSectionGeneration(),
+                        this.uploadGBufferStagingGeneration(),
                         this.cpuScopeDurationsMillis().size(),
                         this.gpuScopeDurationsMillis().size()
                 );
@@ -260,6 +318,7 @@ public record LucernaStatusSnapshot(
         fields.put("native.state", this.nativeBridge.stateLabel());
         fields.put("native.status", this.nativeBridge.nativeStatus());
         fields.put("native.lastError", this.nativeBridge.lastError());
+        fields.put("native.diagnostic", this.nativeBridge.diagnosticMessage());
         fields.put("iris.statusAvailable", Boolean.toString(this.iris.statusAvailable()));
         fields.put("iris.installed", Boolean.toString(this.iris.installed()));
         fields.put("iris.disableAttempted", Boolean.toString(this.iris.disableAttempted()));
@@ -272,6 +331,18 @@ public record LucernaStatusSnapshot(
         fields.put("upload.lastGeneration", Long.toString(this.uploadGeneration()));
         fields.put("upload.lastWorldGeneration", Long.toString(this.uploadWorldGeneration()));
         fields.put("upload.lastMaterialGeneration", Long.toString(this.uploadMaterialGeneration()));
+        fields.put("upload.lastSectionGeneration", Long.toString(this.uploadSectionGeneration()));
+        fields.put("upload.lastSectionMaterialGeneration", Long.toString(this.uploadSectionMaterialGeneration()));
+        fields.put("upload.lastSectionOccupancyGeneration", Long.toString(this.uploadSectionOccupancyGeneration()));
+        fields.put("upload.lastSectionEmissiveGeneration", Long.toString(this.uploadSectionEmissiveGeneration()));
+        fields.put("upload.lastSectionDirtyRegionGeneration", Long.toString(this.uploadSectionDirtyRegionGeneration()));
+        fields.put("upload.lastGBufferStagingGeneration", Long.toString(this.uploadGBufferStagingGeneration()));
+        fields.put("upload.stagingGeneration", Long.toString(this.uploadStagingGeneration()));
+        fields.put("upload.generations", this.uploadGenerationLabel());
+        fields.put("upload.sectionGenerations", this.sectionGenerationLabel());
+        fields.put("upload.sectionSnapshots", this.sectionSnapshotStagingLabel());
+        fields.put("upload.gbufferStaging", this.gBufferStagingLabel());
+        fields.put("upload.stagingPayloads", this.stagingPayloadLabel());
         fields.put("frame.index", Long.toString(this.frameLifecycle.frameIndex()));
         fields.put("frame.stage", this.frameLifecycle.stage().name());
         fields.put("frame.passIntent", this.frameLifecycle.passIntent().name());

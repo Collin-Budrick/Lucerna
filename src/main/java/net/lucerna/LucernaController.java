@@ -18,10 +18,16 @@ import net.lucerna.render.frame.FrameRenderFlags;
 import net.lucerna.render.frame.LucernaFrameConstantsCollector;
 import net.lucerna.render.frame.LucernaFrameConstants;
 import net.lucerna.telemetry.LucernaTelemetry;
+import net.lucerna.upload.NativeSectionSnapshotUpload;
 import net.lucerna.upload.NativeUploadQueue;
 import net.lucerna.world.LucernaWorldFeed;
+import net.lucerna.world.extract.ChunkSectionSnapshotExtractionResult;
+import net.lucerna.world.extract.LucernaSectionSnapshotExtractionCoordinator;
+import net.lucerna.world.extract.MinecraftChunkSectionSnapshotExtractor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.model.ModelManager;
+
+import java.util.List;
 
 public final class LucernaController {
     private static final LucernaController INSTANCE = new LucernaController();
@@ -33,6 +39,8 @@ public final class LucernaController {
     private final LucernaWorldFeed worldFeed = new LucernaWorldFeed();
     private final MaterialRegistry materialRegistry = new MaterialRegistry();
     private final LucernaMaterialExtractionService materialExtractionService = new LucernaMaterialExtractionService(this.materialRegistry);
+    private final LucernaSectionSnapshotExtractionCoordinator sectionSnapshotCoordinator =
+            new LucernaSectionSnapshotExtractionCoordinator(new MinecraftChunkSectionSnapshotExtractor(this.materialExtractionService));
     private final NativeUploadQueue uploadQueue = new NativeUploadQueue();
     private final LucernaTelemetry telemetry = new LucernaTelemetry();
     private final LucernaFrameHooks frameHooks = new LucernaFrameHooks(
@@ -48,8 +56,10 @@ public final class LucernaController {
     private int viewportWidth = -1;
     private int viewportHeight = -1;
     private long frameConstantsFrameIndex;
+    private String lastLoggedBackendStatusKey = "";
     private String lastLoggedFrameContextKey = "";
     private String lastLoggedFrameConstantsKey = "";
+    private String lastLoggedSectionExtractionKey = "";
     private FrameConstantsCapture frameConstantsCapture = FrameConstantsCapture.unavailable(
             "Frame constants have not been captured by Fabric level extraction yet."
     );
@@ -83,10 +93,20 @@ public final class LucernaController {
         if (this.isRendererActive()) {
             this.irisCompat.disableIrisShadersForLucerna();
             this.ensureMaterialTablePrepared();
-            var dirtyRegions = this.worldFeed.drainDirtyRegionSnapshot();
+            var sectionExtraction = this.sectionSnapshotCoordinator.drainAndExtract(Minecraft.getInstance(), this.worldFeed);
             var materialUpdates = this.materialRegistry.snapshotUpdatesAfter(this.uploadQueue.lastMaterialGeneration());
-            var batch = this.uploadQueue.acceptWorldAndMaterialDeltas(dirtyRegions, materialUpdates);
-            this.nativeBridge.uploadWorldDeltas(batch);
+            var sectionUploads = sectionExtraction.sectionSnapshots().stream()
+                    .map(handoff -> NativeSectionSnapshotUpload.from(handoff.snapshot(), handoff.dirtyRegion()))
+                    .toList();
+            var stagedBatch = this.uploadQueue.acceptWorldMaterialAndStagingDeltas(
+                    sectionExtraction.dirtyRegionSnapshot(),
+                    materialUpdates,
+                    sectionUploads,
+                    List.of()
+            );
+            this.nativeBridge.uploadWorldDeltas(stagedBatch.worldAndMaterialBatch());
+            this.nativeBridge.uploadSectionSnapshots(stagedBatch);
+            this.logSectionExtractionStatusIfChanged(sectionExtraction);
             this.submitNoOpFrame(0.0F);
         }
     }
@@ -97,6 +117,7 @@ public final class LucernaController {
             this.nativeInitialized = false;
         }
         this.telemetry.clear();
+        this.sectionSnapshotCoordinator.clearCache();
         this.frameConstantsCollector.reset();
         this.frameConstantsFrameIndex = 0L;
         this.frameConstantsCapture = FrameConstantsCapture.unavailable("Lucerna is shutting down.");
@@ -217,6 +238,7 @@ public final class LucernaController {
 
     private void refreshBackendStatus() {
         this.backendStatus = this.backendDetector.detect();
+        this.logBackendStatusIfChanged();
     }
 
     private void activateOrDeactivateNative() {
@@ -224,6 +246,7 @@ public final class LucernaController {
             if (this.nativeInitialized) {
                 this.nativeBridge.shutdown();
                 this.nativeInitialized = false;
+                this.sectionSnapshotCoordinator.clearCache();
             }
             return;
         }
@@ -304,6 +327,16 @@ public final class LucernaController {
         );
     }
 
+    private void logBackendStatusIfChanged() {
+        String logKey = this.backendStatus.diagnosticSummary();
+        if (logKey.equals(this.lastLoggedBackendStatusKey)) {
+            return;
+        }
+
+        this.lastLoggedBackendStatusKey = logKey;
+        Lucerna.LOGGER.info("Lucerna backend status: {}", this.backendStatus.diagnosticSummary());
+    }
+
     private void logFrameConstantsStatusIfChanged() {
         String logKey = this.frameConstantsCapture.stateLabel()
                 + "|"
@@ -320,6 +353,35 @@ public final class LucernaController {
                 this.frameConstantsCapture.stateLabel(),
                 this.frameConstantsCapture.source(),
                 this.frameConstantsCapture.message()
+        );
+    }
+
+    private void logSectionExtractionStatusIfChanged(ChunkSectionSnapshotExtractionResult result) {
+        if (result.dirtyRegionSnapshot().isEmpty() && result.cachedSectionCount() == 0) {
+            return;
+        }
+
+        String logKey = result.extractedSectionCount()
+                + "|"
+                + result.skippedSectionCount()
+                + "|"
+                + result.cachedSectionCount()
+                + "|"
+                + this.uploadQueue.lastSectionGeneration()
+                + "|"
+                + this.uploadQueue.lastSectionDirtyRegionGeneration();
+        if (logKey.equals(this.lastLoggedSectionExtractionKey)) {
+            return;
+        }
+
+        this.lastLoggedSectionExtractionKey = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna section staging: extracted={} skipped={} cached={} sectionGeneration={} dirtyRegionGeneration={}.",
+                result.extractedSectionCount(),
+                result.skippedSectionCount(),
+                result.cachedSectionCount(),
+                this.uploadQueue.lastSectionGeneration(),
+                this.uploadQueue.lastSectionDirtyRegionGeneration()
         );
     }
 }
