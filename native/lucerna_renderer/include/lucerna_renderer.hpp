@@ -454,6 +454,48 @@ struct NativeDirectLightingExecutionTelemetry {
     std::string last_readiness_reason;
 };
 
+struct NativeRound6DispatchExecutionTelemetry {
+    NativeLightingDispatchStage stage = NativeLightingDispatchStage::DiffuseGi;
+    std::uint64_t attempts = 0;
+    std::uint64_t submitted = 0;
+    std::uint64_t skipped = 0;
+    std::uint64_t accepted = 0;
+    std::uint64_t resource_markers = 0;
+    std::uint64_t last_frame_index = 0;
+    std::uint64_t last_packet_generation = 0;
+    std::uint64_t last_dispatch_generation = 0;
+    std::uint64_t last_width = 0;
+    std::uint64_t last_height = 0;
+    std::uint64_t last_dispatch_x = 0;
+    std::uint64_t last_dispatch_y = 0;
+    std::uint64_t last_dispatch_z = 0;
+    std::uint64_t last_workgroup_size_x = 0;
+    std::uint64_t last_workgroup_size_y = 0;
+    std::uint64_t last_workgroup_size_z = 0;
+    std::uint64_t last_input_count = 0;
+    std::uint64_t last_output_count = 0;
+    std::uint64_t last_sample_count = 0;
+    std::uint64_t last_ray_count = 0;
+    std::uint64_t last_cache_read_count = 0;
+    std::uint64_t last_cache_write_count = 0;
+    std::uint64_t total_sample_count = 0;
+    std::uint64_t total_ray_count = 0;
+    std::uint64_t total_cache_read_count = 0;
+    std::uint64_t total_cache_write_count = 0;
+    std::uint32_t last_flags = 0;
+    bool last_enabled = false;
+    bool last_validated = false;
+    bool last_placeholder = false;
+    bool last_temporal_history = false;
+    bool last_reuse_only = false;
+    bool last_debug_overlay = false;
+    bool last_ready = false;
+    bool last_accepted = false;
+    bool last_resource_marker_recorded = false;
+    std::string last_marker;
+    std::string last_readiness_reason;
+};
+
 struct NativeLightingDispatchTelemetry {
     std::uint64_t packets = 0;
     std::uint64_t advertised_dispatches = 0;
@@ -507,6 +549,8 @@ struct NativeLightingDispatchTelemetry {
     std::string last_enabled_stage_names;
     std::string last_readiness_reason;
     NativeDirectLightingExecutionTelemetry direct_execution;
+    NativeRound6DispatchExecutionTelemetry diffuse_gi_execution;
+    NativeRound6DispatchExecutionTelemetry cache_execution;
     std::array<NativeLightingDispatchStageTelemetry, kNativeLightingDispatchStageCount> stages;
     std::array<NativeLightingDispatchPayloadCategoryTelemetry, kNativeLightingDispatchPayloadCategoryCount> payload_categories;
 };
@@ -564,6 +608,10 @@ private:
     [[nodiscard]] std::uint64_t track_noop_lighting_placeholder();
     [[nodiscard]] std::uint64_t track_flat_composite_placeholder();
     [[nodiscard]] std::uint64_t track_direct_lighting_execution_scaffold();
+    [[nodiscard]] std::uint64_t track_round6_dispatch_execution_scaffold(
+            NativeLightingDispatchStage dispatch_stage,
+            NativeRound6DispatchExecutionTelemetry& execution,
+            const char* accepted_marker);
     void reset_staging_telemetry();
     void reset_pass_counters();
     void prepare_frame_passes();

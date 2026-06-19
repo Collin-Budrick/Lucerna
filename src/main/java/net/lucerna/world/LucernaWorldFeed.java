@@ -5,11 +5,13 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicLong;
 
 public final class LucernaWorldFeed {
     private final AtomicLong generation = new AtomicLong();
     private final Queue<DirtyRegion> dirtyRegions = new ConcurrentLinkedQueue<>();
+    private final List<DirtyRegionListener> dirtyRegionListeners = new CopyOnWriteArrayList<>();
     private volatile String currentDimension = "minecraft:overworld";
 
     public void markChunkLoaded(String dimension, int sectionX, int sectionY, int sectionZ) {
@@ -128,10 +130,22 @@ public final class LucernaWorldFeed {
         return this.dirtyRegions.size();
     }
 
+    public void addDirtyRegionListener(DirtyRegionListener listener) {
+        this.dirtyRegionListeners.add(Objects.requireNonNull(listener, "listener"));
+    }
+
+    public boolean removeDirtyRegionListener(DirtyRegionListener listener) {
+        return this.dirtyRegionListeners.remove(Objects.requireNonNull(listener, "listener"));
+    }
+
     private void mark(DirtyRegionType type, String dimension, int sectionX, int sectionY, int sectionZ) {
         Objects.requireNonNull(type, "type");
         Objects.requireNonNull(dimension, "dimension");
         long nextGeneration = this.generation.incrementAndGet();
-        this.dirtyRegions.add(new DirtyRegion(type, dimension, sectionX, sectionY, sectionZ, nextGeneration));
+        DirtyRegion dirtyRegion = new DirtyRegion(type, dimension, sectionX, sectionY, sectionZ, nextGeneration);
+        this.dirtyRegions.add(dirtyRegion);
+        for (DirtyRegionListener listener : this.dirtyRegionListeners) {
+            listener.onDirtyRegionMarked(dirtyRegion);
+        }
     }
 }

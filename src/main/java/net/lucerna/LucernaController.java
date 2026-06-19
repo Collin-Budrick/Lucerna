@@ -17,6 +17,9 @@ import net.lucerna.render.GBufferDescriptor;
 import net.lucerna.render.gbuffer.GBufferWriteIntent;
 import net.lucerna.render.gbuffer.PrimaryVoxelGBufferPassPlan;
 import net.lucerna.render.LucernaFrameHooks;
+import net.lucerna.render.cache.SparseVoxelRadianceCache;
+import net.lucerna.render.cache.SparseVoxelRadianceCacheDebugStatus;
+import net.lucerna.render.cache.SparseVoxelRadianceCacheSnapshot;
 import net.lucerna.render.context.MojangVulkanBorrowedContextProbe;
 import net.lucerna.render.frame.FrameConstantsCapture;
 import net.lucerna.render.frame.FrameRenderFlags;
@@ -26,7 +29,10 @@ import net.lucerna.render.lighting.direct.DirectCelestialLightingPlan;
 import net.lucerna.render.lighting.direct.DirectEmissiveBlockListPlan;
 import net.lucerna.render.lighting.direct.DirectLightingPlan;
 import net.lucerna.render.lighting.direct.DirectShadowRayPlanner;
+import net.lucerna.render.lighting.gi.AdaptiveGiRayBudgetPolicy;
+import net.lucerna.render.lighting.gi.DiffuseGiSourceSummary;
 import net.lucerna.render.lighting.gi.DiffuseGiSettings;
+import net.lucerna.render.lighting.gi.GiCacheInvalidationPolicy;
 import net.lucerna.render.lighting.gi.GiCachePlannerInputs;
 import net.lucerna.render.lighting.gi.LowResDiffuseGiPlan;
 import net.lucerna.render.lighting.gi.LowResDiffuseGiPlanner;
@@ -73,6 +79,7 @@ public final class LucernaController {
     private final IrisCompat irisCompat = new IrisCompat();
     private final LucernaNativeBridge nativeBridge = new LucernaNativeBridge();
     private final LucernaWorldFeed worldFeed = new LucernaWorldFeed();
+    private final SparseVoxelRadianceCache sparseRadianceCache = new SparseVoxelRadianceCache();
     private final MaterialRegistry materialRegistry = new MaterialRegistry();
     private final LucernaMaterialExtractionService materialExtractionService = new LucernaMaterialExtractionService(this.materialRegistry);
     private final LucernaSectionSnapshotExtractionCoordinator sectionSnapshotCoordinator =
@@ -102,6 +109,7 @@ public final class LucernaController {
     private String lastLoggedDirectLightingPlanKey = "";
     private String lastPreparedLightingDispatchKey = "";
     private String lastLoggedLightingDispatchKey = "";
+    private String lastLoggedSparseRadianceCacheKey = "";
     private String lastLoggedDirectPreviewCompositeKey = "";
     private String lastLoggedPublicMojangPreviewPassKey = "";
     private String lastLoggedPublicMojangFinalCompositeKey = "";
@@ -183,6 +191,7 @@ public final class LucernaController {
         }
         this.telemetry.clear();
         this.sectionSnapshotCoordinator.clearCache();
+        this.sparseRadianceCache.clear();
         this.frameConstantsCollector.reset();
         this.frameConstantsFrameIndex = 0L;
         this.frameConstantsCapture = FrameConstantsCapture.unavailable("Lucerna is shutting down.");
@@ -486,20 +495,46 @@ public final class LucernaController {
         GiCachePlannerInputs giCacheInputs = sectionExtraction == null
                 ? GiCachePlannerInputs.empty()
                 : GiCachePlannerInputs.from(sectionExtraction.dirtyRegionSnapshot(), sourceGeneration);
+        SparseVoxelRadianceCacheSnapshot sparseCacheSnapshot = this.sparseRadianceCache.applyDirtyRegionSnapshot(
+                sectionExtraction == null ? null : sectionExtraction.dirtyRegionSnapshot()
+        );
         DirectLightingPlan directLightingPlan = this.buildDirectLightingPlan(
                 this.currentSectionSnapshots(sectionExtraction),
                 sectionReferences,
                 frameConstants
+        );
+        NativeDirectLightingUploadPacket directLightingUpload = NativeDirectLightingUploadPacket.from(directLightingPlan);
+        DiffuseGiSourceSummary diffuseGiSourceSummary = DiffuseGiSourceSummary.of(
+                directLightingUpload.generation(),
+                metadata.lastWorldGeneration(),
+                metadata.materialGeneration(),
+                metadata.sectionGeneration(),
+                Math.max(metadata.sectionDirtyRegionGeneration(), giCacheInputs.snapshot().latestDirtyGeneration()),
+                directLightingUpload.hasDirectLightingWork(),
+                directLightingUpload.celestialLightCount(),
+                directLightingUpload.selectedEmissiveCount(),
+                directLightingUpload.shadowCandidateCount(),
+                directLightingUpload.budgetedShadowCandidateCount(),
+                directLightingUpload.sectionSnapshotCount(),
+                giCacheInputs.sourceDirtyRegionCount(),
+                metadata.materialUpdateCount(),
+                "Round 6 GI sources from direct lighting, staged world/material deltas, and dirty regions"
         );
         LowResDiffuseGiPlan diffuseGiPlan = LowResDiffuseGiPlanner.plan(
                 frameConstants,
                 writeIntent,
                 this.frameConstantsCapture.matrixHistory(),
                 giCacheInputs.snapshot(),
-                DiffuseGiSettings.fromQuality(this.getConfig().qualityPreset(), 2)
+                DiffuseGiSettings.fromQuality(this.getConfig().qualityPreset(), 2),
+                AdaptiveGiRayBudgetPolicy.firstMilestone(),
+                GiCacheInvalidationPolicy.conservative(),
+                diffuseGiSourceSummary
         );
-        NativeDirectLightingUploadPacket directLightingUpload = NativeDirectLightingUploadPacket.from(directLightingPlan);
-        NativeDiffuseGiUploadPacket diffuseGiUpload = NativeDiffuseGiUploadPacket.from(diffuseGiPlan);
+        NativeDiffuseGiUploadPacket diffuseGiUpload = NativeDiffuseGiUploadPacket.from(
+                diffuseGiPlan,
+                directLightingUpload,
+                metadata
+        );
 
         boolean directEnabled = directLightingUpload.hasDirectLightingWork() && writeIntent.dimensionsAvailable();
         boolean diffuseGiEnabled = diffuseGiUpload.readyForScheduling();
@@ -561,6 +596,12 @@ public final class LucernaController {
                 + "|"
                 + cacheRecordCount
                 + "|"
+                + sparseCacheSnapshot.cacheGeneration()
+                + "|"
+                + sparseCacheSnapshot.debugStatus().recordCount()
+                + "|"
+                + sparseCacheSnapshot.debugStatus().dirtyRecordCount()
+                + "|"
                 + postProcessingUpload.generation()
                 + "|"
                 + postProcessingUpload.flags();
@@ -618,6 +659,7 @@ public final class LucernaController {
         StageUpload cacheStage = this.cacheStage(cacheEnabled, dispatchGeneration, diffuseGiUpload);
 
         this.pendingDirectLightingUpload = directLightingUpload;
+        this.logSparseRadianceCacheStatusIfChanged(sparseCacheSnapshot);
         return NativeLightingDispatchUploadPacket.of(
                 dispatchGeneration,
                 metadata,
@@ -861,6 +903,53 @@ public final class LucernaController {
         return fallback == null ? List.of() : fallback.snapshots();
     }
 
+    private void logSparseRadianceCacheStatusIfChanged(SparseVoxelRadianceCacheSnapshot snapshot) {
+        if (snapshot == null) {
+            return;
+        }
+
+        SparseVoxelRadianceCacheDebugStatus status = snapshot.debugStatus();
+        var invalidation = status.lastInvalidation();
+        String key = snapshot.cacheGeneration()
+                + "|"
+                + status.recordCount()
+                + "|"
+                + status.dirtyRecordCount()
+                + "|"
+                + status.usableRecordCount()
+                + "|"
+                + invalidation.sourceDirtyRegionCount()
+                + "|"
+                + invalidation.affectedRecordCount()
+                + "|"
+                + invalidation.createdDirtyPlaceholderCount()
+                + "|"
+                + invalidation.latestDirtyGeneration();
+        if (key.equals(this.lastLoggedSparseRadianceCacheKey)) {
+            return;
+        }
+
+        this.lastLoggedSparseRadianceCacheKey = key;
+        Lucerna.LOGGER.info(
+                "Lucerna sparse radiance cache: generation={} records={} dirty_records={} usable_records={} confidence={} max_variance={} source_dirty={} coalesced_dirty={} pending_dirty={} affected={} retained={} placeholders={} latest_dirty_generation={} global_invalidation={} reason=\"{}\"",
+                snapshot.cacheGeneration(),
+                status.recordCount(),
+                status.dirtyRecordCount(),
+                status.usableRecordCount(),
+                status.combinedConfidence(),
+                status.maxVariance(),
+                invalidation.sourceDirtyRegionCount(),
+                invalidation.coalescedDirtyRegionCount(),
+                invalidation.pendingDirtyRegionCountAfterDrain(),
+                invalidation.affectedRecordCount(),
+                invalidation.retainedRecordCount(),
+                invalidation.createdDirtyPlaceholderCount(),
+                invalidation.latestDirtyGeneration(),
+                invalidation.globalInvalidation(),
+                status.reason()
+        );
+    }
+
     private List<VoxelSectionSnapshotReference> currentSectionReferences(List<NativeSectionSnapshotUpload> sectionUploads) {
         var referencesByKey = new LinkedHashMap<String, VoxelSectionSnapshotReference>();
         for (ChunkSectionVoxelSnapshot snapshot : this.sectionSnapshotCoordinator.cachedSnapshots()) {
@@ -943,6 +1032,7 @@ public final class LucernaController {
         this.lastLoggedDirectLightingPlanKey = "";
         this.lastPreparedLightingDispatchKey = "";
         this.lastLoggedLightingDispatchKey = "";
+        this.lastLoggedSparseRadianceCacheKey = "";
         this.lastLoggedDirectPreviewCompositeKey = "";
         this.lastLoggedPublicMojangPreviewPassKey = "";
         this.lastLoggedPublicMojangFinalCompositeKey = "";
@@ -951,6 +1041,7 @@ public final class LucernaController {
         this.pendingDirectLightingUpload = null;
         this.gBufferStagingGeneration = 0L;
         this.lightingDispatchGeneration = 0L;
+        this.sparseRadianceCache.clear();
     }
 
     private FrameRenderFlags currentFrameRenderFlags() {
@@ -1303,5 +1394,46 @@ public final class LucernaController {
                 packet.sectionGeneration(),
                 packet.gBufferGeneration()
         );
+        int diffuseGiIndex = stageIndex(packet, Phase5Stage.DIFFUSE_GI);
+        int cacheIndex = stageIndex(packet, Phase5Stage.CACHE);
+        int[] stageEnabled = packet.stageEnabled();
+        int[] stageDimensions = packet.stageDimensions();
+        int[] stageIoCounts = packet.stageIoCounts();
+        int[] stageSampleRayCounts = packet.stageSampleRayCounts();
+        int[] stageCacheCounts = packet.stageCacheCounts();
+        int[] stageFlags = packet.stageFlags();
+        int diffuseGiDimensionOffset = diffuseGiIndex * NativeLightingDispatchUploadPacket.DIMENSION_STRIDE;
+        int diffuseGiSampleOffset = diffuseGiIndex * NativeLightingDispatchUploadPacket.SAMPLE_RAY_STRIDE;
+        int diffuseGiCacheOffset = diffuseGiIndex * NativeLightingDispatchUploadPacket.CACHE_COUNT_STRIDE;
+        int cacheIoOffset = cacheIndex * NativeLightingDispatchUploadPacket.IO_COUNT_STRIDE;
+        int cacheCacheOffset = cacheIndex * NativeLightingDispatchUploadPacket.CACHE_COUNT_STRIDE;
+        Lucerna.LOGGER.info(
+                "Lucerna Round 6 lighting dispatch prepared: generation={} diffuse_gi={{enabled={},size={}x{},samples={},rays={},cache_reads={},cache_writes={},flags=0x{}}} cache={{enabled={},records={},cache_reads={},cache_writes={},flags=0x{}}}.",
+                packet.generation(),
+                stageEnabled[diffuseGiIndex] == 1,
+                stageDimensions[diffuseGiDimensionOffset],
+                stageDimensions[diffuseGiDimensionOffset + 1],
+                stageSampleRayCounts[diffuseGiSampleOffset],
+                stageSampleRayCounts[diffuseGiSampleOffset + 1],
+                stageCacheCounts[diffuseGiCacheOffset],
+                stageCacheCounts[diffuseGiCacheOffset + 1],
+                Integer.toHexString(stageFlags[diffuseGiIndex]),
+                stageEnabled[cacheIndex] == 1,
+                stageIoCounts[cacheIoOffset],
+                stageCacheCounts[cacheCacheOffset],
+                stageCacheCounts[cacheCacheOffset + 1],
+                Integer.toHexString(stageFlags[cacheIndex])
+        );
+    }
+
+    private static int stageIndex(NativeLightingDispatchUploadPacket packet, Phase5Stage stage) {
+        int[] stageIds = packet.stageIds();
+        int id = stage.id();
+        for (int index = 0; index < stageIds.length; index++) {
+            if (stageIds[index] == id) {
+                return index;
+            }
+        }
+        throw new IllegalStateException("Lighting dispatch stage is missing: " + stage.nativeName());
     }
 }

@@ -44,6 +44,10 @@ public final class LucernaDebugOverlayLines {
         if (!directSummary.isBlank()) {
             lines.add(Component.literal("Round 5 direct: " + directSummary));
         }
+        String roundSixSummary = roundSixSummary(snapshot);
+        if (!roundSixSummary.isBlank()) {
+            lines.add(Component.literal("Round 6 GI/cache: " + roundSixSummary));
+        }
         return lines;
     }
 
@@ -168,6 +172,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Staging payloads: " + snapshot.stagingPayloadLabel()));
         addNativePassStateLines(lines, snapshot);
         addLightingDispatchLines(lines, snapshot);
+        addRoundSixStatusLines(lines, snapshot);
         lines.add(Component.literal("Frame pass status: " + snapshot.framePassStatusLabel()));
         lines.add(Component.literal("First-pass validation: " + snapshot.firstPassValidationSummary()));
     }
@@ -237,6 +242,85 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Direct flags: " + directFlagLabel(directStage)));
         String reason = directStage.readinessReason().isBlank() ? lightingDispatch.message() : directStage.readinessReason();
         lines.add(Component.literal("Direct readiness: " + shorten(reason, 96)));
+        addRoundSixStatusLines(lines, snapshot);
+    }
+
+    private static void addRoundSixStatusLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        LightingDispatchTelemetryStatus lightingDispatch = snapshot.lightingDispatchStatus();
+        LightingDispatchStageTelemetryStatus diffuseGiStage = firstStage(
+                lightingDispatch,
+                "diffuse_gi",
+                "low_res_gi",
+                "low_resolution_gi",
+                "gi"
+        );
+        LightingDispatchStageTelemetryStatus cacheStage = firstStage(
+                lightingDispatch,
+                "cache",
+                "radiance_cache",
+                "sparse_radiance_cache",
+                "sparse_voxel_radiance_cache"
+        );
+
+        lines.add(Component.literal("Round 6 GI/cache: " + roundSixSummary(snapshot)));
+        if (!lightingDispatch.hasLightingDispatchStatus()) {
+            lines.add(Component.literal("Round 6 source: lighting dispatch telemetry unavailable"));
+            lines.add(Component.literal("Round 6 reason: " + shorten(lightingDispatch.message(), 96)));
+            return;
+        }
+
+        if (diffuseGiStage == null) {
+            lines.add(Component.literal("Diffuse GI: not reported by controller/native status yet"));
+        } else {
+            lines.add(Component.literal("Diffuse GI readiness: enabled=" + yesNoUnknown(diffuseGiStage.enabled())
+                    + " native=" + nativeExecutionLabel(diffuseGiStage)
+                    + " ready=" + yesNoUnknown(diffuseGiStage.readyForNativeExecution())
+                    + " frame=" + dispatchFrameLabel(snapshot, diffuseGiStage)));
+            lines.add(Component.literal("Low-res GI dispatch: gen=" + valueOrUnknown(diffuseGiStage.generation())
+                    + " size=" + valueOrUnknown(diffuseGiStage.dimensions())
+                    + " groups=" + valueOrUnknown(diffuseGiStage.dispatchGroups())
+                    + " rays=" + valueOrUnknown(diffuseGiStage.rayCount())
+                    + " samples=" + valueOrUnknown(diffuseGiStage.sampleCount())));
+            lines.add(Component.literal("Low-res GI IO: " + valueOrUnknown(diffuseGiStage.ioCounts())
+                    + " | inputs=" + firstDetailOrUnknown(diffuseGiStage, "inputs", "input_count", "last_input_count")
+                    + " outputs=" + firstDetailOrUnknown(diffuseGiStage, "outputs", "output_count", "last_output_count")));
+            lines.add(Component.literal("Diffuse GI readiness reason: " + readinessReason(diffuseGiStage)));
+        }
+
+        if (cacheStage == null) {
+            lines.add(Component.literal("Sparse radiance cache: not reported by controller/native status yet"));
+            lines.add(Component.literal("Dirty-region fallback: pending=" + snapshot.pendingDirtyRegionCount()
+                    + " worldGen=" + snapshot.worldGeneration()));
+        } else {
+            lines.add(Component.literal("Sparse radiance cache: records=" + firstDetailOrUnknown(
+                    cacheStage,
+                    "record_count",
+                    "records",
+                    "cache_records",
+                    "radiance_records"
+            ) + " confidence=" + firstDetailOrUnknown(
+                    cacheStage,
+                    "confidence",
+                    "avg_confidence",
+                    "average_confidence",
+                    "cache_confidence"
+            ) + " reads=" + valueOrUnknown(cacheStage.cacheReadCount())
+                    + " writes=" + valueOrUnknown(cacheStage.cacheWriteCount())));
+            lines.add(Component.literal("Cache dispatch: gen=" + valueOrUnknown(cacheStage.generation())
+                    + " frame=" + dispatchFrameLabel(snapshot, cacheStage)
+                    + " recorded=" + yesNoUnknown(cacheStage.recordedThisFrame())));
+            lines.add(Component.literal("Cache invalidation: dirty=" + firstDetailOrUnknown(
+                    cacheStage,
+                    "dirty_regions",
+                    "pending_dirty_regions",
+                    "invalidation_dirty_regions"
+            ) + " invalidated=" + firstDetailOrUnknown(
+                    cacheStage,
+                    "invalidated_records",
+                    "invalidation_count",
+                    "invalidations"
+            ) + " reason=" + readinessReason(cacheStage)));
+        }
     }
 
     private static String roundFiveDirectSummary(LucernaStatusSnapshot snapshot) {
@@ -254,6 +338,40 @@ public final class LucernaDebugOverlayLines {
                 + " cpuOutput=" + yesNoUnknown(directStage.cpuOutputGenerated())
                 + " evidence=" + directOutputEvidenceLabel(directStage)
                 + " visibleComposite=not_attached";
+    }
+
+    private static String roundSixSummary(LucernaStatusSnapshot snapshot) {
+        LightingDispatchTelemetryStatus lightingDispatch = snapshot.lightingDispatchStatus();
+        if (!lightingDispatch.hasLightingDispatchStatus()) {
+            return "not_reported";
+        }
+
+        LightingDispatchStageTelemetryStatus diffuseGiStage = firstStage(
+                lightingDispatch,
+                "diffuse_gi",
+                "low_res_gi",
+                "low_resolution_gi",
+                "gi"
+        );
+        LightingDispatchStageTelemetryStatus cacheStage = firstStage(
+                lightingDispatch,
+                "cache",
+                "radiance_cache",
+                "sparse_radiance_cache",
+                "sparse_voxel_radiance_cache"
+        );
+        return "gi=" + stageSummary(diffuseGiStage)
+                + " cache=" + stageSummary(cacheStage)
+                + " dirtyPending=" + snapshot.pendingDirtyRegionCount();
+    }
+
+    private static String stageSummary(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null) {
+            return "not_reported";
+        }
+        return "enabled=" + yesNoUnknown(stage.enabled())
+                + ",ready=" + yesNoUnknown(stage.readyForNativeExecution())
+                + ",frame=" + valueOrUnknown(stage.frameIndex());
     }
 
     private static void addNativePassStateLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
@@ -371,6 +489,22 @@ public final class LucernaDebugOverlayLines {
         return "?";
     }
 
+    private static String dispatchFrameLabel(
+            LucernaStatusSnapshot snapshot,
+            LightingDispatchStageTelemetryStatus stage
+    ) {
+        if (stage.frameIndex() != null) {
+            return Long.toString(stage.frameIndex());
+        }
+        if (Boolean.TRUE.equals(stage.recordedThisFrame())) {
+            return snapshot.frameLifecycle().frameIndex() + " current";
+        }
+        if (stage.payloadFrameIndex() != null) {
+            return stage.payloadFrameIndex() + " payload";
+        }
+        return "?";
+    }
+
     private static String valueOrUnknown(Long value) {
         return value == null ? "?" : Long.toString(value);
     }
@@ -381,6 +515,42 @@ public final class LucernaDebugOverlayLines {
 
     private static String detailOrUnknown(LightingDispatchStageTelemetryStatus stage, String key) {
         return valueOrUnknown(stage.details().get(key));
+    }
+
+    private static String firstDetailOrUnknown(LightingDispatchStageTelemetryStatus stage, String... keys) {
+        if (stage == null || keys == null) {
+            return "?";
+        }
+        for (String key : keys) {
+            String value = stage.details().get(key);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "?";
+    }
+
+    private static LightingDispatchStageTelemetryStatus firstStage(
+            LightingDispatchTelemetryStatus lightingDispatch,
+            String... stageIds
+    ) {
+        if (lightingDispatch == null || stageIds == null) {
+            return null;
+        }
+        for (String stageId : stageIds) {
+            LightingDispatchStageTelemetryStatus stage = lightingDispatch.stages().get(stageId);
+            if (stage != null) {
+                return stage;
+            }
+        }
+        return null;
+    }
+
+    private static String readinessReason(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null || stage.readinessReason().isBlank()) {
+            return "unreported";
+        }
+        return shorten(stage.readinessReason(), 96);
     }
 
     private static boolean isTruthy(String value) {

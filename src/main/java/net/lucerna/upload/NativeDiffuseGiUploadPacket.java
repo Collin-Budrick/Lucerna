@@ -1,5 +1,6 @@
 package net.lucerna.upload;
 
+import net.lucerna.render.lighting.gi.DiffuseGiSourceSummary;
 import net.lucerna.render.lighting.gi.LowResDiffuseGiPlan;
 
 import java.util.Objects;
@@ -28,6 +29,34 @@ public final class NativeDiffuseGiUploadPacket {
         NativeDiffuseGiPlanUpload planUpload = NativeDiffuseGiPlanUpload.from(plan);
         NativeDiffuseGiCacheUpload cacheUpload = NativeDiffuseGiCacheUpload.from(plan.cacheSnapshot());
         return new NativeDiffuseGiUploadPacket(planUpload.generation(), planUpload, cacheUpload);
+    }
+
+    public static NativeDiffuseGiUploadPacket from(
+            LowResDiffuseGiPlan plan,
+            NativeDirectLightingUploadPacket directLightingUpload,
+            NativeUploadStagingMetadata stagingMetadata
+    ) {
+        Objects.requireNonNull(plan, "plan");
+        NativeUploadStagingMetadata resolvedMetadata = stagingMetadata == null
+                ? NativeUploadStagingMetadata.empty()
+                : stagingMetadata;
+        LowResDiffuseGiPlan planWithSources = plan.withSourceSummary(DiffuseGiSourceSummary.of(
+                directLightingUpload == null ? 0L : directLightingUpload.generation(),
+                resolvedMetadata.lastWorldGeneration(),
+                resolvedMetadata.materialGeneration(),
+                resolvedMetadata.sectionGeneration(),
+                resolvedMetadata.sectionDirtyRegionGeneration(),
+                directLightingUpload != null && (directLightingUpload.flags() & NativeDirectLightingUploadPacket.FLAG_VALIDATED) != 0,
+                directLightingUpload == null ? 0 : directLightingUpload.celestialLightCount(),
+                directLightingUpload == null ? 0 : directLightingUpload.selectedEmissiveCount(),
+                directLightingUpload == null ? 0 : directLightingUpload.shadowCandidateCount(),
+                directLightingUpload == null ? 0 : directLightingUpload.budgetedShadowCandidateCount(),
+                directLightingUpload == null ? resolvedMetadata.sectionSnapshotCount() : directLightingUpload.sectionSnapshotCount(),
+                resolvedMetadata.dirtyRegionCount(),
+                resolvedMetadata.materialUpdateCount(),
+                "direct/upload + world/material/dirty staging"
+        ));
+        return from(planWithSources);
     }
 
     public static NativeDiffuseGiUploadPacket of(
@@ -127,6 +156,22 @@ public final class NativeDiffuseGiUploadPacket {
 
     public long[] cacheGenerations() {
         return this.planUpload.cacheGenerations();
+    }
+
+    public long[] sourceGenerations() {
+        return this.planUpload.sourceGenerations();
+    }
+
+    public int[] sourceFlags() {
+        return this.planUpload.sourceFlags();
+    }
+
+    public int[] sourceCounts() {
+        return this.planUpload.sourceCounts();
+    }
+
+    public String[] debugLabels() {
+        return this.planUpload.debugLabels();
     }
 
     public int[] dirtyRegionTypeIds() {

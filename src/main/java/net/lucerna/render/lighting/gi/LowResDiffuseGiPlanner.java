@@ -38,6 +38,28 @@ public final class LowResDiffuseGiPlanner {
             AdaptiveGiRayBudgetPolicy rayBudgetPolicy,
             GiCacheInvalidationPolicy invalidationPolicy
     ) {
+        return plan(
+                frameConstants,
+                gBufferWriteIntent,
+                matrixHistory,
+                cacheSnapshot,
+                settings,
+                rayBudgetPolicy,
+                invalidationPolicy,
+                DiffuseGiSourceSummary.unavailable()
+        );
+    }
+
+    public static LowResDiffuseGiPlan plan(
+            LucernaFrameConstants frameConstants,
+            GBufferWriteIntent gBufferWriteIntent,
+            FrameMatrixHistory matrixHistory,
+            GiCacheSnapshot cacheSnapshot,
+            DiffuseGiSettings settings,
+            AdaptiveGiRayBudgetPolicy rayBudgetPolicy,
+            GiCacheInvalidationPolicy invalidationPolicy,
+            DiffuseGiSourceSummary sourceSummary
+    ) {
         LucernaFrameConstants resolvedConstants = frameConstants == null
                 ? LucernaFrameConstants.unavailable()
                 : frameConstants;
@@ -51,6 +73,9 @@ public final class LowResDiffuseGiPlanner {
         GiCacheInvalidationPolicy resolvedInvalidationPolicy = invalidationPolicy == null
                 ? GiCacheInvalidationPolicy.conservative()
                 : invalidationPolicy;
+        DiffuseGiSourceSummary resolvedSourceSummary = sourceSummary == null
+                ? DiffuseGiSourceSummary.unavailable()
+                : sourceSummary;
 
         DiffuseGiFrameInput frameInput = DiffuseGiFrameInput.from(
                 resolvedConstants,
@@ -76,6 +101,7 @@ public final class LowResDiffuseGiPlanner {
                 temporalInput,
                 resolvedCacheSnapshot,
                 cacheConfidence,
+                resolvedSourceSummary,
                 rayBudget
         );
         return new LowResDiffuseGiPlan(
@@ -84,6 +110,7 @@ public final class LowResDiffuseGiPlanner {
                 resolvedCacheSnapshot,
                 cacheConfidence,
                 rayBudget,
+                resolvedSourceSummary,
                 validationReport
         );
     }
@@ -118,12 +145,14 @@ public final class LowResDiffuseGiPlanner {
             TemporalAccumulationInput temporalInput,
             GiCacheSnapshot cacheSnapshot,
             CacheConfidence cacheConfidence,
+            DiffuseGiSourceSummary sourceSummary,
             GiRayBudgetAllocation rayBudget
     ) {
         List<DiffuseGiValidationFinding> findings = new ArrayList<>();
         validateFrameInput(findings, frameInput);
         validateTemporalInput(findings, temporalInput);
         validateCache(findings, cacheSnapshot, cacheConfidence);
+        validateSourceSummary(findings, sourceSummary);
         validateRayBudget(findings, rayBudget);
         return new DiffuseGiValidationReport(findings);
     }
@@ -218,6 +247,26 @@ public final class LowResDiffuseGiPlanner {
                     "GI_CACHE_DIRTY",
                     "$.cache.confidence",
                     cacheConfidence.reason()
+            ));
+        }
+    }
+
+    private static void validateSourceSummary(
+            List<DiffuseGiValidationFinding> findings,
+            DiffuseGiSourceSummary sourceSummary
+    ) {
+        if (!sourceSummary.hasWorldMaterialInputs()) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_SOURCE_WORLD_MATERIAL_PENDING",
+                    "$.sourceSummary",
+                    sourceSummary.debugLabel()
+            ));
+        }
+        if (!sourceSummary.hasDirectLightingWork()) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_SOURCE_DIRECT_LIGHT_PENDING",
+                    "$.sourceSummary.directLighting",
+                    sourceSummary.compactLabel()
             ));
         }
     }

@@ -4,6 +4,7 @@ import net.lucerna.render.frame.FrameJitter;
 import net.lucerna.render.lighting.gi.CacheConfidence;
 import net.lucerna.render.lighting.gi.DiffuseGiLowResolutionGrid;
 import net.lucerna.render.lighting.gi.DiffuseGiSettings;
+import net.lucerna.render.lighting.gi.DiffuseGiSourceSummary;
 import net.lucerna.render.lighting.gi.DiffuseGiValidationReport;
 import net.lucerna.render.lighting.gi.GiCacheSnapshot;
 import net.lucerna.render.lighting.gi.GiRayBudgetAllocation;
@@ -72,9 +73,30 @@ public record NativeDiffuseGiPlanUpload(
         long lastDirtyRegionGeneration,
         int surfaceRecordCount,
         int radianceRecordCount,
+        long sourceSummaryGeneration,
+        long sourceDirectLightingGeneration,
+        long sourceWorldGeneration,
+        long sourceMaterialGeneration,
+        long sourceSectionGeneration,
+        long sourceDirtyRegionGeneration,
+        boolean sourceDirectLightingReady,
+        boolean sourceWorldInputAvailable,
+        boolean sourceMaterialInputAvailable,
+        boolean sourceSectionInputAvailable,
+        int sourceCelestialLightCount,
+        int sourceEmissiveLightCount,
+        int sourceShadowCandidateCount,
+        int sourceBudgetedShadowCandidateCount,
+        int sourceSectionSnapshotCount,
+        int sourceDirtyRegionCount,
+        int sourceMaterialUpdateCount,
         int validationFindingCount,
         int validationErrorCount,
         int validationWarningCount,
+        String gridDebugLabel,
+        String rayBudgetDebugLabel,
+        String cacheConfidenceDebugLabel,
+        String sourceDebugLabel,
         String compactLabel
 ) {
     public static final int GRID_DIMENSION_STRIDE = 5;
@@ -140,6 +162,27 @@ public record NativeDiffuseGiPlanUpload(
     public static final int CACHE_GENERATION_OFFSET = 0;
     public static final int CACHE_FIRST_DIRTY_GENERATION_OFFSET = 1;
     public static final int CACHE_LAST_DIRTY_GENERATION_OFFSET = 2;
+
+    public static final int SOURCE_GENERATION_STRIDE = 6;
+    public static final int SOURCE_SUMMARY_GENERATION_OFFSET = 0;
+    public static final int SOURCE_DIRECT_LIGHTING_GENERATION_OFFSET = 1;
+    public static final int SOURCE_WORLD_GENERATION_OFFSET = 2;
+    public static final int SOURCE_MATERIAL_GENERATION_OFFSET = 3;
+    public static final int SOURCE_SECTION_GENERATION_OFFSET = 4;
+    public static final int SOURCE_DIRTY_REGION_GENERATION_OFFSET = 5;
+    public static final int SOURCE_FLAG_STRIDE = 4;
+    public static final int SOURCE_DIRECT_LIGHTING_READY_OFFSET = 0;
+    public static final int SOURCE_WORLD_INPUT_AVAILABLE_OFFSET = 1;
+    public static final int SOURCE_MATERIAL_INPUT_AVAILABLE_OFFSET = 2;
+    public static final int SOURCE_SECTION_INPUT_AVAILABLE_OFFSET = 3;
+    public static final int SOURCE_COUNT_STRIDE = 7;
+    public static final int SOURCE_CELESTIAL_LIGHT_COUNT_OFFSET = 0;
+    public static final int SOURCE_EMISSIVE_LIGHT_COUNT_OFFSET = 1;
+    public static final int SOURCE_SHADOW_CANDIDATE_COUNT_OFFSET = 2;
+    public static final int SOURCE_BUDGETED_SHADOW_CANDIDATE_COUNT_OFFSET = 3;
+    public static final int SOURCE_SECTION_SNAPSHOT_COUNT_OFFSET = 4;
+    public static final int SOURCE_DIRTY_REGION_COUNT_OFFSET = 5;
+    public static final int SOURCE_MATERIAL_UPDATE_COUNT_OFFSET = 6;
 
     public NativeDiffuseGiPlanUpload {
         requireNonNegative(generation, "generation");
@@ -224,12 +267,29 @@ public record NativeDiffuseGiPlanUpload(
         }
         requireNonNegative(surfaceRecordCount, "surfaceRecordCount");
         requireNonNegative(radianceRecordCount, "radianceRecordCount");
+        requireNonNegative(sourceSummaryGeneration, "sourceSummaryGeneration");
+        requireNonNegative(sourceDirectLightingGeneration, "sourceDirectLightingGeneration");
+        requireNonNegative(sourceWorldGeneration, "sourceWorldGeneration");
+        requireNonNegative(sourceMaterialGeneration, "sourceMaterialGeneration");
+        requireNonNegative(sourceSectionGeneration, "sourceSectionGeneration");
+        requireNonNegative(sourceDirtyRegionGeneration, "sourceDirtyRegionGeneration");
+        requireNonNegative(sourceCelestialLightCount, "sourceCelestialLightCount");
+        requireNonNegative(sourceEmissiveLightCount, "sourceEmissiveLightCount");
+        requireNonNegative(sourceShadowCandidateCount, "sourceShadowCandidateCount");
+        requireNonNegative(sourceBudgetedShadowCandidateCount, "sourceBudgetedShadowCandidateCount");
+        requireNonNegative(sourceSectionSnapshotCount, "sourceSectionSnapshotCount");
+        requireNonNegative(sourceDirtyRegionCount, "sourceDirtyRegionCount");
+        requireNonNegative(sourceMaterialUpdateCount, "sourceMaterialUpdateCount");
         requireNonNegative(validationFindingCount, "validationFindingCount");
         requireNonNegative(validationErrorCount, "validationErrorCount");
         requireNonNegative(validationWarningCount, "validationWarningCount");
         if (validationErrorCount > validationFindingCount || validationWarningCount > validationFindingCount) {
             throw new IllegalArgumentException("validation counts cannot exceed validationFindingCount");
         }
+        gridDebugLabel = requireText(gridDebugLabel, "gridDebugLabel");
+        rayBudgetDebugLabel = requireText(rayBudgetDebugLabel, "rayBudgetDebugLabel");
+        cacheConfidenceDebugLabel = requireText(cacheConfidenceDebugLabel, "cacheConfidenceDebugLabel");
+        sourceDebugLabel = requireText(sourceDebugLabel, "sourceDebugLabel");
         compactLabel = requireText(compactLabel, "compactLabel");
     }
 
@@ -244,6 +304,7 @@ public record NativeDiffuseGiPlanUpload(
         FrameJitter jitter = temporalInput.jitter();
         CacheConfidence confidence = plan.cacheConfidence();
         GiCacheSnapshot cacheSnapshot = plan.cacheSnapshot();
+        DiffuseGiSourceSummary sourceSummary = plan.sourceSummary();
         DiffuseGiValidationReport validationReport = plan.validationReport();
 
         long generation = max(
@@ -251,7 +312,8 @@ public record NativeDiffuseGiPlanUpload(
                 cacheSnapshot.latestDirtyGeneration(),
                 confidence.sourceGeneration(),
                 confidence.lastTouchedFrame(),
-                temporalInput.frameIndex()
+                temporalInput.frameIndex(),
+                sourceSummary.generation()
         );
 
         return new NativeDiffuseGiPlanUpload(
@@ -313,9 +375,30 @@ public record NativeDiffuseGiPlanUpload(
                 cacheSnapshot.dirtyRegions().lastGeneration(),
                 cacheSnapshot.surfaceRecordCount(),
                 cacheSnapshot.radianceRecordCount(),
+                sourceSummary.generation(),
+                sourceSummary.directLightingGeneration(),
+                sourceSummary.worldGeneration(),
+                sourceSummary.materialGeneration(),
+                sourceSummary.sectionGeneration(),
+                sourceSummary.dirtyRegionGeneration(),
+                sourceSummary.directLightingReady(),
+                sourceSummary.worldInputAvailable(),
+                sourceSummary.materialInputAvailable(),
+                sourceSummary.sectionInputAvailable(),
+                sourceSummary.celestialLightCount(),
+                sourceSummary.emissiveLightCount(),
+                sourceSummary.shadowCandidateCount(),
+                sourceSummary.budgetedShadowCandidateCount(),
+                sourceSummary.sectionSnapshotCount(),
+                sourceSummary.dirtyRegionCount(),
+                sourceSummary.materialUpdateCount(),
                 validationReport.findings().size(),
                 validationReport.errorCount(),
                 validationReport.warningCount(),
+                plan.gridDebugLabel(),
+                plan.rayBudgetDebugLabel(),
+                plan.cacheConfidenceDebugLabel(),
+                plan.sourceDebugLabel(),
                 plan.compactLabel()
         );
     }
@@ -426,6 +509,48 @@ public record NativeDiffuseGiPlanUpload(
         };
     }
 
+    public long[] sourceGenerations() {
+        return new long[]{
+                this.sourceSummaryGeneration,
+                this.sourceDirectLightingGeneration,
+                this.sourceWorldGeneration,
+                this.sourceMaterialGeneration,
+                this.sourceSectionGeneration,
+                this.sourceDirtyRegionGeneration
+        };
+    }
+
+    public int[] sourceFlags() {
+        return new int[]{
+                this.sourceDirectLightingReady ? 1 : 0,
+                this.sourceWorldInputAvailable ? 1 : 0,
+                this.sourceMaterialInputAvailable ? 1 : 0,
+                this.sourceSectionInputAvailable ? 1 : 0
+        };
+    }
+
+    public int[] sourceCounts() {
+        return new int[]{
+                this.sourceCelestialLightCount,
+                this.sourceEmissiveLightCount,
+                this.sourceShadowCandidateCount,
+                this.sourceBudgetedShadowCandidateCount,
+                this.sourceSectionSnapshotCount,
+                this.sourceDirtyRegionCount,
+                this.sourceMaterialUpdateCount
+        };
+    }
+
+    public String[] debugLabels() {
+        return new String[]{
+                this.gridDebugLabel,
+                this.rayBudgetDebugLabel,
+                this.cacheConfidenceDebugLabel,
+                this.sourceDebugLabel,
+                this.compactLabel
+        };
+    }
+
     private static int tierId(GiRayBudgetTier tier) {
         return switch (Objects.requireNonNull(tier, "tier")) {
             case DISABLED -> 0;
@@ -436,8 +561,8 @@ public record NativeDiffuseGiPlanUpload(
         };
     }
 
-    private static long max(long first, long second, long third, long fourth, long fifth) {
-        return Math.max(Math.max(first, second), Math.max(Math.max(third, fourth), fifth));
+    private static long max(long first, long second, long third, long fourth, long fifth, long sixth) {
+        return Math.max(Math.max(Math.max(first, second), Math.max(third, fourth)), Math.max(fifth, sixth));
     }
 
     private static String requireText(String value, String name) {
