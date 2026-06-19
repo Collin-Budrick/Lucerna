@@ -59,4 +59,8 @@ public record NativeStagedUploadBatch(
     public NativeSectionSnapshotUploadPacket toSectionSnapshotPacket() {
         return NativeSectionSnapshotUploadPacket.from(this);
     }
+
+    public NativeGBufferStagingUploadPacket toGBufferStagingPacket() {
+        return NativeGBufferStagingUploadPacket.from(this);
+    }
 }

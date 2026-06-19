@@ -226,8 +226,36 @@ public record LucernaStatusSnapshot(
         return this.uploads.compactGBufferStagingLabel();
     }
 
+    public String explicitGBufferStagingLabel() {
+        return this.uploads.explicitGBufferStagingLabel();
+    }
+
     public String stagingPayloadLabel() {
         return this.uploads.compactStagingPayloadLabel();
+    }
+
+    public NativePassTelemetryStatus nativePassStates() {
+        return this.nativeBridge.nativePassStates();
+    }
+
+    public String nativePassStateLabel() {
+        return this.nativePassStates().compactLabel();
+    }
+
+    public FirstPassValidationTelemetryStatus firstPassValidation() {
+        return FirstPassValidationTelemetryStatus.placeholder(this);
+    }
+
+    public String firstPassValidationSummary() {
+        return this.firstPassValidation().summary();
+    }
+
+    public String framePassStatusLabel() {
+        return "%s/%s attachable=%s".formatted(
+                this.frameLifecycle.framePassStatusCode().name(),
+                this.frameLifecycle.framePassStatus().kind().name(),
+                Boolean.toString(this.frameLifecycle.framePassAttachable())
+        );
     }
 
     public long pendingWorldUploadLag() {
@@ -279,7 +307,7 @@ public record LucernaStatusSnapshot(
     }
 
     public String compactStatusLine() {
-        return "Lucerna renderer=%s backend=%s native=%s iris=%s context=%s frameStage=%s constants=%s dirty=%d worldGen=%d uploadWorldGen=%d uploadMatGen=%d sectionGen=%d gbufferGen=%d cpuScopes=%d gpuScopes=%d"
+        return "Lucerna renderer=%s backend=%s native=%s iris=%s context=%s frameStage=%s constants=%s dirty=%d worldGen=%d uploadWorldGen=%d uploadMatGen=%d sectionGen=%d gbuffer=%d/%d firstPass=%s cpuScopes=%d gpuScopes=%d"
                 .formatted(
                         this.rendererStateLabel(),
                         this.backend.kind().name(),
@@ -293,7 +321,9 @@ public record LucernaStatusSnapshot(
                         this.uploadWorldGeneration(),
                         this.uploadMaterialGeneration(),
                         this.uploadSectionGeneration(),
+                        this.stagedGBufferStagingCount(),
                         this.uploadGBufferStagingGeneration(),
+                        this.firstPassValidation().placeholder() ? "placeholder" : "reported",
                         this.cpuScopeDurationsMillis().size(),
                         this.gpuScopeDurationsMillis().size()
                 );
@@ -319,6 +349,8 @@ public record LucernaStatusSnapshot(
         fields.put("native.status", this.nativeBridge.nativeStatus());
         fields.put("native.lastError", this.nativeBridge.lastError());
         fields.put("native.diagnostic", this.nativeBridge.diagnosticMessage());
+        fields.put("native.passStates", this.nativePassStateLabel());
+        fields.putAll(this.nativePassStates().validationFields("native.pass"));
         fields.put("iris.statusAvailable", Boolean.toString(this.iris.statusAvailable()));
         fields.put("iris.installed", Boolean.toString(this.iris.installed()));
         fields.put("iris.disableAttempted", Boolean.toString(this.iris.disableAttempted()));
@@ -337,15 +369,27 @@ public record LucernaStatusSnapshot(
         fields.put("upload.lastSectionEmissiveGeneration", Long.toString(this.uploadSectionEmissiveGeneration()));
         fields.put("upload.lastSectionDirtyRegionGeneration", Long.toString(this.uploadSectionDirtyRegionGeneration()));
         fields.put("upload.lastGBufferStagingGeneration", Long.toString(this.uploadGBufferStagingGeneration()));
+        fields.put("upload.gbuffer.stagedCount", Integer.toString(this.stagedGBufferStagingCount()));
+        fields.put("upload.gbuffer.lastGeneration", Long.toString(this.uploadGBufferStagingGeneration()));
+        fields.put("upload.gbuffer.stagingGeneration", Long.toString(this.uploadStagingGeneration()));
+        fields.put("upload.gbuffer.combinedGeneration", Long.toString(this.uploadGeneration()));
+        fields.put("upload.gbuffer.hasPayload", Boolean.toString(this.uploads.hasGBufferStaging()));
+        fields.put("upload.gbuffer.hasGeneration", Boolean.toString(this.uploads.hasGBufferStagingGeneration()));
         fields.put("upload.stagingGeneration", Long.toString(this.uploadStagingGeneration()));
         fields.put("upload.generations", this.uploadGenerationLabel());
         fields.put("upload.sectionGenerations", this.sectionGenerationLabel());
         fields.put("upload.sectionSnapshots", this.sectionSnapshotStagingLabel());
         fields.put("upload.gbufferStaging", this.gBufferStagingLabel());
+        fields.put("upload.gbufferStagingExplicit", this.explicitGBufferStagingLabel());
         fields.put("upload.stagingPayloads", this.stagingPayloadLabel());
         fields.put("frame.index", Long.toString(this.frameLifecycle.frameIndex()));
         fields.put("frame.stage", this.frameLifecycle.stage().name());
         fields.put("frame.passIntent", this.frameLifecycle.passIntent().name());
+        fields.put("frame.passStatus", this.framePassStatusLabel());
+        fields.put("frame.passStatusCode", this.frameLifecycle.framePassStatusCode().name());
+        fields.put("frame.passKind", this.frameLifecycle.framePassStatus().kind().name());
+        fields.put("frame.passAttachable", Boolean.toString(this.frameLifecycle.framePassAttachable()));
+        fields.put("frame.passMessage", this.frameLifecycle.framePassMessage());
         fields.put("frame.viewport", this.frameLifecycle.viewportWidth() + "x" + this.frameLifecycle.viewportHeight());
         fields.put("frame.resizePending", Boolean.toString(this.frameLifecycle.resizePending()));
         fields.put("frame.open", Boolean.toString(this.frameLifecycle.frameOpen()));
@@ -369,6 +413,8 @@ public record LucernaStatusSnapshot(
         fields.put("frame.activeCpuScopes", String.join(",", this.frameTimings.activeCpuScopeNames()));
         fields.put("frame.totalCpuMillis", Double.toString(this.frameTimings.totalCpuMillis()));
         fields.put("frame.totalGpuMillis", Double.toString(this.frameTimings.totalGpuMillis()));
+        fields.put("firstPass.validationSummary", this.firstPassValidationSummary());
+        fields.putAll(this.firstPassValidation().validationFields("firstPass"));
         fields.put("captured.nanos", Long.toString(this.capturedNanos));
         return Collections.unmodifiableMap(new LinkedHashMap<>(fields));
     }

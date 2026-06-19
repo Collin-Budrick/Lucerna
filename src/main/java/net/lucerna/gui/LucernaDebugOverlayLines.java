@@ -1,6 +1,7 @@
 package net.lucerna.gui;
 
 import net.lucerna.config.DebugOverlay;
+import net.lucerna.telemetry.NativePassTelemetryStatus;
 import net.lucerna.telemetry.LucernaStatusSnapshot;
 import net.minecraft.network.chat.Component;
 
@@ -30,8 +31,7 @@ public final class LucernaDebugOverlayLines {
                 + " materialGen=" + snapshot.uploadMaterialGeneration()));
         lines.add(Component.literal("Staging: sections=" + snapshot.stagedSectionSnapshotCount()
                 + " sectionGen=" + snapshot.uploadSectionGeneration()
-                + " | G-buffer: count=" + snapshot.stagedGBufferStagingCount()
-                + " gen=" + snapshot.uploadGBufferStagingGeneration()));
+                + " | G-buffer: " + snapshot.gBufferStagingLabel()));
         lines.add(Component.literal("Frame: stage=" + snapshot.frameStage()
                 + " context=" + snapshot.frameLifecycle().contextStatus()
                 + " source=" + snapshot.frameContextAcquisition().source()));
@@ -82,6 +82,9 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Frame constants: " + snapshot.frameConstants().stateLabel()
                 + " | " + snapshot.frameConstants().message()));
         lines.add(Component.literal("Native status: " + snapshot.nativeBridge().nativeStatus()));
+        lines.add(Component.literal("Native pass states: " + snapshot.nativePassStateLabel()));
+        lines.add(Component.literal("Frame pass status: " + snapshot.framePassStatusLabel()));
+        lines.add(Component.literal("First-pass validation: " + snapshot.firstPassValidationSummary()));
         lines.add(Component.literal("Iris: " + snapshot.irisLabel() + " (" + snapshot.iris().shaderPackState() + ")"));
     }
 
@@ -93,12 +96,16 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Last uploaded material generation: " + snapshot.uploadMaterialGeneration()));
         lines.add(Component.literal("Section snapshots: " + snapshot.sectionSnapshotStagingLabel()));
         lines.add(Component.literal("G-buffer staging: " + snapshot.gBufferStagingLabel()));
+        lines.add(Component.literal("G-buffer staging explicit: " + snapshot.explicitGBufferStagingLabel()));
+        lines.add(Component.literal("First-pass validation: " + snapshot.firstPassValidationSummary()));
     }
 
     private static void addMaterialLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
         lines.add(Component.literal("Material id overlay awaiting extraction data."));
         lines.add(Component.literal("Last uploaded material generation: " + snapshot.uploadMaterialGeneration()));
         lines.add(Component.literal("Section material generation: " + snapshot.uploadSectionMaterialGeneration()));
+        lines.add(Component.literal("G-buffer staging: " + snapshot.explicitGBufferStagingLabel()));
+        lines.add(Component.literal("First-pass validation: " + snapshot.firstPassValidationSummary()));
         lines.add(Component.literal("Combined upload generation: " + snapshot.uploadGeneration()));
     }
 
@@ -115,6 +122,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Frame stage: " + snapshot.frameStage()
                 + " | pass=" + snapshot.framePassIntent()
                 + " | context=" + snapshot.frameLifecycle().contextStatus()));
+        lines.add(Component.literal("Frame pass status: " + snapshot.framePassStatusLabel()));
         lines.add(Component.literal("Frame constants: " + snapshot.frameConstants().stateLabel()
                 + " | age=" + formatOptionalMillis(snapshot.frameConstants().ageMillis())));
         for (Map.Entry<String, Double> timing : snapshot.cpuScopeDurationsMillis().entrySet()) {
@@ -149,7 +157,23 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Section generations: " + snapshot.sectionGenerationLabel()));
         lines.add(Component.literal("Section snapshots: " + snapshot.sectionSnapshotStagingLabel()));
         lines.add(Component.literal("G-buffer staging: " + snapshot.gBufferStagingLabel()));
+        lines.add(Component.literal("G-buffer staging explicit: " + snapshot.explicitGBufferStagingLabel()));
         lines.add(Component.literal("Staging payloads: " + snapshot.stagingPayloadLabel()));
+        addNativePassStateLines(lines, snapshot);
+        lines.add(Component.literal("Frame pass status: " + snapshot.framePassStatusLabel()));
+        lines.add(Component.literal("First-pass validation: " + snapshot.firstPassValidationSummary()));
+    }
+
+    private static void addNativePassStateLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        NativePassTelemetryStatus nativePassStates = snapshot.nativePassStates();
+        lines.add(Component.literal("Native pass states: " + nativePassStates.compactLabel()));
+        if (!nativePassStates.hasPassStates()) {
+            return;
+        }
+
+        for (Map.Entry<String, String> entry : nativePassStates.passStates().entrySet()) {
+            lines.add(Component.literal("Native pass " + entry.getKey() + ": " + entry.getValue()));
+        }
     }
 
     private static String formatMillis(double millis) {

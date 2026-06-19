@@ -30,7 +30,15 @@ public final class ShaderLayoutValidator {
         knownResources.addAll(attachmentsByName.keySet());
         Set<String> descriptorSetNames = descriptorSetNames(layout.descriptorSets());
 
-        validatePassReferences(layout.passes(), descriptorSetNames, knownResources, bindingsByName, attachmentsByName, findings);
+        validatePassReferences(
+                layout.passes(),
+                passesById,
+                descriptorSetNames,
+                knownResources,
+                bindingsByName,
+                attachmentsByName,
+                findings
+        );
 
         return new ShaderLayoutValidationReport(findings);
     }
@@ -229,6 +237,7 @@ public final class ShaderLayoutValidator {
 
     private static void validatePassReferences(
             List<ShaderPassDescriptor> passes,
+            Map<String, ShaderPassDescriptor> passesById,
             Set<String> descriptorSetNames,
             Set<String> knownResources,
             Map<String, DescriptorBindingSlot> bindingsByName,
@@ -238,6 +247,8 @@ public final class ShaderLayoutValidator {
         for (int i = 0; i < passes.size(); i++) {
             ShaderPassDescriptor pass = passes.get(i);
             String path = "$.passes[" + i + "]";
+
+            validateDependencies(path, pass, passesById, findings);
 
             for (int setIndex = 0; setIndex < pass.descriptorSets().size(); setIndex++) {
                 String descriptorSet = pass.descriptorSets().get(setIndex);
@@ -252,6 +263,120 @@ public final class ShaderLayoutValidator {
 
             validateResourceReferences(path, "reads", pass.reads(), knownResources, bindingsByName, attachmentsByName, pass, findings);
             validateResourceReferences(path, "writes", pass.writes(), knownResources, bindingsByName, attachmentsByName, pass, findings);
+            validateAttachmentWriteSemantics(path, pass, passesById, attachmentsByName, findings);
+        }
+    }
+
+    private static void validateDependencies(
+            String passPath,
+            ShaderPassDescriptor pass,
+            Map<String, ShaderPassDescriptor> passesById,
+            List<ShaderLayoutValidationFinding> findings
+    ) {
+        Set<String> dependencyIds = new LinkedHashSet<>();
+        for (int i = 0; i < pass.dependsOn().size(); i++) {
+            ShaderPassId dependencyId = pass.dependsOn().get(i);
+            String dependency = dependencyId.value();
+            String path = passPath + ".dependsOn[" + i + "]";
+            if (!dependencyIds.add(dependency)) {
+                findings.add(ShaderLayoutValidationFinding.warning(
+                        "pass.dependency.duplicate",
+                        path,
+                        "Pass declares duplicate dependency '" + dependency + "'"
+                ));
+            }
+            if (pass.id().equals(dependencyId)) {
+                findings.add(ShaderLayoutValidationFinding.error(
+                        "pass.dependency.self",
+                        path,
+                        "Pass must not depend on itself"
+                ));
+                continue;
+            }
+
+            ShaderPassDescriptor dependencyPass = passesById.get(dependency);
+            if (dependencyPass == null) {
+                findings.add(ShaderLayoutValidationFinding.error(
+                        "pass.dependency.missing",
+                        path,
+                        "Pass depends on undeclared pass '" + dependency + "'"
+                ));
+            } else if (dependencyPass.executionOrder() >= pass.executionOrder()) {
+                findings.add(ShaderLayoutValidationFinding.warning(
+                        "pass.dependency.order",
+                        path,
+                        "Dependency '" + dependency + "' should execute before '" + pass.id().value() + "'"
+                ));
+            }
+        }
+    }
+
+    private static void validateAttachmentWriteSemantics(
+            String passPath,
+            ShaderPassDescriptor pass,
+            Map<String, ShaderPassDescriptor> passesById,
+            Map<String, ShaderAttachment> attachmentsByName,
+            List<ShaderLayoutValidationFinding> findings
+    ) {
+        Set<String> semanticNames = new LinkedHashSet<>();
+        for (int i = 0; i < pass.attachmentWriteSemantics().size(); i++) {
+            ShaderAttachmentWriteSemantic semantic = pass.attachmentWriteSemantics().get(i);
+            String path = passPath + ".attachmentWriteSemantics[" + i + "]";
+            if (!semanticNames.add(semantic.semantic())) {
+                findings.add(ShaderLayoutValidationFinding.warning(
+                        "pass.write_semantic.duplicate",
+                        path + ".semantic",
+                        "Pass declares duplicate write semantic '" + semantic.semantic() + "'"
+                ));
+            }
+
+            ShaderAttachment attachment = attachmentsByName.get(semantic.attachmentName());
+            if (attachment == null) {
+                findings.add(ShaderLayoutValidationFinding.error(
+                        "pass.write_semantic.attachment_missing",
+                        path + ".attachmentName",
+                        "Write semantic references undeclared attachment '" + semantic.attachmentName() + "'"
+                ));
+            } else {
+                if (!pass.writesResource(semantic.attachmentName())) {
+                    findings.add(ShaderLayoutValidationFinding.error(
+                            "pass.write_semantic.not_written",
+                            path + ".attachmentName",
+                            "Write semantic attachment '" + semantic.attachmentName()
+                                    + "' must also be listed in pass writes"
+                    ));
+                }
+                if (!attachment.isOwnedBy(pass.id())) {
+                    findings.add(ShaderLayoutValidationFinding.error(
+                            "pass.write_semantic.owner_mismatch",
+                            path + ".attachmentName",
+                            "Write semantic attachment '" + semantic.attachmentName()
+                                    + "' is owned by '" + attachment.ownerPass().value() + "'"
+                    ));
+                }
+            }
+
+            String producer = semantic.producerPass().value();
+            ShaderPassDescriptor producerPass = passesById.get(producer);
+            if (producerPass == null) {
+                findings.add(ShaderLayoutValidationFinding.error(
+                        "pass.write_semantic.producer_missing",
+                        path + ".producerPass",
+                        "Write semantic producer pass '" + producer + "' is not declared"
+                ));
+            } else if (!semantic.producedBy(pass.id()) && !pass.dependsOn(semantic.producerPass())) {
+                findings.add(ShaderLayoutValidationFinding.warning(
+                        "pass.write_semantic.producer_dependency",
+                        path + ".producerPass",
+                        "Pass should declare producer '" + producer + "' in dependsOn"
+                ));
+            } else if (!semantic.producedBy(pass.id()) && producerPass.executionOrder() >= pass.executionOrder()) {
+                findings.add(ShaderLayoutValidationFinding.warning(
+                        "pass.write_semantic.producer_order",
+                        path + ".producerPass",
+                        "Write semantic producer '" + producer + "' should execute before '" + pass.id().value() + "'"
+                ));
+            }
         }
     }
 

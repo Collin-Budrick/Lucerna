@@ -111,10 +111,57 @@ public final class ShaderLayoutResource {
                     stringList(pass, "writes"),
                     stringValue(pass, "pushConstants"),
                     booleanValue(pass, "sideEffectFreePlaceholder"),
-                    optionalString(pass, "handoff")
+                    optionalString(pass, "handoff"),
+                    optionalPassIdList(pass, "dependsOn"),
+                    attachmentWriteSemantics(pass, "passes[" + i + "].attachmentWriteSemantics")
             ));
         }
         return passes;
+    }
+
+    private static List<ShaderPassId> optionalPassIdList(JsonObject object, String name) {
+        JsonElement element = object.get(name);
+        if (element == null || element.isJsonNull()) {
+            return List.of();
+        }
+        if (!element.isJsonArray()) {
+            throw new JsonParseException("Expected optional string array field '" + name + "'");
+        }
+        JsonArray array = element.getAsJsonArray();
+        List<ShaderPassId> values = new ArrayList<>(array.size());
+        for (int i = 0; i < array.size(); i++) {
+            JsonElement entry = array.get(i);
+            if (entry == null || !entry.isJsonPrimitive() || !entry.getAsJsonPrimitive().isString()) {
+                throw new JsonParseException("Expected string entry at '" + name + "[" + i + "]'");
+            }
+            values.add(ShaderPassId.of(entry.getAsString()));
+        }
+        return values;
+    }
+
+    private static List<ShaderAttachmentWriteSemantic> attachmentWriteSemantics(JsonObject pass, String path) {
+        JsonElement element = pass.get("attachmentWriteSemantics");
+        if (element == null || element.isJsonNull()) {
+            return List.of();
+        }
+        if (!element.isJsonArray()) {
+            throw new JsonParseException("Expected optional object array field '" + path + "'");
+        }
+        JsonArray array = element.getAsJsonArray();
+        List<ShaderAttachmentWriteSemantic> semantics = new ArrayList<>(array.size());
+        for (int i = 0; i < array.size(); i++) {
+            JsonObject semantic = objectValue(array.get(i), path + "[" + i + "]");
+            semantics.add(new ShaderAttachmentWriteSemantic(
+                    stringValue(semantic, "semantic"),
+                    stringValue(semantic, "attachmentName"),
+                    ShaderPassId.of(stringValue(semantic, "producerPass")),
+                    booleanValue(semantic, "required"),
+                    booleanValue(semantic, "clearBeforeWrite"),
+                    booleanValue(semantic, "historySensitive"),
+                    optionalString(semantic, "notes")
+            ));
+        }
+        return semantics;
     }
 
     private static JsonArray requiredArray(JsonObject object, String name) {

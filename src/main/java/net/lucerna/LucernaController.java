@@ -11,14 +11,21 @@ import net.lucerna.material.MaterialRegistry;
 import net.lucerna.material.extract.LucernaMaterialExtractionService;
 import net.lucerna.material.extract.MaterialTableRefreshResult;
 import net.lucerna.nativebridge.LucernaNativeBridge;
+import net.lucerna.render.gbuffer.GBufferWriteIntent;
+import net.lucerna.render.gbuffer.PrimaryVoxelGBufferPassPlan;
 import net.lucerna.render.LucernaFrameHooks;
 import net.lucerna.render.context.MojangVulkanBorrowedContextProbe;
 import net.lucerna.render.frame.FrameConstantsCapture;
 import net.lucerna.render.frame.FrameRenderFlags;
 import net.lucerna.render.frame.LucernaFrameConstantsCollector;
 import net.lucerna.render.frame.LucernaFrameConstants;
+import net.lucerna.render.voxel.VoxelRay;
+import net.lucerna.render.voxel.VoxelSectionSnapshotReference;
+import net.lucerna.render.voxel.VoxelTraversalRequest;
+import net.lucerna.upload.NativeGBufferStagingUpload;
 import net.lucerna.telemetry.LucernaTelemetry;
 import net.lucerna.upload.NativeSectionSnapshotUpload;
+import net.lucerna.upload.NativeStagedUploadBatch;
 import net.lucerna.upload.NativeUploadQueue;
 import net.lucerna.world.LucernaWorldFeed;
 import net.lucerna.world.extract.ChunkSectionSnapshotExtractionResult;
@@ -27,6 +34,7 @@ import net.lucerna.world.extract.MinecraftChunkSectionSnapshotExtractor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.model.ModelManager;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 
 public final class LucernaController {
@@ -60,6 +68,10 @@ public final class LucernaController {
     private String lastLoggedFrameContextKey = "";
     private String lastLoggedFrameConstantsKey = "";
     private String lastLoggedSectionExtractionKey = "";
+    private String lastPreparedGBufferStagingKey = "";
+    private String lastLoggedGBufferStagingKey = "";
+    private String lastLoggedFirstPassPlanKey = "";
+    private long gBufferStagingGeneration;
     private FrameConstantsCapture frameConstantsCapture = FrameConstantsCapture.unavailable(
             "Frame constants have not been captured by Fabric level extraction yet."
     );
@@ -93,20 +105,26 @@ public final class LucernaController {
         if (this.isRendererActive()) {
             this.irisCompat.disableIrisShadersForLucerna();
             this.ensureMaterialTablePrepared();
-            var sectionExtraction = this.sectionSnapshotCoordinator.drainAndExtract(Minecraft.getInstance(), this.worldFeed);
+            var client = Minecraft.getInstance();
+            var sectionExtraction = this.sectionSnapshotCoordinator.drainAndExtract(client, this.worldFeed);
             var materialUpdates = this.materialRegistry.snapshotUpdatesAfter(this.uploadQueue.lastMaterialGeneration());
             var sectionUploads = sectionExtraction.sectionSnapshots().stream()
                     .map(handoff -> NativeSectionSnapshotUpload.from(handoff.snapshot(), handoff.dirtyRegion()))
                     .toList();
+            var gBufferUploads = this.prepareGBufferStagingUploads(client, sectionUploads, materialUpdates.generation());
             var stagedBatch = this.uploadQueue.acceptWorldMaterialAndStagingDeltas(
                     sectionExtraction.dirtyRegionSnapshot(),
                     materialUpdates,
                     sectionUploads,
-                    List.of()
+                    gBufferUploads
             );
+            var firstPassPlan = this.buildPrimaryGBufferPassPlan(stagedBatch);
             this.nativeBridge.uploadWorldDeltas(stagedBatch.worldAndMaterialBatch());
             this.nativeBridge.uploadSectionSnapshots(stagedBatch);
+            this.nativeBridge.uploadGBufferStaging(stagedBatch);
             this.logSectionExtractionStatusIfChanged(sectionExtraction);
+            this.logGBufferStagingStatusIfChanged(stagedBatch);
+            this.logFirstPassPlanIfChanged(firstPassPlan);
             this.submitNoOpFrame(0.0F);
         }
     }
@@ -121,6 +139,7 @@ public final class LucernaController {
         this.frameConstantsCollector.reset();
         this.frameConstantsFrameIndex = 0L;
         this.frameConstantsCapture = FrameConstantsCapture.unavailable("Lucerna is shutting down.");
+        this.resetGBufferPlanning();
         Lucerna.LOGGER.info("Lucerna shutdown complete.");
     }
 
@@ -247,6 +266,7 @@ public final class LucernaController {
                 this.nativeBridge.shutdown();
                 this.nativeInitialized = false;
                 this.sectionSnapshotCoordinator.clearCache();
+                this.resetGBufferPlanning();
             }
             return;
         }
@@ -277,6 +297,85 @@ public final class LucernaController {
         }
 
         this.refreshMaterials(null);
+    }
+
+    private List<NativeGBufferStagingUpload> prepareGBufferStagingUploads(
+            Minecraft client,
+            List<NativeSectionSnapshotUpload> sectionUploads,
+            long materialGeneration
+    ) {
+        int[] dimensions = this.currentViewportDimensions(client);
+        int width = dimensions[0];
+        int height = dimensions[1];
+        if (width <= 0 || height <= 0) {
+            return List.of();
+        }
+
+        long sourceGeneration = Math.max(materialGeneration, this.maxSectionUploadGeneration(sectionUploads));
+        String stagingKey = width
+                + "x"
+                + height
+                + "|"
+                + sourceGeneration;
+        if (stagingKey.equals(this.lastPreparedGBufferStagingKey)) {
+            return List.of();
+        }
+
+        this.lastPreparedGBufferStagingKey = stagingKey;
+        this.gBufferStagingGeneration = Math.max(this.gBufferStagingGeneration + 1L, Math.max(1L, sourceGeneration));
+        return List.of(NativeGBufferStagingUpload.lucernaMain(width, height, this.gBufferStagingGeneration));
+    }
+
+    private PrimaryVoxelGBufferPassPlan buildPrimaryGBufferPassPlan(NativeStagedUploadBatch stagedBatch) {
+        if (stagedBatch == null || stagedBatch.gBufferStaging().isEmpty()) {
+            return null;
+        }
+
+        NativeGBufferStagingUpload upload = stagedBatch.gBufferStaging().get(stagedBatch.gBufferStaging().size() - 1);
+        var sectionReferences = this.uniqueSectionReferences(stagedBatch.sectionSnapshots());
+        var writeIntent = GBufferWriteIntent.lucernaMain(upload.width(), upload.height(), upload.generation());
+        var traversalRequest = VoxelTraversalRequest.primaryGBuffer(
+                this.frameHooks.frameIndex(),
+                new VoxelRay(0.0F, 0.0F, 0.0F, 0.0F, 0.0F, 1.0F, 0.0F, 512.0F),
+                sectionReferences
+        );
+        return PrimaryVoxelGBufferPassPlan.from(writeIntent, traversalRequest, sectionReferences);
+    }
+
+    private List<VoxelSectionSnapshotReference> uniqueSectionReferences(List<NativeSectionSnapshotUpload> sectionUploads) {
+        var referencesByKey = new LinkedHashMap<String, VoxelSectionSnapshotReference>();
+        for (NativeSectionSnapshotUpload sectionUpload : sectionUploads) {
+            VoxelSectionSnapshotReference reference = VoxelSectionSnapshotReference.from(sectionUpload);
+            VoxelSectionSnapshotReference existing = referencesByKey.get(reference.stableKey());
+            if (existing == null || reference.combinedGeneration() >= existing.combinedGeneration()) {
+                referencesByKey.put(reference.stableKey(), reference);
+            }
+        }
+        return List.copyOf(referencesByKey.values());
+    }
+
+    private int[] currentViewportDimensions(Minecraft client) {
+        int width = this.viewportWidth;
+        int height = this.viewportHeight;
+        if ((width <= 0 || height <= 0) && client != null && client.getWindow() != null) {
+            width = client.getWindow().getWidth();
+            height = client.getWindow().getHeight();
+        }
+        return new int[]{Math.max(0, width), Math.max(0, height)};
+    }
+
+    private long maxSectionUploadGeneration(List<NativeSectionSnapshotUpload> sectionUploads) {
+        return sectionUploads.stream()
+                .mapToLong(NativeSectionSnapshotUpload::combinedGeneration)
+                .max()
+                .orElse(0L);
+    }
+
+    private void resetGBufferPlanning() {
+        this.lastPreparedGBufferStagingKey = "";
+        this.lastLoggedGBufferStagingKey = "";
+        this.lastLoggedFirstPassPlanKey = "";
+        this.gBufferStagingGeneration = 0L;
     }
 
     private FrameRenderFlags currentFrameRenderFlags() {
@@ -382,6 +481,69 @@ public final class LucernaController {
                 result.cachedSectionCount(),
                 this.uploadQueue.lastSectionGeneration(),
                 this.uploadQueue.lastSectionDirtyRegionGeneration()
+        );
+    }
+
+    private void logGBufferStagingStatusIfChanged(NativeStagedUploadBatch stagedBatch) {
+        if (stagedBatch == null || stagedBatch.gBufferStaging().isEmpty()) {
+            return;
+        }
+
+        NativeGBufferStagingUpload upload = stagedBatch.gBufferStaging().get(stagedBatch.gBufferStaging().size() - 1);
+        String logKey = upload.passId()
+                + "|"
+                + upload.generation()
+                + "|"
+                + upload.width()
+                + "x"
+                + upload.height()
+                + "|"
+                + upload.attachmentCount();
+        if (logKey.equals(this.lastLoggedGBufferStagingKey)) {
+            return;
+        }
+
+        this.lastLoggedGBufferStagingKey = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna G-buffer staging prepared: pass={} generation={} size={}x{} attachments={}.",
+                upload.passId(),
+                upload.generation(),
+                upload.width(),
+                upload.height(),
+                upload.attachmentCount()
+        );
+    }
+
+    private void logFirstPassPlanIfChanged(PrimaryVoxelGBufferPassPlan plan) {
+        if (plan == null) {
+            return;
+        }
+
+        var metadata = plan.outputMetadata();
+        String logKey = plan.writeIntent().generation()
+                + "|"
+                + plan.readyForCpuPlanning()
+                + "|"
+                + metadata.sectionCount()
+                + "|"
+                + metadata.occupiedVoxelCount()
+                + "|"
+                + plan.findings().size();
+        if (logKey.equals(this.lastLoggedFirstPassPlanKey)) {
+            return;
+        }
+
+        this.lastLoggedFirstPassPlanKey = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna primary G-buffer first-pass plan: ready={} valid={} sections={} occupiedVoxels={} materialSections={} emissiveSections={} writes={} findings={}.",
+                plan.readyForCpuPlanning(),
+                plan.valid(),
+                metadata.sectionCount(),
+                metadata.occupiedVoxelCount(),
+                metadata.materialPayloadSectionCount(),
+                metadata.emissivePayloadSectionCount(),
+                metadata.expectedAttachmentWriteCount(),
+                plan.findings().size()
         );
     }
 }

@@ -1,6 +1,8 @@
 package net.lucerna.nativebridge;
 
 import net.lucerna.Lucerna;
+import net.lucerna.render.gbuffer.GBufferTargetContract;
+import net.lucerna.upload.NativeGBufferStagingUploadPacket;
 import net.lucerna.upload.NativeSectionSnapshotUploadPacket;
 import net.lucerna.upload.NativeStagedUploadBatch;
 import net.lucerna.upload.NativeUploadBatch;
@@ -8,6 +10,11 @@ import net.lucerna.upload.NativeUploadPacket;
 
 public final class LucernaNativeBridge {
     private static final String LIBRARY_NAME = "lucerna_renderer";
+    private static final int FORMAT_TAG_GBUFFER_DEPTH = 10;
+    private static final int FORMAT_TAG_GBUFFER_NORMAL_MATERIAL = 11;
+    private static final int FORMAT_TAG_GBUFFER_ALBEDO_EMISSIVE = 12;
+    private static final int FORMAT_TAG_GBUFFER_MOTION_HISTORY = 13;
+    private static final int FORMAT_TAG_GBUFFER_MATERIAL_ID = 15;
 
     private boolean loadAttempted;
     private boolean loaded;
@@ -15,6 +22,7 @@ public final class LucernaNativeBridge {
     private boolean initialized;
     private String lastError = "Native library has not been loaded.";
     private long lastLoggedSectionSnapshotGeneration;
+    private long lastLoggedGBufferStagingGeneration;
 
     public synchronized boolean hasLoadAttempted() {
         return this.loadAttempted;
@@ -84,6 +92,7 @@ public final class LucernaNativeBridge {
         }
 
         this.lastLoggedSectionSnapshotGeneration = 0L;
+        this.lastLoggedGBufferStagingGeneration = 0L;
         this.initialized = true;
         return true;
     }
@@ -99,6 +108,7 @@ public final class LucernaNativeBridge {
             this.lastError = "";
         }
         this.lastLoggedSectionSnapshotGeneration = 0L;
+        this.lastLoggedGBufferStagingGeneration = 0L;
         this.initialized = false;
     }
 
@@ -206,6 +216,44 @@ public final class LucernaNativeBridge {
         }
     }
 
+    public synchronized void uploadGBufferStaging(NativeStagedUploadBatch batch) {
+        if (this.isOperational() && batch != null && batch.hasStagingPayloads()) {
+            NativeGBufferStagingUploadPacket packet = batch.toGBufferStagingPacket();
+            if (!packet.hasPayloads()) {
+                return;
+            }
+
+            boolean accepted = this.invokeNative("uploadGBufferStaging", () -> nativeUploadGBufferStaging(
+                    packet.generation(),
+                    packet.gBufferStagingCount(),
+                    packet.firstGBufferStagingGeneration(),
+                    packet.lastGBufferStagingGeneration(),
+                    packet.passIds(),
+                    packet.numericPassIds(),
+                    packet.widths(),
+                    packet.heights(),
+                    packet.attachmentPayloadCounts(),
+                    packet.attachmentNames(),
+                    nativeAttachmentFormatTags(packet),
+                    nativeAttachmentWidths(packet),
+                    nativeAttachmentHeights(packet),
+                    packet.attachmentSamples(),
+                    packet.attachmentEnabled()
+            ), true);
+            if (accepted && packet.lastGBufferStagingGeneration() != this.lastLoggedGBufferStagingGeneration) {
+                this.lastLoggedGBufferStagingGeneration = packet.lastGBufferStagingGeneration();
+                Lucerna.LOGGER.info(
+                        "Lucerna native G-buffer staging accepted: targets={} generation={} attachments={} lastSize={}x{}.",
+                        packet.gBufferStagingCount(),
+                        packet.lastGBufferStagingGeneration(),
+                        packet.attachmentPayloadCount(),
+                        lastValue(packet.widths()),
+                        lastValue(packet.heights())
+                );
+            }
+        }
+    }
+
     public synchronized void renderLighting() {
         if (this.isOperational()) {
             this.invokeNative("renderLighting", LucernaNativeBridge::nativeRenderLighting, true);
@@ -245,6 +293,80 @@ public final class LucernaNativeBridge {
 
     private boolean isOperational() {
         return this.loaded && this.available && this.initialized;
+    }
+
+    private static int[] nativeAttachmentFormatTags(NativeGBufferStagingUploadPacket packet) {
+        String[] attachmentNames = packet.attachmentNames();
+        String[] attachmentFormats = packet.attachmentFormats();
+        int[] formatTags = new int[attachmentNames.length];
+        for (int index = 0; index < attachmentNames.length; index++) {
+            formatTags[index] = nativeAttachmentFormatTag(attachmentNames[index], attachmentFormats[index]);
+        }
+        return formatTags;
+    }
+
+    private static int nativeAttachmentFormatTag(String attachmentName, String attachmentFormat) {
+        return switch (attachmentName) {
+            case GBufferTargetContract.DEPTH -> FORMAT_TAG_GBUFFER_DEPTH;
+            case GBufferTargetContract.NORMAL_ROUGHNESS -> FORMAT_TAG_GBUFFER_NORMAL_MATERIAL;
+            case GBufferTargetContract.ALBEDO_OPACITY, GBufferTargetContract.EMISSIVE -> FORMAT_TAG_GBUFFER_ALBEDO_EMISSIVE;
+            case GBufferTargetContract.MATERIAL_ID -> FORMAT_TAG_GBUFFER_MATERIAL_ID;
+            case GBufferTargetContract.MOTION_HISTORY -> FORMAT_TAG_GBUFFER_MOTION_HISTORY;
+            default -> fallbackFormatTag(attachmentFormat);
+        };
+    }
+
+    private static int fallbackFormatTag(String attachmentFormat) {
+        if (attachmentFormat == null) {
+            return 0;
+        }
+        return switch (attachmentFormat) {
+            case "D32_SFLOAT" -> FORMAT_TAG_GBUFFER_DEPTH;
+            case "R16G16B16A16_SFLOAT" -> FORMAT_TAG_GBUFFER_ALBEDO_EMISSIVE;
+            case "R32_UINT" -> FORMAT_TAG_GBUFFER_MATERIAL_ID;
+            default -> 1;
+        };
+    }
+
+    private static int[] nativeAttachmentWidths(NativeGBufferStagingUploadPacket packet) {
+        return nativeAttachmentDimensions(packet, true);
+    }
+
+    private static int[] nativeAttachmentHeights(NativeGBufferStagingUploadPacket packet) {
+        return nativeAttachmentDimensions(packet, false);
+    }
+
+    private static int[] nativeAttachmentDimensions(NativeGBufferStagingUploadPacket packet, boolean width) {
+        int[] dimensions = new int[packet.attachmentPayloadCount()];
+        int[] offsets = packet.attachmentPayloadOffsets();
+        int[] counts = packet.attachmentPayloadCounts();
+        int[] targetWidths = packet.widths();
+        int[] targetHeights = packet.heights();
+        String[] resolutions = packet.attachmentResolutions();
+
+        for (int targetIndex = 0; targetIndex < offsets.length; targetIndex++) {
+            int baseDimension = width ? targetWidths[targetIndex] : targetHeights[targetIndex];
+            int offset = offsets[targetIndex];
+            int count = counts[targetIndex];
+            for (int attachmentIndex = offset; attachmentIndex < offset + count; attachmentIndex++) {
+                dimensions[attachmentIndex] = scaledDimension(baseDimension, resolutions[attachmentIndex]);
+            }
+        }
+        return dimensions;
+    }
+
+    private static int scaledDimension(int baseDimension, String resolution) {
+        if (baseDimension <= 0) {
+            return 0;
+        }
+        if ("half".equals(resolution)) {
+            return Math.max(1, (baseDimension + 1) / 2);
+        }
+        return baseDimension;
+    }
+
+    private static int lastValue(int[] values) {
+        return values.length == 0 ? 0 : values[values.length - 1];
     }
 
     private boolean invokeNative(String operation, NativeCall call, boolean preserveInitializedAfterFailure) {
@@ -401,6 +523,24 @@ public final class LucernaNativeBridge {
             int[] emissiveMaterialIds,
             int[] emissiveBlockLightLevels,
             long[] emissiveEntryGenerations
+    );
+
+    private static native boolean nativeUploadGBufferStaging(
+            long generation,
+            int gBufferStagingCount,
+            long firstGBufferStagingGeneration,
+            long lastGBufferStagingGeneration,
+            String[] passIds,
+            int[] numericPassIds,
+            int[] widths,
+            int[] heights,
+            int[] attachmentCounts,
+            String[] attachmentNames,
+            int[] attachmentFormats,
+            int[] attachmentWidths,
+            int[] attachmentHeights,
+            int[] attachmentSamples,
+            int[] attachmentEnabled
     );
 
     private static native boolean nativeRenderLighting();

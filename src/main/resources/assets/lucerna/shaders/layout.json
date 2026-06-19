@@ -1,11 +1,12 @@
 {
   "schemaVersion": 1,
-  "layoutVersion": "0.2.0",
+  "layoutVersion": "0.3.0",
   "namespace": "lucerna",
   "intent": "Stable shader/resource metadata for Lucerna-owned Vulkan passes. This file is descriptive until the native renderer consumes it.",
   "subAgentRule": "Do not run shader compilation, Gradle checks, Minecraft launches, render smoke tests, or builds used as verification.",
   "naming": {
     "passIdFormat": "lucerna.<stage>.<name>",
+    "passNameFormat": "lowercase letters, numbers, and underscores; keep existing public ids stable",
     "attachmentNameFormat": "lucerna.<stage>.<name>",
     "descriptorNameFormat": "UpperCamelCase logical resource names with fixed set/binding numbers",
     "shaderFileFormat": "<stage>/<name>.<stage-suffix>.glsl",
@@ -139,6 +140,10 @@
     ],
     "perPassUse": [
       {
+        "passId": "lucerna.voxel.first_pass",
+        "params0": "dirty region generation, voxel update count, upload batch id, reserved"
+      },
+      {
         "passId": "lucerna.gbuffer.main",
         "params0": "section generation, material generation, render flags, reserved"
       },
@@ -156,7 +161,7 @@
       },
       {
         "passId": "lucerna.composite.final",
-        "params0": "exposure, debug mix, tonemap mode, reserved"
+        "params0": "flat red, flat green, flat blue, flat alpha"
       },
       {
         "passId": "lucerna.debug.overlay",
@@ -272,10 +277,12 @@
           "name": "VoxelOccupancy",
           "descriptorType": "storage_buffer",
           "stages": [
+            "fragment",
             "compute"
           ],
-          "access": "read",
-          "updateFrequency": "dirty-region-upload"
+          "access": "read_write",
+          "updateFrequency": "dirty-region-upload",
+          "notes": "Updated by lucerna.voxel.first_pass and read by lucerna.gbuffer.main plus lighting passes."
         },
         {
           "binding": 3,
@@ -660,6 +667,31 @@
   ],
   "passes": [
     {
+      "id": "lucerna.voxel.first_pass",
+      "numericId": 90,
+      "stage": "voxel",
+      "directory": "voxel",
+      "type": "compute",
+      "executionOrder": 90,
+      "placeholderShader": "voxel/noop.glsl",
+      "descriptorSets": [
+        "frame",
+        "world"
+      ],
+      "reads": [
+        "MaterialTable",
+        "ChunkSectionTable",
+        "DirtyRegionQueue"
+      ],
+      "writes": [
+        "VoxelOccupancy",
+        "WorldUploadScratch"
+      ],
+      "pushConstants": "LucernaPassPushConstants",
+      "sideEffectFreePlaceholder": true,
+      "handoff": "Stages dirty voxel occupancy metadata consumed by the main G-buffer pass; placeholder remains side-effect free until native upload work lands."
+    },
+    {
       "id": "lucerna.gbuffer.main",
       "numericId": 100,
       "stage": "gbuffer",
@@ -673,7 +705,8 @@
       ],
       "reads": [
         "MaterialTable",
-        "ChunkSectionTable"
+        "ChunkSectionTable",
+        "VoxelOccupancy"
       ],
       "writes": [
         "lucerna.gbuffer.depth",
@@ -685,7 +718,66 @@
       ],
       "pushConstants": "LucernaPassPushConstants",
       "sideEffectFreePlaceholder": true,
-      "handoff": "Provides full-resolution geometry/material buffers for lighting, denoise, composite, and debug workers."
+      "handoff": "Provides full-resolution geometry/material buffers for lighting, denoise, flat composite, and debug workers.",
+      "dependsOn": [
+        "lucerna.voxel.first_pass"
+      ],
+      "attachmentWriteSemantics": [
+        {
+          "semantic": "DEPTH",
+          "attachmentName": "lucerna.gbuffer.depth",
+          "producerPass": "lucerna.voxel.first_pass",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": false,
+          "notes": "Matches GBufferWriteSemantic.DEPTH and GBufferTargetContract.DEPTH."
+        },
+        {
+          "semantic": "NORMAL_ROUGHNESS",
+          "attachmentName": "lucerna.gbuffer.normalRoughness",
+          "producerPass": "lucerna.voxel.first_pass",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": false,
+          "notes": "Matches GBufferWriteSemantic.NORMAL_ROUGHNESS and GBufferTargetContract.NORMAL_ROUGHNESS."
+        },
+        {
+          "semantic": "ALBEDO_OPACITY",
+          "attachmentName": "lucerna.gbuffer.albedoOpacity",
+          "producerPass": "lucerna.voxel.first_pass",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": false,
+          "notes": "Matches GBufferWriteSemantic.ALBEDO_OPACITY and GBufferTargetContract.ALBEDO_OPACITY."
+        },
+        {
+          "semantic": "MATERIAL_ID",
+          "attachmentName": "lucerna.gbuffer.materialId",
+          "producerPass": "lucerna.voxel.first_pass",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": false,
+          "notes": "Matches GBufferWriteSemantic.MATERIAL_ID and GBufferTargetContract.MATERIAL_ID."
+        },
+        {
+          "semantic": "EMISSIVE",
+          "attachmentName": "lucerna.gbuffer.emissive",
+          "producerPass": "lucerna.voxel.first_pass",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": false,
+          "notes": "Matches GBufferWriteSemantic.EMISSIVE and GBufferTargetContract.EMISSIVE."
+        },
+        {
+          "semantic": "MOTION_HISTORY",
+          "attachmentName": "lucerna.gbuffer.motionHistory",
+          "producerPass": "lucerna.voxel.first_pass",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": true,
+          "notes": "Matches GBufferWriteSemantic.MOTION_HISTORY and GBufferTargetContract.MOTION_HISTORY."
+        }
+      ]
     },
     {
       "id": "lucerna.lighting.direct",
@@ -713,7 +805,10 @@
       ],
       "pushConstants": "LucernaPassPushConstants",
       "sideEffectFreePlaceholder": true,
-      "handoff": "Direct sun, moon, and emissive block lighting target."
+      "handoff": "Direct sun, moon, and emissive block lighting target.",
+      "dependsOn": [
+        "lucerna.gbuffer.main"
+      ]
     },
     {
       "id": "lucerna.lighting.gi",
@@ -746,7 +841,11 @@
       ],
       "pushConstants": "LucernaPassPushConstants",
       "sideEffectFreePlaceholder": true,
-      "handoff": "Low-resolution first-bounce diffuse GI and confidence output."
+      "handoff": "Low-resolution first-bounce diffuse GI and confidence output.",
+      "dependsOn": [
+        "lucerna.gbuffer.main",
+        "lucerna.lighting.direct"
+      ]
     },
     {
       "id": "lucerna.denoise.diffuse",
@@ -778,7 +877,12 @@
       ],
       "pushConstants": "LucernaPassPushConstants",
       "sideEffectFreePlaceholder": true,
-      "handoff": "Edge-aware diffuse denoise, temporal rejection mask, and history repair input."
+      "handoff": "Edge-aware diffuse denoise, temporal rejection mask, and history repair input.",
+      "dependsOn": [
+        "lucerna.gbuffer.main",
+        "lucerna.lighting.direct",
+        "lucerna.lighting.gi"
+      ]
     },
     {
       "id": "lucerna.debug.overlay",
@@ -807,7 +911,11 @@
       ],
       "pushConstants": "LucernaPassPushConstants",
       "sideEffectFreePlaceholder": true,
-      "handoff": "Backend, dirty-region, material-id, timing, native queue, and cache confidence overlays."
+      "handoff": "Backend, dirty-region, material-id, timing, native queue, and cache confidence overlays.",
+      "dependsOn": [
+        "lucerna.gbuffer.main",
+        "lucerna.denoise.diffuse"
+      ]
     },
     {
       "id": "lucerna.composite.final",
@@ -834,17 +942,44 @@
       ],
       "pushConstants": "LucernaPassPushConstants",
       "sideEffectFreePlaceholder": true,
-      "handoff": "Final Lucerna output into the borrowed world color target before vanilla HUD and late translucency."
+      "handoff": "Flat composite staging output into the borrowed world color target before vanilla HUD and late translucency.",
+      "dependsOn": [
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ],
+      "attachmentWriteSemantics": [
+        {
+          "semantic": "FLAT_WORLD_COLOR",
+          "attachmentName": "lucerna.composite.worldColor",
+          "producerPass": "lucerna.composite.final",
+          "required": true,
+          "clearBeforeWrite": false,
+          "historySensitive": false,
+          "notes": "Matches LucernaFramePassKind.FLAT_COMPOSITE staging while preserving the existing composite.final resource contract."
+        }
+      ]
     }
   ],
   "barriers": [
+    {
+      "from": "lucerna.voxel.first_pass",
+      "to": [
+        "lucerna.gbuffer.main"
+      ],
+      "resources": [
+        "VoxelOccupancy",
+        "WorldUploadScratch"
+      ],
+      "requiredTransition": "storage_write_to_shader_read"
+    },
     {
       "from": "lucerna.gbuffer.main",
       "to": [
         "lucerna.lighting.direct",
         "lucerna.lighting.gi",
         "lucerna.denoise.diffuse",
-        "lucerna.debug.overlay"
+        "lucerna.debug.overlay",
+        "lucerna.composite.final"
       ],
       "resources": [
         "lucerna.gbuffer.*"
@@ -878,8 +1013,8 @@
     {
       "from": "lucerna.denoise.diffuse",
       "to": [
-        "lucerna.composite.final",
-        "lucerna.debug.overlay"
+        "lucerna.debug.overlay",
+        "lucerna.composite.final"
       ],
       "resources": [
         "lucerna.denoise.diffuse",
@@ -905,6 +1040,16 @@
       "description": "Parse layout.json and verify unique pass ids, numeric ids, descriptor set/binding pairs, and attachment names."
     },
     {
+      "id": "metadata.pass_dependencies",
+      "owner": "controller",
+      "description": "Verify dependsOn edges point at declared earlier passes and that attachmentWriteSemantics reference attachments written by their owning pass."
+    },
+    {
+      "id": "metadata.gbuffer_contract_names",
+      "owner": "controller",
+      "description": "Confirm lucerna.gbuffer.main attachment names match GBufferTargetContract depth, normalRoughness, albedoOpacity, materialId, emissive, and motionHistory."
+    },
+    {
       "id": "metadata.placeholders.side_effect_free",
       "owner": "controller",
       "description": "Confirm placeholder shaders do not declare storage writes, image writes, atomics, barriers, discard, or fixed color/depth outputs."
@@ -913,6 +1058,11 @@
       "id": "framehook.noop_order",
       "owner": "controller",
       "description": "When Lucerna is active on Sodium Vulkan, execute future no-op passes in executionOrder without altering HUD, late translucency, or swapchain ownership."
+    },
+    {
+      "id": "framehook.flat_composite_staging",
+      "owner": "controller",
+      "description": "Confirm the flat composite staging pass writes only the borrowed world color target and keeps swapchain ownership with Minecraft/Sodium."
     },
     {
       "id": "backend.disabled_no_resource_use",

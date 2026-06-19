@@ -73,6 +73,13 @@ public record NativeBridgeTelemetryStatus(
         return this.nativeStatus;
     }
 
+    public NativePassTelemetryStatus nativePassStates() {
+        if (!this.statusAvailable) {
+            return NativePassTelemetryStatus.unavailable("Native bridge status has not been reported.");
+        }
+        return NativePassTelemetryStatus.fromNativeStatus(this.nativeStatus);
+    }
+
     private static String blankToEmpty(String value) {
         if (value == null || value.isBlank()) {
             return "";

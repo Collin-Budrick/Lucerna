@@ -16,8 +16,44 @@ public record ShaderPassDescriptor(
         List<String> writes,
         String pushConstants,
         boolean sideEffectFreePlaceholder,
-        String handoff
+        String handoff,
+        List<ShaderPassId> dependsOn,
+        List<ShaderAttachmentWriteSemantic> attachmentWriteSemantics
 ) {
+    public ShaderPassDescriptor(
+            ShaderPassId id,
+            int numericId,
+            String stage,
+            String directory,
+            ShaderPassType type,
+            int executionOrder,
+            String placeholderShader,
+            List<String> descriptorSets,
+            List<String> reads,
+            List<String> writes,
+            String pushConstants,
+            boolean sideEffectFreePlaceholder,
+            String handoff
+    ) {
+        this(
+                id,
+                numericId,
+                stage,
+                directory,
+                type,
+                executionOrder,
+                placeholderShader,
+                descriptorSets,
+                reads,
+                writes,
+                pushConstants,
+                sideEffectFreePlaceholder,
+                handoff,
+                List.of(),
+                List.of()
+        );
+    }
+
     public ShaderPassDescriptor {
         Objects.requireNonNull(id, "id");
         if (numericId <= 0) {
@@ -37,6 +73,8 @@ public record ShaderPassDescriptor(
         writes = copyTextList(writes, "writes", false);
         pushConstants = requireText(pushConstants, "pushConstants");
         handoff = normalizeOptional(handoff);
+        dependsOn = copyPassIdList(dependsOn, "dependsOn");
+        attachmentWriteSemantics = copyWriteSemanticList(attachmentWriteSemantics, "attachmentWriteSemantics");
     }
 
     public boolean compute() {
@@ -66,6 +104,21 @@ public record ShaderPassDescriptor(
         return !this.handoff.isBlank();
     }
 
+    public boolean dependsOn(ShaderPassId passId) {
+        Objects.requireNonNull(passId, "passId");
+        return this.dependsOn.contains(passId);
+    }
+
+    public boolean hasAttachmentWriteSemantics() {
+        return !this.attachmentWriteSemantics.isEmpty();
+    }
+
+    public List<String> dependencyIds() {
+        return this.dependsOn.stream()
+                .map(ShaderPassId::value)
+                .toList();
+    }
+
     private static List<String> copyTextList(List<String> values, String name, boolean requireNonEmpty) {
         Objects.requireNonNull(values, name);
         values = List.copyOf(values);
@@ -74,6 +127,31 @@ public record ShaderPassDescriptor(
         }
         for (String value : values) {
             requireText(value, name + " entries");
+        }
+        return values;
+    }
+
+    private static List<ShaderPassId> copyPassIdList(List<ShaderPassId> values, String name) {
+        if (values == null) {
+            return List.of();
+        }
+        values = List.copyOf(values);
+        for (ShaderPassId value : values) {
+            Objects.requireNonNull(value, name + " entries");
+        }
+        return values;
+    }
+
+    private static List<ShaderAttachmentWriteSemantic> copyWriteSemanticList(
+            List<ShaderAttachmentWriteSemantic> values,
+            String name
+    ) {
+        if (values == null) {
+            return List.of();
+        }
+        values = List.copyOf(values);
+        for (ShaderAttachmentWriteSemantic value : values) {
+            Objects.requireNonNull(value, name + " entries");
         }
         return values;
     }

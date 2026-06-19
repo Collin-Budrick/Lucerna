@@ -28,13 +28,47 @@ constexpr std::uint32_t kGBufferNormalMaterialFormatTag = 11;
 constexpr std::uint32_t kGBufferAlbedoEmissiveFormatTag = 12;
 constexpr std::uint32_t kGBufferMotionHistoryFormatTag = 13;
 constexpr std::uint32_t kGBufferReactiveMaskFormatTag = 14;
+constexpr std::int32_t kMaxGBufferDimension = 32768;
+constexpr std::int32_t kMaxGBufferAttachments = 32;
+constexpr std::int32_t kMaxGBufferSamples = 64;
+constexpr std::int32_t kLucernaGBufferMainPassId = 100;
+constexpr const char* kLucernaGBufferMainPassName = "lucerna.gbuffer.main";
 
 std::size_t pass_index(NativeRenderPass pass) {
     return static_cast<std::size_t>(pass);
 }
 
+bool is_valid_pass_id(std::int32_t pass_id) {
+    return pass_id >= 0 && static_cast<std::size_t>(pass_id) < kNativeRenderPassCount;
+}
+
+NativeRenderPass pass_from_id(std::int32_t pass_id) {
+    return static_cast<NativeRenderPass>(pass_id);
+}
+
+bool is_power_of_two(std::int32_t value) {
+    return value > 0 && (value & (value - 1)) == 0;
+}
+
 bool is_blank(const std::string& value) {
     return value.find_first_not_of(" \t\n\r\f\v") == std::string::npos;
+}
+
+std::uint32_t estimate_bytes_per_pixel(std::int32_t format_tag) {
+    switch (static_cast<std::uint32_t>(format_tag)) {
+        case kGBufferDepthFormatTag:
+            return 4;
+        case kGBufferNormalMaterialFormatTag:
+            return 4;
+        case kGBufferAlbedoEmissiveFormatTag:
+            return 8;
+        case kGBufferMotionHistoryFormatTag:
+            return 8;
+        case kGBufferReactiveMaskFormatTag:
+            return 1;
+        default:
+            return format_tag > 0 ? 4 : 0;
+    }
 }
 
 std::uint64_t max_generation(
@@ -80,7 +114,7 @@ bool SectionSnapshotUpload::has_section_payload() const {
 const char* to_string(NativeRenderPass pass) {
     switch (pass) {
         case NativeRenderPass::FutureGBuffer:
-            return "future_gbuffer";
+            return kLucernaGBufferMainPassName;
         case NativeRenderPass::NoopLighting:
             return "noop_lighting";
         case NativeRenderPass::FlatComposite:
@@ -138,12 +172,14 @@ void Renderer::init() {
     last_end_frame_order_valid_ = true;
     frame_index_ = 0;
     last_section_upload_packet_ = {};
+    last_gbuffer_staging_packet_ = {};
     last_tick_delta_ = 0.0F;
     resize_count_ = 0;
     begin_frame_count_ = 0;
     end_frame_count_ = 0;
     upload_packet_count_ = 0;
     section_upload_packet_count_ = 0;
+    gbuffer_staging_packet_count_ = 0;
     upload_dirty_payload_total_ = 0;
     upload_material_payload_total_ = 0;
     section_snapshot_payload_total_ = 0;
@@ -186,12 +222,14 @@ void Renderer::shutdown() {
     frame_index_ = 0;
     last_upload_packet_ = {};
     last_section_upload_packet_ = {};
+    last_gbuffer_staging_packet_ = {};
     last_tick_delta_ = 0.0F;
     resize_count_ = 0;
     begin_frame_count_ = 0;
     end_frame_count_ = 0;
     upload_packet_count_ = 0;
     section_upload_packet_count_ = 0;
+    gbuffer_staging_packet_count_ = 0;
     upload_dirty_payload_total_ = 0;
     upload_material_payload_total_ = 0;
     section_snapshot_payload_total_ = 0;
@@ -522,6 +560,121 @@ void Renderer::upload_section_snapshots(SectionUploadPacket packet) {
     clear_error();
 }
 
+void Renderer::upload_gbuffer_staging(GBufferStagingPacket packet) {
+    if (!initialized_) {
+        return;
+    }
+
+    auto fail = [this](std::string error) {
+        set_error(std::move(error));
+        throw std::invalid_argument(last_error_);
+    };
+    auto require_text = [&fail](const std::string& value, const char* name) {
+        if (is_blank(value)) {
+            fail(std::string(name) + " must not be blank");
+        }
+    };
+    auto require_dimension = [&fail](std::int32_t value, const char* name) {
+        if (value <= 0 || value > kMaxGBufferDimension) {
+            std::ostringstream error;
+            error << name << " must be between 1 and " << kMaxGBufferDimension;
+            fail(error.str());
+        }
+    };
+    auto require_optional_dimension = [&fail](std::int32_t value, const char* name) {
+        if (value < 0 || value > kMaxGBufferDimension) {
+            std::ostringstream error;
+            error << name << " must be between 0 and " << kMaxGBufferDimension;
+            fail(error.str());
+        }
+    };
+
+    if (packet.gbuffer_count < 0) {
+        fail("gbuffer count must be non-negative");
+    }
+    if (packet.first_gbuffer_generation > packet.last_gbuffer_generation) {
+        fail("gbuffer generation bounds are invalid");
+    }
+    if (packet.gbuffers.size() > static_cast<std::size_t>(packet.gbuffer_count)) {
+        fail("gbuffer payload count exceeds advertised count");
+    }
+    if (packet.gbuffers.empty()
+            && (packet.first_gbuffer_generation != 0 || packet.last_gbuffer_generation != 0)) {
+        fail("empty gbuffer staging payload must use zero gbuffer generation bounds");
+    }
+    if (packet.gbuffer_count == 0 && !packet.gbuffers.empty()) {
+        fail("gbuffer staging payload count requires a positive advertised count");
+    }
+
+    for (const auto& upload : packet.gbuffers) {
+        require_text(upload.pass_id, "gbuffer pass id");
+        if (upload.numeric_pass_id != kLucernaGBufferMainPassId) {
+            fail("numeric gbuffer pass id must be lucerna.gbuffer.main");
+        }
+        if (upload.pass_id != kLucernaGBufferMainPassName) {
+            fail("gbuffer staging uploads must target lucerna.gbuffer.main");
+        }
+
+        require_dimension(upload.width, "gbuffer width");
+        require_dimension(upload.height, "gbuffer height");
+
+        if (upload.attachment_count < 0) {
+            fail("gbuffer attachment count must be non-negative");
+        }
+        if (upload.attachment_count > kMaxGBufferAttachments) {
+            std::ostringstream error;
+            error << "gbuffer attachment count must be at most " << kMaxGBufferAttachments;
+            fail(error.str());
+        }
+        if (upload.attachments.size() != static_cast<std::size_t>(upload.attachment_count)) {
+            fail("gbuffer attachment payload count must match the advertised attachment count");
+        }
+
+        for (const auto& attachment : upload.attachments) {
+            require_text(attachment.name, "gbuffer attachment name");
+            if (attachment.format_tag < 0) {
+                fail("gbuffer attachment format must be non-negative");
+            }
+            if (!is_power_of_two(attachment.samples) || attachment.samples > kMaxGBufferSamples) {
+                std::ostringstream error;
+                error << "gbuffer attachment samples must be a power of two between 1 and " << kMaxGBufferSamples;
+                fail(error.str());
+            }
+
+            if (attachment.enabled) {
+                if (attachment.format_tag == 0) {
+                    fail("enabled gbuffer attachment format must be positive");
+                }
+                require_dimension(attachment.width, "gbuffer attachment width");
+                require_dimension(attachment.height, "gbuffer attachment height");
+                if (attachment.width > upload.width || attachment.height > upload.height) {
+                    fail("gbuffer attachment resolution cannot exceed the gbuffer resolution");
+                }
+            } else {
+                require_optional_dimension(attachment.width, "disabled gbuffer attachment width");
+                require_optional_dimension(attachment.height, "disabled gbuffer attachment height");
+            }
+        }
+    }
+
+    if (!packet.gbuffers.empty()) {
+        if (packet.generation == 0) {
+            fail("gbuffer staging generation must be positive when payload is present");
+        }
+        if (packet.first_gbuffer_generation == 0 || packet.last_gbuffer_generation == 0) {
+            fail("gbuffer staging generation bounds must be positive when payload is present");
+        }
+        if (packet.generation < packet.last_gbuffer_generation) {
+            fail("gbuffer staging generation must include the gbuffer generation bounds");
+        }
+    }
+
+    gbuffer_staging_packet_count_++;
+    track_gbuffer_staging_upload(packet);
+    last_gbuffer_staging_packet_ = std::move(packet);
+    clear_error();
+}
+
 void Renderer::render_lighting() {
     if (!initialized_) {
         return;
@@ -653,6 +806,7 @@ std::string Renderer::status() const {
         << ",end_frames=" << end_frame_count_
         << ",upload_packets=" << upload_packet_count_
         << ",section_upload_packets=" << section_upload_packet_count_
+        << ",gbuffer_staging_packets=" << gbuffer_staging_packet_count_
         << ",lighting_passes=" << lighting_pass_count_
         << ",context_adopts=" << context_adopt_count_
         << ",context_releases=" << context_release_count_
@@ -722,6 +876,14 @@ std::string Renderer::status() const {
         << ",emissive=" << last_section_upload_packet_.section_emissive_generation
         << ",dirty=" << last_section_upload_packet_.section_dirty_region_generation
         << "}"
+        << " gbuffer_staging_generation=" << last_gbuffer_staging_packet_.generation
+        << " gbuffers=" << last_gbuffer_staging_packet_.gbuffer_count
+        << " gbuffer_payloads=" << last_gbuffer_staging_packet_.gbuffers.size()
+        << " gbuffer_generation=" << last_gbuffer_staging_packet_.first_gbuffer_generation
+        << "-" << last_gbuffer_staging_packet_.last_gbuffer_generation
+        << " last_gbuffer_pass=\"" << staging_.gbuffer.last_pass_id
+        << "\""
+        << " last_gbuffer_numeric_pass=" << staging_.gbuffer.last_numeric_pass_id
         << " staging={section={packets=" << staging_.section.packets
         << ",advertised_dirty_regions=" << staging_.section.advertised_dirty_regions
         << ",payload_dirty_regions=" << staging_.section.payload_dirty_regions
@@ -769,13 +931,26 @@ std::string Renderer::status() const {
         << ",last_snapshot_estimated_bytes=" << staging_.voxel.last_snapshot_estimated_bytes
         << ",total_snapshot_estimated_bytes=" << staging_.voxel.total_snapshot_estimated_bytes
         << "},gbuffer={frames_planned=" << staging_.gbuffer.frames_planned
+        << ",staging_packets=" << staging_.gbuffer.staging_packets
+        << ",advertised_gbuffers=" << staging_.gbuffer.advertised_gbuffers
+        << ",payload_gbuffers=" << staging_.gbuffer.payload_gbuffers
         << ",allocation_intents=" << staging_.gbuffer.allocation_intents
         << ",attachment_intents=" << staging_.gbuffer.attachment_intents
+        << ",enabled_attachments=" << staging_.gbuffer.enabled_attachments
+        << ",disabled_attachments=" << staging_.gbuffer.disabled_attachments
+        << ",last_packet_generation=" << staging_.gbuffer.last_packet_generation
+        << ",last_generation_range=" << staging_.gbuffer.last_first_generation
+        << "-" << staging_.gbuffer.last_generation
+        << ",last_payload_gbuffers=" << staging_.gbuffer.last_payload_gbuffers
+        << ",last_enabled_attachments=" << staging_.gbuffer.last_enabled_attachments
+        << ",last_disabled_attachments=" << staging_.gbuffer.last_disabled_attachments
         << ",last_attachment_count=" << staging_.gbuffer.last_attachment_count
+        << ",last_attachment_samples=" << staging_.gbuffer.last_attachment_samples
         << ",last_size=" << staging_.gbuffer.last_width << "x" << staging_.gbuffer.last_height
         << ",last_estimated_bytes=" << staging_.gbuffer.last_estimated_bytes
         << ",total_estimated_bytes=" << staging_.gbuffer.total_estimated_bytes
         << ",planned_this_frame=" << staging_.gbuffer.planned_this_frame
+        << ",last_payload_recorded_this_frame=" << staging_.gbuffer.last_payload_recorded_this_frame
         << "}}";
     if (resources_ != nullptr) {
         const auto resource_stats = resources_->stats();
@@ -856,6 +1031,18 @@ std::uint64_t Renderer::estimate_gbuffer_attachment_bytes(
     }
 
     return static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height) * bytes_per_pixel;
+}
+
+std::uint64_t Renderer::estimate_gbuffer_attachment_bytes(const GBufferAttachmentUpload& attachment) const {
+    if (!attachment.enabled) {
+        return 0;
+    }
+
+    return estimate_gbuffer_attachment_bytes(
+            attachment.width,
+            attachment.height,
+            estimate_bytes_per_pixel(attachment.format_tag))
+        * static_cast<std::uint64_t>(attachment.samples);
 }
 
 void Renderer::track_upload_staging_placeholder(const UploadPacket& packet) {
@@ -1001,13 +1188,90 @@ void Renderer::track_section_snapshot_staging_placeholder(const SectionUploadPac
     }
 }
 
+void Renderer::track_gbuffer_staging_upload(const GBufferStagingPacket& packet) {
+    const bool can_record_resource_intents = resources_ != nullptr && frame_open_;
+    std::uint64_t payload_gbuffers = static_cast<std::uint64_t>(packet.gbuffers.size());
+    std::uint64_t attachment_count = 0;
+    std::uint64_t enabled_attachment_count = 0;
+    std::uint64_t disabled_attachment_count = 0;
+    std::uint64_t estimated_bytes = 0;
+    std::uint64_t max_samples = 0;
+    std::int32_t last_width = 0;
+    std::int32_t last_height = 0;
+    std::int32_t last_numeric_pass_id = 0;
+    std::string last_pass_id;
+
+    for (const auto& upload : packet.gbuffers) {
+        last_width = upload.width;
+        last_height = upload.height;
+        last_numeric_pass_id = upload.numeric_pass_id;
+        last_pass_id = upload.pass_id;
+
+        for (const auto& attachment : upload.attachments) {
+            attachment_count++;
+            if (static_cast<std::uint64_t>(attachment.samples) > max_samples) {
+                max_samples = static_cast<std::uint64_t>(attachment.samples);
+            }
+
+            if (!attachment.enabled) {
+                disabled_attachment_count++;
+                continue;
+            }
+
+            enabled_attachment_count++;
+            const auto attachment_bytes = estimate_gbuffer_attachment_bytes(attachment);
+            estimated_bytes += attachment_bytes;
+
+            if (can_record_resource_intents) {
+                const auto label = std::string("upload:gbuffer-staging:")
+                    + upload.pass_id
+                    + ":"
+                    + attachment.name;
+                resources_->track_image_allocation_intent(
+                        frame_index_,
+                        attachment.width,
+                        attachment.height,
+                        static_cast<std::uint32_t>(attachment.format_tag),
+                        attachment_bytes,
+                        label,
+                        NativeResourceIntentStage::FutureGBuffer);
+                staging_.gbuffer.allocation_intents++;
+                staging_.gbuffer.attachment_intents++;
+            }
+        }
+    }
+
+    staging_.gbuffer.staging_packets++;
+    staging_.gbuffer.advertised_gbuffers += static_cast<std::uint64_t>(packet.gbuffer_count);
+    staging_.gbuffer.payload_gbuffers += payload_gbuffers;
+    staging_.gbuffer.enabled_attachments += enabled_attachment_count;
+    staging_.gbuffer.disabled_attachments += disabled_attachment_count;
+    staging_.gbuffer.last_packet_generation = packet.generation;
+    staging_.gbuffer.last_first_generation = packet.first_gbuffer_generation;
+    staging_.gbuffer.last_generation = packet.last_gbuffer_generation;
+    staging_.gbuffer.last_payload_gbuffers = payload_gbuffers;
+    staging_.gbuffer.last_enabled_attachments = enabled_attachment_count;
+    staging_.gbuffer.last_disabled_attachments = disabled_attachment_count;
+    staging_.gbuffer.last_attachment_count = attachment_count;
+    staging_.gbuffer.last_attachment_samples = max_samples;
+    staging_.gbuffer.last_estimated_bytes = estimated_bytes;
+    staging_.gbuffer.total_estimated_bytes += estimated_bytes;
+    staging_.gbuffer.last_width = last_width;
+    staging_.gbuffer.last_height = last_height;
+    staging_.gbuffer.last_numeric_pass_id = last_numeric_pass_id;
+    staging_.gbuffer.last_payload_recorded_this_frame = can_record_resource_intents && enabled_attachment_count != 0;
+    staging_.gbuffer.last_pass_id = std::move(last_pass_id);
+}
+
 void Renderer::track_gbuffer_placeholder_intent() {
     staging_.gbuffer.frames_planned++;
     staging_.gbuffer.last_width = width_;
     staging_.gbuffer.last_height = height_;
     staging_.gbuffer.last_attachment_count = 0;
+    staging_.gbuffer.last_attachment_samples = 0;
     staging_.gbuffer.last_estimated_bytes = 0;
     staging_.gbuffer.planned_this_frame = false;
+    staging_.gbuffer.last_payload_recorded_this_frame = false;
 
     if (resources_ == nullptr || !frame_open_ || width_ <= 0 || height_ <= 0) {
         return;

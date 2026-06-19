@@ -1,5 +1,6 @@
 package net.lucerna.render.voxel;
 
+import net.lucerna.upload.NativeSectionSnapshotUpload;
 import net.lucerna.world.section.ChunkSectionGeneration;
 import net.lucerna.world.section.ChunkSectionOrigin;
 import net.lucerna.world.section.ChunkSectionVoxelSnapshot;
@@ -8,6 +9,7 @@ import net.lucerna.world.section.VoxelOccupancyBitOrder;
 import net.lucerna.world.section.VoxelOccupancyMaskMetadata;
 import net.lucerna.world.section.VoxelOccupancySummary;
 
+import java.util.List;
 import java.util.Objects;
 
 public record VoxelSectionSnapshotReference(
@@ -99,6 +101,53 @@ public record VoxelSectionSnapshotReference(
         );
     }
 
+    public static VoxelSectionSnapshotReference from(NativeSectionSnapshotUpload upload) {
+        Objects.requireNonNull(upload, "upload");
+        VoxelOccupancyBitOrder occupancyBitOrder = occupancyBitOrder(upload);
+        return new VoxelSectionSnapshotReference(
+                new ChunkSectionOrigin(
+                        upload.dimension(),
+                        upload.sectionX(),
+                        upload.sectionY(),
+                        upload.sectionZ()
+                ),
+                new ChunkSectionGeneration(
+                        upload.sectionGeneration(),
+                        upload.materialGeneration(),
+                        upload.occupancyGeneration(),
+                        upload.emissiveGeneration()
+                ),
+                upload.occupiedVoxelCount(),
+                upload.opaqueVoxelCount(),
+                upload.translucentVoxelCount(),
+                upload.fluidVoxelCount(),
+                upload.emissiveVoxelCount(),
+                occupancyBitOrder,
+                upload.occupancyMaskWordOffset(),
+                upload.occupancyMaskWordCount(),
+                upload.occupancyMaskBitCount(),
+                upload.occupancyMaskGeneration(),
+                upload.materialPaletteOffset(),
+                upload.materialPaletteSize(),
+                upload.materialPaletteGeneration(),
+                upload.emissiveEntryCount() > 0
+        );
+    }
+
+    public static List<VoxelSectionSnapshotReference> fromSnapshots(List<ChunkSectionVoxelSnapshot> snapshots) {
+        Objects.requireNonNull(snapshots, "snapshots");
+        return snapshots.stream()
+                .map(VoxelSectionSnapshotReference::from)
+                .toList();
+    }
+
+    public static List<VoxelSectionSnapshotReference> fromUploads(List<NativeSectionSnapshotUpload> uploads) {
+        Objects.requireNonNull(uploads, "uploads");
+        return uploads.stream()
+                .map(VoxelSectionSnapshotReference::from)
+                .toList();
+    }
+
     public String stableKey() {
         return this.origin.stableKey();
     }
@@ -133,5 +182,18 @@ public record VoxelSectionSnapshotReference(
         if (value < 0) {
             throw new IllegalArgumentException(name + " must be non-negative");
         }
+    }
+
+    private static VoxelOccupancyBitOrder occupancyBitOrder(NativeSectionSnapshotUpload upload) {
+        VoxelOccupancyBitOrder occupancyBitOrder;
+        try {
+            occupancyBitOrder = VoxelOccupancyBitOrder.valueOf(upload.occupancyBitOrderName());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("upload occupancyBitOrderName is not supported by voxel traversal", exception);
+        }
+        if (occupancyBitOrder.ordinal() + 1 != upload.occupancyBitOrderId()) {
+            throw new IllegalArgumentException("upload occupancyBitOrderId does not match occupancyBitOrderName");
+        }
+        return occupancyBitOrder;
     }
 }

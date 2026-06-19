@@ -506,6 +506,95 @@ lucerna::SectionUploadPacket make_section_upload_packet(
     return packet;
 }
 
+lucerna::GBufferStagingPacket make_gbuffer_staging_packet(
+        JNIEnv* env,
+        jlong generation,
+        jint gbuffer_count,
+        jlong first_gbuffer_generation,
+        jlong last_gbuffer_generation,
+        jobjectArray pass_ids,
+        jintArray numeric_pass_ids,
+        jintArray widths,
+        jintArray heights,
+        jintArray attachment_counts,
+        jobjectArray attachment_names,
+        jintArray attachment_formats,
+        jintArray attachment_widths,
+        jintArray attachment_heights,
+        jintArray attachment_samples,
+        jintArray attachment_enabled) {
+    auto pass_id_values = read_string_array(env, pass_ids, "gbufferPassIds");
+    const auto payload_count = pass_id_values.size();
+    require_payload_not_larger_than_count(payload_count, gbuffer_count, "gbuffer");
+
+    auto numeric_pass_id_values = read_int_array(env, numeric_pass_ids, "gbufferNumericPassIds");
+    auto width_values = read_int_array(env, widths, "gbufferWidths");
+    auto height_values = read_int_array(env, heights, "gbufferHeights");
+    auto attachment_count_values = read_int_array(env, attachment_counts, "gbufferAttachmentCounts");
+
+    require_length(payload_count, numeric_pass_id_values.size(), "gbufferNumericPassIds");
+    require_length(payload_count, width_values.size(), "gbufferWidths");
+    require_length(payload_count, height_values.size(), "gbufferHeights");
+    require_length(payload_count, attachment_count_values.size(), "gbufferAttachmentCounts");
+
+    const auto attachment_payload_count = sum_counts(attachment_count_values, "gbufferAttachmentCounts");
+    auto attachment_name_values = read_string_array(env, attachment_names, "gbufferAttachmentNames");
+    auto attachment_format_values = read_int_array(env, attachment_formats, "gbufferAttachmentFormats");
+    auto attachment_width_values = read_int_array(env, attachment_widths, "gbufferAttachmentWidths");
+    auto attachment_height_values = read_int_array(env, attachment_heights, "gbufferAttachmentHeights");
+    auto attachment_sample_values = read_int_array(env, attachment_samples, "gbufferAttachmentSamples");
+    auto attachment_enabled_values = read_int_array(env, attachment_enabled, "gbufferAttachmentEnabled");
+
+    require_length(attachment_payload_count, attachment_name_values.size(), "gbufferAttachmentNames");
+    require_length(attachment_payload_count, attachment_format_values.size(), "gbufferAttachmentFormats");
+    require_length(attachment_payload_count, attachment_width_values.size(), "gbufferAttachmentWidths");
+    require_length(attachment_payload_count, attachment_height_values.size(), "gbufferAttachmentHeights");
+    require_length(attachment_payload_count, attachment_sample_values.size(), "gbufferAttachmentSamples");
+    require_length(attachment_payload_count, attachment_enabled_values.size(), "gbufferAttachmentEnabled");
+
+    lucerna::GBufferStagingPacket packet{
+        to_non_negative_uint64(generation, "generation"),
+        gbuffer_count,
+        to_non_negative_uint64(first_gbuffer_generation, "firstGbufferGeneration"),
+        to_non_negative_uint64(last_gbuffer_generation, "lastGbufferGeneration"),
+        {}
+    };
+
+    packet.gbuffers.reserve(payload_count);
+    std::size_t attachment_cursor = 0;
+    for (std::size_t index = 0; index < payload_count; index++) {
+        lucerna::GBufferStagingUpload upload;
+        upload.pass_id = std::move(pass_id_values[index]);
+        upload.numeric_pass_id = numeric_pass_id_values[index];
+        upload.width = width_values[index];
+        upload.height = height_values[index];
+        upload.attachment_count = attachment_count_values[index];
+
+        const auto attachment_count = static_cast<std::size_t>(attachment_count_values[index]);
+        upload.attachments.reserve(attachment_count);
+        for (std::size_t attachment_index = 0; attachment_index < attachment_count; attachment_index++) {
+            const auto packed_index = attachment_cursor + attachment_index;
+            const auto enabled = attachment_enabled_values[packed_index];
+            if (enabled != 0 && enabled != 1) {
+                throw std::invalid_argument("gbufferAttachmentEnabled entries must be 0 or 1");
+            }
+
+            upload.attachments.push_back(lucerna::GBufferAttachmentUpload{
+                std::move(attachment_name_values[packed_index]),
+                attachment_format_values[packed_index],
+                attachment_width_values[packed_index],
+                attachment_height_values[packed_index],
+                attachment_sample_values[packed_index],
+                enabled != 0
+            });
+        }
+        attachment_cursor += attachment_count;
+        packet.gbuffers.push_back(std::move(upload));
+    }
+
+    return packet;
+}
+
 std::string last_error_locked() {
     if (!g_last_error.empty()) {
         return g_last_error;
@@ -708,6 +797,48 @@ Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeUploadSectionSnapshots(
                 emissive_material_ids,
                 emissive_block_light_levels,
                 emissive_entry_generations
+        ));
+    });
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeUploadGBufferStaging(
+        JNIEnv* env,
+        jclass,
+        jlong generation,
+        jint gbuffer_count,
+        jlong first_gbuffer_generation,
+        jlong last_gbuffer_generation,
+        jobjectArray pass_ids,
+        jintArray numeric_pass_ids,
+        jintArray widths,
+        jintArray heights,
+        jintArray attachment_counts,
+        jobjectArray attachment_names,
+        jintArray attachment_formats,
+        jintArray attachment_widths,
+        jintArray attachment_heights,
+        jintArray attachment_samples,
+        jintArray attachment_enabled) {
+    std::lock_guard lock(g_renderer_mutex);
+    return call_initialized_renderer("uploadGBufferStaging", [=](lucerna::Renderer& renderer) {
+        renderer.upload_gbuffer_staging(make_gbuffer_staging_packet(
+                env,
+                generation,
+                gbuffer_count,
+                first_gbuffer_generation,
+                last_gbuffer_generation,
+                pass_ids,
+                numeric_pass_ids,
+                widths,
+                heights,
+                attachment_counts,
+                attachment_names,
+                attachment_formats,
+                attachment_widths,
+                attachment_heights,
+                attachment_samples,
+                attachment_enabled
         ));
     });
 }

@@ -149,6 +149,10 @@ public record UploadGenerationTelemetryStatus(
         return this.stagedGBufferStagingCount > 0;
     }
 
+    public boolean hasGBufferStagingGeneration() {
+        return this.lastGBufferStagingGeneration > 0L;
+    }
+
     public String compactGenerationLabel() {
         return "combined=%d world=%d material=%d section=%d gbuffer=%d staging=%d".formatted(
                 this.lastGeneration,
@@ -181,6 +185,16 @@ public record UploadGenerationTelemetryStatus(
         return "count=%d gen=%d".formatted(
                 this.stagedGBufferStagingCount,
                 this.lastGBufferStagingGeneration
+        );
+    }
+
+    public String explicitGBufferStagingLabel() {
+        return "stagedCount=%d lastGBufferGen=%d stagingGen=%d combinedGen=%d payload=%s".formatted(
+                this.stagedGBufferStagingCount,
+                this.lastGBufferStagingGeneration,
+                this.stagingGeneration,
+                this.lastGeneration,
+                Boolean.toString(this.hasGBufferStaging())
         );
     }
 

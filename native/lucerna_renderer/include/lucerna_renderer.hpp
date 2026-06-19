@@ -111,6 +111,32 @@ struct SectionUploadPacket {
     std::vector<SectionSnapshotUpload> snapshots;
 };
 
+struct GBufferAttachmentUpload {
+    std::string name;
+    std::int32_t format_tag = 0;
+    std::int32_t width = 0;
+    std::int32_t height = 0;
+    std::int32_t samples = 1;
+    bool enabled = false;
+};
+
+struct GBufferStagingUpload {
+    std::string pass_id;
+    std::int32_t numeric_pass_id = 0;
+    std::int32_t width = 0;
+    std::int32_t height = 0;
+    std::int32_t attachment_count = 0;
+    std::vector<GBufferAttachmentUpload> attachments;
+};
+
+struct GBufferStagingPacket {
+    std::uint64_t generation = 0;
+    std::int32_t gbuffer_count = 0;
+    std::uint64_t first_gbuffer_generation = 0;
+    std::uint64_t last_gbuffer_generation = 0;
+    std::vector<GBufferStagingUpload> gbuffers;
+};
+
 struct BorrowedVulkanContext;
 class ResourceManager;
 
@@ -203,14 +229,29 @@ struct NativeVoxelStagingTelemetry {
 
 struct NativeGBufferStagingTelemetry {
     std::uint64_t frames_planned = 0;
+    std::uint64_t staging_packets = 0;
+    std::uint64_t advertised_gbuffers = 0;
+    std::uint64_t payload_gbuffers = 0;
     std::uint64_t allocation_intents = 0;
     std::uint64_t attachment_intents = 0;
+    std::uint64_t enabled_attachments = 0;
+    std::uint64_t disabled_attachments = 0;
+    std::uint64_t last_packet_generation = 0;
+    std::uint64_t last_first_generation = 0;
+    std::uint64_t last_generation = 0;
+    std::uint64_t last_payload_gbuffers = 0;
+    std::uint64_t last_enabled_attachments = 0;
+    std::uint64_t last_disabled_attachments = 0;
     std::uint64_t last_attachment_count = 0;
+    std::uint64_t last_attachment_samples = 0;
     std::uint64_t last_estimated_bytes = 0;
     std::uint64_t total_estimated_bytes = 0;
     std::int32_t last_width = 0;
     std::int32_t last_height = 0;
+    std::int32_t last_numeric_pass_id = 0;
     bool planned_this_frame = false;
+    bool last_payload_recorded_this_frame = false;
+    std::string last_pass_id;
 };
 
 struct NativeStagingTelemetry {
@@ -233,6 +274,7 @@ public:
     void begin_frame(FrameInfo info);
     void upload_world_deltas(UploadPacket packet);
     void upload_section_snapshots(SectionUploadPacket packet);
+    void upload_gbuffer_staging(GBufferStagingPacket packet);
     void render_lighting();
     void end_frame();
     void adopt_borrowed_context(BorrowedVulkanContext context);
@@ -251,8 +293,10 @@ private:
     [[nodiscard]] std::uint64_t estimate_section_staging_bytes(std::uint64_t dirty_section_count) const;
     [[nodiscard]] std::uint64_t estimate_voxel_staging_bytes(std::uint64_t dirty_section_count) const;
     [[nodiscard]] std::uint64_t estimate_gbuffer_attachment_bytes(std::int32_t width, std::int32_t height, std::uint32_t bytes_per_pixel) const;
+    [[nodiscard]] std::uint64_t estimate_gbuffer_attachment_bytes(const GBufferAttachmentUpload& attachment) const;
     void track_upload_staging_placeholder(const UploadPacket& packet);
     void track_section_snapshot_staging_placeholder(const SectionUploadPacket& packet);
+    void track_gbuffer_staging_upload(const GBufferStagingPacket& packet);
     void track_gbuffer_placeholder_intent();
     [[nodiscard]] std::uint64_t track_noop_lighting_placeholder();
     [[nodiscard]] std::uint64_t track_flat_composite_placeholder();
@@ -282,12 +326,14 @@ private:
     std::uint64_t frame_index_ = 0;
     UploadPacket last_upload_packet_;
     SectionUploadPacket last_section_upload_packet_;
+    GBufferStagingPacket last_gbuffer_staging_packet_;
     float last_tick_delta_ = 0.0F;
     std::uint64_t resize_count_ = 0;
     std::uint64_t begin_frame_count_ = 0;
     std::uint64_t end_frame_count_ = 0;
     std::uint64_t upload_packet_count_ = 0;
     std::uint64_t section_upload_packet_count_ = 0;
+    std::uint64_t gbuffer_staging_packet_count_ = 0;
     std::uint64_t upload_dirty_payload_total_ = 0;
     std::uint64_t upload_material_payload_total_ = 0;
     std::uint64_t section_snapshot_payload_total_ = 0;
