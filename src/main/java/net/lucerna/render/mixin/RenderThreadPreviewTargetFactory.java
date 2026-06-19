@@ -16,6 +16,7 @@ import net.lucerna.render.preview.DirectLightPreviewTextureUploader;
 import net.lucerna.render.preview.PublicMojangFinalCompositeSubmissionResult;
 import net.lucerna.render.preview.PublicMojangPreviewDrawScaffold;
 import net.lucerna.render.preview.PublicMojangPreviewDrawScaffolds;
+import net.lucerna.render.preview.Round7RawGiVisualSource;
 import net.lucerna.render.preview.Round6DiffuseGiPreviewCompositeState;
 import net.lucerna.render.pass.LucernaFrameAttachmentMetadata;
 import net.lucerna.render.pass.LucernaJavaOpaqueRenderObjects;
@@ -42,8 +43,8 @@ public final class RenderThreadPreviewTargetFactory {
             );
     private static final DirectLightPreviewTextureUploader ROUND6_DIFFUSE_GI_FINAL_COMPOSITE_TEXTURE_UPLOADER =
             new DirectLightPreviewTextureUploader(
-                    "lucerna_round6_diffuse_gi_final_composite_rgba",
-                    "Round 6 native diffuse GI final composite"
+                    "lucerna_round7_raw_gi_native_diffuse_source_rgba",
+                    "Round 7 RAW_GI native diffuse-GI source"
             );
 
     private RenderThreadPreviewTargetFactory() {
@@ -430,12 +431,13 @@ public final class RenderThreadPreviewTargetFactory {
             Round6DiffuseGiCpuOutputPayload diffuseGiPayload,
             Round6DiffuseGiPreviewCompositeState previewState
     ) {
+        Round7RawGiVisualSource rawGiSource = Round7RawGiVisualSource.from(previewState, diffuseGiPayload);
         if (previewState == null) {
             return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
                     true,
                     target != null && target.attachmentMetadata().javaOpaque(),
                     PublicMojangFinalCompositeSubmissionResult.TargetStatus.UNKNOWN,
-                    "public Mojang Round 6 diffuse GI final composite skipped because GI preview readiness state is unavailable"
+                    "public Mojang Round 7 RAW_GI visual mode skipped because GI source readiness state is unavailable"
             );
         }
         if (target == null || !target.available()) {
@@ -443,7 +445,8 @@ public final class RenderThreadPreviewTargetFactory {
                     true,
                     false,
                     PublicMojangFinalCompositeSubmissionResult.TargetStatus.TARGET_MISSING,
-                    "public Mojang Round 6 diffuse GI final composite skipped because no frame target is available"
+                    "public Mojang Round 7 RAW_GI visual mode skipped because no frame target is available; source: "
+                            + rawGiSource.summary()
             );
         }
         if (!target.safeForAttachment()) {
@@ -451,16 +454,19 @@ public final class RenderThreadPreviewTargetFactory {
                     true,
                     target.attachmentMetadata().javaOpaque(),
                     PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
-                    "public Mojang Round 6 diffuse GI final composite skipped because the target is not HUD-safe"
+                    "public Mojang Round 7 RAW_GI visual mode skipped because the target is not HUD-safe; source: "
+                            + rawGiSource.summary()
             );
         }
-        if (!previewState.readyForRound6PreviewSource()) {
+        if (!previewState.readyForRound7RawGiSource()) {
             return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
                     true,
                     target.attachmentMetadata().javaOpaque(),
                     PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
-                    "public Mojang Round 6 diffuse GI final composite skipped because GI/cache readiness is incomplete: "
-                            + previewState.summary()
+                    "public Mojang Round 7 RAW_GI visual mode skipped because GI/cache source readiness is incomplete: "
+                            + previewState.round7RawGiReadinessReason(diffuseGiPayload)
+                            + "; source: "
+                            + rawGiSource.summary()
             );
         }
         if (!(target.commandEncoder() instanceof CommandEncoder commandEncoder)
@@ -471,7 +477,8 @@ public final class RenderThreadPreviewTargetFactory {
                     target.attachmentMetadata().javaOpaque()
                             ? PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT
                             : PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
-                    "public Mojang Round 6 diffuse GI final composite skipped because command encoder or color view is unavailable"
+                    "public Mojang Round 7 RAW_GI visual mode skipped because command encoder or color view is unavailable; source: "
+                            + rawGiSource.summary()
             );
         }
         if (diffuseGiPayload == null) {
@@ -479,7 +486,8 @@ public final class RenderThreadPreviewTargetFactory {
                     true,
                     target.attachmentMetadata().javaOpaque(),
                     PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
-                    "public Mojang Round 6 diffuse GI final composite skipped because native diffuse GI RGBA8 output payload is unavailable"
+                    "public Mojang Round 7 RAW_GI visual mode skipped because native diffuse-GI RGBA8 source payload is unavailable; source: "
+                            + rawGiSource.summary()
             );
         }
         if (!diffuseGiPayload.readyForPreviewDraw()) {
@@ -487,8 +495,10 @@ public final class RenderThreadPreviewTargetFactory {
                     true,
                     target.attachmentMetadata().javaOpaque(),
                     PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
-                    "public Mojang Round 6 diffuse GI final composite skipped because native diffuse GI RGBA8 output payload is not displayable: "
+                    "public Mojang Round 7 RAW_GI visual mode skipped because native diffuse-GI RGBA8 source payload is not displayable: "
                             + diffuseGiPayload.debugSummary()
+                            + "; source: "
+                            + rawGiSource.summary()
             );
         }
 
@@ -506,20 +516,22 @@ public final class RenderThreadPreviewTargetFactory {
                     true,
                     target.attachmentMetadata().javaOpaque(),
                     PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
-                    "public Mojang Round 6 diffuse GI final composite skipped because native GI texture upload was unavailable: "
+                    "public Mojang Round 7 RAW_GI visual mode skipped because native diffuse-GI source texture upload was unavailable: "
                             + upload.summary()
+                            + "; source: "
+                            + rawGiSource.summary()
             );
         }
 
         PublicMojangPreviewDrawScaffold drawScaffold;
         try (RenderPass renderPass = createFullTargetRenderPass(
                 commandEncoder,
-                () -> "lucerna public Round 6 native diffuse GI final composite draw pass",
+                () -> "lucerna public Round 7 RAW_GI native diffuse-GI visual draw pass",
                 colorView,
                 target
         )) {
             renderPass.disableScissor();
-            drawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenRound6DiffuseGiFinalCompositeDraw(
+            drawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenRound7RawGiVisualDraw(
                     renderPass,
                     upload.textureView(),
                     upload.sampler()
@@ -531,13 +543,20 @@ public final class RenderThreadPreviewTargetFactory {
                 drawScaffold.drawCallsIssued(),
                 target.attachmentMetadata().javaOpaque(),
                 PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
-                "public Mojang Round 6 native diffuse GI output final composite render pass submitted; readiness: "
-                        + previewState.summary()
+                "public Mojang Round 7 RAW_GI visual render pass submitted; "
+                        + "mode="
+                        + previewState.round7RawGiModeKey()
+                        + ",evidence="
+                        + previewState.round7RawGiEvidenceLabel()
+                        + ",readiness=\""
+                        + previewState.round7RawGiReadinessReason(diffuseGiPayload)
+                        + "\",source: "
+                        + rawGiSource.summary()
                         + "; target: "
                         + targetAttachmentSummary(target)
                         + "; javaOpaquePublicFallback="
                         + target.attachmentMetadata().javaOpaque()
-                        + "; native diffuse GI output payload: "
+                        + "; native diffuse-GI RAW_GI source payload: "
                         + diffuseGiPayload.debugSummary()
                         + "; upload: "
                         + upload.summary()

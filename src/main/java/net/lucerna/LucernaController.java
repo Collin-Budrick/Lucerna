@@ -12,6 +12,7 @@ import net.lucerna.material.extract.LucernaMaterialExtractionService;
 import net.lucerna.material.extract.MaterialTableRefreshResult;
 import net.lucerna.nativebridge.DirectLightingPreviewCompositeSubmissionResult;
 import net.lucerna.nativebridge.DirectLightingCpuOutputPayload;
+import net.lucerna.nativebridge.DenoisedDiffuseGiCpuOutputPayload;
 import net.lucerna.nativebridge.LucernaNativeBridge;
 import net.lucerna.nativebridge.Round6DiffuseGiCpuOutputPayload;
 import net.lucerna.render.GBufferDescriptor;
@@ -118,6 +119,7 @@ public final class LucernaController {
     private String lastLoggedPublicMojangPreviewPassKey = "";
     private String lastLoggedPublicMojangFinalCompositeKey = "";
     private String lastLoggedRound6DiffuseGiPreviewKey = "";
+    private String lastLoggedRound7DenoisedGiCpuOutputKey = "";
     private String lastLoggedTickNoOpFrameKey = "";
     private boolean renderThreadFrameHookObserved;
     private NativeDirectLightingUploadPacket pendingDirectLightingUpload;
@@ -300,6 +302,8 @@ public final class LucernaController {
             Round6DiffuseGiCpuOutputPayload diffuseGiPayload =
                     this.nativeBridge.round6DiffuseGiCpuOutputPayload(giPreviewState);
             this.logRound6DiffuseGiPreviewStatusIfChanged(giPreviewState, diffuseGiPayload);
+            DenoisedDiffuseGiCpuOutputPayload denoisedGiPayload = this.nativeBridge.denoisedDiffuseGiCpuOutputPayload();
+            this.logRound7DenoisedGiCpuOutputStatusIfChanged(denoisedGiPayload);
             LucernaFramePassRequest finalCompositeRequest = LucernaFramePassRequest.finalWorldColorComposite(
                     this.frameHooks.frameIndex(),
                     target,
@@ -1071,6 +1075,7 @@ public final class LucernaController {
         this.lastLoggedPublicMojangPreviewPassKey = "";
         this.lastLoggedPublicMojangFinalCompositeKey = "";
         this.lastLoggedRound6DiffuseGiPreviewKey = "";
+        this.lastLoggedRound7DenoisedGiCpuOutputKey = "";
         this.lastLoggedTickNoOpFrameKey = "";
         this.renderThreadFrameHookObserved = false;
         this.pendingDirectLightingUpload = null;
@@ -1296,6 +1301,59 @@ public final class LucernaController {
                 sourceReady,
                 sourcePayload == null ? "missing" : sourcePayload.debugSummary(),
                 readinessReason
+        );
+    }
+
+    private void logRound7DenoisedGiCpuOutputStatusIfChanged(DenoisedDiffuseGiCpuOutputPayload payload) {
+        if (payload == null) {
+            return;
+        }
+
+        String logKey = payload.available()
+                + "|"
+                + payload.readyForPreviewDraw()
+                + "|"
+                + payload.snapshot().dispatchGeneration()
+                + "|"
+                + payload.snapshot().nativeOutputPixels()
+                + "|"
+                + payload.snapshot().nativeOutputChecksum()
+                + "|"
+                + payload.snapshot().nativeOutputChangedPixels()
+                + "|"
+                + payload.snapshot().nativeOutputMeanAbsDelta()
+                + "|"
+                + payload.snapshot().outputEvidenceMarker()
+                + "|"
+                + payload.snapshot().realDenoiseShaderOutput()
+                + "|"
+                + payload.previewReadinessReason();
+        if (logKey.equals(this.lastLoggedRound7DenoisedGiCpuOutputKey)) {
+            return;
+        }
+
+        this.lastLoggedRound7DenoisedGiCpuOutputKey = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna Round 7 denoised GI CPU output: denoisedPayloadReady={} readyForPreviewDraw={} denoisedPayloadEvidence={} size={}x{} pixels={} bytes={} displayablePixels={} peakChannel={} denoisedCpuOutputGenerated={} denoised_cpu_output_generated={} denoisedOutputDiffersFromRaw={} denoisedOutputChangedPixels={} denoisedOutputMeanAbsDelta={} denoisedOutputChecksum={} realDenoiseShaderOutput={} marker={} denoisedOutputMarker={} reason={}.",
+                payload.available(),
+                payload.readyForPreviewDraw(),
+                payload.snapshot().outputEvidenceMarker(),
+                payload.width(),
+                payload.height(),
+                payload.pixelCount(),
+                payload.byteCount(),
+                payload.displayablePixelCount(),
+                payload.peakChannel(),
+                payload.snapshot().denoisedCpuOutputGenerated(),
+                payload.snapshot().denoisedCpuOutputGenerated(),
+                payload.snapshot().denoisedOutputDiffersFromRaw(),
+                payload.snapshot().nativeOutputChangedPixels(),
+                payload.snapshot().nativeOutputMeanAbsDelta(),
+                payload.snapshot().nativeOutputChecksum(),
+                payload.snapshot().realDenoiseShaderOutput(),
+                payload.snapshot().outputMarker(),
+                payload.snapshot().denoisedOutputMarker(),
+                payload.previewReadinessReason()
         );
     }
 

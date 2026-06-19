@@ -1302,6 +1302,45 @@ Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeDiffuseGiCpuOutputPrevie
     return env->NewByteArray(0);
 }
 
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeDenoisedDiffuseGiCpuOutputPreviewRgba8(JNIEnv* env, jclass) {
+    std::lock_guard lock(g_renderer_mutex);
+    try {
+        const auto rgba8 = initialized_renderer().denoised_diffuse_gi_cpu_output_preview_rgba8();
+        constexpr std::size_t kMaxDenoisedDiffuseGiPreviewRgba8Bytes = 1024 * 1024 * 4;
+        if (rgba8.size() > kMaxDenoisedDiffuseGiPreviewRgba8Bytes || rgba8.size() % 4 != 0) {
+            set_last_error("denoisedDiffuseGiCpuOutputPreviewRgba8", "native denoised diffuse-GI RGBA8 preview payload size is invalid");
+            return env->NewByteArray(0);
+        }
+        if (rgba8.size() > static_cast<std::size_t>(std::numeric_limits<jsize>::max())) {
+            set_last_error("denoisedDiffuseGiCpuOutputPreviewRgba8", "native denoised diffuse-GI RGBA8 preview payload exceeds JNI byte array limit");
+            return nullptr;
+        }
+        auto result = env->NewByteArray(static_cast<jsize>(rgba8.size()));
+        if (result == nullptr) {
+            set_last_error("denoisedDiffuseGiCpuOutputPreviewRgba8", "failed to allocate Java byte array");
+            return nullptr;
+        }
+        if (!rgba8.empty()) {
+            env->SetByteArrayRegion(
+                    result,
+                    0,
+                    static_cast<jsize>(rgba8.size()),
+                    reinterpret_cast<const jbyte*>(rgba8.data()));
+            if (env->ExceptionCheck()) {
+                return nullptr;
+            }
+        }
+        clear_last_error();
+        return result;
+    } catch (const std::exception& exception) {
+        set_last_error("denoisedDiffuseGiCpuOutputPreviewRgba8", exception.what());
+    } catch (...) {
+        set_last_error("denoisedDiffuseGiCpuOutputPreviewRgba8", "unknown native exception");
+    }
+    return env->NewByteArray(0);
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeLastError(JNIEnv* env, jclass) {
     std::lock_guard lock(g_renderer_mutex);

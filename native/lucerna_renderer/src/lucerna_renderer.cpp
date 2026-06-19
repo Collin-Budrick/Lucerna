@@ -583,6 +583,10 @@ void append_denoise_execution_status(
         << ",raw_gi_samples=" << execution.last_raw_gi_samples
         << ",raw_gi_rays=" << execution.last_raw_gi_rays
         << ",raw_gi_cache_reads=" << execution.last_raw_gi_cache_reads
+        << ",denoised_output_pixels=" << execution.last_denoised_output_pixels
+        << ",denoised_output_checksum=" << execution.last_denoised_output_checksum
+        << ",denoised_output_changed_pixels=" << execution.last_denoised_output_changed_pixels
+        << ",denoised_output_mean_abs_delta=" << execution.last_denoised_output_mean_abs_delta
         << ",composite_size=" << execution.last_composite_width << "x" << execution.last_composite_height
         << ",composite_outputs=" << execution.last_composite_outputs
         << ",flags=" << execution.last_flags
@@ -603,6 +607,8 @@ void append_denoise_execution_status(
         << ",raw_gi_input_available=" << execution.last_raw_gi_input_available
         << ",raw_direct_input_available=" << execution.last_raw_direct_input_available
         << ",denoised_output_intent=" << execution.last_denoised_output_intent
+        << ",denoised_cpu_output_generated=" << execution.last_denoised_cpu_output_generated
+        << ",denoised_output_differs_from_raw=" << execution.last_denoised_output_differs_from_raw
         << ",real_denoise_shader_output=" << execution.last_real_denoise_shader_output
         << ",composite_stage_recorded=" << execution.last_composite_stage_recorded
         << ",composite_enabled=" << execution.last_composite_enabled
@@ -833,6 +839,7 @@ void Renderer::init() {
     last_direct_lighting_payload_packet_ = {};
     direct_lighting_cpu_output_.clear();
     diffuse_gi_cpu_output_.clear();
+    denoised_diffuse_gi_cpu_output_rgba8_.clear();
     last_tick_delta_ = 0.0F;
     resize_count_ = 0;
     begin_frame_count_ = 0;
@@ -889,6 +896,7 @@ void Renderer::shutdown() {
     last_direct_lighting_payload_packet_ = {};
     direct_lighting_cpu_output_.clear();
     diffuse_gi_cpu_output_.clear();
+    denoised_diffuse_gi_cpu_output_rgba8_.clear();
     last_tick_delta_ = 0.0F;
     resize_count_ = 0;
     begin_frame_count_ = 0;
@@ -1853,6 +1861,149 @@ std::vector<std::uint8_t> Renderer::diffuse_gi_cpu_output_preview_rgba8() const 
         rgba8[offset + 3] = 255;
     }
     return rgba8;
+}
+
+std::vector<std::uint8_t> Renderer::denoised_diffuse_gi_cpu_output_preview_rgba8() {
+    if (!initialized_) {
+        return {};
+    }
+    if (denoised_diffuse_gi_cpu_output_rgba8_.empty()) {
+        const bool generated = generate_denoised_diffuse_gi_cpu_output_rgba8();
+        (void) generated;
+    }
+    if (denoised_diffuse_gi_cpu_output_rgba8_.empty()) {
+        return {};
+    }
+
+    const auto& execution = staging_.lighting.denoise_execution;
+    const auto expected_components = static_cast<std::size_t>(
+            execution.last_denoised_output_pixels * 4);
+    if (!execution.last_denoised_cpu_output_generated
+            || expected_components == 0
+            || expected_components != denoised_diffuse_gi_cpu_output_rgba8_.size()
+            || denoised_diffuse_gi_cpu_output_rgba8_.size() % 4 != 0) {
+        return {};
+    }
+
+    return denoised_diffuse_gi_cpu_output_rgba8_;
+}
+
+bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
+    auto& denoise_execution = staging_.lighting.denoise_execution;
+    denoised_diffuse_gi_cpu_output_rgba8_.clear();
+    denoise_execution.last_denoised_output_pixels = 0;
+    denoise_execution.last_denoised_output_checksum = 0;
+    denoise_execution.last_denoised_output_changed_pixels = 0;
+    denoise_execution.last_denoised_output_mean_abs_delta = 0;
+    denoise_execution.last_denoised_cpu_output_generated = false;
+    denoise_execution.last_denoised_output_differs_from_raw = false;
+
+    const auto& gi_execution = staging_.lighting.diffuse_gi_execution;
+    const auto raw_rgba8 = diffuse_gi_cpu_output_preview_rgba8();
+    if (raw_rgba8.empty()
+            || raw_rgba8.size() % 4 != 0) {
+        return false;
+    }
+
+    std::uint64_t width = gi_execution.last_cpu_output_width;
+    std::uint64_t height = gi_execution.last_cpu_output_height;
+    if (width == 0 || height == 0) {
+        width = std::max<std::uint64_t>(1, denoise_execution.last_width / 2);
+        height = std::max<std::uint64_t>(1, denoise_execution.last_height / 2);
+    }
+    const auto pixel_count = saturated_multiply(width, height);
+    const auto expected_components = static_cast<std::size_t>(pixel_count * 4);
+    if (pixel_count == 0 || expected_components != raw_rgba8.size()) {
+        return false;
+    }
+
+    denoised_diffuse_gi_cpu_output_rgba8_.resize(raw_rgba8.size());
+    auto luma_at = [&raw_rgba8, width](std::uint64_t x, std::uint64_t y) {
+        const auto offset = static_cast<std::size_t>(((y * width) + x) * 4);
+        return (static_cast<std::uint32_t>(raw_rgba8[offset]) * 77U)
+                + (static_cast<std::uint32_t>(raw_rgba8[offset + 1]) * 150U)
+                + (static_cast<std::uint32_t>(raw_rgba8[offset + 2]) * 29U);
+    };
+
+    std::uint64_t checksum = 1469598103934665603ULL;
+    std::uint64_t changed_pixels = 0;
+    std::uint64_t total_abs_delta = 0;
+    for (std::uint64_t y = 0; y < height; y++) {
+        for (std::uint64_t x = 0; x < width; x++) {
+            const auto pixel = (y * width) + x;
+            const auto offset = static_cast<std::size_t>(pixel * 4);
+            const auto center_luma = luma_at(x, y);
+            std::uint32_t channel_sum[3] = {
+                    raw_rgba8[offset],
+                    raw_rgba8[offset + 1],
+                    raw_rgba8[offset + 2]
+            };
+            std::uint32_t weight_sum = 1;
+
+            for (std::int32_t oy = -1; oy <= 1; oy++) {
+                for (std::int32_t ox = -1; ox <= 1; ox++) {
+                    if (ox == 0 && oy == 0) {
+                        continue;
+                    }
+                    const auto nx_signed = static_cast<std::int64_t>(x) + ox;
+                    const auto ny_signed = static_cast<std::int64_t>(y) + oy;
+                    if (nx_signed < 0
+                            || ny_signed < 0
+                            || nx_signed >= static_cast<std::int64_t>(width)
+                            || ny_signed >= static_cast<std::int64_t>(height)) {
+                        continue;
+                    }
+                    const auto nx = static_cast<std::uint64_t>(nx_signed);
+                    const auto ny = static_cast<std::uint64_t>(ny_signed);
+                    const auto neighbor_luma = luma_at(nx, ny);
+                    const auto luma_delta = center_luma > neighbor_luma
+                            ? center_luma - neighbor_luma
+                            : neighbor_luma - center_luma;
+                    if (luma_delta > (48U * 256U)) {
+                        continue;
+                    }
+
+                    const auto neighbor_offset = static_cast<std::size_t>(((ny * width) + nx) * 4);
+                    const std::uint32_t weight = (ox == 0 || oy == 0) ? 2U : 1U;
+                    channel_sum[0] += static_cast<std::uint32_t>(raw_rgba8[neighbor_offset]) * weight;
+                    channel_sum[1] += static_cast<std::uint32_t>(raw_rgba8[neighbor_offset + 1]) * weight;
+                    channel_sum[2] += static_cast<std::uint32_t>(raw_rgba8[neighbor_offset + 2]) * weight;
+                    weight_sum += weight;
+                }
+            }
+
+            bool pixel_changed = false;
+            for (std::size_t channel = 0; channel < 3; channel++) {
+                const auto smoothed = channel_sum[channel] / weight_sum;
+                const auto raw = static_cast<std::uint32_t>(raw_rgba8[offset + channel]);
+                const auto blended = ((raw * 3U) + smoothed + 2U) / 4U;
+                const auto clamped = static_cast<std::uint8_t>(std::min<std::uint32_t>(blended, 255U));
+                denoised_diffuse_gi_cpu_output_rgba8_[offset + channel] = clamped;
+                const auto delta = raw > clamped ? raw - clamped : clamped - raw;
+                total_abs_delta += delta;
+                pixel_changed = pixel_changed || delta != 0;
+            }
+            denoised_diffuse_gi_cpu_output_rgba8_[offset + 3] = raw_rgba8[offset + 3];
+            if (pixel_changed) {
+                changed_pixels++;
+            }
+
+            mix_checksum(checksum, denoised_diffuse_gi_cpu_output_rgba8_[offset]);
+            mix_checksum(checksum, denoised_diffuse_gi_cpu_output_rgba8_[offset + 1]);
+            mix_checksum(checksum, denoised_diffuse_gi_cpu_output_rgba8_[offset + 2]);
+            mix_checksum(checksum, denoised_diffuse_gi_cpu_output_rgba8_[offset + 3]);
+            mix_checksum(checksum, pixel);
+        }
+    }
+
+    denoise_execution.last_denoised_output_pixels = pixel_count;
+    denoise_execution.last_denoised_output_checksum = checksum;
+    denoise_execution.last_denoised_output_changed_pixels = changed_pixels;
+    denoise_execution.last_denoised_output_mean_abs_delta =
+            pixel_count == 0 ? 0 : total_abs_delta / pixel_count;
+    denoise_execution.last_denoised_cpu_output_generated = true;
+    denoise_execution.last_denoised_output_differs_from_raw = changed_pixels != 0;
+    return true;
 }
 
 std::string Renderer::status() const {
@@ -3222,6 +3373,7 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_scene_dimension_id.clear();
     if (dispatch_stage == NativeLightingDispatchStage::DiffuseGi) {
         diffuse_gi_cpu_output_.clear();
+        denoised_diffuse_gi_cpu_output_rgba8_.clear();
     }
 
     if (!stage.enabled_this_packet) {
@@ -3812,6 +3964,10 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
     execution.last_raw_gi_samples = diffuse_gi_execution.last_sample_count;
     execution.last_raw_gi_rays = diffuse_gi_execution.last_ray_count;
     execution.last_raw_gi_cache_reads = diffuse_gi_execution.last_cache_read_count;
+    execution.last_denoised_output_pixels = 0;
+    execution.last_denoised_output_checksum = 0;
+    execution.last_denoised_output_changed_pixels = 0;
+    execution.last_denoised_output_mean_abs_delta = 0;
     execution.last_raw_gi_input_available = execution.last_diffuse_gi_signal_available
             || execution.last_raw_gi_samples > 0
             || execution.last_raw_gi_rays > 0
@@ -3820,6 +3976,8 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
             || direct_execution.last_sample_count > 0
             || direct_execution.last_ray_count > 0;
     execution.last_denoised_output_intent = denoise_stage.last_output_count > 0;
+    execution.last_denoised_cpu_output_generated = false;
+    execution.last_denoised_output_differs_from_raw = false;
     execution.last_real_denoise_shader_output = false;
     execution.last_composite_stage_recorded = composite_stage.packets > 0;
     execution.last_composite_enabled = composite_stage.enabled_this_packet;
@@ -3892,11 +4050,18 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
     execution.accepted++;
     execution.submitted++;
     execution.last_accepted = true;
-    execution.last_output_marker = "signal_separated_denoise_metadata_scaffold_no_render_output";
-    execution.last_readiness_reason =
-            validated_placeholder_metadata
+    const bool denoised_output_generated = generate_denoised_diffuse_gi_cpu_output_rgba8();
+    execution.last_output_marker = denoised_output_generated
+            ? "first_practical_cpu_denoised_diffuse_gi_rgba8_generated"
+            : "signal_separated_denoise_metadata_scaffold_no_render_output";
+    execution.last_denoised_output_marker = denoised_output_generated
+            ? "denoised_diffuse_gi_cpu_rgba8_output_generated_from_raw_gi"
+            : execution.last_denoised_output_marker;
+    execution.last_readiness_reason = denoised_output_generated
+            ? "first practical CPU edge-aware denoise foundation generated from native diffuse GI; no final shader quality claim"
+            : (validated_placeholder_metadata
                     ? "signal-separated denoise validated placeholder metadata accepted; native denoise shader/output not implemented"
-                    : "signal-separated denoise metadata accepted; native denoise shader/output not implemented";
+                    : "signal-separated denoise metadata accepted; native denoise shader/output not implemented");
     if (denoise_stage.last_temporal_history) {
         const auto pixel_count = execution.last_width * execution.last_height;
         execution.last_history_accepted = pixel_count / 2;
@@ -3919,6 +4084,21 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
         execution.resource_markers++;
         execution.last_resource_marker_recorded = true;
         recorded_resources++;
+        if (denoised_output_generated) {
+            resources_->track_transient_image(
+                    frame_index_,
+                    0,
+                    static_cast<std::int32_t>(std::min<std::uint64_t>(
+                            staging_.lighting.diffuse_gi_execution.last_cpu_output_width,
+                            static_cast<std::uint64_t>(kMaxLightingDispatchDimension))),
+                    static_cast<std::int32_t>(std::min<std::uint64_t>(
+                            staging_.lighting.diffuse_gi_execution.last_cpu_output_height,
+                            static_cast<std::uint64_t>(kMaxLightingDispatchDimension))),
+                    kDiffuseGiVisibleSignalFormatTag,
+                    "render:denoised-diffuse-gi-cpu-rgba8-output");
+            execution.resource_markers++;
+            recorded_resources++;
+        }
     }
 
     return recorded_resources;

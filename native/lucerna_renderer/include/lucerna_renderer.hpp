@@ -573,6 +573,10 @@ struct NativeDenoiseExecutionTelemetry {
     std::uint64_t last_raw_gi_samples = 0;
     std::uint64_t last_raw_gi_rays = 0;
     std::uint64_t last_raw_gi_cache_reads = 0;
+    std::uint64_t last_denoised_output_pixels = 0;
+    std::uint64_t last_denoised_output_checksum = 0;
+    std::uint64_t last_denoised_output_changed_pixels = 0;
+    std::uint64_t last_denoised_output_mean_abs_delta = 0;
     std::uint64_t last_composite_width = 0;
     std::uint64_t last_composite_height = 0;
     std::uint64_t last_composite_outputs = 0;
@@ -594,6 +598,8 @@ struct NativeDenoiseExecutionTelemetry {
     bool last_raw_gi_input_available = false;
     bool last_raw_direct_input_available = false;
     bool last_denoised_output_intent = false;
+    bool last_denoised_cpu_output_generated = false;
+    bool last_denoised_output_differs_from_raw = false;
     bool last_real_denoise_shader_output = false;
     bool last_composite_stage_recorded = false;
     bool last_composite_enabled = false;
@@ -704,6 +710,7 @@ public:
     [[nodiscard]] std::string status() const;
     [[nodiscard]] std::vector<std::uint8_t> direct_lighting_cpu_output_preview_rgba8() const;
     [[nodiscard]] std::vector<std::uint8_t> diffuse_gi_cpu_output_preview_rgba8() const;
+    [[nodiscard]] std::vector<std::uint8_t> denoised_diffuse_gi_cpu_output_preview_rgba8();
 
 private:
     void ensure_initialized(const char* operation) const;
@@ -729,6 +736,7 @@ private:
             NativeRound6DispatchExecutionTelemetry& execution,
             const char* accepted_marker);
     [[nodiscard]] std::uint64_t track_denoise_execution_scaffold();
+    [[nodiscard]] bool generate_denoised_diffuse_gi_cpu_output_rgba8();
     void reset_staging_telemetry();
     void reset_pass_counters();
     void prepare_frame_passes();
@@ -763,6 +771,7 @@ private:
     DirectLightingPayloadPacket last_direct_lighting_payload_packet_;
     std::vector<float> direct_lighting_cpu_output_;
     std::vector<float> diffuse_gi_cpu_output_;
+    std::vector<std::uint8_t> denoised_diffuse_gi_cpu_output_rgba8_;
     float last_tick_delta_ = 0.0F;
     std::uint64_t resize_count_ = 0;
     std::uint64_t begin_frame_count_ = 0;

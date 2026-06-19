@@ -49,6 +49,12 @@ param(
     [double] $MinFinalMeanAbsLuma = 0.5,
 
     [string[]] $RawGiSourcePatterns = @(
+        "round7\.rawGiSource=lucerna\.lighting\.diffuseGi",
+        "rawGiSource=lucerna\.lighting\.diffuseGi",
+        "rawGiOutput=lucerna\.lighting\.diffuseGi",
+        "rawGi=true",
+        "raw_gi_input_available=true",
+        "raw_input_marker=",
         "Lucerna Round 7 raw GI",
         "mode=round7-raw-gi",
         "raw(?:_| )?gi.*(?:source|output).*native"
@@ -57,15 +63,44 @@ param(
     [string[]] $DenoiseDispatchPatterns = @(
         "Lucerna Round 7 denoise",
         "denoise dispatch",
+        "first_practical_cpu_denoised_diffuse_gi_rgba8_generated",
+        "denoisedCpuOutputGenerated=true",
+        "denoised_cpu_output_generated=true",
+        "mode=round7-denoised-gi"
+    ),
+
+    [string[]] $DenoisedGiOutputPatterns = @(
+        "round7\.denoisedGiOutput=lucerna\.denoise\.diffuse",
+        "denoisedGiOutput=lucerna\.denoise\.diffuse",
+        "denoisedOutputResource=lucerna\.denoise\.diffuse",
+        "denoisedPayloadReady=true",
+        "denoisedPayloadEvidence=denoised_diffuse_gi_rgba8_first_practical_cpu_output",
+        "denoised_diffuse_gi_cpu_rgba8_output_generated_from_raw_gi",
+        "denoised_output_marker=",
+        "denoised(?:_| )?(?:gi|diffuse).*output.*(?:lucerna\.denoise\.diffuse|native|texture)",
         "mode=round7-denoised-gi"
     ),
 
     [string[]] $FinalCompositePatterns = @(
+        "round7\.finalCompositeMode=round7\.composite\.final\.base_direct_gi",
+        "compositeEvidenceKey=round7\.composite\.final\.base_direct_gi",
+        "evidenceKey=round7\.composite\.final\.base_direct_gi",
+        "mode=final-lucerna-composite",
+        "mode=FINAL_LUCERNA_COMPOSITE",
         "Lucerna Round 7 final composite",
         "mode=round7-final-composite",
         "final composite.*(?:submitted=true|dispatch)",
         "composite mode.*(?:final|lucerna)",
         "mode=final-lucerna-composite"
+    ),
+
+    [string[]] $HudSafeFinalCompositePatterns = @(
+        "round7\.finalCompositeHudSafe=true",
+        "hudSafeFinalComposite=true",
+        "hud_preserved=true",
+        "HUD-safe final composite",
+        "before hand/HUD composition",
+        "HUD remains readable"
     ),
 
     [switch] $RequireLogProof,
@@ -182,9 +217,12 @@ function Measure-Round7LogProof {
     $log = Get-Content -Raw -LiteralPath $ResolvedLogPath
     $rawGiSourcePresent = Test-AnyRegex $log $RawGiSourcePatterns
     $denoiseDispatchPresent = Test-AnyRegex $log $DenoiseDispatchPatterns
+    $denoisedGiOutputPresent = Test-AnyRegex $log $DenoisedGiOutputPatterns
     $finalCompositePresent = Test-AnyRegex $log $FinalCompositePatterns
+    $hudSafeFinalCompositePresent = Test-AnyRegex $log $HudSafeFinalCompositePatterns
     $temporaryDirectLightSourcePresent = Test-Regex $log "temporarySourceReady=true|temporary direct-light|current direct-light RGBA payload"
     $metadataOnlyPreviewPresent = Test-Regex $log "metadata-only|metadata scaffold|signal_separated_denoise_metadata_scaffold_no_render_output|no_render_output"
+    $firstPracticalCpuOutputPresent = Test-Regex $log "first_practical_cpu_denoised_diffuse_gi_rgba8_generated|denoisedCpuOutputGenerated=true|denoised_cpu_output_generated=true"
     $proofMarkerPresent = Test-Regex $log "proof marker|R6 GI proof|R7 proof|CPU output proof"
     $focusWindowOnlyPresent = Test-Regex $log "focus-window"
     $nativeErrorPresent = Test-Regex $log "invalid descriptor|VK_ERROR|Lucerna native error|native error"
@@ -193,9 +231,12 @@ function Measure-Round7LogProof {
         markers = [ordered]@{
             rawGiSourcePresent = $rawGiSourcePresent
             denoiseDispatchPresent = $denoiseDispatchPresent
+            denoisedGiOutputPresent = $denoisedGiOutputPresent
             finalCompositePresent = $finalCompositePresent
+            hudSafeFinalCompositePresent = $hudSafeFinalCompositePresent
             temporaryDirectLightSourcePresent = $temporaryDirectLightSourcePresent
             metadataOnlyPreviewPresent = $metadataOnlyPreviewPresent
+            firstPracticalCpuOutputPresent = $firstPracticalCpuOutputPresent
             proofMarkerPresent = $proofMarkerPresent
             focusWindowOnlyPresent = $focusWindowOnlyPresent
             nativeErrorPresent = $nativeErrorPresent
@@ -203,7 +244,9 @@ function Measure-Round7LogProof {
         patterns = [ordered]@{
             rawGiSourcePatterns = @($RawGiSourcePatterns)
             denoiseDispatchPatterns = @($DenoiseDispatchPatterns)
+            denoisedGiOutputPatterns = @($DenoisedGiOutputPatterns)
             finalCompositePatterns = @($FinalCompositePatterns)
+            hudSafeFinalCompositePatterns = @($HudSafeFinalCompositePatterns)
         }
     }
 }
@@ -270,14 +313,20 @@ if ($logProof) {
     if (-not $logProof.markers.denoiseDispatchPresent) {
         $failures.Add("Missing Round 7 denoise dispatch log marker.")
     }
+    if (-not $logProof.markers.denoisedGiOutputPresent) {
+        $failures.Add("Missing Round 7 denoised GI output log marker.")
+    }
     if (-not $logProof.markers.finalCompositePresent) {
         $failures.Add("Missing Round 7 final composite log marker.")
+    }
+    if (-not $logProof.markers.hudSafeFinalCompositePresent) {
+        $failures.Add("Missing Round 7 HUD-safe final composite log marker.")
     }
     if ($logProof.markers.temporaryDirectLightSourcePresent) {
         $failures.Add("Log contains temporary direct-light source marker; Round 7 proof must use raw GI/denoised/final paths.")
     }
-    if ($logProof.markers.metadataOnlyPreviewPresent) {
-        $failures.Add("Log contains metadata-only/scaffold marker; Round 7 visual proof must use real raw GI, denoised GI, and final composite outputs.")
+    if ($logProof.markers.metadataOnlyPreviewPresent -and -not $logProof.markers.firstPracticalCpuOutputPresent) {
+        $failures.Add("Log contains metadata-only/scaffold marker without first practical CPU denoised output; Round 7 visual proof must use real raw GI, denoised GI, and final composite outputs.")
     }
     if ($logProof.markers.proofMarkerPresent) {
         $failures.Add("Log contains proof-marker evidence; Round 7 proof must use requested debug/composite modes.")
@@ -342,7 +391,8 @@ $result = [ordered]@{
                     ([double]$denoiseDelta.focusRegionMetrics.changedPixelPercent -ge $MinDenoiseChangedPixelPercent) -and
                     ([double]$denoiseDelta.focusRegionMetrics.meanAbsLuma -ge $MinDenoiseMeanAbsLuma)
                 )
-                logMarkerPresent = if ($logProof) { [bool]$logProof.markers.denoiseDispatchPresent } else { $null }
+                dispatchLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.denoiseDispatchPresent } else { $null }
+                outputLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.denoisedGiOutputPresent } else { $null }
             }
             finalComposite = [ordered]@{
                 imageDeltaPresent = (
@@ -350,10 +400,12 @@ $result = [ordered]@{
                     ([double]$finalDelta.focusRegionMetrics.meanAbsLuma -ge $MinFinalMeanAbsLuma)
                 )
                 logMarkerPresent = if ($logProof) { [bool]$logProof.markers.finalCompositePresent } else { $null }
+                hudSafeLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.hudSafeFinalCompositePresent } else { $null }
             }
             rejectionMarkers = [ordered]@{
                 temporaryDirectLightSourcePresent = if ($logProof) { [bool]$logProof.markers.temporaryDirectLightSourcePresent } else { $null }
                 metadataOnlyPreviewPresent = if ($logProof) { [bool]$logProof.markers.metadataOnlyPreviewPresent } else { $null }
+                firstPracticalCpuOutputPresent = if ($logProof) { [bool]$logProof.markers.firstPracticalCpuOutputPresent } else { $null }
                 proofMarkerPresent = if ($logProof) { [bool]$logProof.markers.proofMarkerPresent } else { $null }
                 focusWindowOnlyPresent = if ($logProof) { [bool]$logProof.markers.focusWindowOnlyPresent } else { $null }
                 nativeErrorPresent = if ($logProof) { [bool]$logProof.markers.nativeErrorPresent } else { $null }
@@ -387,9 +439,12 @@ Write-Host "final.focus.meanAbsLuma=$($finalDelta.focusRegionMetrics.meanAbsLuma
 if ($logProof) {
     Write-Host "rawGiSourcePresent=$($logProof.markers.rawGiSourcePresent)"
     Write-Host "denoiseDispatchPresent=$($logProof.markers.denoiseDispatchPresent)"
+    Write-Host "denoisedGiOutputPresent=$($logProof.markers.denoisedGiOutputPresent)"
     Write-Host "finalCompositePresent=$($logProof.markers.finalCompositePresent)"
+    Write-Host "hudSafeFinalCompositePresent=$($logProof.markers.hudSafeFinalCompositePresent)"
     Write-Host "temporaryDirectLightSourcePresent=$($logProof.markers.temporaryDirectLightSourcePresent)"
     Write-Host "metadataOnlyPreviewPresent=$($logProof.markers.metadataOnlyPreviewPresent)"
+    Write-Host "firstPracticalCpuOutputPresent=$($logProof.markers.firstPracticalCpuOutputPresent)"
     Write-Host "proofMarkerPresent=$($logProof.markers.proofMarkerPresent)"
     Write-Host "focusWindowOnlyPresent=$($logProof.markers.focusWindowOnlyPresent)"
     Write-Host "nativeErrorPresent=$($logProof.markers.nativeErrorPresent)"

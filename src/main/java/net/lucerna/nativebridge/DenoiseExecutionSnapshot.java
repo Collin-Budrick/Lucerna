@@ -18,6 +18,10 @@ public record DenoiseExecutionSnapshot(
         int rawGiSamples,
         int rawGiRays,
         int rawGiCacheReads,
+        int denoisedOutputPixels,
+        long denoisedOutputChecksum,
+        int denoisedOutputChangedPixels,
+        int denoisedOutputMeanAbsDelta,
         int compositeWidth,
         int compositeHeight,
         int compositeOutputCount,
@@ -33,6 +37,8 @@ public record DenoiseExecutionSnapshot(
         boolean rawGiInputAvailable,
         boolean rawDirectInputAvailable,
         boolean denoisedOutputIntent,
+        boolean denoisedCpuOutputGenerated,
+        boolean denoisedOutputDiffersFromRaw,
         boolean realDenoiseShaderOutput,
         boolean compositeStageRecorded,
         boolean compositeEnabled,
@@ -66,6 +72,10 @@ public record DenoiseExecutionSnapshot(
         rawGiSamples = Math.max(0, rawGiSamples);
         rawGiRays = Math.max(0, rawGiRays);
         rawGiCacheReads = Math.max(0, rawGiCacheReads);
+        denoisedOutputPixels = Math.max(0, denoisedOutputPixels);
+        denoisedOutputChecksum = Math.max(0L, denoisedOutputChecksum);
+        denoisedOutputChangedPixels = Math.max(0, denoisedOutputChangedPixels);
+        denoisedOutputMeanAbsDelta = Math.max(0, denoisedOutputMeanAbsDelta);
         compositeWidth = Math.max(0, compositeWidth);
         compositeHeight = Math.max(0, compositeHeight);
         compositeOutputCount = Math.max(0, compositeOutputCount);
@@ -96,8 +106,14 @@ public record DenoiseExecutionSnapshot(
                 0,
                 0,
                 0,
+                0L,
                 0,
                 0,
+                0,
+                0,
+                0,
+                false,
+                false,
                 false,
                 false,
                 false,
@@ -155,8 +171,14 @@ public record DenoiseExecutionSnapshot(
                     0,
                     0,
                     0,
+                    0L,
                     0,
                     0,
+                    0,
+                    0,
+                    0,
+                    false,
+                    false,
                     false,
                     false,
                     false,
@@ -206,6 +228,10 @@ public record DenoiseExecutionSnapshot(
                 parseInt(extractField(denoiseExecution, "raw_gi_samples")),
                 parseInt(extractField(denoiseExecution, "raw_gi_rays")),
                 parseInt(extractField(denoiseExecution, "raw_gi_cache_reads")),
+                parseInt(extractField(denoiseExecution, "denoised_output_pixels")),
+                parseLong(extractField(denoiseExecution, "denoised_output_checksum")),
+                parseInt(extractField(denoiseExecution, "denoised_output_changed_pixels")),
+                parseInt(extractField(denoiseExecution, "denoised_output_mean_abs_delta")),
                 dimensionComponentInt(extractField(denoiseExecution, "composite_size"), 0),
                 dimensionComponentInt(extractField(denoiseExecution, "composite_size"), 1),
                 parseInt(extractField(denoiseExecution, "composite_outputs")),
@@ -221,6 +247,8 @@ public record DenoiseExecutionSnapshot(
                 parseBoolean(extractField(denoiseExecution, "raw_gi_input_available")),
                 parseBoolean(extractField(denoiseExecution, "raw_direct_input_available")),
                 parseBoolean(extractField(denoiseExecution, "denoised_output_intent")),
+                parseBoolean(extractField(denoiseExecution, "denoised_cpu_output_generated")),
+                parseBoolean(extractField(denoiseExecution, "denoised_output_differs_from_raw")),
                 parseBoolean(extractField(denoiseExecution, "real_denoise_shader_output")),
                 parseBoolean(extractField(denoiseExecution, "composite_stage_recorded")),
                 parseBoolean(extractField(denoiseExecution, "composite_enabled")),
@@ -271,6 +299,11 @@ public record DenoiseExecutionSnapshot(
                 + " rawGiRays=" + this.rawGiRays
                 + " rawGiCacheReads=" + this.rawGiCacheReads
                 + " denoisedIntent=" + this.denoisedOutputIntent
+                + " denoisedCpuOutputGenerated=" + this.denoisedCpuOutputGenerated
+                + " denoisedOutputPixels=" + this.denoisedOutputPixels
+                + " denoisedOutputChangedPixels=" + this.denoisedOutputChangedPixels
+                + " denoisedOutputMeanAbsDelta=" + this.denoisedOutputMeanAbsDelta
+                + " denoisedOutputDiffersFromRaw=" + this.denoisedOutputDiffersFromRaw
                 + " realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
                 + " composite=" + this.compositeSignalLabel()
                 + " compositeSize=" + this.compositeWidth + "x" + this.compositeHeight

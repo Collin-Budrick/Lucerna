@@ -36,6 +36,7 @@ public final class LucernaNativeBridge {
     private String lastLoggedDenoiseExecutionKey = "";
     private boolean directLightingUploadUnavailableLogged;
     private boolean diffuseGiPreviewRgba8ExportUnavailable;
+    private boolean denoisedDiffuseGiPreviewRgba8ExportUnavailable;
 
     public synchronized boolean hasLoadAttempted() {
         return this.loadAttempted;
@@ -124,6 +125,82 @@ public final class LucernaNativeBridge {
             return DenoiseExecutionSnapshot.unavailable("native library not loaded");
         }
         return DenoiseExecutionSnapshot.fromNativeStatus(this.queryNativeStatus());
+    }
+
+    public synchronized DenoisedDiffuseGiCpuOutputSnapshot denoisedDiffuseGiCpuOutputSnapshot() {
+        if (!this.loaded) {
+            return DenoisedDiffuseGiCpuOutputSnapshot.unavailable("native library not loaded");
+        }
+        return DenoisedDiffuseGiCpuOutputSnapshot.fromNativeStatus(this.queryNativeStatus());
+    }
+
+    public synchronized DenoisedDiffuseGiCpuOutputPayload denoisedDiffuseGiCpuOutputPayload() {
+        if (!this.loaded) {
+            return DenoisedDiffuseGiCpuOutputPayload.unavailable("native library not loaded");
+        }
+
+        DenoisedDiffuseGiCpuOutputSnapshot snapshot = this.denoisedDiffuseGiCpuOutputSnapshot();
+        if (!snapshot.hasDenoisedOutputTelemetry()) {
+            return new DenoisedDiffuseGiCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    snapshot.previewReadinessReason()
+            );
+        }
+
+        if (this.denoisedDiffuseGiPreviewRgba8ExportUnavailable) {
+            return new DenoisedDiffuseGiCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native denoised diffuse GI RGBA8 JNI export is not available yet"
+            );
+        }
+
+        byte[] rgba8;
+        try {
+            rgba8 = nativeDenoisedDiffuseGiCpuOutputPreviewRgba8();
+        } catch (UnsatisfiedLinkError error) {
+            this.denoisedDiffuseGiPreviewRgba8ExportUnavailable = true;
+            return new DenoisedDiffuseGiCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native denoised diffuse GI RGBA8 JNI export is not available yet"
+            );
+        } catch (Throwable throwable) {
+            return new DenoisedDiffuseGiCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native denoised diffuse GI RGBA8 call failed: " + throwable.getMessage()
+                );
+        }
+        snapshot = this.denoisedDiffuseGiCpuOutputSnapshot();
+        if (!snapshot.readyForPreviewPayload()) {
+            return new DenoisedDiffuseGiCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    snapshot.previewReadinessReason()
+            );
+        }
+        if (rgba8 == null) {
+            return new DenoisedDiffuseGiCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native denoised diffuse GI RGBA8 payload returned null"
+            );
+        }
+        long expectedBytes = Math.max(0L, snapshot.outputPixels()) * 4L;
+        if (expectedBytes > Integer.MAX_VALUE || rgba8.length != (int) expectedBytes) {
+            return new DenoisedDiffuseGiCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native denoised diffuse GI RGBA8 payload size did not match telemetry"
+            );
+        }
+        return new DenoisedDiffuseGiCpuOutputPayload(
+                snapshot,
+                rgba8,
+                "native denoised diffuse GI RGBA8 payload copied"
+        );
     }
 
     public synchronized Round6DiffuseGiCpuOutputPayload round6DiffuseGiCpuOutputPayload(
@@ -939,6 +1016,12 @@ public final class LucernaNativeBridge {
         if (!denoise.hasExecutionTelemetry()) {
             return;
         }
+        DenoisedDiffuseGiCpuOutputSnapshot denoisedOutput = DenoisedDiffuseGiCpuOutputSnapshot.fromDenoiseExecution(denoise);
+        if (denoisedOutput.hasDenoisedOutputTelemetry() && !denoisedOutput.readyForPreviewPayload()) {
+            this.denoisedDiffuseGiCpuOutputPayload();
+            denoise = this.denoiseExecutionSnapshot();
+            denoisedOutput = DenoisedDiffuseGiCpuOutputSnapshot.fromDenoiseExecution(denoise);
+        }
 
         String key = denoise.dispatchGeneration()
                 + "|" + denoise.inputCount()
@@ -950,14 +1033,19 @@ public final class LucernaNativeBridge {
                 + "|" + denoise.outputMarker()
                 + "|" + denoise.rawInputMarker()
                 + "|" + denoise.denoisedOutputMarker()
-                + "|" + denoise.compositeMarker();
+                + "|" + denoise.compositeMarker()
+                + "|" + denoise.denoisedCpuOutputGenerated()
+                + "|" + denoise.denoisedOutputChangedPixels()
+                + "|" + denoise.denoisedOutputMeanAbsDelta()
+                + "|" + denoisedOutput.outputEvidenceMarker()
+                + "|" + denoisedOutput.readyForPreviewPayload();
         if (key.equals(this.lastLoggedDenoiseExecutionKey)) {
             return;
         }
 
         this.lastLoggedDenoiseExecutionKey = key;
         Lucerna.LOGGER.info(
-                "Lucerna native signal-separated denoise execution scaffold: dispatchGeneration={} size={}x{} inputs={} outputs={} samples={} enabled={} ready={} accepted={} diffuseGiSignal={} directShadowSignal={} edgeInputs={} temporalHistory={} historyAccepted={} historyRejected={} edgePreserved={} edgeRejected={} rawGi={} rawGiPixels={} rawGiSamples={} rawGiRays={} rawGiCacheReads={} rawDirect={} denoisedIntent={} realDenoiseShaderOutput={} composite={} compositeSize={}x{} compositeOutputs={} specularPlaceholder={} aoPlaceholder={} marker={} rawInputMarker={} denoisedOutputMarker={} compositeMarker={} reason={}.",
+                "Lucerna native signal-separated denoise execution scaffold: dispatchGeneration={} size={}x{} inputs={} outputs={} samples={} enabled={} ready={} accepted={} diffuseGiSignal={} directShadowSignal={} edgeInputs={} temporalHistory={} historyAccepted={} historyRejected={} edgePreserved={} edgeRejected={} rawGi={} rawGiPixels={} rawGiSamples={} rawGiRays={} rawGiCacheReads={} rawDirect={} denoisedIntent={} denoisedCpuOutputGenerated={} denoisedOutputPixels={} denoisedOutputChangedPixels={} denoisedOutputMeanAbsDelta={} denoisedOutputDiffersFromRaw={} realDenoiseShaderOutput={} denoisedPayloadReady={} denoisedPayloadEvidence={} denoisedPayloadReason={} composite={} compositeSize={}x{} compositeOutputs={} specularPlaceholder={} aoPlaceholder={} marker={} rawInputMarker={} denoisedOutputMarker={} compositeMarker={} reason={}.",
                 denoise.dispatchGeneration(),
                 denoise.width(),
                 denoise.height(),
@@ -982,7 +1070,15 @@ public final class LucernaNativeBridge {
                 denoise.rawGiCacheReads(),
                 denoise.rawDirectInputAvailable(),
                 denoise.denoisedOutputIntent(),
+                denoise.denoisedCpuOutputGenerated(),
+                denoise.denoisedOutputPixels(),
+                denoise.denoisedOutputChangedPixels(),
+                denoise.denoisedOutputMeanAbsDelta(),
+                denoise.denoisedOutputDiffersFromRaw(),
                 denoise.realDenoiseShaderOutput(),
+                denoisedOutput.readyForPreviewPayload(),
+                denoisedOutput.outputEvidenceMarker(),
+                denoisedOutput.previewReadinessReason(),
                 denoise.compositeSignalLabel(),
                 denoise.compositeWidth(),
                 denoise.compositeHeight(),
@@ -1192,6 +1288,8 @@ public final class LucernaNativeBridge {
     private static native byte[] nativeDirectLightingCpuOutputPreviewRgba8();
 
     private static native byte[] nativeDiffuseGiCpuOutputPreviewRgba8();
+
+    private static native byte[] nativeDenoisedDiffuseGiCpuOutputPreviewRgba8();
 
     private static native String nativeLastError();
 }

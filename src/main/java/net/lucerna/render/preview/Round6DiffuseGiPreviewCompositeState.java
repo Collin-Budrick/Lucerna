@@ -137,10 +137,40 @@ public record Round6DiffuseGiPreviewCompositeState(
                 && this.sourceDirectLightingReady;
     }
 
+    public boolean readyForRound7RawGiSource() {
+        return readyForRound6PreviewSource();
+    }
+
     public boolean readyForFinalComposite(Round6DiffuseGiCpuOutputPayload sourcePayload) {
         return readyForRound6PreviewSource()
                 && sourcePayload != null
                 && sourcePayload.readyForPreviewDraw();
+    }
+
+    public String round7RawGiModeKey() {
+        return "ROUND7_RAW_GI";
+    }
+
+    public String round7RawGiEvidenceLabel() {
+        return "round7.rawGi.nativeDiffuseGiPayload";
+    }
+
+    public String round7RawGiSourceLabel() {
+        return "Round 7 RAW_GI visual source: native diffuse-GI RGBA8 payload";
+    }
+
+    public String round7RawGiReadinessReason(Round6DiffuseGiCpuOutputPayload sourcePayload) {
+        if (!readyForRound7RawGiSource()) {
+            return "Round 7 RAW_GI visual source is not ready: " + this.reason;
+        }
+        if (sourcePayload == null) {
+            return "Round 7 RAW_GI visual source metadata is ready, but no native diffuse-GI RGBA8 payload is available";
+        }
+        if (!sourcePayload.readyForPreviewDraw()) {
+            return "Round 7 RAW_GI visual source metadata is ready, but the native diffuse-GI RGBA8 payload is not displayable: "
+                    + sourcePayload.previewReadinessReason();
+        }
+        return "Round 7 RAW_GI visual source can draw the native diffuse-GI RGBA8 payload as a raw source view";
     }
 
     public String finalCompositeReadinessReason(Round6DiffuseGiCpuOutputPayload sourcePayload) {
