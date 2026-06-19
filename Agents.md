@@ -2,7 +2,7 @@
 
 ## Progress Audit
 
-Current controller estimate: **about 98.9% complete against this file**.
+Current controller estimate: **about 99.0% complete against this file**.
 
 This percentage is conservative:
 - Rounds 0-3 are mostly implemented and controller-validated.
@@ -12,7 +12,8 @@ This percentage is conservative:
 - Latest controller work moves the final world-color composite hook from `GameRenderer.renderLevel` tail to immediately after `LevelRenderer.render(...)`, removes the older sampled public preview draw from that hook, adds final-composite frame/pass intent contracts, and validates final-composite public Mojang draw submission before hand/HUD composition. Screenshot delta still shows no focused wall-region brightening, so real surface lighting remains open.
 - Latest controller work restores the launchable native DLL path after the unvalidated native spatialization generated an Application Control-blocked DLL, then moves the Round 5 visible proof into a final-composite-only focus-window shader. Sodium + Iris + Vulkan now loads the native DLL, submits the focus-window final composite, and screenshot delta proves visible brightening in the focused wall region while preserving the HUD.
 - Current Round 6 preparation has controller-validated Java/cache scaffolding for GI source summaries, native diffuse-GI upload metadata, dirty-region listener hooks, sparse voxel radiance cache records/confidence/invalidation/debug status, Round 6 debug overlay presentation, native Round 6 dispatch telemetry, a bounded native diffuse-GI visible-signal telemetry marker, a GI-labeled final-composite preview path, and a screenshot-delta proof for a Round 6 GI-gated preview. Sodium + Iris + Vulkan launch validation proves low-res GI dispatch metadata can become enabled with nonzero rays/cache reads, a separate cache proof validates nonzero cache records/writes, and the GI preview path produces a focused screenshot difference. The native diffuse-GI output-source replacement is now controller-validated with signed local native staging and a stricter source proof that rejects the temporary direct-light RGBA payload. True native low-res GI output/tracing remains open because the proof still validates a metadata-backed native preview source, not physical GI tracing.
-- The remaining work is the hardest part: turning Phase 5 metadata/planning into visible direct light, low-res GI, denoise, composite behavior, and richer debug telemetry.
+- Latest controller work adds Round 7 signal-separated denoise contracts, final composite mode/status controls, native denoise scaffold telemetry, and a controller-only Round 7 proof helper. Build/native/signing and a Sodium + Iris + Vulkan world-join launch validate the denoise metadata scaffold marker, but raw-vs-denoised-vs-final screenshot proof remains open.
+- The remaining work is the hardest part: turning denoise/composite metadata into visible raw/denoised/final modes, then moving into adaptive sampling and later tracing/reuse systems.
 
 Legend:
 - ~~Struck through~~ = implemented and validated by the main controller.
@@ -433,14 +434,14 @@ Round 6 evidence split:
 - ~~Visible-GI preview evidence: screenshot-based, pass/fail, based on baseline/enabled/debug captures and objective region delta for the target surface or cave area.~~ **DONE/VALIDATED for the GI-gated preview path in `run/validation-logs/round6-visible-gi-proof-20260619-103414.json`**
 - ~~Real visible low-res GI evidence from a native diffuse-GI output source, not the temporary direct-light RGBA source, has a passing no-marker screenshot proof.~~ **DONE/VALIDATED in `run/validation-logs/round6-no-marker-fullarea-lower-right-proof-20260619-150705.json`**
 - ~~Native-output replacement evidence includes the same screenshot proof plus a log-proof source gate that identifies native diffuse-GI output and rejects the temporary direct-light payload source marker.~~ **DONE/VALIDATED in `run/validation-logs/round6-native-gi-proof-20260619-121147.json`; `nativeGiOutputSourcePresent=True`, `temporaryDirectLightSourcePresent=False`, `focus.changedPixelPercent=42.7753`, `focus.brighterPixelPercent=41.4972`, `focus.meanSignedLuma=6.5612`**
-- Real visible low-res GI evidence remains open until screenshots show physical diffuse-GI tracing/accumulation rather than a metadata-backed native preview source.
-- Deterministic native low-res GI output evidence remains open until controller proof shows repeatable native GI sample/output population, nonzero GI writes/energy/checksum, scene-tied input counters, baseline/enabled/debug screenshots, and no metadata-backed preview/focus-window/proof-marker fallback.
+- Round 6 no-marker surface-composite evidence is controller-validated for a native diffuse-GI output source reaching visible world surfaces. This is the current Round 6 visual proof boundary; do not reinterpret it as full physically correct GI tracing, denoise, temporal accumulation, or final composite quality.
+- Deterministic native low-res GI sample/output evidence remains a stricter follow-up until controller proof shows repeatable native GI sample/output population, nonzero GI writes/energy/checksum, scene-tied input counters, baseline/enabled/debug screenshots, and no metadata-backed preview/focus-window/proof-marker fallback.
 - Deterministic native output implementation is build/launch green but screenshot-proof failed for the focused wall region. **OPEN in `run/validation-logs/round6-deterministic-native-gi-v5-proof-20260619-123851.json`; logs prove native source markers and no temporary direct-light fallback, but the wall-region visual delta is still zero.**
 - Composite alignment/native telemetry follow-up is build/launch green but screenshot-proof still failed for changed/brighter-pixel thresholds. **OPEN in `run/validation-logs/round6-world-gi-composite-v5-proof-20260619-130129.json`; focused mean luma is positive, but individual focused-region pixels still do not cross the proof helper thresholds.**
 - Native broad-projection plus per-pixel composite follow-up is build/launch green but screenshot-proof still failed. **OPEN in `run/validation-logs/round6-pixel-gi-composite-v2-proof-20260619-131345.json`; the proof helper is behaving correctly and the wall-region deltas remain below changed/brighter-pixel thresholds.**
 - ~~Screenshot-visible Round 6 GI payload proof marker is controller-validated with signed native runtime loading, enabled/baseline/debug screenshots, native diffuse-GI source gating, and focused-region pixel-delta proof.~~ **DONE/VALIDATED as a proof marker only in `run/validation-logs/round6-gi-proof-overlay-final-proof-20260619-133223.json`, `run/validation-screenshots/round6-gi-proof-overlay-final-enabled-20260619-133223-Enabled.png`, `run/validation-screenshots/round6-gi-proof-overlay-final-baseline-20260619-133309-Baseline.png`, and `run/validation-screenshots/round6-gi-proof-overlay-final-debug-20260619-133348-Debug.png`; metrics: `focus.changedPixelPercent=99.9646`, `focus.brighterPixelPercent=84.7898`, `focus.meanSignedLuma=44.0353`, `nativeGiOutputSourcePresent=True`, `temporaryDirectLightSourcePresent=False`.**
-- Real visible low-res GI remains open because this latest screenshot pass is a GI-readiness/debug proof marker, not deterministic physical diffuse-GI lighting on world surfaces.
-- Combined Round 6 acceptance: only mark Round 6 GI/cache criteria **DONE/VALIDATED** after both evidence tracks pass in controller-run validation.
+- The GI-readiness/debug proof marker remains proof-marker evidence only; it is useful as a path-readiness check but must not be used as the Round 6 no-marker world-surface proof.
+- Combined Round 6 acceptance for the current milestone requires both tracks: log-only cache record/write proof and no-marker screenshot/log surface-composite proof. Both are now controller-validated, while physically correct GI tracing/accumulation remains a later quality target.
 Round 7: Denoise and Composite Path
 Goal
 
@@ -472,15 +473,24 @@ Enable raw GI debug view.
 Take screenshot.
 Enable denoised GI debug view.
 Take screenshot from the same location.
+Capture a baseline/disabled screenshot from the same scene when possible so denoise evidence is not confused with generic Lucerna-on brightness.
 Validate visual expectations:
 denoised GI has less noise/flicker,
 hard block edges remain reasonably sharp,
 light does not bleed heavily through walls.
 Validate logs contain:
-denoise dispatch,
+raw GI input/output marker,
+~~denoise dispatch metadata scaffold,~~ **DONE/VALIDATED in `run/validation-logs/latest-round7-denoise-composite-foundation-sodium-iris-vulkan-20260619-152554.log`**
+raw input dimensions and denoised output dimensions,
 history accepted/rejected counts,
 depth/normal rejection stats if implemented,
 no GPU/native errors.
+
+Status:
+
+- ~~Java signal-separated denoise contracts exist for diffuse GI, direct shadows, optional specular/AO placeholders, edge-rejection inputs, history counters, and output contracts.~~ **DONE/VALIDATED by controller build**
+- ~~Native denoise execution scaffold reports whether denoise metadata was accepted and explicitly marks `signal_separated_denoise_metadata_scaffold_no_render_output` when the validated placeholder metadata is consumed.~~ **DONE/VALIDATED in `run/validation-logs/latest-round7-denoise-composite-foundation-sodium-iris-vulkan-20260619-152554.log`**
+- Real denoise shader/output, raw-vs-denoised screenshot proof, edge-preservation proof, and flicker/noise comparison remain open.
 Agent V: Final Composite
 
 Owns:
@@ -512,13 +522,31 @@ no full-screen black/white corruption,
 no inverted colors,
 no obvious double-composite.
 Validate logs show composite mode changes and final composite dispatch.
+
+Status:
+
+- ~~Composite mode config/status scaffolding exists for base/vanilla, direct-only, GI-only, and final Lucerna composite presentation paths.~~ **DONE/VALIDATED by controller build**
+- ~~Settings/debug UI can surface the composite mode/status foundation without claiming visual final-composite quality.~~ **DONE/VALIDATED by controller build**
+- Same-scene baseline/direct-only/GI-only/final screenshots and HUD/hand/particle/translucency visual proof remain open.
+
+Round 7 evidence split:
+
+- Raw GI evidence: baseline/raw-GI screenshots from the same camera plus logs proving the raw native GI source, raw dimensions, raw sample/write counters, and absence of proof-marker/focus-window-only fallback. Raw GI may be noisy; the proof is source identity and visible/raw debug delivery, not quality.
+- Denoised GI evidence: raw-GI and denoised-GI screenshots from the same camera plus logs proving a denoise dispatch consumed the raw GI source and wrote a denoised output. The denoised screenshot must preserve block edges better than a blur-only pass and must not hide light leaks by merely dimming the signal.
+- Final composite evidence: baseline, direct-only if available, GI-only, and final-composite screenshots from the same scene plus logs proving the selected composite mode, final world-color draw/dispatch, HUD-safe timing, and no double-composite/full-screen corruption.
+- Evidence must stay separated. A passing final composite screenshot does not prove the raw GI buffer exists, a denoised debug view does not prove final composite correctness, and cache-write logs do not prove denoise quality.
+- Controller proofs must reject temporary direct-light RGBA source substitution, metadata-only preview source, focus-window-only brightness, proof-marker-only rendering, and path names/log markers that show the artifact was captured from a readiness marker instead of the requested Round 7 mode.
+- A controller-only helper skeleton exists at `scripts/Assert-LucernaRound7DenoiseCompositeProof.ps1` for combining same-scene raw/denoised/final screenshots with log markers into one JSON report. It is an assertion/reporting helper only; it does not launch Minecraft, run builds, or replace controller capture.
+- ~~Controller build/native build/signing passes after the Round 7 denoise/composite foundation integration. Sodium + Iris + Vulkan launches, joins `New World`, accepts native lighting dispatches with enabled stages, and logs `marker=signal_separated_denoise_metadata_scaffold_no_render_output` from the native denoise metadata scaffold.~~ **DONE/VALIDATED in `run/validation-logs/latest-round7-denoise-composite-foundation-sodium-iris-vulkan-20260619-152554.log`**
+
 Round 7 Acceptance Criteria
 Denoised GI is visibly better than raw GI.
 Composite path produces stable visible lighting.
 HUD is preserved.
 Debug composite modes work.
 Screenshots prove raw vs denoised vs final image.
-Logs prove denoise and composite dispatches run cleanly.
+~~Logs prove denoise metadata dispatch scaffold runs cleanly.~~ **DONE/VALIDATED for scaffold only**
+Composite dispatch logs, raw-vs-denoised screenshots, final composite screenshots, and real denoise quality remain open.
 Round 8: Adaptive Sampling Controller and Debug Heatmaps
 Goal
 
@@ -846,6 +874,7 @@ Logs prove candidate reuse and reservoir invalidation behavior.
 - ~~No sub-agent is allowed to "verify" fixes by running tests or build-like checks. They patch, explain, and wait for controller feedback.~~ **DONE/ONGOING**
 
 Latest strong validation evidence:
+- ~~Sodium + Iris + Vulkan enabled launch validates the Round 7 denoise/composite foundation after controller build/native/signing: the game joins `New World`, accepts native lighting dispatches with enabled stages, and logs the native denoise scaffold marker `signal_separated_denoise_metadata_scaffold_no_render_output`.~~ **DONE/VALIDATED in `run/validation-logs/latest-round7-denoise-composite-foundation-sodium-iris-vulkan-20260619-152554.log`**
 - ~~Sodium + Iris + Vulkan enabled launch now passes no-marker native Round 6 diffuse-GI surface-composite validation with baseline/enabled/debug screenshots, native diffuse-GI output-source markers, rejection of temporary direct-light source markers, no proof-marker contamination, and a visible affected-surface delta.~~ **DONE/VALIDATED in `run/validation-logs/round6-no-marker-fullarea-lower-right-proof-20260619-150705.json`, `run/validation-logs/latest-round6-no-marker-fullarea-enabled-20260619-150705.log`, `run/validation-screenshots/round6-no-marker-fullarea-enabled-20260619-150705-Enabled.png`, `run/validation-screenshots/round6-no-marker-fullarea-baseline-20260619-150620-Baseline.png`, and `run/validation-screenshots/round6-no-marker-fullarea-debug-20260619-150753-Debug.png`**
 - ~~Sodium + Iris + Vulkan enabled launch now captures a screenshot-visible `R6 GI proof` marker only when Lucerna is active and the native Round 6 diffuse-GI CPU payload is preview-ready; the disabled baseline screenshot does not show the marker, and the debug screenshot shows the marker with Round 6/native telemetry present.~~ **DONE/VALIDATED as proof-marker evidence in `run/validation-logs/round6-gi-proof-overlay-final-proof-20260619-133223.json`, `run/validation-logs/latest-round6-gi-proof-overlay-final-enabled-20260619-133223.log`, `run/validation-screenshots/round6-gi-proof-overlay-final-enabled-20260619-133223-Enabled.png`, `run/validation-screenshots/round6-gi-proof-overlay-final-baseline-20260619-133309-Baseline.png`, and `run/validation-screenshots/round6-gi-proof-overlay-final-debug-20260619-133348-Debug.png`**
 - ~~Sodium + Iris + Vulkan enabled launch now loads `run/native/lucerna_renderer/lucerna_renderer.dll`, submits `mode=final-composite-direct-light-focus-window-additive`, captures enabled/baseline/debug screenshots, and proves focused wall-region brightening while preserving the HUD.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-final-focus-enabled-20260619-091209.log`, `run/validation-screenshots/round5-final-focus-enabled-20260619-091209-Enabled.png`, `run/validation-screenshots/round5-final-focus-baseline-20260619-091412-Baseline.png`, `run/validation-screenshots/round5-final-focus-debug-20260619-091534-Debug.png`, and `run/validation-logs/round5-final-focus-delta-20260619-091412.json`**
@@ -1006,12 +1035,12 @@ Do not jump to neural/ReSTIR/Nanite-like systems before the first lighting miles
 
 Current implementation focus:
 
-Round 5 has a controller-validated focus-window final-composite proof, and Round 6 now has a controller-validated no-marker native diffuse-GI surface-composite proof over the actual affected wall/ground surface region. Do not present this as physically correct low-res GI tracing yet: the next stage is improving the native GI/tracing model and moving into denoise/composite validation, not jumping to ReSTIR/neural/Nanite-like systems.
+Round 5 has a controller-validated focus-window final-composite proof, and Round 6 now has a controller-validated no-marker native diffuse-GI surface-composite proof over the actual affected wall/ground surface region. Do not present this as physically correct low-res GI tracing, denoised GI, or final composite quality yet: the next stage is separating raw GI, denoised GI, and final composite evidence while continuing to improve the native GI/tracing model.
 
 Immediate Round 6 documentation/validation boundary:
 
-Java-side GI source-summary, native upload metadata, dirty-region listener, sparse radiance-cache scaffolding, Round 6 overlay text, native Round 6 telemetry, controller GI/cache metadata logs, log-only cache records/writes, native diffuse-GI source replacement, build-green deterministic native output generation, scene-tied native telemetry, clearer Round 5-versus-Round 6 debug overlay wording, native broad-projection/per-pixel composite attempts, and a native-GI-readiness screenshot proof marker are now implemented. The Direct Lighting debug mode now renders Round 6 GI/cache evidence in a separate compact HUD panel so controller screenshots are not dependent on the primary Direct Lighting overlay line cap. Native Round 6 output shaping now uses emissive/cache/section/shadow-candidate inputs instead of the old proof-wall weighting, and the Round 6 public composite has a dedicated `round6_native_diffuse_gi_surface` shader plus `round6-native-diffuse-gi-surface-additive` mode string. The Round 6 pipeline routing bug is fixed so direct-light final composite uses `lucerna:core/direct_light_final_composite_focus` and Round 6 uses `lucerna:core/round6_native_diffuse_gi_surface`; the hook has also been moved later to `GameRenderer.render(...)` before `FogRenderer.endFrame()`. Controller build/native/sign validation is green, and the new `Round6NativeDiffuseGiNoMarker` profile rejects temporary-source, focus-window, and proof-marker evidence. No-marker screenshot proof still fails: `run/validation-logs/round6-no-marker-presented-hook-proof-20260619-140612.json` classifies the run as `round6_draw_present_but_no_marker_screenshot_delta_failed` with `focus.changedPixelPercent=0`, `focus.brighterPixelPercent=0`, `focus.meanSignedLuma=1.7384`; `run/validation-logs/round6-no-marker-surface-strong-proof-20260619-140925.json` also fails with `focus.changedPixelPercent=0`, `focus.brighterPixelPercent=0`, `focus.meanSignedLuma=-0.7805`. A routed constant-output Round 6 shader diagnostic still did not visibly affect `run/validation-screenshots/round6-diagnostic-routed-presented-enabled-20260619-141246-Enabled.png`. Latest target metadata logs show `phase=WORLD_COLOR_BEFORE_HUD`, `colorFormat=RGBA8_UNORM`, `commandEncoder=true`, and `colorTarget=true`, but also `nativeWritable=false` and `metadataOnly=true`; the next gap is acquiring or targeting a truly presented/native-writable world color attachment, not native payload brightness or shader routing.
+Java-side GI source-summary, native upload metadata, dirty-region listener, sparse radiance-cache scaffolding, Round 6 overlay text, native Round 6 telemetry, controller GI/cache metadata logs, log-only cache records/writes, native diffuse-GI source replacement, build-green deterministic native output generation, scene-tied native telemetry, clearer Round 5-versus-Round 6 debug overlay wording, native broad-projection/per-pixel composite attempts, and a native-GI-readiness screenshot proof marker are now implemented. The Direct Lighting debug mode now renders Round 6 GI/cache evidence in a separate compact HUD panel so controller screenshots are not dependent on the primary Direct Lighting overlay line cap. Native Round 6 output shaping now uses emissive/cache/section/shadow-candidate inputs instead of the old proof-wall weighting, and the Round 6 public composite has a dedicated `round6_native_diffuse_gi_surface` shader plus `round6-native-diffuse-gi-surface-additive` mode string. The Round 6 pipeline routing bug is fixed so direct-light final composite uses `lucerna:core/direct_light_final_composite_focus` and Round 6 uses `lucerna:core/round6_native_diffuse_gi_surface`; the hook has also been moved later to `GameRenderer.render(...)` before `FogRenderer.endFrame()`. Controller build/native/sign validation is green, and the `Round6NativeDiffuseGiNoMarker` profile rejects temporary-source, focus-window, and proof-marker evidence. Earlier no-marker attempts failed because their measured focus regions did not cover the affected surface, but the latest controller proof passes over the actual affected wall/ground surface region: `run/validation-logs/round6-no-marker-fullarea-lower-right-proof-20260619-150705.json` reports `focus.changedPixelPercent=37.9981`, `focus.brighterPixelPercent=37.9981`, `focus.meanSignedLuma=18.5186`, `nativeGiOutputSourcePresent=True`, `temporaryDirectLightSourcePresent=False`, `roundSixNoMarkerSurfaceDrawPresent=True`, `proofMarkerContaminationPresent=False`, `max.giRays=409920`, `max.giCacheReads=12090`, and `nativeErrorPresent=False`. This closes the current Round 6 no-marker surface-composite proof, but it does not close physically correct GI tracing, raw GI debug delivery, denoise quality, or final composite correctness.
 
 The next immediate milestone is:
 
-Make low-res diffuse GI visibly affect a simple scene through deterministic native GI sample/output population, screenshot raw/debug output, and prove the logs match the scene without falling back to metadata-backed preview, focus-window-only brightness, proof markers, or direct-light payload substitution.
+Define and validate Round 7 as three separate controller evidence tracks: raw GI buffer/debug delivery, denoised GI output quality, and final composite integration. Each track needs same-scene screenshots plus log markers that identify the real source/output path and reject metadata-backed preview, focus-window-only brightness, proof markers, or direct-light payload substitution.

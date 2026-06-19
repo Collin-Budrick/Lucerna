@@ -74,6 +74,24 @@ public final class LucernaConfigManager {
         this.setConfig(this.config().withDebugOverlay(overlay));
     }
 
+    public void setCompositeMode(CompositeMode mode) {
+        LucernaConfig before = this.config();
+        CompositeMode resolvedMode = mode == null ? LucernaConfig.defaults().compositeMode() : mode;
+        if (before.compositeMode() != resolvedMode) {
+            Lucerna.LOGGER.info(
+                    "Lucerna composite mode changed: previous={} current={} baseWorldColor={} directLighting={} diffuseGi={} lucernaLighting={} description={}.",
+                    before.compositeMode().statusKey(),
+                    resolvedMode.statusKey(),
+                    resolvedMode.baseWorldColorEnabled(),
+                    resolvedMode.directLightingEnabled(),
+                    resolvedMode.diffuseGiEnabled(),
+                    resolvedMode.lucernaLightingEnabled(),
+                    resolvedMode.statusDescription()
+            );
+        }
+        this.setConfig(before.withCompositeMode(resolvedMode));
+    }
+
     public void setShowIrisNotice(boolean show) {
         this.setConfig(this.config().withShowIrisNotice(show));
     }
@@ -84,6 +102,10 @@ public final class LucernaConfigManager {
 
     public void cycleDebugOverlay() {
         this.setDebugOverlay(this.config().debugOverlay().next());
+    }
+
+    public void cycleCompositeMode() {
+        this.setCompositeMode(this.config().compositeMode().next());
     }
 
     private LoadedConfig readConfig(Reader reader) {
@@ -102,12 +124,14 @@ public final class LucernaConfigManager {
         ReadValue<Boolean> rendererEnabled = this.readBoolean(object, "rendererEnabled", defaults.rendererEnabled());
         ReadValue<QualityPreset> qualityPreset = this.readQualityPreset(object, "qualityPreset", defaults.qualityPreset());
         ReadValue<DebugOverlay> debugOverlay = this.readDebugOverlay(object, "debugOverlay", defaults.debugOverlay());
+        ReadValue<CompositeMode> compositeMode = this.readCompositeMode(object, "compositeMode", defaults.compositeMode());
         ReadValue<Boolean> showIrisNotice = this.readBoolean(object, "showIrisNotice", defaults.showIrisNotice());
 
         needsRewrite = needsRewrite
                 || rendererEnabled.usedFallback()
                 || qualityPreset.usedFallback()
                 || debugOverlay.usedFallback()
+                || compositeMode.usedFallback()
                 || showIrisNotice.usedFallback();
 
         return new LoadedConfig(new LucernaConfig(
@@ -115,6 +139,7 @@ public final class LucernaConfigManager {
                 rendererEnabled.value(),
                 qualityPreset.value(),
                 debugOverlay.value(),
+                compositeMode.value(),
                 showIrisNotice.value()
         ).normalized(), needsRewrite);
     }
@@ -125,6 +150,7 @@ public final class LucernaConfigManager {
         object.addProperty("rendererEnabled", config.rendererEnabled());
         object.addProperty("qualityPreset", config.qualityPreset().name());
         object.addProperty("debugOverlay", config.debugOverlay().name());
+        object.addProperty("compositeMode", config.compositeMode().name());
         object.addProperty("showIrisNotice", config.showIrisNotice());
         return object;
     }
@@ -190,6 +216,19 @@ public final class LucernaConfigManager {
         String serialized = element.getAsString();
         DebugOverlay parsed = DebugOverlay.fromSerializedName(serialized, fallback);
         return new ReadValue<>(parsed, parsed == fallback && !fallback.name().equalsIgnoreCase(serialized));
+    }
+
+    private ReadValue<CompositeMode> readCompositeMode(JsonObject object, String name, CompositeMode fallback) {
+        JsonElement element = object.get(name);
+        if (element == null || !element.isJsonPrimitive() || !element.getAsJsonPrimitive().isString()) {
+            return new ReadValue<>(fallback, true);
+        }
+
+        String serialized = element.getAsString();
+        CompositeMode parsed = CompositeMode.fromSerializedName(serialized, fallback);
+        boolean matchedName = fallback.name().equalsIgnoreCase(serialized);
+        boolean matchedKey = fallback.statusKey().equalsIgnoreCase(serialized);
+        return new ReadValue<>(parsed, parsed == fallback && !matchedName && !matchedKey);
     }
 
     private record LoadedConfig(LucernaConfig config, boolean needsRewrite) {

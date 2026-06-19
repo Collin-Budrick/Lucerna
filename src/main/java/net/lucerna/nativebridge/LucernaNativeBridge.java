@@ -33,6 +33,7 @@ public final class LucernaNativeBridge {
     private long lastLoggedDirectLightingUploadGeneration;
     private long lastLoggedLightingDispatchGeneration;
     private String lastLoggedDirectLightingExecutionKey = "";
+    private String lastLoggedDenoiseExecutionKey = "";
     private boolean directLightingUploadUnavailableLogged;
     private boolean diffuseGiPreviewRgba8ExportUnavailable;
 
@@ -116,6 +117,13 @@ public final class LucernaNativeBridge {
             return Round6DiffuseGiCpuOutputSnapshot.unavailable("native library not loaded");
         }
         return Round6DiffuseGiCpuOutputSnapshot.fromNativeStatus(this.queryNativeStatus());
+    }
+
+    public synchronized DenoiseExecutionSnapshot denoiseExecutionSnapshot() {
+        if (!this.loaded) {
+            return DenoiseExecutionSnapshot.unavailable("native library not loaded");
+        }
+        return DenoiseExecutionSnapshot.fromNativeStatus(this.queryNativeStatus());
     }
 
     public synchronized Round6DiffuseGiCpuOutputPayload round6DiffuseGiCpuOutputPayload(
@@ -411,6 +419,7 @@ public final class LucernaNativeBridge {
         this.lastLoggedDirectLightingUploadGeneration = 0L;
         this.lastLoggedLightingDispatchGeneration = 0L;
         this.lastLoggedDirectLightingExecutionKey = "";
+        this.lastLoggedDenoiseExecutionKey = "";
         this.directLightingUploadUnavailableLogged = false;
         this.diffuseGiPreviewRgba8ExportUnavailable = false;
         this.initialized = true;
@@ -432,6 +441,7 @@ public final class LucernaNativeBridge {
         this.lastLoggedDirectLightingUploadGeneration = 0L;
         this.lastLoggedLightingDispatchGeneration = 0L;
         this.lastLoggedDirectLightingExecutionKey = "";
+        this.lastLoggedDenoiseExecutionKey = "";
         this.directLightingUploadUnavailableLogged = false;
         this.initialized = false;
     }
@@ -700,6 +710,7 @@ public final class LucernaNativeBridge {
             boolean accepted = this.invokeNative("renderLighting", LucernaNativeBridge::nativeRenderLighting, true);
             if (accepted) {
                 this.logDirectLightingExecutionStatus();
+                this.logDenoiseExecutionStatus();
             }
         }
     }
@@ -920,6 +931,49 @@ public final class LucernaNativeBridge {
                 directOutput.outputEnergy(),
                 directOutput.outputChecksum(),
                 directOutput.readinessReason()
+        );
+    }
+
+    private void logDenoiseExecutionStatus() {
+        DenoiseExecutionSnapshot denoise = this.denoiseExecutionSnapshot();
+        if (!denoise.hasExecutionTelemetry()) {
+            return;
+        }
+
+        String key = denoise.dispatchGeneration()
+                + "|" + denoise.inputCount()
+                + "|" + denoise.outputCount()
+                + "|" + denoise.historyAcceptedCount()
+                + "|" + denoise.historyRejectedCount()
+                + "|" + denoise.ready()
+                + "|" + denoise.accepted()
+                + "|" + denoise.outputMarker();
+        if (key.equals(this.lastLoggedDenoiseExecutionKey)) {
+            return;
+        }
+
+        this.lastLoggedDenoiseExecutionKey = key;
+        Lucerna.LOGGER.info(
+                "Lucerna native signal-separated denoise execution scaffold: dispatchGeneration={} size={}x{} inputs={} outputs={} samples={} enabled={} ready={} accepted={} diffuseGiSignal={} directShadowSignal={} edgeInputs={} temporalHistory={} historyAccepted={} historyRejected={} specularPlaceholder={} aoPlaceholder={} marker={} reason={}.",
+                denoise.dispatchGeneration(),
+                denoise.width(),
+                denoise.height(),
+                denoise.inputCount(),
+                denoise.outputCount(),
+                denoise.sampleCount(),
+                denoise.enabled(),
+                denoise.ready(),
+                denoise.accepted(),
+                denoise.diffuseGiSignalAvailable(),
+                denoise.directShadowSignalAvailable(),
+                denoise.edgeInputsAvailable(),
+                denoise.temporalHistory(),
+                denoise.historyAcceptedCount(),
+                denoise.historyRejectedCount(),
+                denoise.optionalSpecularPlaceholder(),
+                denoise.optionalAoPlaceholder(),
+                denoise.outputMarker(),
+                denoise.readinessReason()
         );
     }
 

@@ -1,6 +1,8 @@
 package net.lucerna.gui;
 
+import net.lucerna.LucernaController;
 import net.lucerna.config.DebugOverlay;
+import net.lucerna.render.preview.FinalCompositeModeStatus;
 import net.lucerna.telemetry.LightingDispatchStageTelemetryStatus;
 import net.lucerna.telemetry.LightingDispatchTelemetryStatus;
 import net.lucerna.telemetry.NativePassTelemetryStatus;
@@ -48,6 +50,8 @@ public final class LucernaDebugOverlayLines {
         if (!roundSixSummary.isBlank()) {
             lines.add(Component.literal("Round 6 GI/cache: " + roundSixSummary));
         }
+        FinalCompositeModeStatus compositeStatus = currentCompositeModeStatus();
+        lines.add(Component.literal("Round 7 composite: " + compositeStatus.summary()));
         return lines;
     }
 
@@ -65,6 +69,7 @@ public final class LucernaDebugOverlayLines {
             case NATIVE_QUEUE -> addNativeQueueLines(lines, snapshot);
             case OFF -> lines.add(statusLine(snapshot));
         }
+        addCompositeModeLines(lines);
 
         return lines;
     }
@@ -76,9 +81,25 @@ public final class LucernaDebugOverlayLines {
         return lines;
     }
 
+    private static void addCompositeModeLines(List<Component> lines) {
+        FinalCompositeModeStatus compositeStatus = currentCompositeModeStatus();
+        lines.add(Component.literal("Round 7 composite mode: " + compositeStatus.debugLine()));
+        lines.add(Component.literal("Round 7 composite status: " + compositeStatus.statusText()));
+        lines.add(Component.literal("Round 7 boundary: " + compositeStatus.foundationBoundary()));
+    }
+
     public static List<Component> validationLines(LucernaStatusSnapshot snapshot) {
         List<Component> lines = new ArrayList<>();
         lines.add(statusLine(snapshot));
+        FinalCompositeModeStatus compositeStatus = currentCompositeModeStatus();
+        lines.add(Component.literal("round7.compositeMode=" + compositeStatus.statusKey()));
+        lines.add(Component.literal("round7.compositeDispatch=" + compositeStatus.dispatchLabel()));
+        lines.add(Component.literal("round7.compositeSignals=baseWorldColor:"
+                + yesNo(compositeStatus.baseWorldColorEnabled())
+                + ",directLighting:"
+                + yesNo(compositeStatus.directLightingEnabled())
+                + ",diffuseGi:"
+                + yesNo(compositeStatus.diffuseGiEnabled())));
         snapshot.validationFields().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> Component.literal(entry.getKey() + "=" + entry.getValue()))
@@ -597,6 +618,12 @@ public final class LucernaDebugOverlayLines {
             return "unreported";
         }
         return shorten(stage.readinessReason(), 96);
+    }
+
+    private static FinalCompositeModeStatus currentCompositeModeStatus() {
+        return FinalCompositeModeStatus.fromConfigMode(
+                LucernaController.getInstance().getConfig().compositeMode()
+        );
     }
 
     private static boolean isTruthy(String value) {

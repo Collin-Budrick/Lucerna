@@ -1,6 +1,7 @@
 package net.lucerna.gui;
 
 import net.lucerna.LucernaController;
+import net.lucerna.render.preview.FinalCompositeModeStatus;
 import net.lucerna.telemetry.LucernaStatusSnapshot;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -37,6 +38,13 @@ public final class LucernaSettingsScreen extends Screen {
         }).bounds(centerX - 155, y, 310, 20).build());
 
         y += 26;
+        this.addRenderableWidget(Button.builder(Component.literal("Composite: " + config.compositeMode().displayName()), button -> {
+            var manager = controller.configManager();
+            manager.cycleCompositeMode();
+            Minecraft.getInstance().gui.setScreen(new LucernaSettingsScreen(this.parent));
+        }).bounds(centerX - 155, y, 310, 20).build());
+
+        y += 26;
         this.addRenderableWidget(Button.builder(Component.literal("Debug: " + config.debugOverlay().displayName()), button -> {
             var manager = controller.configManager();
             manager.cycleDebugOverlay();
@@ -51,7 +59,7 @@ public final class LucernaSettingsScreen extends Screen {
         }).bounds(centerX - 155, y, 310, 20).build());
 
         y += 34;
-        int doneY = this.height >= 292 ? this.height - 32 : y;
+        int doneY = this.height >= 318 ? this.height - 32 : y;
         this.addRenderableWidget(Button.builder(Component.literal("Done"), button -> this.onClose())
                 .bounds(centerX - 75, doneY, 150, 20)
                 .build());
@@ -62,6 +70,7 @@ public final class LucernaSettingsScreen extends Screen {
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
         LucernaController controller = LucernaController.getInstance();
         LucernaStatusSnapshot snapshot = LucernaStatusSnapshot.capture(controller);
+        var compositeStatus = FinalCompositeModeStatus.fromConfigMode(controller.getConfig().compositeMode());
 
         graphics.centeredText(this.font, this.title, this.width / 2, 32, 0xFFFFFFFF);
         int y = 52;
@@ -69,9 +78,24 @@ public final class LucernaSettingsScreen extends Screen {
             graphics.centeredText(this.font, this.fitLine(line), this.width / 2, y, 0xFFB8C7D9);
             y += 12;
         }
+        graphics.centeredText(
+                this.font,
+                this.fitLine(Component.literal("Composite mode: " + compositeStatus.debugLine())),
+                this.width / 2,
+                y,
+                0xFFB8C7D9
+        );
+        y += 12;
+        graphics.centeredText(
+                this.font,
+                this.fitLine(Component.literal("Composite status: " + compositeStatus.statusText())),
+                this.width / 2,
+                y,
+                0xFFB8C7D9
+        );
 
-        if (this.height >= 292) {
-            y = 214;
+        if (this.height >= 318) {
+            y = 240;
             int lastOverlayY = this.height - 44;
             for (Component line : LucernaDebugOverlayLines.selectedOverlay(snapshot)) {
                 if (y > lastOverlayY) {

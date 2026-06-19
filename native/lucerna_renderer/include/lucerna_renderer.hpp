@@ -548,6 +548,43 @@ struct NativeRound6DispatchExecutionTelemetry {
     std::string last_scene_dimension_id;
 };
 
+struct NativeDenoiseExecutionTelemetry {
+    std::uint64_t attempts = 0;
+    std::uint64_t submitted = 0;
+    std::uint64_t skipped = 0;
+    std::uint64_t accepted = 0;
+    std::uint64_t resource_markers = 0;
+    std::uint64_t metadata_dispatches = 0;
+    std::uint64_t history_accepted = 0;
+    std::uint64_t history_rejected = 0;
+    std::uint64_t last_frame_index = 0;
+    std::uint64_t last_packet_generation = 0;
+    std::uint64_t last_dispatch_generation = 0;
+    std::uint64_t last_width = 0;
+    std::uint64_t last_height = 0;
+    std::uint64_t last_input_count = 0;
+    std::uint64_t last_output_count = 0;
+    std::uint64_t last_sample_count = 0;
+    std::uint64_t last_history_accepted = 0;
+    std::uint64_t last_history_rejected = 0;
+    std::uint32_t last_flags = 0;
+    bool last_enabled = false;
+    bool last_validated = false;
+    bool last_placeholder = false;
+    bool last_temporal_history = false;
+    bool last_ready = false;
+    bool last_accepted = false;
+    bool last_resource_marker_recorded = false;
+    bool last_metadata_dispatch_recorded = false;
+    bool last_edge_inputs_available = false;
+    bool last_direct_shadow_signal_available = false;
+    bool last_diffuse_gi_signal_available = false;
+    bool last_optional_specular_placeholder = true;
+    bool last_optional_ao_placeholder = true;
+    std::string last_output_marker;
+    std::string last_readiness_reason;
+};
+
 struct NativeLightingDispatchTelemetry {
     std::uint64_t packets = 0;
     std::uint64_t advertised_dispatches = 0;
@@ -603,6 +640,7 @@ struct NativeLightingDispatchTelemetry {
     NativeDirectLightingExecutionTelemetry direct_execution;
     NativeRound6DispatchExecutionTelemetry diffuse_gi_execution;
     NativeRound6DispatchExecutionTelemetry cache_execution;
+    NativeDenoiseExecutionTelemetry denoise_execution;
     std::array<NativeLightingDispatchStageTelemetry, kNativeLightingDispatchStageCount> stages;
     std::array<NativeLightingDispatchPayloadCategoryTelemetry, kNativeLightingDispatchPayloadCategoryCount> payload_categories;
 };
@@ -665,6 +703,7 @@ private:
             NativeLightingDispatchStage dispatch_stage,
             NativeRound6DispatchExecutionTelemetry& execution,
             const char* accepted_marker);
+    [[nodiscard]] std::uint64_t track_denoise_execution_scaffold();
     void reset_staging_telemetry();
     void reset_pass_counters();
     void prepare_frame_passes();

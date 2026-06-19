@@ -557,6 +557,48 @@ void append_round6_execution_status(
         << "\"}";
 }
 
+void append_denoise_execution_status(
+        std::ostringstream& out,
+        const NativeDenoiseExecutionTelemetry& execution) {
+    out << ",denoise_execution={attempts=" << execution.attempts
+        << ",submitted=" << execution.submitted
+        << ",skipped=" << execution.skipped
+        << ",accepted=" << execution.accepted
+        << ",resource_markers=" << execution.resource_markers
+        << ",metadata_dispatches=" << execution.metadata_dispatches
+        << ",last_frame=" << execution.last_frame_index
+        << ",packet_generation=" << execution.last_packet_generation
+        << ",dispatch_generation=" << execution.last_dispatch_generation
+        << ",size=" << execution.last_width << "x" << execution.last_height
+        << ",inputs=" << execution.last_input_count
+        << ",outputs=" << execution.last_output_count
+        << ",samples=" << execution.last_sample_count
+        << ",history_accepted=" << execution.last_history_accepted
+        << ",history_rejected=" << execution.last_history_rejected
+        << ",total_history_accepted=" << execution.history_accepted
+        << ",total_history_rejected=" << execution.history_rejected
+        << ",flags=" << execution.last_flags
+        << ",enabled=" << execution.last_enabled
+        << ",validated=" << execution.last_validated
+        << ",placeholder=" << execution.last_placeholder
+        << ",temporal_history=" << execution.last_temporal_history
+        << ",ready=" << execution.last_ready
+        << ",accepted_this_dispatch=" << execution.last_accepted
+        << ",resource_marker_recorded=" << execution.last_resource_marker_recorded
+        << ",metadata_dispatch_recorded=" << execution.last_metadata_dispatch_recorded
+        << ",edge_inputs_available=" << execution.last_edge_inputs_available
+        << ",direct_shadow_signal_available=" << execution.last_direct_shadow_signal_available
+        << ",diffuse_gi_signal_available=" << execution.last_diffuse_gi_signal_available
+        << ",optional_specular_placeholder=" << execution.last_optional_specular_placeholder
+        << ",optional_ao_placeholder=" << execution.last_optional_ao_placeholder
+        << ",output_marker=\"" << execution.last_output_marker
+        << "\""
+        << ",readiness_reason=\"" << (execution.last_readiness_reason.empty()
+            ? "denoise_stage_not_evaluated"
+            : execution.last_readiness_reason)
+        << "\"}";
+}
+
 void append_phase5_lighting_status(
         std::ostringstream& out,
         const NativeLightingDispatchTelemetry& lighting,
@@ -687,6 +729,7 @@ void append_phase5_lighting_status(
         << "\"}";
     append_round6_execution_status(out, "diffuse_gi_execution", lighting.diffuse_gi_execution);
     append_round6_execution_status(out, "cache_execution", lighting.cache_execution);
+    append_denoise_execution_status(out, lighting.denoise_execution);
     append_phase5_payload_categories(out, lighting);
     out
         << ",total_estimated_bytes=" << lighting.total_estimated_bytes
@@ -1557,6 +1600,7 @@ void Renderer::render_lighting() {
                 NativeLightingDispatchStage::DiffuseGi,
                 staging_.lighting.diffuse_gi_execution,
                 "diffuse_gi_dispatch_accepted_metadata_marker")
+        + track_denoise_execution_scaffold()
         + track_round6_dispatch_execution_scaffold(
                 NativeLightingDispatchStage::Cache,
                 staging_.lighting.cache_execution,
@@ -3703,6 +3747,101 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
             ? std::string(to_string(dispatch_stage)) + "_dispatch_accepted_metadata_marker_recorded"
             : std::string(to_string(dispatch_stage)) + "_dispatch_accepted_without_resource_marker";
     }
+    return recorded_resources;
+}
+
+std::uint64_t Renderer::track_denoise_execution_scaffold() {
+    auto& execution = staging_.lighting.denoise_execution;
+    const auto& denoise_stage = lighting_stage_telemetry(NativeLightingDispatchStage::Denoise);
+
+    execution.attempts++;
+    execution.last_frame_index = frame_index_;
+    execution.last_packet_generation = staging_.lighting.last_packet_generation;
+    execution.last_dispatch_generation = denoise_stage.last_generation;
+    execution.last_width = non_negative_u64(denoise_stage.last_width);
+    execution.last_height = non_negative_u64(denoise_stage.last_height);
+    execution.last_input_count = non_negative_u64(denoise_stage.last_input_count);
+    execution.last_output_count = non_negative_u64(denoise_stage.last_output_count);
+    execution.last_sample_count = non_negative_u64(denoise_stage.last_sample_count);
+    execution.last_flags = denoise_stage.last_flags;
+    execution.last_enabled = denoise_stage.enabled_this_packet;
+    execution.last_validated = denoise_stage.last_validated;
+    execution.last_placeholder = denoise_stage.last_placeholder;
+    execution.last_temporal_history = denoise_stage.last_temporal_history;
+    execution.last_ready = denoise_stage.ready_for_native_execution_this_packet;
+    execution.last_edge_inputs_available = denoise_stage.last_input_count >= 4;
+    execution.last_diffuse_gi_signal_available = staging_.lighting.diffuse_gi_execution.last_cpu_output_generated
+            || staging_.lighting.diffuse_gi_execution.last_output_count > 0;
+    execution.last_direct_shadow_signal_available = staging_.lighting.direct_execution.last_output_count > 0
+            || staging_.lighting.direct_execution.last_candidate_count > 0;
+    execution.last_optional_specular_placeholder = true;
+    execution.last_optional_ao_placeholder = true;
+    execution.last_metadata_dispatch_recorded = denoise_stage.recorded_this_frame;
+    execution.last_accepted = false;
+    execution.last_resource_marker_recorded = false;
+    execution.last_history_accepted = 0;
+    execution.last_history_rejected = 0;
+
+    std::uint64_t recorded_resources = 0;
+    const bool validated_placeholder_metadata = denoise_stage.enabled_this_packet
+            && denoise_stage.last_validated
+            && denoise_stage.last_placeholder;
+
+    if (!denoise_stage.recorded_this_frame && !validated_placeholder_metadata) {
+        execution.skipped++;
+        execution.last_output_marker = "denoise_metadata_not_recorded";
+        execution.last_readiness_reason = "denoise dispatch metadata unavailable";
+        return 0;
+    }
+
+    execution.metadata_dispatches++;
+    if (!denoise_stage.enabled_this_packet) {
+        execution.skipped++;
+        execution.last_output_marker = "denoise_disabled_noop";
+        execution.last_readiness_reason = "denoise stage disabled";
+        return 0;
+    }
+
+    if (!denoise_stage.ready_for_native_execution_this_packet && !validated_placeholder_metadata) {
+        execution.skipped++;
+        execution.last_output_marker = "denoise_not_ready_noop";
+        execution.last_readiness_reason = denoise_stage.last_readiness_reason.empty()
+                ? "denoise dispatch is metadata-only or unvalidated"
+                : denoise_stage.last_readiness_reason;
+        if (denoise_stage.last_temporal_history) {
+            execution.last_history_rejected = execution.last_width * execution.last_height;
+            execution.history_rejected += execution.last_history_rejected;
+        }
+        return 0;
+    }
+
+    execution.accepted++;
+    execution.submitted++;
+    execution.last_accepted = true;
+    execution.last_output_marker = "signal_separated_denoise_metadata_scaffold_no_render_output";
+    execution.last_readiness_reason =
+            validated_placeholder_metadata
+                    ? "signal-separated denoise validated placeholder metadata accepted; native denoise shader/output not implemented"
+                    : "signal-separated denoise metadata accepted; native denoise shader/output not implemented";
+    if (denoise_stage.last_temporal_history) {
+        const auto pixel_count = execution.last_width * execution.last_height;
+        execution.last_history_accepted = pixel_count / 2;
+        execution.last_history_rejected = pixel_count - execution.last_history_accepted;
+        execution.history_accepted += execution.last_history_accepted;
+        execution.history_rejected += execution.last_history_rejected;
+    }
+
+    if (resources_ != nullptr && frame_open_ && resources_->has_context()) {
+        resources_->track_transient_buffer(
+                frame_index_,
+                0,
+                kLightingConstantsBytes,
+                "render:signal-separated-denoise-contract-metadata");
+        execution.resource_markers++;
+        execution.last_resource_marker_recorded = true;
+        recorded_resources++;
+    }
+
     return recorded_resources;
 }
 
