@@ -44,13 +44,18 @@ public record DirectLightPreviewTextureUploadResult(
     }
 
     public boolean availableForDraw() {
-        return this.textureReady && this.textureView != null && this.sampler != null;
+        return this.status == DirectLightPreviewTextureUploadStatus.UPLOADED
+                && this.uploadSubmitted
+                && this.textureReady
+                && this.textureView != null
+                && this.sampler != null;
     }
 
     public String summary() {
         return "status=" + this.status
                 + ",textureReady=" + this.textureReady
                 + ",uploadSubmitted=" + this.uploadSubmitted
+                + ",availableForDraw=" + this.availableForDraw()
                 + ",textureRecreated=" + this.textureRecreated
                 + ",extent=" + this.width + "x" + this.height
                 + ",format=" + this.format

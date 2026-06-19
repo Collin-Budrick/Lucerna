@@ -237,12 +237,21 @@ public final class RenderThreadPreviewTargetFactory {
                     "public Mojang sampled preview draw skipped because command encoder or color view is unavailable"
             );
         }
-        if (directOutputPayload == null || !directOutputPayload.available()) {
-            return submitDiagnosticFallback(
-                    commandEncoder,
-                    colorView,
-                    target,
+        if (directOutputPayload == null) {
+            return PublicMojangPreviewPassSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangPreviewPassSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
                     "public Mojang sampled preview draw skipped because direct-light RGBA8 payload is unavailable"
+            );
+        }
+        if (!directOutputPayload.readyForPreviewDraw()) {
+            return PublicMojangPreviewPassSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangPreviewPassSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang sampled preview draw skipped because direct-light RGBA8 payload is not preview-ready: "
+                            + directOutputPayload.debugSummary()
             );
         }
 
@@ -255,11 +264,12 @@ public final class RenderThreadPreviewTargetFactory {
                 directOutputPayload.height()
         );
         if (!upload.availableForDraw()) {
-            return submitDiagnosticFallback(
-                    commandEncoder,
-                    colorView,
-                    target,
-                    "public Mojang sampled preview draw fell back to diagnostic draw because upload was unavailable: "
+            Reference.reachabilityFence(directOutputBuffer);
+            return PublicMojangPreviewPassSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangPreviewPassSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang sampled preview draw skipped because direct-light texture upload was unavailable: "
                             + upload.summary()
             );
         }

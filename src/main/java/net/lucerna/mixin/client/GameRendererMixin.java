@@ -14,11 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class GameRendererMixin {
     @Inject(
             method = "renderLevel(Lnet/minecraft/client/DeltaTracker;)V",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/client/renderer/LevelRenderer;render(Lcom/mojang/blaze3d/resource/GraphicsResourceAllocator;Lnet/minecraft/client/DeltaTracker;ZLnet/minecraft/client/renderer/state/level/CameraRenderState;Lorg/joml/Matrix4fc;Lcom/mojang/blaze3d/buffers/GpuBufferSlice;Lorg/joml/Vector4f;Z)V",
-                    shift = At.Shift.AFTER
-            ),
+            at = @At("TAIL"),
             require = 0
     )
     private void lucerna$attachDirectLightPreviewComposite(DeltaTracker deltaTracker, CallbackInfo callbackInfo) {

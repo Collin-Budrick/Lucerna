@@ -87,7 +87,14 @@ constexpr std::int32_t kMaxDirectCpuOutputHeight = 36;
 constexpr float kDirectCpuCelestialScale = 0.02F;
 constexpr float kDirectCpuEmissiveScale = 0.0005F;
 constexpr float kDirectCpuMinimumSurfaceRadius = 8.0F;
-constexpr float kDirectCpuSurfacePreviewScale = 18.0F;
+constexpr float kDirectCpuSurfacePreviewScale = 72.0F;
+constexpr float kDirectCpuSurfacePreviewFalloffGain = 1.75F;
+constexpr float kDirectCpuSurfacePreviewAlphaFloor = 0.42F;
+constexpr float kDirectCpuSurfacePreviewAlphaGain = 0.58F;
+constexpr float kDirectCpuSurfacePreviewCoverageRed = 10.0F;
+constexpr float kDirectCpuSurfacePreviewCoverageGreen = 6.0F;
+constexpr float kDirectCpuSurfacePreviewCoverageBlue = 1.5F;
+constexpr float kDirectCpuSurfacePreviewCoverageAlpha = 0.32F;
 constexpr std::size_t kLightingPayloadCategoryDirect = 0;
 constexpr std::size_t kLightingPayloadCategoryGi = 1;
 constexpr std::size_t kLightingPayloadCategoryPost = 2;
@@ -2613,7 +2620,9 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
     const auto pixel_count = output_width * output_height;
     const bool has_payload = execution.last_payload_accepted
             && execution.last_payload_generation != 0
-            && execution.last_payload_has_direct_work;
+            && execution.last_payload_has_direct_work
+            && execution.last_candidate_count > 0
+            && execution.last_shadow_candidate_count > 0;
     if (has_payload && pixel_count != 0) {
         const auto celestial_count = static_cast<std::size_t>(last_direct_lighting_payload_packet_.celestial_light_count);
         const auto emissive_count = static_cast<std::size_t>(last_direct_lighting_payload_packet_.selected_emissive_count);
@@ -2632,6 +2641,7 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
                 ? 1.0F
                 : std::max(0.05F, shadow_weight / static_cast<float>(shadow_count));
         const float celestial_base = celestial_energy * kDirectCpuCelestialScale * normalized_shadow_weight;
+        const bool preview_has_visible_direct_work = emissive_count > 0 && shadow_count > 0;
 
         direct_lighting_cpu_output_.assign(static_cast<std::size_t>(pixel_count) * 4, 0.0F);
         float total_energy = 0.0F;
@@ -2678,6 +2688,12 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
             float green = celestial_base * 0.2F;
             float blue = celestial_base * 0.24F;
             float surface_mask = 0.0F;
+            if (preview_has_visible_direct_work) {
+                red += kDirectCpuSurfacePreviewCoverageRed;
+                green += kDirectCpuSurfacePreviewCoverageGreen;
+                blue += kDirectCpuSurfacePreviewCoverageBlue;
+                surface_mask = kDirectCpuSurfacePreviewCoverageAlpha;
+            }
             for (std::size_t light_index = 0; light_index < emissive_count; light_index++) {
                 const float light_x = static_cast<float>(strided_int_or_zero(
                         last_direct_lighting_payload_packet_.emissive_light_metadata,
@@ -2704,18 +2720,27 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
                         kDirectEmissiveLightDataStride,
                         kDirectEmissiveInfluenceRadiusOffset));
                 const float falloff = std::max(0.0F, 1.0F - (distance / radius));
-                const float shaped_falloff = falloff * falloff;
-                if (shaped_falloff <= 0.0F) {
+                const float shaped_falloff = std::max(falloff * falloff, falloff * 0.55F);
+                const float preview_falloff = std::clamp(
+                        shaped_falloff * kDirectCpuSurfacePreviewFalloffGain,
+                        0.0F,
+                        1.0F);
+                if (preview_falloff <= 0.0F) {
                     continue;
                 }
-                surface_mask = std::max(surface_mask, shaped_falloff);
+                surface_mask = std::max(surface_mask, preview_falloff);
 
                 const float intensity = strided_float_or_zero(
                         last_direct_lighting_payload_packet_.emissive_light_data,
                         light_index,
                         kDirectEmissiveLightDataStride,
                         kDirectEmissiveIntensityOffset);
-                const float strength = intensity * shaped_falloff * surface_weight * kDirectCpuSurfacePreviewScale;
+                const float preview_energy = intensity
+                        * (1.0F + static_cast<float>(emissive_count) * kDirectCpuEmissiveScale);
+                const float strength = preview_energy
+                        * preview_falloff
+                        * surface_weight
+                        * kDirectCpuSurfacePreviewScale;
                 red += strided_float_or_zero(
                         last_direct_lighting_payload_packet_.emissive_light_data,
                         light_index,
@@ -2737,10 +2762,11 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
             direct_lighting_cpu_output_[offset] = std::min(64.0F, red * tile_factor);
             direct_lighting_cpu_output_[offset + 1] = std::min(64.0F, green * tile_factor);
             direct_lighting_cpu_output_[offset + 2] = std::min(64.0F, blue * tile_factor);
-            direct_lighting_cpu_output_[offset + 3] = std::clamp(
-                    surface_mask * surface_weight,
-                    0.0F,
-                    1.0F);
+            const float preview_alpha = surface_mask <= 0.0F
+                    ? 0.0F
+                    : kDirectCpuSurfacePreviewAlphaFloor
+                            + surface_mask * surface_weight * kDirectCpuSurfacePreviewAlphaGain;
+            direct_lighting_cpu_output_[offset + 3] = std::clamp(preview_alpha, 0.0F, 1.0F);
             const float sample_energy = direct_lighting_cpu_output_[offset]
                     + direct_lighting_cpu_output_[offset + 1]
                     + direct_lighting_cpu_output_[offset + 2];

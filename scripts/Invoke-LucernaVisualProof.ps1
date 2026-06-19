@@ -8,10 +8,51 @@ param(
 
     [switch] $SetupScene,
 
+    [string] $BaselineImagePath = "",
+
+    [string] $EnabledImagePath = "",
+
+    [string] $ImageDeltaJsonPath = "",
+
+    [double] $ImageDeltaRegionLeftPercent = 30.0,
+
+    [double] $ImageDeltaRegionTopPercent = 20.0,
+
+    [double] $ImageDeltaRegionWidthPercent = 40.0,
+
+    [double] $ImageDeltaRegionHeightPercent = 55.0,
+
     [int] $TimeoutSeconds = 240
 )
 
 $ErrorActionPreference = "Stop"
+
+function Invoke-ImageDeltaComparison {
+    param(
+        [string] $BaselinePath,
+        [string] $EnabledPath,
+        [string] $JsonPath
+    )
+
+    $compareScript = Join-Path $PSScriptRoot "Compare-LucernaVisualProofImages.ps1"
+    if (-not (Test-Path -LiteralPath $compareScript)) {
+        throw "Missing Lucerna image comparison helper: $compareScript"
+    }
+
+    $args = @(
+        "-BaselineImagePath", $BaselinePath,
+        "-EnabledImagePath", $EnabledPath,
+        "-RegionLeftPercent", $ImageDeltaRegionLeftPercent,
+        "-RegionTopPercent", $ImageDeltaRegionTopPercent,
+        "-RegionWidthPercent", $ImageDeltaRegionWidthPercent,
+        "-RegionHeightPercent", $ImageDeltaRegionHeightPercent
+    )
+    if (-not [string]::IsNullOrWhiteSpace($JsonPath)) {
+        $args += @("-OutputJsonPath", $JsonPath)
+    }
+
+    & $compareScript @args
+}
 
 function Write-LucernaConfig {
     param(
@@ -165,6 +206,14 @@ function Copy-FreshLatestLog {
     $target = Join-Path $ValidationDir "latest-$safeScenario-$Stamp.log"
     Copy-Item -LiteralPath $latestLog -Destination $target -Force
     return $target
+}
+
+if (-not [string]::IsNullOrWhiteSpace($BaselineImagePath) -or -not [string]::IsNullOrWhiteSpace($EnabledImagePath)) {
+    if ([string]::IsNullOrWhiteSpace($BaselineImagePath) -or [string]::IsNullOrWhiteSpace($EnabledImagePath)) {
+        throw "Both -BaselineImagePath and -EnabledImagePath are required for image-delta-only mode."
+    }
+    Invoke-ImageDeltaComparison $BaselineImagePath $EnabledImagePath $ImageDeltaJsonPath
+    return
 }
 
 $root = (Resolve-Path ".").Path
