@@ -2,6 +2,8 @@ package net.lucerna.nativebridge;
 
 import net.lucerna.Lucerna;
 import net.lucerna.render.gbuffer.GBufferTargetContract;
+import net.lucerna.render.pass.LucernaFramePassKind;
+import net.lucerna.render.pass.LucernaFramePassRequest;
 import net.lucerna.upload.NativeDirectLightingUploadPacket;
 import net.lucerna.upload.NativeGBufferStagingUploadPacket;
 import net.lucerna.upload.NativeLightingDispatchUploadPacket;
@@ -66,6 +68,117 @@ public final class LucernaNativeBridge {
             return DirectLightingCpuOutputSnapshot.unavailable("native library not loaded");
         }
         return DirectLightingCpuOutputSnapshot.fromNativeStatus(this.queryNativeStatus());
+    }
+
+    public synchronized DirectLightingPreviewCompositeSubmissionResult submitDirectLightingPreviewComposite(
+            LucernaFramePassRequest request
+    ) {
+        return this.submitDirectLightingPreviewComposite(this.directLightingCpuOutputSnapshot(), request);
+    }
+
+    public synchronized DirectLightingPreviewCompositeSubmissionResult submitDirectLightingPreviewComposite(
+            DirectLightingCpuOutputSnapshot snapshot,
+            LucernaFramePassRequest request
+    ) {
+        DirectLightingCpuOutputSnapshot directOutput = snapshot == null
+                ? DirectLightingCpuOutputSnapshot.unavailable("direct-light CPU output snapshot was not supplied")
+                : snapshot;
+        LucernaFramePassRequest previewRequest = request == null
+                ? LucernaFramePassRequest.noOp(0L)
+                : request;
+        boolean nativeOperational = this.isOperational();
+        boolean snapshotReady = directOutput.ready()
+                && directOutput.hasCpuOutputTelemetry()
+                && directOutput.hasNonzeroEnergy();
+        boolean directPreviewRequest = previewRequest.kind() == LucernaFramePassKind.DIRECT_LIGHT_PREVIEW_COMPOSITE;
+        boolean targetReady = directPreviewRequest && previewRequest.targetSafeForAttachment();
+        boolean targetHudPreserving = directPreviewRequest
+                && previewRequest.target() != null
+                && previewRequest.target().preservesHud();
+        boolean targetNativeWritable = directPreviewRequest
+                && previewRequest.target() != null
+                && previewRequest.target().nativeWritableAttachment();
+        float strength = previewRequest.red();
+        float alpha = previewRequest.alpha();
+
+        if (!nativeOperational) {
+            return DirectLightingPreviewCompositeSubmissionResult.notSubmitted(
+                    previewRequest.frameIndex(),
+                    false,
+                    snapshotReady,
+                    targetReady,
+                    targetHudPreserving,
+                    targetNativeWritable,
+                    strength,
+                    alpha,
+                    "native bridge is not initialized for direct-light preview composite submission"
+            );
+        }
+        if (!directPreviewRequest) {
+            return DirectLightingPreviewCompositeSubmissionResult.notSubmitted(
+                    previewRequest.frameIndex(),
+                    true,
+                    snapshotReady,
+                    false,
+                    targetHudPreserving,
+                    targetNativeWritable,
+                    strength,
+                    alpha,
+                    "frame pass request is not a direct-light preview composite request"
+            );
+        }
+        if (!snapshotReady) {
+            return DirectLightingPreviewCompositeSubmissionResult.notSubmitted(
+                    previewRequest.frameIndex(),
+                    true,
+                    false,
+                    targetReady,
+                    targetHudPreserving,
+                    targetNativeWritable,
+                    strength,
+                    alpha,
+                    "direct-light CPU output snapshot is not ready for preview composite submission: "
+                            + directOutput.debugSummary()
+            );
+        }
+        if (!targetReady) {
+            return DirectLightingPreviewCompositeSubmissionResult.notSubmitted(
+                    previewRequest.frameIndex(),
+                    true,
+                    true,
+                    false,
+                    targetHudPreserving,
+                    targetNativeWritable,
+                    strength,
+                    alpha,
+                    "frame target is not ready or safe for HUD-preserving direct-light preview composite submission"
+            );
+        }
+        if (!targetNativeWritable) {
+            return DirectLightingPreviewCompositeSubmissionResult.notSubmitted(
+                    previewRequest.frameIndex(),
+                    true,
+                    true,
+                    true,
+                    targetHudPreserving,
+                    false,
+                    strength,
+                    alpha,
+                    "frame target is HUD-safe but metadata-only; native-writable command/color handles are not available"
+            );
+        }
+
+        return DirectLightingPreviewCompositeSubmissionResult.notSubmitted(
+                previewRequest.frameIndex(),
+                true,
+                true,
+                true,
+                targetHudPreserving,
+                true,
+                strength,
+                alpha,
+                "native direct-light preview composite target and JNI submission function are not wired yet"
+        );
     }
 
     public synchronized void load() {

@@ -17,7 +17,7 @@ public record LucernaFramePassResult(
             status = LucernaFramePassStatus.skipped(request.kind(), frameIndex, message);
         }
         accepted = accepted && status.accepted();
-        drawCallsIssued = false;
+        drawCallsIssued = drawCallsIssued && status.drawCallsIssued();
         if (message == null || message.isBlank()) {
             message = status.message();
         } else {
@@ -45,6 +45,35 @@ public record LucernaFramePassResult(
                 normalizedStatus,
                 true,
                 false,
+                normalizedStatus.frameIndex(),
+                normalizedStatus.message()
+        );
+    }
+
+    public static LucernaFramePassResult acceptedDirectLightPreview(
+            LucernaFramePassRequest request,
+            LucernaFramePassStatus status,
+            boolean drawCallsIssued
+    ) {
+        long fallbackFrameIndex = status == null ? frameIndexFrom(request) : status.frameIndex();
+        LucernaFramePassRequest normalizedRequest = request == null
+                ? LucernaFramePassRequest.directLightPreviewComposite(fallbackFrameIndex, null, 0.0F, 0.0F)
+                : request;
+        LucernaFramePassStatus normalizedStatus = status == null
+                ? LucernaFramePassStatus.submittedDirectLightPreview(
+                        fallbackFrameIndex,
+                        drawCallsIssued,
+                        "Lucerna accepted a direct-light preview frame target."
+                )
+                : status;
+        boolean canReportDrawCalls = drawCallsIssued
+                && normalizedRequest.kind() == LucernaFramePassKind.DIRECT_LIGHT_PREVIEW_COMPOSITE
+                && normalizedStatus.kind() == LucernaFramePassKind.DIRECT_LIGHT_PREVIEW_COMPOSITE;
+        return new LucernaFramePassResult(
+                normalizedRequest,
+                normalizedStatus,
+                true,
+                canReportDrawCalls,
                 normalizedStatus.frameIndex(),
                 normalizedStatus.message()
         );

@@ -24,7 +24,7 @@ public record LucernaFramePassStatus(
         } else {
             message = message.trim();
         }
-        drawCallsIssued = false;
+        drawCallsIssued = drawCallsIssued && canReportDrawCalls(code, kind);
     }
 
     public static LucernaFramePassStatus notRequested() {
@@ -150,6 +150,24 @@ public record LucernaFramePassStatus(
         );
     }
 
+    public static LucernaFramePassStatus submittedDirectLightPreview(
+            long frameIndex,
+            boolean drawCallsIssued,
+            String message
+    ) {
+        return new LucernaFramePassStatus(
+                LucernaFramePassStatusCode.ATTACHED_NO_OP,
+                LucernaFramePassKind.DIRECT_LIGHT_PREVIEW_COMPOSITE,
+                frameIndex,
+                true,
+                true,
+                true,
+                true,
+                drawCallsIssued,
+                message
+        );
+    }
+
     public static LucernaFramePassStatus frameClosed(
             LucernaFramePassKind kind,
             long frameIndex,
@@ -193,5 +211,10 @@ public record LucernaFramePassStatus(
 
     public boolean accepted() {
         return this.code == LucernaFramePassStatusCode.ATTACHED_NO_OP;
+    }
+
+    private static boolean canReportDrawCalls(LucernaFramePassStatusCode code, LucernaFramePassKind kind) {
+        return code == LucernaFramePassStatusCode.ATTACHED_NO_OP
+                && kind == LucernaFramePassKind.DIRECT_LIGHT_PREVIEW_COMPOSITE;
     }
 }

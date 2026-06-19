@@ -7,7 +7,8 @@ public record LucernaFramePassTarget(
         Object depthTarget,
         boolean safeMojangRenderPass,
         LucernaFramePassPhase phase,
-        String description
+        String description,
+        LucernaFrameAttachmentMetadata attachmentMetadata
 ) {
     public LucernaFramePassTarget {
         if (phase == null) {
@@ -20,6 +21,30 @@ public record LucernaFramePassTarget(
         } else {
             description = description.trim();
         }
+        if (attachmentMetadata == null) {
+            attachmentMetadata = LucernaFrameAttachmentMetadata.metadataOnly(phase, description);
+        }
+    }
+
+    public LucernaFramePassTarget(
+            Object renderPass,
+            Object commandEncoder,
+            Object colorTarget,
+            Object depthTarget,
+            boolean safeMojangRenderPass,
+            LucernaFramePassPhase phase,
+            String description
+    ) {
+        this(
+                renderPass,
+                commandEncoder,
+                colorTarget,
+                depthTarget,
+                safeMojangRenderPass,
+                phase,
+                description,
+                LucernaFrameAttachmentMetadata.metadataOnly(phase, description)
+        );
     }
 
     public static LucernaFramePassTarget absent(String reason) {
@@ -47,6 +72,17 @@ public record LucernaFramePassTarget(
             Object depthTarget,
             String description
     ) {
+        return safeWorldColorBeforeHud(renderPass, commandEncoder, colorTarget, depthTarget, description, null);
+    }
+
+    public static LucernaFramePassTarget safeWorldColorBeforeHud(
+            Object renderPass,
+            Object commandEncoder,
+            Object colorTarget,
+            Object depthTarget,
+            String description,
+            LucernaFrameAttachmentMetadata attachmentMetadata
+    ) {
         return new LucernaFramePassTarget(
                 renderPass,
                 commandEncoder,
@@ -54,7 +90,13 @@ public record LucernaFramePassTarget(
                 depthTarget,
                 true,
                 LucernaFramePassPhase.WORLD_COLOR_BEFORE_HUD,
-                description
+                description,
+                attachmentMetadata == null
+                        ? LucernaFrameAttachmentMetadata.metadataOnly(
+                                LucernaFramePassPhase.WORLD_COLOR_BEFORE_HUD,
+                                description
+                        )
+                        : attachmentMetadata
         );
     }
 
@@ -64,6 +106,20 @@ public record LucernaFramePassTarget(
 
     public boolean safeForAttachment() {
         return this.available() && this.safeMojangRenderPass && this.phase.safeForLightingComposite();
+    }
+
+    public boolean metadataOnlyAttachment() {
+        return this.attachmentMetadata.metadataOnly();
+    }
+
+    public boolean attachmentMetadataPhaseMatches() {
+        return this.attachmentMetadata.phase() == this.phase;
+    }
+
+    public boolean nativeWritableAttachment() {
+        return this.safeForAttachment()
+                && this.attachmentMetadataPhaseMatches()
+                && this.attachmentMetadata.nativeWritable();
     }
 
     public boolean preservesHud() {
