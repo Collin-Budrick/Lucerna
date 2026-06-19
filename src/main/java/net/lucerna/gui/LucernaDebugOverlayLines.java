@@ -2,6 +2,7 @@ package net.lucerna.gui;
 
 import net.lucerna.LucernaController;
 import net.lucerna.config.DebugOverlay;
+import net.lucerna.render.culling.Round9CullingDebugStatus;
 import net.lucerna.render.preview.FinalCompositeModeStatus;
 import net.lucerna.render.preview.Round8AdaptiveDebugStatus;
 import net.lucerna.telemetry.LightingDispatchStageTelemetryStatus;
@@ -57,6 +58,8 @@ public final class LucernaDebugOverlayLines {
         Round8AdaptiveDebugStatus round8 = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("Round 8 adaptive debug: " + round8.summary()));
         lines.add(Component.literal("Round 8 heatmaps: " + round8.heatmapRolesLine()));
+        Round9CullingDebugStatus round9 = Round9CullingDebugStatus.fromSnapshot(snapshot);
+        lines.add(Component.literal("Round 9 culling: " + round9.summary()));
         return lines;
     }
 
@@ -77,6 +80,7 @@ public final class LucernaDebugOverlayLines {
             case VARIANCE_MAP -> addVarianceMapLines(lines, snapshot);
             case HISTORY_CONFIDENCE -> addHistoryConfidenceLines(lines, snapshot);
             case DISOCCLUSION_MASK -> addDisocclusionMaskLines(lines, snapshot);
+            case CHUNK_CULLING -> addChunkCullingLines(lines, snapshot);
             case OFF -> lines.add(statusLine(snapshot));
         }
         addCompositeModeLines(lines);
@@ -148,6 +152,16 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("round8.heatmapRoles=" + round8.heatmapRolesLine()));
         lines.add(Component.literal("round8.readiness=" + round8.readinessLine()));
         lines.add(Component.literal("round8.evidenceBoundary=" + round8.evidenceBoundaryLine()));
+        Round9CullingDebugStatus round9 = Round9CullingDebugStatus.fromSnapshot(snapshot);
+        lines.add(Component.literal("round9.cullingSummary=" + round9.summary()));
+        lines.add(Component.literal("round9.clusterMetadata=" + round9.clusterMetadataLine()));
+        lines.add(Component.literal("round9.visibilityCounts=" + round9.visibilityCountsLine()));
+        lines.add(Component.literal("round9.culling=" + round9.cullingLine()));
+        lines.add(Component.literal("round9.indirectDrawList=" + round9.indirectDrawLine()));
+        lines.add(Component.literal("round9.upload=" + round9.uploadLine()));
+        lines.add(Component.literal("round9.generation=" + round9.generationLine()));
+        lines.add(Component.literal("round9.readiness=" + round9.readinessLine()));
+        lines.add(Component.literal("round9.evidenceBoundary=" + round9.evidenceBoundaryLine()));
         snapshot.validationFields().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> Component.literal(entry.getKey() + "=" + entry.getValue()))
@@ -289,6 +303,19 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal(status.historyConfidenceLine()));
         lines.add(Component.literal(status.historyCountsLine()));
         lines.add(Component.literal("Disocclusion legend: stable=transparent moving=yellow reset=red missing=gray"));
+        lines.add(Component.literal(status.readinessLine()));
+        lines.add(Component.literal(status.evidenceBoundaryLine()));
+    }
+
+    private static void addChunkCullingLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        Round9CullingDebugStatus status = Round9CullingDebugStatus.fromSnapshot(snapshot);
+        lines.add(Component.literal("Overlay scope: Round 9 chunk cluster/culling status."));
+        lines.add(Component.literal(status.clusterMetadataLine()));
+        lines.add(Component.literal(status.visibilityCountsLine()));
+        lines.add(Component.literal(status.cullingLine()));
+        lines.add(Component.literal(status.indirectDrawLine()));
+        lines.add(Component.literal(status.uploadLine()));
+        lines.add(Component.literal(status.generationLine()));
         lines.add(Component.literal(status.readinessLine()));
         lines.add(Component.literal(status.evidenceBoundaryLine()));
     }

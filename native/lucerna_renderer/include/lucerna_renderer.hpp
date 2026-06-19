@@ -308,6 +308,28 @@ struct NativeVoxelStagingTelemetry {
     std::uint64_t total_snapshot_estimated_bytes = 0;
 };
 
+struct NativeVirtualChunkGeometryTelemetry {
+    std::uint64_t packets = 0;
+    std::uint64_t payload_sections = 0;
+    std::uint64_t cluster_count = 0;
+    std::uint64_t visible_cluster_count = 0;
+    std::uint64_t culled_cluster_count = 0;
+    std::uint64_t upload_byte_estimate = 0;
+    std::uint64_t total_upload_byte_estimate = 0;
+    std::uint64_t indirect_draw_count_placeholder = 0;
+    std::uint64_t generation_counter = 0;
+    std::uint64_t first_generation = 0;
+    std::uint64_t last_generation = 0;
+    std::uint64_t occupied_voxel_count = 0;
+    std::uint64_t opaque_voxel_count = 0;
+    std::uint64_t translucent_voxel_count = 0;
+    std::uint64_t emissive_voxel_count = 0;
+    std::uint64_t metadata_buffer_intents = 0;
+    std::uint64_t culling_evaluations = 0;
+    std::string cluster_marker;
+    std::string culling_marker;
+};
+
 struct NativeGBufferStagingTelemetry {
     std::uint64_t frames_planned = 0;
     std::uint64_t staging_packets = 0;
@@ -745,6 +767,7 @@ struct NativeLightingDispatchTelemetry {
 struct NativeStagingTelemetry {
     NativeSectionStagingTelemetry section;
     NativeVoxelStagingTelemetry voxel;
+    NativeVirtualChunkGeometryTelemetry virtual_geometry;
     NativeGBufferStagingTelemetry gbuffer;
     NativeLightingDispatchTelemetry lighting;
 };
@@ -786,11 +809,13 @@ private:
     [[nodiscard]] std::uint64_t estimate_section_snapshot_staging_bytes(const SectionUploadPacket& packet) const;
     [[nodiscard]] std::uint64_t estimate_section_staging_bytes(std::uint64_t dirty_section_count) const;
     [[nodiscard]] std::uint64_t estimate_voxel_staging_bytes(std::uint64_t dirty_section_count) const;
+    [[nodiscard]] std::uint64_t estimate_virtual_cluster_upload_bytes(std::uint64_t cluster_count) const;
     [[nodiscard]] std::uint64_t estimate_gbuffer_attachment_bytes(std::int32_t width, std::int32_t height, std::uint32_t bytes_per_pixel) const;
     [[nodiscard]] std::uint64_t estimate_gbuffer_attachment_bytes(const GBufferAttachmentUpload& attachment) const;
     [[nodiscard]] std::uint64_t estimate_lighting_dispatch_bytes(const LightingDispatchStageUpload& dispatch) const;
     void track_upload_staging_placeholder(const UploadPacket& packet);
     void track_section_snapshot_staging_placeholder(const SectionUploadPacket& packet);
+    void track_virtual_chunk_geometry_metadata(const SectionUploadPacket& packet);
     void track_gbuffer_staging_upload(const GBufferStagingPacket& packet);
     void track_lighting_dispatch_upload(const LightingDispatchPacket& packet);
     void track_gbuffer_placeholder_intent();

@@ -12,7 +12,8 @@ public enum DebugOverlay {
     RAY_BUDGET_HEATMAP("Round 8 ray budget heatmap"),
     VARIANCE_MAP("Round 8 variance map"),
     HISTORY_CONFIDENCE("Round 8 history confidence heatmap"),
-    DISOCCLUSION_MASK("Round 8 disocclusion mask");
+    DISOCCLUSION_MASK("Round 8 disocclusion mask"),
+    CHUNK_CULLING("Round 9 chunk culling");
 
     private final String displayName;
 

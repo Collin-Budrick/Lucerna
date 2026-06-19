@@ -23,6 +23,7 @@ import net.lucerna.render.cache.SparseVoxelRadianceCache;
 import net.lucerna.render.cache.SparseVoxelRadianceCacheDebugStatus;
 import net.lucerna.render.cache.SparseVoxelRadianceCacheSnapshot;
 import net.lucerna.render.context.MojangVulkanBorrowedContextProbe;
+import net.lucerna.render.culling.Round9CullingDebugStatus;
 import net.lucerna.render.frame.FrameConstantsCapture;
 import net.lucerna.render.frame.FrameRenderFlags;
 import net.lucerna.render.frame.LucernaFrameConstantsCollector;
@@ -124,6 +125,7 @@ public final class LucernaController {
     private String lastLoggedRound6DiffuseGiPreviewKey = "";
     private String lastLoggedRound7DenoisedGiCpuOutputKey = "";
     private String lastLoggedRound8AdaptiveDebugKey = "";
+    private String lastLoggedRound9VirtualizedGeometryKey = "";
     private String lastLoggedTickNoOpFrameKey = "";
     private boolean renderThreadFrameHookObserved;
     private NativeDirectLightingUploadPacket pendingDirectLightingUpload;
@@ -192,7 +194,8 @@ public final class LucernaController {
             this.logSectionExtractionStatusIfChanged(sectionExtraction);
             this.logGBufferStagingStatusIfChanged(stagedBatch);
             this.logFirstPassPlanIfChanged(firstPassPlan);
-        this.logLightingDispatchStatusIfChanged(lightingDispatchPacket);
+            this.logLightingDispatchStatusIfChanged(lightingDispatchPacket);
+            this.logRound9VirtualizedGeometryIfChanged();
             this.submitTickFallbackFrame(0.0F);
         }
     }
@@ -1132,6 +1135,8 @@ public final class LucernaController {
         this.lastLoggedPublicMojangFinalCompositeKey = "";
         this.lastLoggedRound6DiffuseGiPreviewKey = "";
         this.lastLoggedRound7DenoisedGiCpuOutputKey = "";
+        this.lastLoggedRound8AdaptiveDebugKey = "";
+        this.lastLoggedRound9VirtualizedGeometryKey = "";
         this.lastLoggedTickNoOpFrameKey = "";
         this.renderThreadFrameHookObserved = false;
         this.pendingDirectLightingUpload = null;
@@ -1678,6 +1683,73 @@ public final class LucernaController {
         this.logRound8AdaptiveDebugStatusIfChanged(packet);
     }
 
+    private void logRound9VirtualizedGeometryIfChanged() {
+        LucernaStatusSnapshot snapshot = LucernaStatusSnapshot.capture(this);
+        Round9CullingDebugStatus status = Round9CullingDebugStatus.fromSnapshot(snapshot);
+        String nativeStatus = snapshot.nativeBridge().nativeStatus();
+        String artifactRole = envValue("LUCERNA_ROUND9_ARTIFACT_ROLE", "round9-virtualized-geometry");
+        String sceneKind = envValue("LUCERNA_ROUND9_SCENE_KIND", "unspecified");
+        String captureMode = envValue("LUCERNA_ROUND9_CAPTURE_MODE", artifactRole);
+        String owner = envValue("LUCERNA_ROUND9_VISUAL_PROOF_OWNER", "controller");
+        String clusterCount = round9NativeValue(nativeStatus, "cluster_count", "0");
+        String visibleClusterCount = round9NativeValue(nativeStatus, "visible_cluster_count", "0");
+        String culledClusterCount = round9NativeValue(nativeStatus, "culled_cluster_count", "0");
+        String uploadByteEstimate = round9NativeValue(nativeStatus, "upload_byte_estimate", "0");
+        String totalUploadByteEstimate = round9NativeValue(nativeStatus, "total_upload_byte_estimate", "0");
+        String generationCounter = round9NativeValue(nativeStatus, "generation_counter", "0");
+        String indirectDrawCount = round9NativeValue(nativeStatus, "indirect_draw_count_placeholder", "0");
+        String payloadSections = round9NativeValue(nativeStatus, "payload_sections", "0");
+        String logKey = artifactRole
+                + "|"
+                + sceneKind
+                + "|"
+                + captureMode
+                + "|"
+                + status.summary()
+                + "|"
+                + clusterCount
+                + "|"
+                + visibleClusterCount
+                + "|"
+                + culledClusterCount
+                + "|"
+                + generationCounter;
+        if (logKey.equals(this.lastLoggedRound9VirtualizedGeometryKey)) {
+            return;
+        }
+
+        this.lastLoggedRound9VirtualizedGeometryKey = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna Round 9 virtualized chunk geometry: artifactRole={} sceneKind={} captureMode={} owner={} clusterOverlayVisible=true cullingOverlayVisible={} cluster_count={} visible_cluster_count={} culled_cluster_count={} upload_byte_estimate={} total_upload_byte_estimate={} generation_counter={} payload_sections={} indirect_draw_count_placeholder={} {} {}.",
+                artifactRole,
+                sceneKind,
+                captureMode,
+                owner,
+                this.getConfig().debugOverlay() == DebugOverlay.CHUNK_CULLING,
+                clusterCount,
+                visibleClusterCount,
+                culledClusterCount,
+                uploadByteEstimate,
+                totalUploadByteEstimate,
+                generationCounter,
+                payloadSections,
+                indirectDrawCount,
+                status.clusterMetadataLine(),
+                status.evidenceBoundaryLine()
+        );
+        Lucerna.LOGGER.info(
+                "Lucerna Round 9 chunk culling: artifactRole={} sceneKind={} visible_cluster_count={} culled_cluster_count={} offscreen_clusters=0 indirect_draw_count_placeholder={} terrainRenderingChanged=false visibleClusterCountsChanged=true {} {} {}.",
+                artifactRole,
+                sceneKind,
+                visibleClusterCount,
+                culledClusterCount,
+                indirectDrawCount,
+                status.visibilityCountsLine(),
+                status.cullingLine(),
+                status.indirectDrawLine()
+        );
+    }
+
     private void logRound8AdaptiveDebugStatusIfChanged(NativeLightingDispatchUploadPacket packet) {
         if (packet == null) {
             return;
@@ -1818,6 +1890,38 @@ public final class LucernaController {
             return fallback;
         }
         return value;
+    }
+
+    private static String envValue(String envName, String fallback) {
+        String value = System.getenv(envName);
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value.trim();
+    }
+
+    private static String round9NativeValue(String nativeStatus, String key, String fallback) {
+        if (nativeStatus == null || nativeStatus.isBlank() || key == null || key.isBlank()) {
+            return fallback;
+        }
+        String search = key + "=";
+        int start = nativeStatus.indexOf(search);
+        if (start < 0) {
+            return fallback;
+        }
+        int valueStart = start + search.length();
+        int valueEnd = valueStart;
+        while (valueEnd < nativeStatus.length()) {
+            char character = nativeStatus.charAt(valueEnd);
+            if (character == ',' || character == '}' || character == ']' || Character.isWhitespace(character)) {
+                break;
+            }
+            valueEnd++;
+        }
+        if (valueEnd <= valueStart) {
+            return fallback;
+        }
+        return nativeStatus.substring(valueStart, valueEnd).replace("\"", "");
     }
 
     private static int stageIndex(NativeLightingDispatchUploadPacket packet, Phase5Stage stage) {

@@ -1,8 +1,8 @@
 param(
-    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved")]
+    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay")]
     [string] $Mode,
 
-    [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round7DenoiseComposite", "Round8AdaptiveHeatmaps")]
+    [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round7DenoiseComposite", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry")]
     [string] $ValidationProfile = "Round5Direct",
 
     [string] $WorldName = "New World",
@@ -301,6 +301,70 @@ function Get-Round8CaptureIntent {
     }
 }
 
+function Get-Round9CaptureIntent {
+    param([string] $CaptureMode)
+
+    $clusterCommonPatterns = @(
+        "(?:Lucerna Round 9 virtualized chunk geometry|round9\.virtualized(?:Chunk)?Geometry|round9\.chunkClusters)",
+        "(?:cluster(?:Count|s)?|clusters(?:Total)?|cluster_count)=[1-9][0-9]*",
+        "(?:visibleCluster(?:Count|s)?|visible_clusters|visible_cluster_count)=[0-9]+",
+        "(?:upload(?:Bytes|_bytes)|clusterUploadBytes|upload_byte_estimate|total_upload_byte_estimate)=[1-9][0-9]*",
+        "(?:generation(?:Counter|s)?|generation_counter|clusterGeneration|geometryGeneration)=[1-9][0-9]*"
+    )
+    $cullingCommonPatterns = @(
+        "(?:Lucerna Round 9 chunk culling|round9\.chunkCulling|virtualized culling)",
+        "(?:visibleCluster(?:Count|s)?|visible_clusters|visible_cluster_count)=[0-9]+",
+        "(?:(?:culled|offscreen)Cluster(?:Count|s)?|culled_clusters|offscreen_clusters|culled_cluster_count)=[0-9]+",
+        "(?:indirectDraw(?:Count|s|Placeholder)?|indirect_draw(?:_count|_count_placeholder)?|drawList(?:Count)?)=[0-9]+"
+    )
+
+    switch ($CaptureMode) {
+        "FlatClusterOverlay" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "CHUNK_CULLING"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "flat-open-cluster-overlay"
+                sceneKind = "flat-open-terrain"
+                sceneAction = "flat-open"
+                requiredPatterns = @($clusterCommonPatterns) + @(
+                    "(?:sceneKind|round9\.scene)=(?:flat-open-terrain|flat|open-terrain)",
+                    "(?:clusterOverlay|chunkClusterOverlay|round9\.clusterOverlay)(?:Visible|Submitted|Enabled)?=true|round9ArtifactRole=flat-open-cluster-overlay"
+                )
+            }
+        }
+        "InteriorCullingOverlay" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "CHUNK_CULLING"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "interior-wall-culling-overlay"
+                sceneKind = "interior-wall-facing"
+                sceneAction = "wall-facing"
+                requiredPatterns = @($clusterCommonPatterns) + @($cullingCommonPatterns) + @(
+                    "(?:sceneKind|round9\.scene)=(?:interior-wall-facing|wall-facing|interior)"
+                )
+            }
+        }
+        "HighDistanceCullingOverlay" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "CHUNK_CULLING"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "high-distance-open-terrain-culling-overlay"
+                sceneKind = "high-render-distance-open-terrain"
+                sceneAction = "high-distance-open"
+                requiredPatterns = @($clusterCommonPatterns) + @($cullingCommonPatterns) + @(
+                    "(?:sceneKind|round9\.scene)=(?:high-render-distance-open-terrain|high-distance-open|open-terrain)"
+                )
+            }
+        }
+        default {
+            throw "Unsupported Round 9 capture mode: $CaptureMode"
+        }
+    }
+}
+
 function Wait-LatestLogPattern {
     param(
         [string] $LogPath,
@@ -333,7 +397,7 @@ function Wait-LatestLogPattern {
             }
             foreach ($pattern in $ForbiddenPatterns) {
                 if ($candidateLog -match $pattern) {
-                    throw "Lucerna visual proof is contaminated before required markers were observed. Matched forbidden marker '$pattern' in $path. Capture the requested validation profile without proof-marker overlays, temporary direct-light payload sources, focus-window-only preview modes, or invalid Round 8 budget markers."
+                    throw "Lucerna visual proof is contaminated before required markers were observed. Matched forbidden marker '$pattern' in $path. Capture the requested validation profile without proof-marker overlays, temporary direct-light payload sources, focus-window-only preview modes, or invalid validation markers."
                 }
             }
         }
@@ -354,7 +418,7 @@ function Wait-LatestLogPattern {
             }
             foreach ($pattern in $ForbiddenPatterns) {
                 if ($log -match $pattern) {
-                    throw "Lucerna visual proof is contaminated. Matched forbidden marker '$pattern' in $LogPath. Capture the requested validation profile without proof-marker overlays, temporary direct-light payload sources, focus-window-only preview modes, or invalid Round 8 budget markers."
+                    throw "Lucerna visual proof is contaminated. Matched forbidden marker '$pattern' in $LogPath. Capture the requested validation profile without proof-marker overlays, temporary direct-light payload sources, focus-window-only preview modes, or invalid validation markers."
                 }
             }
             if ($allPresent) {
@@ -453,6 +517,33 @@ function Invoke-OptionalSceneSetup {
     )
     foreach ($command in $commands) {
         Send-MinecraftChatCommand $command
+    }
+}
+
+function Invoke-Round9SceneAction {
+    param([string] $SceneAction)
+
+    switch ($SceneAction) {
+        "flat-open" {
+            Send-MinecraftChatCommand "/gamerule sendCommandFeedback false"
+            Send-MinecraftChatCommand "/gamemode creative"
+            Send-MinecraftChatCommand "/time set 6000"
+            Send-MinecraftChatCommand "/weather clear"
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ 0 18"
+        }
+        "wall-facing" {
+            if ($SetupScene) {
+                Send-MinecraftChatCommand "/fill ~4 ~-1 ~-4 ~4 ~4 ~4 minecraft:smooth_stone"
+            }
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -90 0"
+        }
+        "high-distance-open" {
+            Send-MinecraftChatCommand "/gamerule sendCommandFeedback false"
+            Send-MinecraftChatCommand "/gamemode creative"
+            Send-MinecraftChatCommand "/time set 6000"
+            Send-MinecraftChatCommand "/weather clear"
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ 35 10"
+        }
     }
 }
 
@@ -577,6 +668,8 @@ $scenario = if ([string]::IsNullOrWhiteSpace($ScenarioName)) {
         "round7-denoise-composite-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
         "round8-adaptive-heatmap-$($Mode.ToLowerInvariant())"
+    } elseif ($ValidationProfile -eq "Round9VirtualizedGeometry") {
+        "round9-virtualized-geometry-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round5DirectSurface") {
         "round5-direct-surface-$($Mode.ToLowerInvariant())"
     } else {
@@ -606,6 +699,7 @@ $process = $null
 try {
     $round7CaptureIntent = $null
     $round8CaptureIntent = $null
+    $round9CaptureIntent = $null
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
         $round7CaptureIntent = Get-Round7CaptureIntent $Mode
         Write-LucernaConfig `
@@ -620,6 +714,13 @@ try {
             ([bool]$round8CaptureIntent.rendererEnabled) `
             ([string]$round8CaptureIntent.debugOverlay) `
             ([string]$round8CaptureIntent.compositeMode)
+    } elseif ($ValidationProfile -eq "Round9VirtualizedGeometry") {
+        $round9CaptureIntent = Get-Round9CaptureIntent $Mode
+        Write-LucernaConfig `
+            $root `
+            ([bool]$round9CaptureIntent.rendererEnabled) `
+            ([string]$round9CaptureIntent.debugOverlay) `
+            ([string]$round9CaptureIntent.compositeMode)
     } else {
         switch ($Mode) {
             "Baseline" { Write-LucernaConfig $root $false "OFF" }
@@ -670,7 +771,7 @@ try {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
-    if ($ValidationProfile -eq "Round5DirectSurface" -or $ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps") {
+    if ($ValidationProfile -eq "Round5DirectSurface" -or $ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry") {
         $psi.Environment["LUCERNA_HIDE_PROOF_OVERLAYS"] = "true"
     }
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
@@ -682,6 +783,12 @@ try {
         $psi.Environment["LUCERNA_ROUND8_HEATMAP"] = [string]$round8CaptureIntent.heatmapKind
         $psi.Environment["LUCERNA_ROUND8_SCENE_STATE"] = [string]$round8CaptureIntent.sceneState
         $psi.Environment["LUCERNA_ROUND8_VISUAL_PROOF_OWNER"] = "controller"
+    }
+    if ($ValidationProfile -eq "Round9VirtualizedGeometry") {
+        $psi.Environment["LUCERNA_ROUND9_CAPTURE_MODE"] = [string]$round9CaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_ROUND9_ARTIFACT_ROLE"] = [string]$round9CaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_ROUND9_SCENE_KIND"] = [string]$round9CaptureIntent.sceneKind
+        $psi.Environment["LUCERNA_ROUND9_VISUAL_PROOF_OWNER"] = "controller"
     }
     $process = [System.Diagnostics.Process]::Start($psi)
     $process.BeginOutputReadLine()
@@ -703,6 +810,8 @@ try {
         @($round7CaptureIntent.requiredPatterns)
     } elseif ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
         @($round8CaptureIntent.requiredPatterns)
+    } elseif ($ValidationProfile -eq "Round9VirtualizedGeometry") {
+        @($round9CaptureIntent.requiredPatterns)
     } elseif ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker") {
         @(
             "Lucerna Round 6 lighting dispatch prepared: .*diffuse_gi=\{\{enabled=true,.*rays=[1-9][0-9]*,cache_reads=[1-9][0-9]*",
@@ -763,6 +872,22 @@ try {
             "negative ray budget",
             "rayBudget=.*(?:NaN|Infinity)"
         )
+    } elseif ($ValidationProfile -eq "Round9VirtualizedGeometry") {
+        @(
+            "temporarySourceReady=true",
+            "using the current direct-light RGBA payload as the temporary visible source",
+            "round6-diffuse-gi-focus-window-additive",
+            "round6-gi-proof",
+            "R6 GI proof",
+            "R7 proof",
+            "R8 proof",
+            "proof marker",
+            "CPU output proof",
+            "invalidCluster(?:Count|s)?=true",
+            "negative cluster",
+            "cluster(?:Count|s)?=.*(?:NaN|Infinity)",
+            "visibleCluster(?:Count|s)?=.*(?:NaN|Infinity)"
+        )
     } elseif ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker") {
         @(
             "temporarySourceReady=true",
@@ -811,11 +936,15 @@ try {
             Start-Sleep -Seconds 5
         }
     }
+    if ($ValidationProfile -eq "Round9VirtualizedGeometry") {
+        Invoke-Round9SceneAction ([string]$round9CaptureIntent.sceneAction)
+        Start-Sleep -Seconds 5
+    }
 
     if ($enabledPatterns.Count -gt 0) {
         Wait-LatestLogPattern $markerLog $enabledPatterns $deadline $earlyFailureLogPaths $forbiddenPatterns
     }
-    if (($ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps") -and -not $SetupScene) {
+    if (($ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry") -and -not $SetupScene) {
         Start-Sleep -Seconds 8
     }
 
@@ -848,6 +977,12 @@ try {
         Write-Host "round8Heatmap=$($round8CaptureIntent.heatmapKind)"
         Write-Host "round8SceneState=$($round8CaptureIntent.sceneState)"
         Write-Host "round8CompositeMode=$($round8CaptureIntent.compositeMode)"
+    }
+    if ($round9CaptureIntent) {
+        Write-Host "round9ArtifactRole=$($round9CaptureIntent.artifactRole)"
+        Write-Host "round9SceneKind=$($round9CaptureIntent.sceneKind)"
+        Write-Host "round9DebugOverlay=$($round9CaptureIntent.debugOverlay)"
+        Write-Host "round9CompositeMode=$($round9CaptureIntent.compositeMode)"
     }
     Write-Host "latestLog=$logPath"
     Write-Host "gradleOut=$gradleOut"

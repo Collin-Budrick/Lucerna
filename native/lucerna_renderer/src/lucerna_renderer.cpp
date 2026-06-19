@@ -95,6 +95,10 @@ constexpr std::int32_t kMaxDirectCpuOutputWidth = 64;
 constexpr std::int32_t kMaxDirectCpuOutputHeight = 36;
 constexpr std::int32_t kMaxDiffuseGiCpuOutputWidth = 1024;
 constexpr std::int32_t kMaxDiffuseGiCpuOutputHeight = 1024;
+constexpr std::uint64_t kRound9ClusterVoxelCapacity = 8ULL * 8ULL * 8ULL;
+constexpr std::uint64_t kRound9MaxClustersPerSection = 8;
+constexpr std::uint64_t kEstimatedRound9ClusterMetadataBytes = 96;
+constexpr std::uint64_t kEstimatedRound9ClusterVisibilityBytes = 16;
 constexpr float kDirectCpuCelestialScale = 0.02F;
 constexpr float kDirectCpuMinimumSurfaceRadius = 8.0F;
 constexpr float kDirectCpuEmissiveSurfaceScale = 118.0F;
@@ -2613,6 +2617,32 @@ std::string Renderer::status() const {
         << ",last_emissive_entries=" << staging_.voxel.last_emissive_entries
         << ",last_snapshot_estimated_bytes=" << staging_.voxel.last_snapshot_estimated_bytes
         << ",total_snapshot_estimated_bytes=" << staging_.voxel.total_snapshot_estimated_bytes
+        << "},round9_virtual_geometry={packets=" << staging_.virtual_geometry.packets
+        << ",payload_sections=" << staging_.virtual_geometry.payload_sections
+        << ",cluster_count=" << staging_.virtual_geometry.cluster_count
+        << ",visible_cluster_count=" << staging_.virtual_geometry.visible_cluster_count
+        << ",culled_cluster_count=" << staging_.virtual_geometry.culled_cluster_count
+        << ",upload_byte_estimate=" << staging_.virtual_geometry.upload_byte_estimate
+        << ",total_upload_byte_estimate=" << staging_.virtual_geometry.total_upload_byte_estimate
+        << ",indirect_draw_count_placeholder=" << staging_.virtual_geometry.indirect_draw_count_placeholder
+        << ",generation_counter=" << staging_.virtual_geometry.generation_counter
+        << ",generation_range=" << staging_.virtual_geometry.first_generation
+        << "-" << staging_.virtual_geometry.last_generation
+        << ",occupied_voxels=" << staging_.virtual_geometry.occupied_voxel_count
+        << ",opaque_voxels=" << staging_.virtual_geometry.opaque_voxel_count
+        << ",translucent_voxels=" << staging_.virtual_geometry.translucent_voxel_count
+        << ",emissive_voxels=" << staging_.virtual_geometry.emissive_voxel_count
+        << ",metadata_buffer_intents=" << staging_.virtual_geometry.metadata_buffer_intents
+        << ",culling_evaluations=" << staging_.virtual_geometry.culling_evaluations
+        << ",metadata_only=true"
+        << ",cluster_marker=\"" << (staging_.virtual_geometry.cluster_marker.empty()
+            ? "round9_virtual_chunk_geometry_not_recorded"
+            : staging_.virtual_geometry.cluster_marker)
+        << "\""
+        << ",culling_marker=\"" << (staging_.virtual_geometry.culling_marker.empty()
+            ? "round9_cluster_culling_not_recorded"
+            : staging_.virtual_geometry.culling_marker)
+        << "\""
         << "},gbuffer={frames_planned=" << staging_.gbuffer.frames_planned
         << ",staging_packets=" << staging_.gbuffer.staging_packets
         << ",advertised_gbuffers=" << staging_.gbuffer.advertised_gbuffers
@@ -2867,6 +2897,12 @@ std::uint64_t Renderer::estimate_voxel_staging_bytes(std::uint64_t dirty_section
     return dirty_section_count * (kVoxelOccupancyBytesPerSection + kVoxelMaterialIndexBytesPerSection);
 }
 
+std::uint64_t Renderer::estimate_virtual_cluster_upload_bytes(std::uint64_t cluster_count) const {
+    return saturated_multiply(
+            cluster_count,
+            kEstimatedRound9ClusterMetadataBytes + kEstimatedRound9ClusterVisibilityBytes);
+}
+
 std::uint64_t Renderer::estimate_gbuffer_attachment_bytes(
         std::int32_t width,
         std::int32_t height,
@@ -3044,6 +3080,8 @@ void Renderer::track_section_snapshot_staging_placeholder(const SectionUploadPac
     staging_.voxel.last_snapshot_estimated_bytes = voxel_payload_bytes;
     staging_.voxel.total_snapshot_estimated_bytes += voxel_payload_bytes;
 
+    track_virtual_chunk_geometry_metadata(packet);
+
     if (resources_ == nullptr || !frame_open_) {
         return;
     }
@@ -3066,6 +3104,74 @@ void Renderer::track_section_snapshot_staging_placeholder(const SectionUploadPac
                 NativeResourceIntentStage::VoxelUpload);
         resources_->track_transient_buffer(frame_index_, 0, voxel_payload_bytes, "upload:section-voxel-payload");
         staging_.voxel.placeholder_buffers++;
+    }
+}
+
+void Renderer::track_virtual_chunk_geometry_metadata(const SectionUploadPacket& packet) {
+    std::uint64_t payload_sections = 0;
+    std::uint64_t cluster_count = 0;
+    std::uint64_t occupied_voxels = 0;
+    std::uint64_t opaque_voxels = 0;
+    std::uint64_t translucent_voxels = 0;
+    std::uint64_t emissive_voxels = 0;
+
+    for (const auto& snapshot : packet.snapshots) {
+        if (!snapshot.has_section_payload() || snapshot.occupied_voxel_count <= 0) {
+            continue;
+        }
+
+        payload_sections++;
+        const auto occupied = static_cast<std::uint64_t>(snapshot.occupied_voxel_count);
+        occupied_voxels = saturated_add(occupied_voxels, occupied);
+        opaque_voxels = saturated_add(opaque_voxels, static_cast<std::uint64_t>(snapshot.opaque_voxel_count));
+        translucent_voxels = saturated_add(
+                translucent_voxels,
+                static_cast<std::uint64_t>(snapshot.translucent_voxel_count));
+        emissive_voxels = saturated_add(emissive_voxels, static_cast<std::uint64_t>(snapshot.emissive_voxel_count));
+
+        const auto occupied_clusters = saturated_add(
+                occupied / kRound9ClusterVoxelCapacity,
+                (occupied % kRound9ClusterVoxelCapacity) == 0 ? 0 : 1);
+        cluster_count = saturated_add(
+                cluster_count,
+                std::max<std::uint64_t>(1, std::min(kRound9MaxClustersPerSection, occupied_clusters)));
+    }
+
+    const auto upload_bytes = estimate_virtual_cluster_upload_bytes(cluster_count);
+    auto& telemetry = staging_.virtual_geometry;
+    telemetry.packets++;
+    telemetry.payload_sections = payload_sections;
+    telemetry.cluster_count = cluster_count;
+    telemetry.visible_cluster_count = cluster_count;
+    telemetry.culled_cluster_count = 0;
+    telemetry.upload_byte_estimate = upload_bytes;
+    telemetry.total_upload_byte_estimate = saturated_add(telemetry.total_upload_byte_estimate, upload_bytes);
+    telemetry.indirect_draw_count_placeholder = cluster_count;
+    telemetry.generation_counter = packet.generation;
+    telemetry.first_generation = packet.first_section_snapshot_generation;
+    telemetry.last_generation = packet.last_section_snapshot_generation;
+    telemetry.occupied_voxel_count = occupied_voxels;
+    telemetry.opaque_voxel_count = opaque_voxels;
+    telemetry.translucent_voxel_count = translucent_voxels;
+    telemetry.emissive_voxel_count = emissive_voxels;
+    telemetry.culling_evaluations++;
+    telemetry.cluster_marker = cluster_count == 0
+            ? "round9_virtual_chunk_geometry_no_section_clusters"
+            : "round9_virtual_chunk_geometry_cluster_metadata_recorded";
+    telemetry.culling_marker = "round9_cluster_culling_metadata_only_all_clusters_visible_no_gpu_culling";
+
+    if (resources_ != nullptr && frame_open_ && upload_bytes != 0) {
+        resources_->track_buffer_allocation_intent(
+                frame_index_,
+                upload_bytes,
+                "upload:round9-virtual-cluster-metadata-intent",
+                NativeResourceIntentStage::SectionUpload);
+        resources_->track_transient_buffer(
+                frame_index_,
+                0,
+                upload_bytes,
+                "upload:round9-virtual-cluster-metadata");
+        telemetry.metadata_buffer_intents++;
     }
 }
 
