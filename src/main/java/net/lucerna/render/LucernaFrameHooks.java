@@ -2,6 +2,7 @@ package net.lucerna.render;
 
 import net.lucerna.compat.BackendStatus;
 import net.lucerna.nativebridge.LucernaNativeBridge;
+import net.lucerna.render.context.BorrowedVulkanContextProbe;
 import net.lucerna.render.hooks.FrameHookResult;
 import net.lucerna.render.hooks.FrameLifecycleSnapshot;
 import net.lucerna.render.hooks.VulkanFrameLifecycleAdapter;
@@ -11,7 +12,15 @@ public final class LucernaFrameHooks {
     private final VulkanFrameLifecycleAdapter lifecycleAdapter;
 
     public LucernaFrameHooks(LucernaNativeBridge nativeBridge, LucernaTelemetry telemetry) {
-        this.lifecycleAdapter = new VulkanFrameLifecycleAdapter(nativeBridge, telemetry);
+        this(nativeBridge, telemetry, BorrowedVulkanContextProbe.unwired());
+    }
+
+    public LucernaFrameHooks(
+            LucernaNativeBridge nativeBridge,
+            LucernaTelemetry telemetry,
+            BorrowedVulkanContextProbe contextProbe
+    ) {
+        this.lifecycleAdapter = new VulkanFrameLifecycleAdapter(nativeBridge, telemetry, contextProbe);
     }
 
     public FrameHookResult onResize(int width, int height) {

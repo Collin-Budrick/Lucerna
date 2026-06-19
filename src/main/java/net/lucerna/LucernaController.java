@@ -7,11 +7,14 @@ import net.lucerna.compat.sodium.LucernaBackendDetector;
 import net.lucerna.config.LucernaConfig;
 import net.lucerna.config.LucernaConfigManager;
 import net.lucerna.material.MaterialRegistry;
+import net.lucerna.material.extract.LucernaMaterialExtractionService;
+import net.lucerna.material.extract.MaterialTableRefreshResult;
 import net.lucerna.nativebridge.LucernaNativeBridge;
 import net.lucerna.render.LucernaFrameHooks;
 import net.lucerna.telemetry.LucernaTelemetry;
 import net.lucerna.upload.NativeUploadQueue;
 import net.lucerna.world.LucernaWorldFeed;
+import net.minecraft.client.resources.model.ModelManager;
 
 public final class LucernaController {
     private static final LucernaController INSTANCE = new LucernaController();
@@ -22,6 +25,7 @@ public final class LucernaController {
     private final LucernaNativeBridge nativeBridge = new LucernaNativeBridge();
     private final LucernaWorldFeed worldFeed = new LucernaWorldFeed();
     private final MaterialRegistry materialRegistry = new MaterialRegistry();
+    private final LucernaMaterialExtractionService materialExtractionService = new LucernaMaterialExtractionService(this.materialRegistry);
     private final NativeUploadQueue uploadQueue = new NativeUploadQueue();
     private final LucernaTelemetry telemetry = new LucernaTelemetry();
     private final LucernaFrameHooks frameHooks = new LucernaFrameHooks(nativeBridge, telemetry);
@@ -60,7 +64,8 @@ public final class LucernaController {
 
         if (this.isRendererActive()) {
             this.irisCompat.disableIrisShadersForLucerna();
-            var dirtyRegions = this.worldFeed.drainDirtyRegionBatch();
+            this.ensureMaterialTablePrepared();
+            var dirtyRegions = this.worldFeed.drainDirtyRegionSnapshot();
             var materialUpdates = this.materialRegistry.snapshotUpdatesAfter(this.uploadQueue.lastMaterialGeneration());
             var batch = this.uploadQueue.acceptWorldAndMaterialDeltas(dirtyRegions, materialUpdates);
             this.nativeBridge.uploadWorldDeltas(batch);
@@ -108,6 +113,10 @@ public final class LucernaController {
         return this.materialRegistry;
     }
 
+    public LucernaMaterialExtractionService materialExtractionService() {
+        return this.materialExtractionService;
+    }
+
     public NativeUploadQueue uploadQueue() {
         return this.uploadQueue;
     }
@@ -132,6 +141,28 @@ public final class LucernaController {
         this.viewportWidth = width;
         this.viewportHeight = height;
         this.frameHooks.onResize(width, height);
+    }
+
+    public MaterialTableRefreshResult refreshMaterials(ModelManager modelManager) {
+        MaterialTableRefreshResult result = this.materialExtractionService.refreshKnownBlockStateMaterials(modelManager);
+        if (result.failedStateCount() > 0) {
+            Lucerna.LOGGER.warn(
+                    "Lucerna material refresh completed with {} failures out of {} planned states; materialGeneration={} materialCount={}.",
+                    result.failedStateCount(),
+                    result.plannedStateCount(),
+                    result.generationAfter(),
+                    result.materialCountAfter()
+            );
+        } else {
+            Lucerna.LOGGER.info(
+                    "Lucerna material refresh complete: states={} materials={} generation={} created={}.",
+                    result.registeredStateCount(),
+                    result.materialCountAfter(),
+                    result.generationAfter(),
+                    result.createdMaterialCount()
+            );
+        }
+        return result;
     }
 
     private void refreshBackendStatus() {
@@ -163,6 +194,14 @@ public final class LucernaController {
         if (!this.nativeInitialized) {
             Lucerna.LOGGER.warn("Lucerna native renderer did not initialize: {}", this.nativeBridge.lastError());
         }
+    }
+
+    private void ensureMaterialTablePrepared() {
+        if (this.materialExtractionService.lastRefreshResult().isPresent()) {
+            return;
+        }
+
+        this.refreshMaterials(null);
     }
 
     private void submitNoOpFrame(float tickDelta) {

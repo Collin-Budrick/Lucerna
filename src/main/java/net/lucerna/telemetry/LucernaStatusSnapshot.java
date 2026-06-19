@@ -5,6 +5,10 @@ import net.lucerna.compat.BackendKind;
 import net.lucerna.compat.BackendStatus;
 import net.lucerna.config.DebugOverlay;
 import net.lucerna.config.QualityPreset;
+import net.lucerna.render.context.BorrowedVulkanContextAcquisition;
+import net.lucerna.render.hooks.FrameHookStage;
+import net.lucerna.render.hooks.FrameLifecycleSnapshot;
+import net.lucerna.render.hooks.FramePassIntent;
 
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -21,6 +25,7 @@ public record LucernaStatusSnapshot(
         IrisTelemetryStatus iris,
         DirtyRegionTelemetryStatus dirtyRegions,
         UploadGenerationTelemetryStatus uploads,
+        FrameLifecycleSnapshot frameLifecycle,
         FrameTimingTelemetryStatus frameTimings,
         long capturedNanos
 ) {
@@ -45,6 +50,9 @@ public record LucernaStatusSnapshot(
         }
         if (uploads == null) {
             uploads = new UploadGenerationTelemetryStatus(0L, 0L, 0L);
+        }
+        if (frameLifecycle == null) {
+            frameLifecycle = emptyFrameLifecycle();
         }
         if (frameTimings == null) {
             frameTimings = FrameTimingTelemetryStatus.empty();
@@ -76,6 +84,7 @@ public record LucernaStatusSnapshot(
                 IrisTelemetryStatus.unavailable(irisMessage),
                 new DirtyRegionTelemetryStatus(worldGeneration, 0),
                 new UploadGenerationTelemetryStatus(uploadGeneration, uploadGeneration, 0L),
+                emptyFrameLifecycle(),
                 new FrameTimingTelemetryStatus(cpuScopeDurationsMillis, Map.of(), List.of(), activeCpuScopeCount),
                 capturedNanos
         );
@@ -96,6 +105,7 @@ public record LucernaStatusSnapshot(
                         controller.worldFeed().pendingDirtyRegionCount()
                 ),
                 UploadGenerationTelemetryStatus.from(controller.uploadQueue()),
+                controller.frameHooks().snapshot(),
                 FrameTimingTelemetryStatus.from(controller.telemetry()),
                 System.nanoTime()
         );
@@ -180,13 +190,27 @@ public record LucernaStatusSnapshot(
         return this.frameTimings.hasGpuTimings();
     }
 
+    public FrameHookStage frameStage() {
+        return this.frameLifecycle.stage();
+    }
+
+    public FramePassIntent framePassIntent() {
+        return this.frameLifecycle.passIntent();
+    }
+
+    public BorrowedVulkanContextAcquisition frameContextAcquisition() {
+        return this.frameLifecycle.contextAcquisition();
+    }
+
     public String compactStatusLine() {
-        return "Lucerna renderer=%s backend=%s native=%s iris=%s dirty=%d worldGen=%d uploadWorldGen=%d uploadMatGen=%d cpuScopes=%d gpuScopes=%d"
+        return "Lucerna renderer=%s backend=%s native=%s iris=%s context=%s frameStage=%s dirty=%d worldGen=%d uploadWorldGen=%d uploadMatGen=%d cpuScopes=%d gpuScopes=%d"
                 .formatted(
                         this.rendererStateLabel(),
                         this.backend.kind().name(),
                         this.nativeBridge.stateLabel(),
                         this.iris.stateLabel(),
+                        this.frameLifecycle.contextStatus().name(),
+                        this.frameLifecycle.stage().name(),
                         this.pendingDirtyRegionCount(),
                         this.worldGeneration(),
                         this.uploadWorldGeneration(),
@@ -227,6 +251,17 @@ public record LucernaStatusSnapshot(
         fields.put("upload.lastGeneration", Long.toString(this.uploadGeneration()));
         fields.put("upload.lastWorldGeneration", Long.toString(this.uploadWorldGeneration()));
         fields.put("upload.lastMaterialGeneration", Long.toString(this.uploadMaterialGeneration()));
+        fields.put("frame.index", Long.toString(this.frameLifecycle.frameIndex()));
+        fields.put("frame.stage", this.frameLifecycle.stage().name());
+        fields.put("frame.passIntent", this.frameLifecycle.passIntent().name());
+        fields.put("frame.viewport", this.frameLifecycle.viewportWidth() + "x" + this.frameLifecycle.viewportHeight());
+        fields.put("frame.resizePending", Boolean.toString(this.frameLifecycle.resizePending()));
+        fields.put("frame.open", Boolean.toString(this.frameLifecycle.frameOpen()));
+        fields.put("frame.lightingSubmitted", Boolean.toString(this.frameLifecycle.lightingSubmitted()));
+        fields.put("frame.context.status", this.frameLifecycle.contextStatus().name());
+        fields.put("frame.context.ready", Boolean.toString(this.frameLifecycle.contextReady()));
+        fields.put("frame.context.source", this.frameLifecycle.contextAcquisition().source());
+        fields.put("frame.context.message", this.frameLifecycle.contextMessage());
         fields.put("frame.cpuScopeCount", Integer.toString(this.cpuScopeDurationsMillis().size()));
         fields.put("frame.gpuScopeCount", Integer.toString(this.gpuScopeDurationsMillis().size()));
         fields.put("frame.activeCpuScopeCount", Integer.toString(this.activeCpuScopeCount()));
@@ -235,5 +270,20 @@ public record LucernaStatusSnapshot(
         fields.put("frame.totalGpuMillis", Double.toString(this.frameTimings.totalGpuMillis()));
         fields.put("captured.nanos", Long.toString(this.capturedNanos));
         return Collections.unmodifiableMap(new LinkedHashMap<>(fields));
+    }
+
+    private static FrameLifecycleSnapshot emptyFrameLifecycle() {
+        return new FrameLifecycleSnapshot(
+                0L,
+                FrameHookStage.IDLE,
+                FramePassIntent.NONE,
+                0,
+                0,
+                false,
+                false,
+                false,
+                BorrowedVulkanContextAcquisition.absent("Frame lifecycle has not been reported."),
+                "Frame lifecycle has not been reported."
+        );
     }
 }

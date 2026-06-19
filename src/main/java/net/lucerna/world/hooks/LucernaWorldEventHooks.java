@@ -8,6 +8,7 @@ import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.resource.v1.ResourceLoader;
 import net.lucerna.Lucerna;
 import net.lucerna.LucernaController;
+import net.minecraft.client.Minecraft;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 
@@ -45,7 +46,12 @@ public final class LucernaWorldEventHooks {
 
         ResourceLoader.get(PackType.CLIENT_RESOURCES).registerReloadListener(
                 Lucerna.id("world_feed_reload"),
-                (ResourceManagerReloadListener) resourceManager -> adapter.markResourcePackReloaded()
+                (ResourceManagerReloadListener) resourceManager -> {
+                    adapter.markResourcePackReloaded();
+                    if (controller.backendStatus().sodiumVulkan()) {
+                        controller.refreshMaterials(Minecraft.getInstance().getModelManager());
+                    }
+                }
         );
 
         registered = true;

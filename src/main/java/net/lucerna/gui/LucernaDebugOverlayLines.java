@@ -28,6 +28,9 @@ public final class LucernaDebugOverlayLines {
                 + " worldGen=" + snapshot.worldGeneration()
                 + " | Upload: worldGen=" + snapshot.uploadWorldGeneration()
                 + " materialGen=" + snapshot.uploadMaterialGeneration()));
+        lines.add(Component.literal("Frame: stage=" + snapshot.frameStage()
+                + " context=" + snapshot.frameLifecycle().contextStatus()
+                + " source=" + snapshot.frameContextAcquisition().source()));
         return lines;
     }
 
@@ -65,6 +68,10 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Backend message: " + snapshot.backendMessage()));
         lines.add(Component.literal("Renderer state: " + snapshot.rendererStateLabel()));
         lines.add(Component.literal("Native bridge: " + snapshot.nativeBridgeLabel()));
+        lines.add(Component.literal("Frame context: " + snapshot.frameLifecycle().contextStatus()
+                + " | ready=" + yesNo(snapshot.frameLifecycle().contextReady())));
+        lines.add(Component.literal("Frame context source: " + snapshot.frameContextAcquisition().source()));
+        lines.add(Component.literal("Frame context message: " + snapshot.frameLifecycle().contextMessage()));
         lines.add(Component.literal("Iris: " + snapshot.irisLabel() + " (" + snapshot.iris().shaderPackState() + ")"));
     }
 
@@ -92,6 +99,9 @@ public final class LucernaDebugOverlayLines {
         }
 
         lines.add(Component.literal("CPU total: " + formatMillis(snapshot.frameTimings().totalCpuMillis())));
+        lines.add(Component.literal("Frame stage: " + snapshot.frameStage()
+                + " | pass=" + snapshot.framePassIntent()
+                + " | context=" + snapshot.frameLifecycle().contextStatus()));
         for (Map.Entry<String, Double> timing : snapshot.cpuScopeDurationsMillis().entrySet()) {
             lines.add(Component.literal("CPU " + timing.getKey() + ": " + formatMillis(timing.getValue())));
         }
@@ -114,6 +124,8 @@ public final class LucernaDebugOverlayLines {
                 + " initialized=" + yesNo(snapshot.nativeBridge().initialized())));
         lines.add(Component.literal("Native status: " + snapshot.nativeBridge().nativeStatus()));
         lines.add(Component.literal("Native last error: " + snapshot.nativeBridge().diagnosticMessage()));
+        lines.add(Component.literal("Frame context: " + snapshot.frameLifecycle().contextStatus()
+                + " | " + snapshot.frameLifecycle().contextMessage()));
         lines.add(Component.literal("Upload generation: " + snapshot.uploadGeneration()));
         lines.add(Component.literal("Upload world=" + snapshot.uploadWorldGeneration()
                 + " material=" + snapshot.uploadMaterialGeneration()

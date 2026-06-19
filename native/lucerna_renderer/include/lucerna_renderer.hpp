@@ -77,6 +77,9 @@ private:
     void ensure_initialized(const char* operation) const;
     void clear_error();
     void set_error(std::string error);
+    [[nodiscard]] std::uint64_t estimate_upload_staging_bytes(const UploadPacket& packet) const;
+    void track_upload_staging_placeholder(const UploadPacket& packet);
+    void track_lighting_placeholders();
 
     std::unique_ptr<ResourceManager> resources_;
     std::string last_error_;
@@ -86,6 +89,16 @@ private:
     std::int32_t height_ = 0;
     std::uint64_t frame_index_ = 0;
     UploadPacket last_upload_packet_;
+    float last_tick_delta_ = 0.0F;
+    std::uint64_t resize_count_ = 0;
+    std::uint64_t begin_frame_count_ = 0;
+    std::uint64_t end_frame_count_ = 0;
+    std::uint64_t upload_packet_count_ = 0;
+    std::uint64_t upload_dirty_payload_total_ = 0;
+    std::uint64_t upload_material_payload_total_ = 0;
+    std::uint64_t lighting_pass_count_ = 0;
+    std::uint64_t context_adopt_count_ = 0;
+    std::uint64_t context_release_count_ = 0;
 };
 
 } // namespace lucerna

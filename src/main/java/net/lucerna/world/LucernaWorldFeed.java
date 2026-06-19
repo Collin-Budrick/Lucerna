@@ -87,15 +87,23 @@ public final class LucernaWorldFeed {
     }
 
     public DirtyRegionBatch drainDirtyRegionBatch() {
+        return this.drainDirtyRegionSnapshot().batch();
+    }
+
+    public DirtyRegionSnapshot drainDirtyRegionSnapshot() {
         List<DirtyRegion> drained = new ArrayList<>();
         DirtyRegion region;
         while ((region = this.dirtyRegions.poll()) != null) {
             drained.add(region);
         }
-        return DirtyRegionBatch.from(drained);
+        return DirtyRegionSnapshot.from(drained, this.dirtyRegions.size());
     }
 
     public DirtyRegionBatch drainDirtyRegionBatch(int maxRegions) {
+        return this.drainDirtyRegionSnapshot(maxRegions).batch();
+    }
+
+    public DirtyRegionSnapshot drainDirtyRegionSnapshot(int maxRegions) {
         if (maxRegions <= 0) {
             throw new IllegalArgumentException("maxRegions must be positive");
         }
@@ -105,7 +113,7 @@ public final class LucernaWorldFeed {
         while (drained.size() < maxRegions && (region = this.dirtyRegions.poll()) != null) {
             drained.add(region);
         }
-        return DirtyRegionBatch.from(drained);
+        return DirtyRegionSnapshot.from(drained, this.dirtyRegions.size());
     }
 
     public long currentGeneration() {

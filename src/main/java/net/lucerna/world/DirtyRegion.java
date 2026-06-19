@@ -22,6 +22,10 @@ public record DirtyRegion(
         return new DirtyRegionKey(this.dimension, this.sectionX, this.sectionY, this.sectionZ);
     }
 
+    public DirtyRegionCoalesceKey coalesceKey() {
+        return DirtyRegionCoalesceKey.from(this);
+    }
+
     public boolean sectionScoped() {
         return this.type.sectionScoped();
     }

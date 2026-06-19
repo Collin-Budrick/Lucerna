@@ -1,100 +1,948 @@
 {
   "schemaVersion": 1,
+  "layoutVersion": "0.2.0",
+  "namespace": "lucerna",
+  "intent": "Stable shader/resource metadata for Lucerna-owned Vulkan passes. This file is descriptive until the native renderer consumes it.",
+  "subAgentRule": "Do not run shader compilation, Gradle checks, Minecraft launches, render smoke tests, or builds used as verification.",
+  "naming": {
+    "passIdFormat": "lucerna.<stage>.<name>",
+    "attachmentNameFormat": "lucerna.<stage>.<name>",
+    "descriptorNameFormat": "UpperCamelCase logical resource names with fixed set/binding numbers",
+    "shaderFileFormat": "<stage>/<name>.<stage-suffix>.glsl",
+    "placeholderShader": "noop.glsl"
+  },
+  "frameConstants": {
+    "name": "LucernaFrameConstants",
+    "descriptor": {
+      "set": 0,
+      "binding": 0
+    },
+    "packing": "std140",
+    "updateFrequency": "per-frame",
+    "fields": [
+      {
+        "name": "view",
+        "type": "mat4",
+        "description": "Current world-to-view matrix."
+      },
+      {
+        "name": "projection",
+        "type": "mat4",
+        "description": "Current projection matrix after Minecraft/Sodium viewport selection."
+      },
+      {
+        "name": "viewProjection",
+        "type": "mat4",
+        "description": "Current projection * view matrix."
+      },
+      {
+        "name": "previousViewProjection",
+        "type": "mat4",
+        "description": "Previous accepted frame matrix, invalidated on dimension switch, resource reload, or history reset."
+      },
+      {
+        "name": "inverseViewProjection",
+        "type": "mat4",
+        "description": "Inverse of current viewProjection for ray reconstruction."
+      },
+      {
+        "name": "cameraWorldPosition",
+        "type": "vec4",
+        "description": "xyz camera origin in world coordinates, w reserved."
+      },
+      {
+        "name": "viewport",
+        "type": "uvec4",
+        "description": "x, y, width, height in framebuffer pixels."
+      },
+      {
+        "name": "renderScale",
+        "type": "vec4",
+        "description": "full-resolution scale, GI scale, denoise scale, reserved."
+      },
+      {
+        "name": "clipPlanes",
+        "type": "vec4",
+        "description": "near, far, reversedZ flag, reserved."
+      },
+      {
+        "name": "frameInfo",
+        "type": "uvec4",
+        "description": "frameIndex, historyIndex, dimensionHash, qualityPreset."
+      },
+      {
+        "name": "worldInfo",
+        "type": "vec4",
+        "description": "timeOfDay, rainStrength, thunderStrength, skyDarken."
+      },
+      {
+        "name": "debugInfo",
+        "type": "uvec4",
+        "description": "debugOverlayMode, validationFlags, activePassMask, reserved."
+      }
+    ]
+  },
+  "pushConstants": {
+    "packing": "std430-compatible scalar values",
+    "maxBytes": 128,
+    "ranges": [
+      {
+        "name": "LucernaPassPushConstants",
+        "stages": [
+          "vertex",
+          "fragment",
+          "compute"
+        ],
+        "fields": [
+          {
+            "name": "passId",
+            "type": "uint",
+            "description": "Stable numeric id mapped from the pass id string by the native renderer."
+          },
+          {
+            "name": "passFlags",
+            "type": "uint",
+            "description": "Per-pass feature toggles and validation flags."
+          },
+          {
+            "name": "frameIndex",
+            "type": "uint",
+            "description": "Mirrors frame constants for lightweight dispatch-only passes."
+          },
+          {
+            "name": "debugMode",
+            "type": "uint",
+            "description": "Selected overlay or pass debug mode."
+          },
+          {
+            "name": "targetSize",
+            "type": "uvec2",
+            "description": "Dispatch or render target dimensions in pixels."
+          },
+          {
+            "name": "sourceSize",
+            "type": "uvec2",
+            "description": "Primary input dimensions in pixels."
+          },
+          {
+            "name": "params0",
+            "type": "vec4",
+            "description": "Pass-owned scalar values such as kernel radius, exposure, blend factor, or ray budget."
+          },
+          {
+            "name": "params1",
+            "type": "vec4",
+            "description": "Pass-owned scalar values for future expansion."
+          }
+        ]
+      }
+    ],
+    "perPassUse": [
+      {
+        "passId": "lucerna.gbuffer.main",
+        "params0": "section generation, material generation, render flags, reserved"
+      },
+      {
+        "passId": "lucerna.lighting.direct",
+        "params0": "sun strength, moon strength, shadow ray budget, reserved"
+      },
+      {
+        "passId": "lucerna.lighting.gi",
+        "params0": "GI resolution scale, bounce count, cache confidence threshold, reserved"
+      },
+      {
+        "passId": "lucerna.denoise.diffuse",
+        "params0": "kernel radius, history blend, variance clamp, rejection strength"
+      },
+      {
+        "passId": "lucerna.composite.final",
+        "params0": "exposure, debug mix, tonemap mode, reserved"
+      },
+      {
+        "passId": "lucerna.debug.overlay",
+        "params0": "overlay mode, selected material id, min value, max value"
+      }
+    ]
+  },
   "descriptorSets": [
     {
       "set": 0,
       "name": "frame",
-      "reservedFor": [
-        "camera matrices",
-        "frame index",
-        "quality preset",
-        "debug overlay mode"
+      "scope": "per-frame global constants and immutable samplers",
+      "bindings": [
+        {
+          "binding": 0,
+          "name": "LucernaFrameConstants",
+          "descriptorType": "uniform_buffer",
+          "stages": [
+            "vertex",
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 1,
+          "name": "LucernaCameraHistory",
+          "descriptorType": "uniform_buffer",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame",
+          "notes": "Previous camera jitter, accepted history age, and history reset reason."
+        },
+        {
+          "binding": 2,
+          "name": "LucernaQualityConstants",
+          "descriptorType": "uniform_buffer",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "on-config-change"
+        },
+        {
+          "binding": 3,
+          "name": "LinearClampSampler",
+          "descriptorType": "sampler",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "immutable"
+        },
+        {
+          "binding": 4,
+          "name": "NearestClampSampler",
+          "descriptorType": "sampler",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "immutable"
+        },
+        {
+          "binding": 5,
+          "name": "BlueNoiseTexture",
+          "descriptorType": "sampled_image",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "resource-pack-reload"
+        }
       ]
     },
     {
       "set": 1,
       "name": "world",
-      "reservedFor": [
-        "material table",
-        "chunk and section metadata",
-        "voxel occupancy",
-        "dirty-region upload buffers"
+      "scope": "material, chunk, voxel, and world-delta resources owned by world/material/upload agents",
+      "bindings": [
+        {
+          "binding": 0,
+          "name": "MaterialTable",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "material-generation-change"
+        },
+        {
+          "binding": 1,
+          "name": "ChunkSectionTable",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "chunk-streaming"
+        },
+        {
+          "binding": 2,
+          "name": "VoxelOccupancy",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "dirty-region-upload"
+        },
+        {
+          "binding": 3,
+          "name": "DirtyRegionQueue",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-upload-batch"
+        },
+        {
+          "binding": 4,
+          "name": "EmissiveBlockList",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "emissive-generation-change"
+        },
+        {
+          "binding": 5,
+          "name": "WorldUploadScratch",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "compute"
+          ],
+          "access": "read_write",
+          "updateFrequency": "per-upload-batch",
+          "notes": "Reserved for GPU-side upload staging once native upload packets exist."
+        }
       ]
     },
     {
       "set": 2,
       "name": "history",
-      "reservedFor": [
-        "previous depth",
-        "previous normals",
-        "temporal radiance",
-        "variance and confidence"
+      "scope": "previous-frame and temporal accumulation resources",
+      "bindings": [
+        {
+          "binding": 0,
+          "name": "PreviousDepth",
+          "descriptorType": "sampled_image",
+          "format": "D32_SFLOAT or borrowed depth-compatible format",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 1,
+          "name": "PreviousNormalRoughness",
+          "descriptorType": "sampled_image",
+          "format": "R16G16B16A16_SFLOAT",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 2,
+          "name": "PreviousLighting",
+          "descriptorType": "sampled_image",
+          "format": "R16G16B16A16_SFLOAT",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 3,
+          "name": "RadianceHistory",
+          "descriptorType": "storage_image",
+          "format": "R16G16B16A16_SFLOAT",
+          "stages": [
+            "compute"
+          ],
+          "access": "read_write",
+          "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 4,
+          "name": "VarianceConfidence",
+          "descriptorType": "storage_image",
+          "format": "R16G16_SFLOAT",
+          "stages": [
+            "compute"
+          ],
+          "access": "read_write",
+          "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 5,
+          "name": "MotionHistory",
+          "descriptorType": "sampled_image",
+          "format": "R16G16B16A16_SFLOAT",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame"
+        }
       ]
     },
     {
       "set": 3,
       "name": "debug",
-      "reservedFor": [
-        "overlay constants",
-        "timing readback",
-        "native queue telemetry",
-        "controller diagnostics"
+      "scope": "debug overlays, timing readback, and native queue telemetry",
+      "bindings": [
+        {
+          "binding": 0,
+          "name": "DebugConstants",
+          "descriptorType": "uniform_buffer",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 1,
+          "name": "TimingReadback",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 2,
+          "name": "NativeQueueTelemetry",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 3,
+          "name": "DebugOverlayTarget",
+          "descriptorType": "storage_image",
+          "format": "R8G8B8A8_UNORM",
+          "stages": [
+            "compute"
+          ],
+          "access": "write",
+          "updateFrequency": "resize-or-overlay-change"
+        },
+        {
+          "binding": 4,
+          "name": "DebugLabelTable",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "resource-pack-reload"
+        }
+      ]
+    }
+  ],
+  "attachments": [
+    {
+      "name": "lucerna.gbuffer.depth",
+      "ownerPass": "lucerna.gbuffer.main",
+      "format": "D32_SFLOAT",
+      "fallbackFormats": [
+        "D24_UNORM_S8_UINT when a borrowed Minecraft/Sodium depth target requires stencil compatibility"
+      ],
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "depth_stencil_attachment",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.gi",
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.gbuffer.normalRoughness",
+      "ownerPass": "lucerna.gbuffer.main",
+      "format": "R16G16B16A16_SFLOAT",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "color_attachment",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.gi",
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.gbuffer.albedoOpacity",
+      "ownerPass": "lucerna.gbuffer.main",
+      "format": "R8G8B8A8_UNORM",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "color_attachment",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.lighting.direct",
+        "lucerna.composite.final",
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.gbuffer.materialId",
+      "ownerPass": "lucerna.gbuffer.main",
+      "format": "R32_UINT",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "color_attachment",
+        "sampled",
+        "transfer_src"
+      ],
+      "consumers": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.gi",
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.gbuffer.emissive",
+      "ownerPass": "lucerna.gbuffer.main",
+      "format": "R16G16B16A16_SFLOAT",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "color_attachment",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.gi",
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.gbuffer.motionHistory",
+      "ownerPass": "lucerna.gbuffer.main",
+      "format": "R16G16B16A16_SFLOAT",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "color_attachment",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.lighting.direct",
+      "ownerPass": "lucerna.lighting.direct",
+      "format": "R16G16B16A16_SFLOAT",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "storage_image",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.lighting.gi",
+        "lucerna.denoise.diffuse",
+        "lucerna.composite.final",
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.lighting.diffuseGi",
+      "ownerPass": "lucerna.lighting.gi",
+      "format": "R16G16B16A16_SFLOAT",
+      "resolution": "half",
+      "samples": 1,
+      "usage": [
+        "storage_image",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.denoise.diffuse",
+        "lucerna.composite.final",
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.lighting.cacheConfidence",
+      "ownerPass": "lucerna.lighting.gi",
+      "format": "R16G16_SFLOAT",
+      "resolution": "half",
+      "samples": 1,
+      "usage": [
+        "storage_image",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.denoise.diffuse",
+      "ownerPass": "lucerna.denoise.diffuse",
+      "format": "R16G16B16A16_SFLOAT",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "storage_image",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.composite.final",
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.denoise.rejectionMask",
+      "ownerPass": "lucerna.denoise.diffuse",
+      "format": "R8_UNORM",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "storage_image",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.composite.worldColor",
+      "ownerPass": "lucerna.composite.final",
+      "format": "borrowed Minecraft/Sodium world color target format",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "color_attachment",
+        "transfer_dst"
+      ],
+      "consumers": [
+        "Minecraft HUD and late translucency after Lucerna completes"
+      ],
+      "notes": "Lucerna must not own swapchain presentation; the frame hook borrows the active world color target."
+    },
+    {
+      "name": "lucerna.debug.overlay",
+      "ownerPass": "lucerna.debug.overlay",
+      "format": "R8G8B8A8_UNORM",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "storage_image",
+        "sampled",
+        "color_attachment"
+      ],
+      "consumers": [
+        "lucerna.composite.final"
       ]
     }
   ],
   "passes": [
     {
-      "name": "gbuffer",
+      "id": "lucerna.gbuffer.main",
+      "numericId": 100,
+      "stage": "gbuffer",
       "directory": "gbuffer",
-      "stage": "placeholder",
-      "outputs": [
-        "depth-compatible data",
-        "normals",
-        "albedo",
-        "material id",
-        "emissive",
-        "motion/history metadata"
-      ]
+      "type": "graphics",
+      "executionOrder": 100,
+      "placeholderShader": "gbuffer/noop.glsl",
+      "descriptorSets": [
+        "frame",
+        "world"
+      ],
+      "reads": [
+        "MaterialTable",
+        "ChunkSectionTable"
+      ],
+      "writes": [
+        "lucerna.gbuffer.depth",
+        "lucerna.gbuffer.normalRoughness",
+        "lucerna.gbuffer.albedoOpacity",
+        "lucerna.gbuffer.materialId",
+        "lucerna.gbuffer.emissive",
+        "lucerna.gbuffer.motionHistory"
+      ],
+      "pushConstants": "LucernaPassPushConstants",
+      "sideEffectFreePlaceholder": true,
+      "handoff": "Provides full-resolution geometry/material buffers for lighting, denoise, composite, and debug workers."
     },
     {
-      "name": "lighting",
+      "id": "lucerna.lighting.direct",
+      "numericId": 200,
+      "stage": "lighting",
       "directory": "lighting",
-      "stage": "placeholder",
-      "outputs": [
-        "direct lighting",
-        "low-res diffuse GI",
-        "cache confidence"
-      ]
+      "type": "compute",
+      "executionOrder": 200,
+      "placeholderShader": "lighting/noop.glsl",
+      "descriptorSets": [
+        "frame",
+        "world",
+        "history"
+      ],
+      "reads": [
+        "lucerna.gbuffer.depth",
+        "lucerna.gbuffer.normalRoughness",
+        "lucerna.gbuffer.albedoOpacity",
+        "lucerna.gbuffer.materialId",
+        "lucerna.gbuffer.emissive",
+        "EmissiveBlockList"
+      ],
+      "writes": [
+        "lucerna.lighting.direct"
+      ],
+      "pushConstants": "LucernaPassPushConstants",
+      "sideEffectFreePlaceholder": true,
+      "handoff": "Direct sun, moon, and emissive block lighting target."
     },
     {
-      "name": "denoise",
+      "id": "lucerna.lighting.gi",
+      "numericId": 210,
+      "stage": "lighting",
+      "directory": "lighting",
+      "type": "compute",
+      "executionOrder": 210,
+      "placeholderShader": "lighting/noop.glsl",
+      "descriptorSets": [
+        "frame",
+        "world",
+        "history"
+      ],
+      "reads": [
+        "lucerna.gbuffer.depth",
+        "lucerna.gbuffer.normalRoughness",
+        "lucerna.gbuffer.materialId",
+        "lucerna.gbuffer.emissive",
+        "lucerna.lighting.direct",
+        "RadianceHistory",
+        "VarianceConfidence",
+        "VoxelOccupancy"
+      ],
+      "writes": [
+        "lucerna.lighting.diffuseGi",
+        "lucerna.lighting.cacheConfidence",
+        "RadianceHistory",
+        "VarianceConfidence"
+      ],
+      "pushConstants": "LucernaPassPushConstants",
+      "sideEffectFreePlaceholder": true,
+      "handoff": "Low-resolution first-bounce diffuse GI and confidence output."
+    },
+    {
+      "id": "lucerna.denoise.diffuse",
+      "numericId": 300,
+      "stage": "denoise",
       "directory": "denoise",
-      "stage": "placeholder",
-      "outputs": [
-        "edge-aware diffuse lighting",
-        "history rejection mask"
-      ]
+      "type": "compute",
+      "executionOrder": 300,
+      "placeholderShader": "denoise/noop.glsl",
+      "descriptorSets": [
+        "frame",
+        "history"
+      ],
+      "reads": [
+        "lucerna.gbuffer.depth",
+        "lucerna.gbuffer.normalRoughness",
+        "lucerna.gbuffer.motionHistory",
+        "lucerna.lighting.direct",
+        "lucerna.lighting.diffuseGi",
+        "lucerna.lighting.cacheConfidence",
+        "PreviousDepth",
+        "PreviousNormalRoughness",
+        "PreviousLighting",
+        "MotionHistory"
+      ],
+      "writes": [
+        "lucerna.denoise.diffuse",
+        "lucerna.denoise.rejectionMask"
+      ],
+      "pushConstants": "LucernaPassPushConstants",
+      "sideEffectFreePlaceholder": true,
+      "handoff": "Edge-aware diffuse denoise, temporal rejection mask, and history repair input."
     },
     {
-      "name": "composite",
-      "directory": "composite",
-      "stage": "placeholder",
-      "outputs": [
-        "world color target"
-      ]
-    },
-    {
-      "name": "debug",
+      "id": "lucerna.debug.overlay",
+      "numericId": 500,
+      "stage": "debug",
       "directory": "debug",
-      "stage": "placeholder",
-      "outputs": [
-        "backend overlay",
-        "dirty-region overlay",
-        "material-id overlay",
-        "timing overlay",
-        "native queue overlay"
-      ]
+      "type": "compute",
+      "executionOrder": 390,
+      "placeholderShader": "debug/noop.glsl",
+      "descriptorSets": [
+        "frame",
+        "world",
+        "history",
+        "debug"
+      ],
+      "reads": [
+        "lucerna.gbuffer.depth",
+        "lucerna.gbuffer.materialId",
+        "lucerna.denoise.rejectionMask",
+        "DirtyRegionQueue",
+        "TimingReadback",
+        "NativeQueueTelemetry"
+      ],
+      "writes": [
+        "lucerna.debug.overlay"
+      ],
+      "pushConstants": "LucernaPassPushConstants",
+      "sideEffectFreePlaceholder": true,
+      "handoff": "Backend, dirty-region, material-id, timing, native queue, and cache confidence overlays."
+    },
+    {
+      "id": "lucerna.composite.final",
+      "numericId": 400,
+      "stage": "composite",
+      "directory": "composite",
+      "type": "graphics",
+      "executionOrder": 400,
+      "placeholderShader": "composite/noop.glsl",
+      "descriptorSets": [
+        "frame",
+        "history",
+        "debug"
+      ],
+      "reads": [
+        "lucerna.gbuffer.albedoOpacity",
+        "lucerna.lighting.direct",
+        "lucerna.lighting.diffuseGi",
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ],
+      "writes": [
+        "lucerna.composite.worldColor"
+      ],
+      "pushConstants": "LucernaPassPushConstants",
+      "sideEffectFreePlaceholder": true,
+      "handoff": "Final Lucerna output into the borrowed world color target before vanilla HUD and late translucency."
     }
   ],
-  "subAgentRule": "Do not run shader compilation, Gradle checks, Minecraft launches, render smoke tests, or builds used as verification."
+  "barriers": [
+    {
+      "from": "lucerna.gbuffer.main",
+      "to": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.gi",
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ],
+      "resources": [
+        "lucerna.gbuffer.*"
+      ],
+      "requiredTransition": "attachment_write_to_shader_read"
+    },
+    {
+      "from": "lucerna.lighting.direct",
+      "to": [
+        "lucerna.lighting.gi",
+        "lucerna.denoise.diffuse",
+        "lucerna.composite.final"
+      ],
+      "resources": [
+        "lucerna.lighting.direct"
+      ],
+      "requiredTransition": "compute_write_to_shader_read"
+    },
+    {
+      "from": "lucerna.lighting.gi",
+      "to": [
+        "lucerna.denoise.diffuse",
+        "lucerna.composite.final"
+      ],
+      "resources": [
+        "lucerna.lighting.diffuseGi",
+        "lucerna.lighting.cacheConfidence"
+      ],
+      "requiredTransition": "compute_write_to_shader_read"
+    },
+    {
+      "from": "lucerna.denoise.diffuse",
+      "to": [
+        "lucerna.composite.final",
+        "lucerna.debug.overlay"
+      ],
+      "resources": [
+        "lucerna.denoise.diffuse",
+        "lucerna.denoise.rejectionMask"
+      ],
+      "requiredTransition": "compute_write_to_shader_read"
+    },
+    {
+      "from": "lucerna.debug.overlay",
+      "to": [
+        "lucerna.composite.final"
+      ],
+      "resources": [
+        "lucerna.debug.overlay"
+      ],
+      "requiredTransition": "compute_write_to_shader_read"
+    }
+  ],
+  "validationScenarios": [
+    {
+      "id": "metadata.json.parse",
+      "owner": "controller",
+      "description": "Parse layout.json and verify unique pass ids, numeric ids, descriptor set/binding pairs, and attachment names."
+    },
+    {
+      "id": "metadata.placeholders.side_effect_free",
+      "owner": "controller",
+      "description": "Confirm placeholder shaders do not declare storage writes, image writes, atomics, barriers, discard, or fixed color/depth outputs."
+    },
+    {
+      "id": "framehook.noop_order",
+      "owner": "controller",
+      "description": "When Lucerna is active on Sodium Vulkan, execute future no-op passes in executionOrder without altering HUD, late translucency, or swapchain ownership."
+    },
+    {
+      "id": "backend.disabled_no_resource_use",
+      "owner": "controller",
+      "description": "On no-Sodium, OpenGL-forced, or Vulkan-unavailable launches, Lucerna should not allocate or bind resources from this layout."
+    },
+    {
+      "id": "resize.recreate_resolution_classes",
+      "owner": "controller",
+      "description": "Resize full-resolution and half-resolution attachments from the active viewport, refresh debug overlay target, and preserve stable pass ids."
+    },
+    {
+      "id": "reload.invalidate_external_resources",
+      "owner": "controller",
+      "description": "Resource-pack reload refreshes material, blue-noise, and debug label resources while invalidating temporal history."
+    },
+    {
+      "id": "world_transition.invalidate_history",
+      "owner": "controller",
+      "description": "Dimension switch, world leave, or world join clears PreviousDepth, PreviousLighting, RadianceHistory, VarianceConfidence, and MotionHistory consumers."
+    },
+    {
+      "id": "streaming.dirty_region_generation",
+      "owner": "controller",
+      "description": "Chunk stream and block/material updates advance generation counters before lighting and debug passes consume DirtyRegionQueue."
+    },
+    {
+      "id": "debug.overlay_modes",
+      "owner": "controller",
+      "description": "Debug overlay modes can sample backend status, dirty regions, material ids, timing readback, native queue telemetry, and cache confidence without requiring Iris shader-pack rendering."
+    }
+  ]
 }

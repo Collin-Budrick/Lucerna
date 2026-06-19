@@ -42,6 +42,10 @@ public record DirtyRegionBatch(
     }
 
     public static DirtyRegionBatch from(Collection<DirtyRegion> regions) {
+        return DirtyRegionSnapshot.from(regions).batch();
+    }
+
+    static DirtyRegionBatch fromCoalesced(Collection<DirtyRegion> regions) {
         Objects.requireNonNull(regions, "regions");
         if (regions.isEmpty()) {
             return empty();
@@ -57,6 +61,10 @@ public record DirtyRegionBatch(
                 .orElseThrow()
                 .generation();
         return new DirtyRegionBatch(firstGeneration, lastGeneration, immutableRegions);
+    }
+
+    public DirtyRegionBatch coalesced() {
+        return from(this.regions);
     }
 
     public boolean isEmpty() {
