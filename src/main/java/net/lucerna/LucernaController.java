@@ -11,6 +11,7 @@ import net.lucerna.material.MaterialRegistry;
 import net.lucerna.material.extract.LucernaMaterialExtractionService;
 import net.lucerna.material.extract.MaterialTableRefreshResult;
 import net.lucerna.nativebridge.DirectLightingPreviewCompositeSubmissionResult;
+import net.lucerna.nativebridge.DirectLightingCpuOutputPayload;
 import net.lucerna.nativebridge.LucernaNativeBridge;
 import net.lucerna.render.GBufferDescriptor;
 import net.lucerna.render.gbuffer.GBufferWriteIntent;
@@ -275,8 +276,9 @@ public final class LucernaController {
             DirectLightingPreviewCompositeSubmissionResult submission =
                     this.nativeBridge.submitDirectLightingPreviewComposite(request);
             this.logDirectPreviewCompositeStatusIfChanged(submission);
+            DirectLightingCpuOutputPayload directOutputPayload = this.nativeBridge.directLightingCpuOutputPayload();
             PublicMojangPreviewPassSubmissionResult publicPassSubmission =
-                    RenderThreadPreviewTargetFactory.submitDiagnosticPublicPreviewDraw(target);
+                    RenderThreadPreviewTargetFactory.submitSampledPublicPreviewDraw(target, directOutputPayload);
             this.logPublicMojangPreviewPassStatusIfChanged(publicPassSubmission);
             return this.frameHooks.attachFramePass(request);
         } finally {

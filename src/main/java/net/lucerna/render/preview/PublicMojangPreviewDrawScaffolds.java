@@ -1,6 +1,7 @@
 package net.lucerna.render.preview;
 
 import com.mojang.blaze3d.PrimitiveTopology;
+import com.mojang.blaze3d.GpuFormat;
 import com.mojang.blaze3d.pipeline.BlendFunction;
 import com.mojang.blaze3d.pipeline.ColorTargetState;
 import com.mojang.blaze3d.pipeline.RenderPipeline;
@@ -8,13 +9,16 @@ import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.GpuSampler;
 import com.mojang.blaze3d.textures.GpuTextureView;
-import net.minecraft.resources.Identifier;
+import net.minecraft.client.renderer.BindGroupLayouts;
 import net.minecraft.client.renderer.RenderPipelines;
+import net.minecraft.resources.Identifier;
+
+import java.util.Optional;
 
 public final class PublicMojangPreviewDrawScaffolds {
     private static final String DIRECT_LIGHT_SOURCE_BINDING = "InSampler";
     private static final String NO_TEXTURE_BINDING = "none";
-    private static final String TEXTURED_FULLSCREEN_MODE = "textured-fullscreen-direct-light";
+    private static final String TEXTURED_FULLSCREEN_MODE = "sampled-fullscreen-direct-light-additive";
     private static final String DIAGNOSTIC_FULLSCREEN_MODE = "diagnostic-fullscreen-warm-additive";
     private static final int FULLSCREEN_TRIANGLE_FIRST_VERTEX = 0;
     private static final int FULLSCREEN_TRIANGLE_VERTEX_COUNT = 3;
@@ -35,6 +39,26 @@ public final class PublicMojangPreviewDrawScaffolds {
                     .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
                     .build()
     );
+    private static final RenderPipeline DIRECT_LIGHT_PREVIEW_ADDITIVE_PIPELINE = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.POST_PROCESSING_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "pipeline/direct_light_preview_additive"
+                    ))
+                    .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
+                    .withFragmentShader(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "core/direct_light_preview_additive"
+                    ))
+                    .withBindGroupLayout(BindGroupLayouts.IN_SAMPLER)
+                    .withColorTargetState(new ColorTargetState(
+                            Optional.of(BlendFunction.ADDITIVE),
+                            GpuFormat.RGBA8_UNORM,
+                            ColorTargetState.WRITE_COLOR
+                    ))
+                    .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+                    .build()
+    );
 
     private PublicMojangPreviewDrawScaffolds() {
     }
@@ -50,7 +74,7 @@ public final class PublicMojangPreviewDrawScaffolds {
         }
         if (directLightSourceView == null) {
             return PublicMojangPreviewDrawScaffold.prepared(
-                    RenderPipelines.ENTITY_OUTLINE_BLIT,
+                    DIRECT_LIGHT_PREVIEW_ADDITIVE_PIPELINE,
                     DIRECT_LIGHT_SOURCE_BINDING,
                     TEXTURED_FULLSCREEN_MODE,
                     FULLSCREEN_TRIANGLE_FIRST_VERTEX,
@@ -62,7 +86,7 @@ public final class PublicMojangPreviewDrawScaffolds {
         }
 
         return PublicMojangPreviewDrawScaffold.prepared(
-                RenderPipelines.ENTITY_OUTLINE_BLIT,
+                DIRECT_LIGHT_PREVIEW_ADDITIVE_PIPELINE,
                 DIRECT_LIGHT_SOURCE_BINDING,
                 TEXTURED_FULLSCREEN_MODE,
                 FULLSCREEN_TRIANGLE_FIRST_VERTEX,
@@ -94,7 +118,7 @@ public final class PublicMojangPreviewDrawScaffolds {
             );
         }
 
-        renderPass.setPipeline(RenderPipelines.ENTITY_OUTLINE_BLIT);
+        renderPass.setPipeline(DIRECT_LIGHT_PREVIEW_ADDITIVE_PIPELINE);
         RenderSystem.bindDefaultUniforms(renderPass);
         renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, directLightSourceView, directLightSourceSampler);
         renderPass.draw(
@@ -104,7 +128,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FIRST_INSTANCE
         );
         return PublicMojangPreviewDrawScaffold.issued(
-                RenderPipelines.ENTITY_OUTLINE_BLIT,
+                DIRECT_LIGHT_PREVIEW_ADDITIVE_PIPELINE,
                 DIRECT_LIGHT_SOURCE_BINDING,
                 TEXTURED_FULLSCREEN_MODE,
                 FULLSCREEN_TRIANGLE_FIRST_VERTEX,

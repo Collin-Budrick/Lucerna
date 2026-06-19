@@ -5,6 +5,7 @@
 #include <jni.h>
 #include <cstddef>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -1221,6 +1222,45 @@ Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeStatus(JNIEnv* env, jcla
         set_last_error("status", "unknown native exception");
         return to_java_string(env, g_last_error);
     }
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeDirectLightingCpuOutputPreviewRgba8(JNIEnv* env, jclass) {
+    std::lock_guard lock(g_renderer_mutex);
+    try {
+        const auto rgba8 = initialized_renderer().direct_lighting_cpu_output_preview_rgba8();
+        constexpr std::size_t kMaxDirectLightingPreviewRgba8Bytes = 64 * 36 * 4;
+        if (rgba8.size() > kMaxDirectLightingPreviewRgba8Bytes || rgba8.size() % 4 != 0) {
+            set_last_error("directLightingCpuOutputPreviewRgba8", "native direct-light RGBA8 preview payload size is invalid");
+            return env->NewByteArray(0);
+        }
+        if (rgba8.size() > static_cast<std::size_t>(std::numeric_limits<jsize>::max())) {
+            set_last_error("directLightingCpuOutputPreviewRgba8", "native direct-light RGBA8 preview payload exceeds JNI byte array limit");
+            return nullptr;
+        }
+        auto result = env->NewByteArray(static_cast<jsize>(rgba8.size()));
+        if (result == nullptr) {
+            set_last_error("directLightingCpuOutputPreviewRgba8", "failed to allocate Java byte array");
+            return nullptr;
+        }
+        if (!rgba8.empty()) {
+            env->SetByteArrayRegion(
+                    result,
+                    0,
+                    static_cast<jsize>(rgba8.size()),
+                    reinterpret_cast<const jbyte*>(rgba8.data()));
+            if (env->ExceptionCheck()) {
+                return nullptr;
+            }
+        }
+        clear_last_error();
+        return result;
+    } catch (const std::exception& exception) {
+        set_last_error("directLightingCpuOutputPreviewRgba8", exception.what());
+    } catch (...) {
+        set_last_error("directLightingCpuOutputPreviewRgba8", "unknown native exception");
+    }
+    return env->NewByteArray(0);
 }
 
 extern "C" JNIEXPORT jstring JNICALL

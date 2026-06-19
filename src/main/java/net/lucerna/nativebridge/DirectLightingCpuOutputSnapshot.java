@@ -131,14 +131,14 @@ public record DirectLightingCpuOutputSnapshot(
     }
 
     public boolean hasPixelPayload() {
-        return false;
+        return this.hasCpuOutputTelemetry();
     }
 
     public String pixelPayloadStatus() {
         if (!this.hasCpuOutputTelemetry()) {
             return "native CPU direct-light output telemetry is not available";
         }
-        return "native reports CPU direct-light output dimensions, energy, and checksum; Java pixel payload access is not exposed yet";
+        return "native reports CPU direct-light output dimensions, energy, and checksum; Java can request a bounded RGBA8 preview payload";
     }
 
     public String debugSummary() {

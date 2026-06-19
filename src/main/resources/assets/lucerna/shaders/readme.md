@@ -14,6 +14,8 @@ These shader files are placeholders for the Sodium Vulkan integration milestones
 
 `core/direct_light_preview_diagnostic.fsh` is a temporary diagnostic shader. It proves that Lucerna can set a public Mojang pipeline and issue a bounded draw call against the world color target before HUD composition. It is not the real direct-light resolve, does not sample Lucerna direct-light output, and must not be used as screenshot proof that one emissive block lights one surface.
 
+`core/direct_light_preview_additive.fsh` samples the Java-uploaded native CPU direct-light preview texture through the public Mojang `InSampler` binding and additively blends RGB into the world color target. This is the bridge from diagnostic draw plumbing toward a real direct-light source texture; it is still preview-readback based and not the final native GPU direct-light resolve.
+
 ## Phase 5 Order
 
 The canonical Phase 5 dependency order is `lucerna.lighting.direct`, `lucerna.lighting.gi`, `lucerna.denoise.diffuse`, `lucerna.debug.overlay`, then `lucerna.composite.final`. Debug overlay is scheduled before composite because composite may consume `lucerna.debug.overlay` when overlay mode is active.

@@ -1436,6 +1436,53 @@ std::string Renderer::last_error() const {
     return last_error_;
 }
 
+std::vector<std::uint8_t> Renderer::direct_lighting_cpu_output_preview_rgba8() const {
+    if (!initialized_ || direct_lighting_cpu_output_.empty()) {
+        return {};
+    }
+    if (direct_lighting_cpu_output_.size() % 4 != 0) {
+        return {};
+    }
+    const auto expected_components = static_cast<std::size_t>(
+            staging_.lighting.direct_execution.last_output_pixel_count * 4);
+    if (expected_components != direct_lighting_cpu_output_.size()) {
+        return {};
+    }
+
+    float max_channel = 0.0F;
+    for (std::size_t index = 0; index + 3 < direct_lighting_cpu_output_.size(); index += 4) {
+        max_channel = std::max(max_channel, finite_non_negative(direct_lighting_cpu_output_[index]));
+        max_channel = std::max(max_channel, finite_non_negative(direct_lighting_cpu_output_[index + 1]));
+        max_channel = std::max(max_channel, finite_non_negative(direct_lighting_cpu_output_[index + 2]));
+    }
+    if (max_channel <= 0.0F) {
+        return {};
+    }
+
+    std::vector<std::uint8_t> rgba8;
+    rgba8.resize(direct_lighting_cpu_output_.size());
+    const float scale = 255.0F / max_channel;
+    for (std::size_t index = 0; index + 3 < direct_lighting_cpu_output_.size(); index += 4) {
+        rgba8[index] = static_cast<std::uint8_t>(std::clamp(
+                finite_non_negative(direct_lighting_cpu_output_[index]) * scale,
+                0.0F,
+                255.0F));
+        rgba8[index + 1] = static_cast<std::uint8_t>(std::clamp(
+                finite_non_negative(direct_lighting_cpu_output_[index + 1]) * scale,
+                0.0F,
+                255.0F));
+        rgba8[index + 2] = static_cast<std::uint8_t>(std::clamp(
+                finite_non_negative(direct_lighting_cpu_output_[index + 2]) * scale,
+                0.0F,
+                255.0F));
+        rgba8[index + 3] = static_cast<std::uint8_t>(std::clamp(
+                finite_non_negative(direct_lighting_cpu_output_[index + 3]) * 255.0F,
+                0.0F,
+                255.0F));
+    }
+    return rgba8;
+}
+
 std::string Renderer::status() const {
     const bool has_context = resources_ != nullptr && resources_->has_context();
     std::ostringstream out;

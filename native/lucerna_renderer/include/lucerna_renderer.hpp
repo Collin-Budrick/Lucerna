@@ -543,6 +543,7 @@ public:
     [[nodiscard]] bool initialized() const;
     [[nodiscard]] std::string last_error() const;
     [[nodiscard]] std::string status() const;
+    [[nodiscard]] std::vector<std::uint8_t> direct_lighting_cpu_output_preview_rgba8() const;
 
 private:
     void ensure_initialized(const char* operation) const;

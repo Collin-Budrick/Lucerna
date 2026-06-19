@@ -71,6 +71,43 @@ public final class LucernaNativeBridge {
         return DirectLightingCpuOutputSnapshot.fromNativeStatus(this.queryNativeStatus());
     }
 
+    public synchronized DirectLightingCpuOutputPayload directLightingCpuOutputPayload() {
+        if (!this.loaded) {
+            return DirectLightingCpuOutputPayload.unavailable("native library not loaded");
+        }
+
+        DirectLightingCpuOutputSnapshot snapshot = this.directLightingCpuOutputSnapshot();
+        if (!snapshot.hasCpuOutputTelemetry() || !snapshot.hasNonzeroEnergy()) {
+            return new DirectLightingCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "direct-light CPU output telemetry is not ready for Java preview upload"
+            );
+        }
+
+        byte[] rgba8 = nativeDirectLightingCpuOutputPreviewRgba8();
+        if (rgba8 == null) {
+            return new DirectLightingCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native direct-light CPU output preview payload returned null"
+            );
+        }
+        long expectedBytes = Math.max(0L, snapshot.outputPixels()) * 4L;
+        if (expectedBytes > Integer.MAX_VALUE || rgba8.length != (int) expectedBytes) {
+            return new DirectLightingCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native direct-light CPU output preview RGBA8 payload size did not match telemetry"
+            );
+        }
+        return new DirectLightingCpuOutputPayload(
+                snapshot,
+                rgba8,
+                "native direct-light CPU output preview RGBA8 payload copied"
+        );
+    }
+
     public synchronized DirectLightingPreviewCompositeSubmissionResult submitDirectLightingPreviewComposite(
             LucernaFramePassRequest request
     ) {
@@ -987,6 +1024,8 @@ public final class LucernaNativeBridge {
     private static native boolean nativeReleaseBorrowedVulkanContext();
 
     private static native String nativeStatus();
+
+    private static native byte[] nativeDirectLightingCpuOutputPreviewRgba8();
 
     private static native String nativeLastError();
 }

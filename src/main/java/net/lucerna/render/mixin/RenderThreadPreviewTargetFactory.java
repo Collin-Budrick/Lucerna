@@ -7,6 +7,9 @@ import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.GpuTexture;
 import com.mojang.blaze3d.textures.GpuTextureView;
+import net.lucerna.nativebridge.DirectLightingCpuOutputPayload;
+import net.lucerna.render.preview.DirectLightPreviewTextureUploadResult;
+import net.lucerna.render.preview.DirectLightPreviewTextureUploader;
 import net.lucerna.render.preview.PublicMojangPreviewDrawScaffold;
 import net.lucerna.render.preview.PublicMojangPreviewDrawScaffolds;
 import net.lucerna.render.pass.LucernaFrameAttachmentMetadata;
@@ -15,12 +18,16 @@ import net.lucerna.render.pass.LucernaFramePassPhase;
 import net.lucerna.render.pass.LucernaFramePassTarget;
 import net.minecraft.client.renderer.GameRenderer;
 
+import java.lang.ref.Reference;
+import java.nio.ByteBuffer;
 import java.util.Optional;
 
 public final class RenderThreadPreviewTargetFactory {
     private static final Object METADATA_ONLY_RENDER_PASS = new Object();
     private static final String DIRECT_LIGHT_PREVIEW_TARGET =
             "GameRenderer.renderLevel world color target after level render and before hand/HUD composition.";
+    private static final DirectLightPreviewTextureUploader DIRECT_LIGHT_PREVIEW_TEXTURE_UPLOADER =
+            new DirectLightPreviewTextureUploader();
 
     private RenderThreadPreviewTargetFactory() {
     }
@@ -196,6 +203,114 @@ public final class RenderThreadPreviewTargetFactory {
                 PublicMojangPreviewPassSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
                 "public Mojang diagnostic preview render pass submitted; draw scaffold: "
                         + drawScaffold.summary()
+        );
+    }
+
+    public static PublicMojangPreviewPassSubmissionResult submitSampledPublicPreviewDraw(
+            LucernaFramePassTarget target,
+            DirectLightingCpuOutputPayload directOutputPayload
+    ) {
+        if (target == null || !target.available()) {
+            return PublicMojangPreviewPassSubmissionResult.notSubmitted(
+                    true,
+                    false,
+                    PublicMojangPreviewPassSubmissionResult.TargetStatus.TARGET_MISSING,
+                    "public Mojang sampled preview draw skipped because no frame target is available"
+            );
+        }
+        if (!target.safeForAttachment()) {
+            return PublicMojangPreviewPassSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangPreviewPassSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang sampled preview draw skipped because the target is not HUD-safe"
+            );
+        }
+        if (!(target.commandEncoder() instanceof CommandEncoder commandEncoder)
+                || !(target.colorTarget() instanceof GpuTextureView colorView)) {
+            return PublicMojangPreviewPassSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    target.attachmentMetadata().javaOpaque()
+                            ? PublicMojangPreviewPassSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT
+                            : PublicMojangPreviewPassSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang sampled preview draw skipped because command encoder or color view is unavailable"
+            );
+        }
+        if (directOutputPayload == null || !directOutputPayload.available()) {
+            return submitDiagnosticFallback(
+                    commandEncoder,
+                    colorView,
+                    target,
+                    "public Mojang sampled preview draw skipped because direct-light RGBA8 payload is unavailable"
+            );
+        }
+
+        ByteBuffer directOutputBuffer = directOutputPayload.copyToByteBuffer();
+        DirectLightPreviewTextureUploadResult upload = DIRECT_LIGHT_PREVIEW_TEXTURE_UPLOADER.upload(
+                RenderSystem.getDevice(),
+                commandEncoder,
+                directOutputBuffer,
+                directOutputPayload.width(),
+                directOutputPayload.height()
+        );
+        if (!upload.availableForDraw()) {
+            return submitDiagnosticFallback(
+                    commandEncoder,
+                    colorView,
+                    target,
+                    "public Mojang sampled preview draw fell back to diagnostic draw because upload was unavailable: "
+                            + upload.summary()
+            );
+        }
+
+        PublicMojangPreviewDrawScaffold drawScaffold;
+        try (RenderPass renderPass = commandEncoder.createRenderPass(
+                () -> "lucerna public sampled direct-light preview draw pass",
+                colorView,
+                Optional.empty()
+        )) {
+            drawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenDirectLightPreviewDraw(
+                    renderPass,
+                    upload.textureView(),
+                    upload.sampler()
+            );
+        }
+        commandEncoder.submit();
+        Reference.reachabilityFence(directOutputBuffer);
+        return PublicMojangPreviewPassSubmissionResult.submitted(
+                drawScaffold.drawCallsIssued(),
+                target.attachmentMetadata().javaOpaque(),
+                PublicMojangPreviewPassSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                "public Mojang sampled direct-light preview render pass submitted; payload: "
+                        + directOutputPayload.debugSummary()
+                        + "; upload: "
+                        + upload.summary()
+                        + "; draw scaffold: "
+                        + drawScaffold.summary()
+        );
+    }
+
+    private static PublicMojangPreviewPassSubmissionResult submitDiagnosticFallback(
+            CommandEncoder commandEncoder,
+            GpuTextureView colorView,
+            LucernaFramePassTarget target,
+            String fallbackReason
+    ) {
+        PublicMojangPreviewDrawScaffold drawScaffold;
+        try (RenderPass renderPass = commandEncoder.createRenderPass(
+                () -> "lucerna public diagnostic direct-light preview fallback draw pass",
+                colorView,
+                Optional.empty()
+        )) {
+            drawScaffold = PublicMojangPreviewDrawScaffolds.issueDiagnosticDirectLightPreviewDraw(renderPass);
+        }
+        commandEncoder.submit();
+        return PublicMojangPreviewPassSubmissionResult.submitted(
+                drawScaffold.drawCallsIssued(),
+                target.attachmentMetadata().javaOpaque(),
+                PublicMojangPreviewPassSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                fallbackReason + "; diagnostic fallback: " + drawScaffold.summary()
         );
     }
 
