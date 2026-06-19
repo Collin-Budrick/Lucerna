@@ -1,0 +1,11 @@
+{
+  "required": false,
+  "package": "net.lucerna.mixin.client",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "GameRendererMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

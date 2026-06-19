@@ -10,6 +10,7 @@ import net.lucerna.config.LucernaConfigManager;
 import net.lucerna.material.MaterialRegistry;
 import net.lucerna.material.extract.LucernaMaterialExtractionService;
 import net.lucerna.material.extract.MaterialTableRefreshResult;
+import net.lucerna.nativebridge.DirectLightingPreviewCompositeSubmissionResult;
 import net.lucerna.nativebridge.LucernaNativeBridge;
 import net.lucerna.render.GBufferDescriptor;
 import net.lucerna.render.gbuffer.GBufferWriteIntent;
@@ -30,6 +31,10 @@ import net.lucerna.render.lighting.gi.LowResDiffuseGiPlan;
 import net.lucerna.render.lighting.gi.LowResDiffuseGiPlanner;
 import net.lucerna.render.lighting.post.PostProcessingPipelinePlan;
 import net.lucerna.render.lighting.post.PostProcessingPlanBuilder;
+import net.lucerna.render.pass.LucernaFramePassRequest;
+import net.lucerna.render.pass.LucernaFramePassResult;
+import net.lucerna.render.pass.LucernaFramePassStatus;
+import net.lucerna.render.pass.LucernaFramePassTarget;
 import net.lucerna.render.voxel.VoxelRay;
 import net.lucerna.render.voxel.VoxelRayBudgetConfig;
 import net.lucerna.render.voxel.VoxelSectionSnapshotReference;
@@ -92,6 +97,9 @@ public final class LucernaController {
     private String lastLoggedFirstPassPlanKey = "";
     private String lastPreparedLightingDispatchKey = "";
     private String lastLoggedLightingDispatchKey = "";
+    private String lastLoggedDirectPreviewCompositeKey = "";
+    private String lastLoggedTickNoOpFrameKey = "";
+    private boolean renderThreadFrameHookObserved;
     private NativeDirectLightingUploadPacket pendingDirectLightingUpload;
     private long gBufferStagingGeneration;
     private long lightingDispatchGeneration;
@@ -156,8 +164,8 @@ public final class LucernaController {
             this.logSectionExtractionStatusIfChanged(sectionExtraction);
             this.logGBufferStagingStatusIfChanged(stagedBatch);
             this.logFirstPassPlanIfChanged(firstPassPlan);
-            this.logLightingDispatchStatusIfChanged(lightingDispatchPacket);
-            this.submitNoOpFrame(0.0F);
+        this.logLightingDispatchStatusIfChanged(lightingDispatchPacket);
+            this.submitTickFallbackFrame(0.0F);
         }
     }
 
@@ -220,6 +228,55 @@ public final class LucernaController {
 
     public LucernaFrameHooks frameHooks() {
         return this.frameHooks;
+    }
+
+    public LucernaFramePassResult attachDirectLightPreviewTarget(
+            LucernaFramePassTarget target,
+            float tickDelta
+    ) {
+        LucernaFramePassRequest skippedRequest = LucernaFramePassRequest.directLightPreviewComposite(
+                this.frameHooks.frameIndex(),
+                target,
+                0.35F,
+                0.35F
+        );
+        if (!this.initialized || !this.isRendererActive()) {
+            return LucernaFramePassResult.skipped(
+                    skippedRequest,
+                    LucernaFramePassStatus.skipped(
+                            skippedRequest.kind(),
+                            skippedRequest.frameIndex(),
+                            "Direct-light preview target skipped because Lucerna is not active."
+                    )
+            );
+        }
+
+        this.renderThreadFrameHookObserved = true;
+        var beginResult = this.frameHooks.beginFrame(this.backendStatus, tickDelta);
+        this.logFrameContextStatusIfChanged();
+        if (!beginResult.accepted()) {
+            return LucernaFramePassResult.skipped(
+                    skippedRequest,
+                    this.frameHooks.framePassStatus()
+            );
+        }
+
+        try {
+            this.frameHooks.renderLighting();
+            LucernaFramePassRequest request = LucernaFramePassRequest.directLightPreviewComposite(
+                    this.frameHooks.frameIndex(),
+                    target,
+                    0.35F,
+                    0.35F
+            );
+            DirectLightingPreviewCompositeSubmissionResult submission =
+                    this.nativeBridge.submitDirectLightingPreviewComposite(request);
+            this.logDirectPreviewCompositeStatusIfChanged(submission);
+            return this.frameHooks.attachFramePass(request);
+        } finally {
+            this.frameHooks.endFrame();
+            this.logFrameContextStatusIfChanged();
+        }
     }
 
     public FrameConstantsCapture frameConstantsCapture() {
@@ -850,6 +907,9 @@ public final class LucernaController {
         this.lastLoggedFirstPassPlanKey = "";
         this.lastPreparedLightingDispatchKey = "";
         this.lastLoggedLightingDispatchKey = "";
+        this.lastLoggedDirectPreviewCompositeKey = "";
+        this.lastLoggedTickNoOpFrameKey = "";
+        this.renderThreadFrameHookObserved = false;
         this.pendingDirectLightingUpload = null;
         this.gBufferStagingGeneration = 0L;
         this.lightingDispatchGeneration = 0L;
@@ -870,7 +930,12 @@ public final class LucernaController {
         );
     }
 
-    private void submitNoOpFrame(float tickDelta) {
+    private void submitTickFallbackFrame(float tickDelta) {
+        if (this.renderThreadFrameHookObserved) {
+            this.logTickNoOpFrameSkippedIfChanged();
+            return;
+        }
+
         var beginResult = this.frameHooks.beginFrame(this.backendStatus, tickDelta);
         this.logFrameContextStatusIfChanged();
         if (!beginResult.accepted()) {
@@ -880,6 +945,16 @@ public final class LucernaController {
         this.frameHooks.renderLighting();
         this.frameHooks.endFrame();
         this.logFrameContextStatusIfChanged();
+    }
+
+    private void logTickNoOpFrameSkippedIfChanged() {
+        String logKey = "render-thread-frame-hook-active";
+        if (logKey.equals(this.lastLoggedTickNoOpFrameKey)) {
+            return;
+        }
+
+        this.lastLoggedTickNoOpFrameKey = logKey;
+        Lucerna.LOGGER.info("Lucerna tick no-op frame skipped because render-thread frame hook is active.");
     }
 
     private void logFrameContextStatusIfChanged() {
@@ -900,6 +975,39 @@ public final class LucernaController {
                 acquisition.status(),
                 acquisition.source(),
                 acquisition.message()
+        );
+    }
+
+    private void logDirectPreviewCompositeStatusIfChanged(DirectLightingPreviewCompositeSubmissionResult result) {
+        if (result == null) {
+            return;
+        }
+
+        String logKey = result.submitted()
+                + "|"
+                + result.snapshotReady()
+                + "|"
+                + result.targetReady()
+                + "|"
+                + result.targetNativeWritable()
+                + "|"
+                + result.reason();
+        if (logKey.equals(this.lastLoggedDirectPreviewCompositeKey)) {
+            return;
+        }
+
+        this.lastLoggedDirectPreviewCompositeKey = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna direct-light preview composite: submitted={} frame={} snapshotReady={} targetReady={} hudPreserving={} nativeWritable={} strength={} alpha={} reason={}.",
+                result.submitted(),
+                result.frameIndex(),
+                result.snapshotReady(),
+                result.targetReady(),
+                result.targetHudPreserving(),
+                result.targetNativeWritable(),
+                result.strength(),
+                result.alpha(),
+                result.reason()
         );
     }
 

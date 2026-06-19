@@ -21,6 +21,12 @@
       "net.lucerna.compat.sodium.LucernaSodiumConfigEntrypoint"
     ]
   },
+  "mixins": [
+    {
+      "config": "lucerna.mixins.json",
+      "environment": "client"
+    }
+  ],
   "depends": {
     "fabricloader": ">=0.19.2",
     "fabric-api": "*",
