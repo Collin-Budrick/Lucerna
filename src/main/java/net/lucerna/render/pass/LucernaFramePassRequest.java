@@ -68,6 +68,24 @@ public record LucernaFramePassRequest(
         );
     }
 
+    public static LucernaFramePassRequest directLightPreviewComposite(
+            long frameIndex,
+            LucernaFramePassTarget target,
+            float strength,
+            float alpha
+    ) {
+        return new LucernaFramePassRequest(
+                LucernaFramePassKind.DIRECT_LIGHT_PREVIEW_COMPOSITE,
+                frameIndex,
+                target,
+                strength,
+                strength,
+                strength,
+                alpha,
+                "lucerna-direct-light-preview-composite"
+        );
+    }
+
     public boolean hasExplicitFrameIndex() {
         return this.frameIndex > 0L;
     }

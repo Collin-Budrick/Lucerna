@@ -315,7 +315,7 @@ public final class VulkanFrameLifecycleAdapter {
             this.framePassStatus = LucernaFramePassStatus.targetUnsafe(
                     normalizedRequest.kind(),
                     this.frameIndex,
-                    "Frame pass attachment skipped because the target was not marked safe for Lucerna."
+                    "Frame pass attachment skipped because the target was not marked as a HUD-preserving world color target."
             );
             return LucernaFramePassResult.skipped(normalizedRequest, this.framePassStatus);
         }
@@ -536,6 +536,7 @@ public final class VulkanFrameLifecycleAdapter {
 
     private FramePassIntent intentFor(LucernaFramePassKind kind) {
         return switch (kind) {
+            case DIRECT_LIGHT_PREVIEW_COMPOSITE -> FramePassIntent.DIRECT_LIGHT_PREVIEW_COMPOSITE_PASS;
             case FLAT_COMPOSITE -> FramePassIntent.FLAT_COMPOSITE_PASS;
             case NO_OP -> FramePassIntent.NO_OP_FRAME_ATTACHMENT_PASS;
         };

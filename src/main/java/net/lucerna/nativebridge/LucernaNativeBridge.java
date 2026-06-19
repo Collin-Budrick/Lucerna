@@ -61,6 +61,13 @@ public final class LucernaNativeBridge {
         );
     }
 
+    public synchronized DirectLightingCpuOutputSnapshot directLightingCpuOutputSnapshot() {
+        if (!this.loaded) {
+            return DirectLightingCpuOutputSnapshot.unavailable("native library not loaded");
+        }
+        return DirectLightingCpuOutputSnapshot.fromNativeStatus(this.queryNativeStatus());
+    }
+
     public synchronized void load() {
         if (this.loadAttempted) {
             return;
@@ -554,22 +561,18 @@ public final class LucernaNativeBridge {
     }
 
     private void logDirectLightingExecutionStatus() {
-        String nativeStatus = this.queryNativeStatus();
-        String directExecution = extractBlock(nativeStatus, "direct_execution={");
-        if (directExecution.isBlank()) {
+        DirectLightingCpuOutputSnapshot directOutput = this.directLightingCpuOutputSnapshot();
+        if (!directOutput.hasExecutionTelemetry()) {
             return;
         }
 
-        String dispatchGeneration = extractField(directExecution, "dispatch_generation");
-        String outputWrites = extractField(directExecution, "output_writes");
-        String resolves = extractField(directExecution, "resolves");
-        String key = dispatchGeneration
-                + "|" + extractField(directExecution, "candidate_count")
-                + "|" + extractField(directExecution, "output_write_recorded")
-                + "|" + extractField(directExecution, "resolve_recorded")
-                + "|" + extractField(directExecution, "ready")
-                + "|" + extractField(directExecution, "cpu_output_generated")
-                + "|" + extractField(directExecution, "output_checksum");
+        String key = directOutput.dispatchGeneration()
+                + "|" + directOutput.candidateCount()
+                + "|" + directOutput.outputWriteRecorded()
+                + "|" + directOutput.resolveRecorded()
+                + "|" + directOutput.ready()
+                + "|" + directOutput.cpuOutputGenerated()
+                + "|" + directOutput.outputChecksum();
         if (key.equals(this.lastLoggedDirectLightingExecutionKey)) {
             return;
         }
@@ -577,100 +580,24 @@ public final class LucernaNativeBridge {
         this.lastLoggedDirectLightingExecutionKey = key;
         Lucerna.LOGGER.info(
                 "Lucerna native direct lighting execution: dispatchGeneration={} candidates={} samples={} rays={} outputs={} outputWrites={} resolves={} outputWriteRecorded={} resolveRecorded={} ready={} cpuOutput={} cpuOutputSize={}x{} cpuOutputPixels={} cpuOutputEnergy={} cpuOutputChecksum={} reason={}.",
-                valueOrUnknown(dispatchGeneration),
-                valueOrUnknown(extractField(directExecution, "candidate_count")),
-                valueOrUnknown(extractField(directExecution, "sample_count")),
-                valueOrUnknown(extractField(directExecution, "ray_count")),
-                valueOrUnknown(extractField(directExecution, "output_count")),
-                valueOrUnknown(outputWrites),
-                valueOrUnknown(resolves),
-                booleanOrUnknown(extractField(directExecution, "output_write_recorded")),
-                booleanOrUnknown(extractField(directExecution, "resolve_recorded")),
-                booleanOrUnknown(extractField(directExecution, "ready")),
-                booleanOrUnknown(extractField(directExecution, "cpu_output_generated")),
-                valueOrUnknown(extractField(directExecution, "output_width")),
-                valueOrUnknown(extractField(directExecution, "output_height")),
-                valueOrUnknown(extractField(directExecution, "output_pixels")),
-                valueOrUnknown(extractField(directExecution, "output_energy")),
-                valueOrUnknown(extractField(directExecution, "output_checksum")),
-                valueOrUnknown(extractField(directExecution, "readiness_reason"))
+                directOutput.dispatchGeneration(),
+                directOutput.candidateCount(),
+                directOutput.sampleCount(),
+                directOutput.rayCount(),
+                directOutput.outputCount(),
+                directOutput.outputWrites(),
+                directOutput.resolves(),
+                directOutput.outputWriteRecorded(),
+                directOutput.resolveRecorded(),
+                directOutput.ready(),
+                directOutput.cpuOutputGenerated(),
+                directOutput.outputWidth(),
+                directOutput.outputHeight(),
+                directOutput.outputPixels(),
+                directOutput.outputEnergy(),
+                directOutput.outputChecksum(),
+                directOutput.readinessReason()
         );
-    }
-
-    private static String extractBlock(String source, String marker) {
-        if (source == null || source.isBlank()) {
-            return "";
-        }
-        int markerStart = source.indexOf(marker);
-        if (markerStart < 0) {
-            return "";
-        }
-        int contentStart = markerStart + marker.length();
-        int depth = 1;
-        boolean quoted = false;
-        for (int index = contentStart; index < source.length(); index++) {
-            char character = source.charAt(index);
-            if (quoted) {
-                if (character == '"') {
-                    quoted = false;
-                }
-                continue;
-            }
-            if (character == '"') {
-                quoted = true;
-                continue;
-            }
-            if (character == '{') {
-                depth++;
-            } else if (character == '}') {
-                depth--;
-                if (depth == 0) {
-                    return source.substring(contentStart, index);
-                }
-            }
-        }
-        return "";
-    }
-
-    private static String extractField(String block, String fieldName) {
-        if (block == null || block.isBlank()) {
-            return "";
-        }
-        String marker = fieldName + "=";
-        int markerStart = block.indexOf(marker);
-        if (markerStart < 0) {
-            return "";
-        }
-        int valueStart = markerStart + marker.length();
-        boolean quoted = valueStart < block.length() && block.charAt(valueStart) == '"';
-        int contentStart = quoted ? valueStart + 1 : valueStart;
-        for (int index = contentStart; index < block.length(); index++) {
-            char character = block.charAt(index);
-            if (quoted && character == '"') {
-                return block.substring(contentStart, index);
-            }
-            if (!quoted && (character == ',' || character == '}')) {
-                return block.substring(contentStart, index).trim();
-            }
-        }
-        return block.substring(contentStart).trim();
-    }
-
-    private static String valueOrUnknown(String value) {
-        return value == null || value.isBlank() ? "?" : value;
-    }
-
-    private static String booleanOrUnknown(String value) {
-        if (value == null || value.isBlank()) {
-            return "?";
-        }
-        if ("1".equals(value) || "true".equalsIgnoreCase(value)) {
-            return "true";
-        }
-        if ("0".equals(value) || "false".equalsIgnoreCase(value)) {
-            return "false";
-        }
-        return value;
     }
 
     @FunctionalInterface

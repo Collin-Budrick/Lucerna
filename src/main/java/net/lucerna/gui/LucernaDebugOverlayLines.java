@@ -40,6 +40,10 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Frame constants: " + snapshot.frameConstantsLabel()
                 + " | required=" + yesNo(snapshot.frameConstantsRequiredAvailable())
                 + " | fresh=" + yesNo(snapshot.frameConstantsFresh())));
+        String directSummary = roundFiveDirectSummary(snapshot);
+        if (!directSummary.isBlank()) {
+            lines.add(Component.literal("Round 5 direct: " + directSummary));
+        }
         return lines;
     }
 
@@ -205,6 +209,9 @@ public final class LucernaDebugOverlayLines {
                 + " gen=" + valueOrUnknown(directStage.payloadGeneration())
                 + " frame=" + valueOrUnknown(directStage.payloadFrameIndex())
                 + " range=" + valueOrUnknown(directStage.payloadGenerationRange())));
+        lines.add(Component.literal("Direct R5 payload accepted: " + yesNoUnknown(directStage.payloadAccepted())
+                + " | validated=" + yesNoUnknown(directStage.payloadValidated())
+                + " | hasWork=" + yesNoUnknown(directStage.payloadHasDirectWork())));
         lines.add(Component.literal("Direct payload counts: celestial=" + valueOrUnknown(directStage.celestialCount())
                 + " emissive=" + valueOrUnknown(directStage.emissiveCount())
                 + " shadow=" + valueOrUnknown(directStage.shadowCandidateCount())
@@ -220,6 +227,9 @@ public final class LucernaDebugOverlayLines {
                 + " pixels=" + valueOrUnknown(directStage.outputPixelCount())
                 + " energy=" + valueOrUnknown(directStage.outputEnergy())
                 + " checksum=" + valueOrUnknown(directStage.outputChecksum())));
+        lines.add(Component.literal("Direct R5 CPU output generated: " + yesNoUnknown(directStage.cpuOutputGenerated())
+                + " | evidence=" + directOutputEvidenceLabel(directStage)));
+        lines.add(Component.literal("Direct R5 visible composite: not attached yet; CPU output telemetry only"));
         lines.add(Component.literal("Direct native: attempts=" + detailOrUnknown(directStage, "attempts")
                 + " submitted=" + detailOrUnknown(directStage, "submitted")
                 + " skipped=" + detailOrUnknown(directStage, "skipped")
@@ -227,6 +237,23 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Direct flags: " + directFlagLabel(directStage)));
         String reason = directStage.readinessReason().isBlank() ? lightingDispatch.message() : directStage.readinessReason();
         lines.add(Component.literal("Direct readiness: " + shorten(reason, 96)));
+    }
+
+    private static String roundFiveDirectSummary(LucernaStatusSnapshot snapshot) {
+        LightingDispatchTelemetryStatus lightingDispatch = snapshot.lightingDispatchStatus();
+        if (!lightingDispatch.hasLightingDispatchStatus()) {
+            return "";
+        }
+
+        LightingDispatchStageTelemetryStatus directStage = lightingDispatch.stages().get("direct_lighting");
+        if (directStage == null) {
+            return "";
+        }
+
+        return "payloadAccepted=" + yesNoUnknown(directStage.payloadAccepted())
+                + " cpuOutput=" + yesNoUnknown(directStage.cpuOutputGenerated())
+                + " evidence=" + directOutputEvidenceLabel(directStage)
+                + " visibleComposite=not_attached";
     }
 
     private static void addNativePassStateLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
@@ -300,6 +327,25 @@ public final class LucernaDebugOverlayLines {
         fields.add("hasWork=" + yesNoUnknown(stage.payloadHasDirectWork()));
         fields.add("shadowReady=" + yesNoUnknown(stage.payloadReadyForShadowTracing()));
         return String.join(" ", fields);
+    }
+
+    private static String directOutputEvidenceLabel(LightingDispatchStageTelemetryStatus stage) {
+        return "energy=" + evidenceValueLabel(stage.outputEnergy())
+                + " checksum=" + evidenceValueLabel(stage.outputChecksum());
+    }
+
+    private static String evidenceValueLabel(String value) {
+        if (value == null || value.isBlank()) {
+            return "missing";
+        }
+        return "present(" + shorten(value, 24) + ")";
+    }
+
+    private static String evidenceValueLabel(Long value) {
+        if (value == null) {
+            return "missing";
+        }
+        return "present(" + value + ")";
     }
 
     private static String countOrFallback(Long count, Long fallback) {
