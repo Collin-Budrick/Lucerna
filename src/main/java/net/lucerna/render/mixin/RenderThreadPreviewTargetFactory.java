@@ -13,6 +13,7 @@ import net.lucerna.render.preview.DirectLightPreviewTextureUploader;
 import net.lucerna.render.preview.PublicMojangFinalCompositeSubmissionResult;
 import net.lucerna.render.preview.PublicMojangPreviewDrawScaffold;
 import net.lucerna.render.preview.PublicMojangPreviewDrawScaffolds;
+import net.lucerna.render.preview.Round6DiffuseGiPreviewCompositeState;
 import net.lucerna.render.pass.LucernaFrameAttachmentMetadata;
 import net.lucerna.render.pass.LucernaJavaOpaqueRenderObjects;
 import net.lucerna.render.pass.LucernaFramePassPhase;
@@ -33,6 +34,11 @@ public final class RenderThreadPreviewTargetFactory {
             new DirectLightPreviewTextureUploader(
                     "lucerna_direct_light_final_composite_rgba",
                     "direct-light final composite"
+            );
+    private static final DirectLightPreviewTextureUploader ROUND6_DIFFUSE_GI_FINAL_COMPOSITE_TEXTURE_UPLOADER =
+            new DirectLightPreviewTextureUploader(
+                    "lucerna_round6_diffuse_gi_preview_rgba",
+                    "Round 6 diffuse GI final composite preview"
             );
 
     private RenderThreadPreviewTargetFactory() {
@@ -395,6 +401,121 @@ public final class RenderThreadPreviewTargetFactory {
                 PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
                 "public Mojang final composite direct-light render pass submitted; payload: "
                         + directOutputPayload.debugSummary()
+                        + "; upload: "
+                        + upload.summary()
+                        + "; draw scaffold: "
+                        + drawScaffold.summary()
+        );
+    }
+
+    public static PublicMojangFinalCompositeSubmissionResult submitRound6DiffuseGiFinalCompositePublicDraw(
+            LucernaFramePassTarget target,
+            DirectLightingCpuOutputPayload temporarySourcePayload,
+            Round6DiffuseGiPreviewCompositeState previewState
+    ) {
+        if (previewState == null) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target != null && target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.UNKNOWN,
+                    "public Mojang Round 6 diffuse GI final composite skipped because GI preview readiness state is unavailable"
+            );
+        }
+        if (target == null || !target.available()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    false,
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.TARGET_MISSING,
+                    "public Mojang Round 6 diffuse GI final composite skipped because no frame target is available"
+            );
+        }
+        if (!target.safeForAttachment()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang Round 6 diffuse GI final composite skipped because the target is not HUD-safe"
+            );
+        }
+        if (!previewState.readyForRound6PreviewSource()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang Round 6 diffuse GI final composite skipped because GI/cache readiness is incomplete: "
+                            + previewState.summary()
+            );
+        }
+        if (!(target.commandEncoder() instanceof CommandEncoder commandEncoder)
+                || !(target.colorTarget() instanceof GpuTextureView colorView)) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    target.attachmentMetadata().javaOpaque()
+                            ? PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT
+                            : PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang Round 6 diffuse GI final composite skipped because command encoder or color view is unavailable"
+            );
+        }
+        if (temporarySourcePayload == null) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang Round 6 diffuse GI final composite skipped because temporary RGBA8 source payload is unavailable"
+            );
+        }
+        if (!temporarySourcePayload.readyForPreviewDraw()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang Round 6 diffuse GI final composite skipped because temporary RGBA8 source payload is not displayable: "
+                            + temporarySourcePayload.debugSummary()
+            );
+        }
+
+        ByteBuffer sourceBuffer = temporarySourcePayload.copyToByteBuffer();
+        DirectLightPreviewTextureUploadResult upload = ROUND6_DIFFUSE_GI_FINAL_COMPOSITE_TEXTURE_UPLOADER.upload(
+                RenderSystem.getDevice(),
+                commandEncoder,
+                sourceBuffer,
+                temporarySourcePayload.width(),
+                temporarySourcePayload.height()
+        );
+        if (!upload.availableForDraw()) {
+            Reference.reachabilityFence(sourceBuffer);
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang Round 6 diffuse GI final composite skipped because temporary texture upload was unavailable: "
+                            + upload.summary()
+            );
+        }
+
+        PublicMojangPreviewDrawScaffold drawScaffold;
+        try (RenderPass renderPass = commandEncoder.createRenderPass(
+                () -> "lucerna public Round 6 diffuse GI final composite preview draw pass",
+                colorView,
+                Optional.empty()
+        )) {
+            drawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenRound6DiffuseGiFinalCompositeDraw(
+                    renderPass,
+                    upload.textureView(),
+                    upload.sampler()
+            );
+        }
+        commandEncoder.submit();
+        Reference.reachabilityFence(sourceBuffer);
+        return PublicMojangFinalCompositeSubmissionResult.submitted(
+                drawScaffold.drawCallsIssued(),
+                target.attachmentMetadata().javaOpaque(),
+                PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
+                "public Mojang Round 6 diffuse GI final composite preview render pass submitted; readiness: "
+                        + previewState.summary()
+                        + "; temporary source payload: "
+                        + temporarySourcePayload.debugSummary()
                         + "; upload: "
                         + upload.summary()
                         + "; draw scaffold: "

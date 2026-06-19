@@ -47,6 +47,7 @@ import net.lucerna.render.pass.LucernaFramePassResult;
 import net.lucerna.render.pass.LucernaFramePassStatus;
 import net.lucerna.render.pass.LucernaFramePassTarget;
 import net.lucerna.render.preview.PublicMojangFinalCompositeSubmissionResult;
+import net.lucerna.render.preview.Round6DiffuseGiPreviewCompositeState;
 import net.lucerna.render.voxel.VoxelRay;
 import net.lucerna.render.voxel.VoxelRayBudgetConfig;
 import net.lucerna.render.voxel.VoxelSectionSnapshotReference;
@@ -115,9 +116,12 @@ public final class LucernaController {
     private String lastLoggedDirectPreviewCompositeKey = "";
     private String lastLoggedPublicMojangPreviewPassKey = "";
     private String lastLoggedPublicMojangFinalCompositeKey = "";
+    private String lastLoggedRound6DiffuseGiPreviewKey = "";
     private String lastLoggedTickNoOpFrameKey = "";
     private boolean renderThreadFrameHookObserved;
     private NativeDirectLightingUploadPacket pendingDirectLightingUpload;
+    private Round6DiffuseGiPreviewCompositeState round6DiffuseGiPreviewCompositeState =
+            Round6DiffuseGiPreviewCompositeState.unavailable("Round 6 diffuse GI dispatch has not been prepared yet");
     private long gBufferStagingGeneration;
     private long lightingDispatchGeneration;
     private FrameConstantsCapture frameConstantsCapture = FrameConstantsCapture.unavailable(
@@ -291,14 +295,23 @@ public final class LucernaController {
                     this.nativeBridge.submitDirectLightingPreviewComposite(request);
             this.logDirectPreviewCompositeStatusIfChanged(submission);
             DirectLightingCpuOutputPayload directOutputPayload = this.nativeBridge.directLightingCpuOutputPayload();
+            Round6DiffuseGiPreviewCompositeState giPreviewState = this.round6DiffuseGiPreviewCompositeState;
+            this.logRound6DiffuseGiPreviewStatusIfChanged(giPreviewState, directOutputPayload);
             LucernaFramePassRequest finalCompositeRequest = LucernaFramePassRequest.finalWorldColorComposite(
                     this.frameHooks.frameIndex(),
                     target,
                     0.35F,
                     0.35F
             );
-            PublicMojangFinalCompositeSubmissionResult finalCompositeSubmission =
-                    RenderThreadPreviewTargetFactory.submitFinalCompositePublicDraw(target, directOutputPayload);
+            PublicMojangFinalCompositeSubmissionResult finalCompositeSubmission = giPreviewState.readyForFinalComposite(
+                    directOutputPayload
+            )
+                    ? RenderThreadPreviewTargetFactory.submitRound6DiffuseGiFinalCompositePublicDraw(
+                            target,
+                            directOutputPayload,
+                            giPreviewState
+                    )
+                    : RenderThreadPreviewTargetFactory.submitFinalCompositePublicDraw(target, directOutputPayload);
             this.logPublicMojangFinalCompositeStatusIfChanged(finalCompositeSubmission);
             return this.frameHooks.attachFramePass(finalCompositeRequest);
         } finally {
@@ -561,6 +574,12 @@ public final class LucernaController {
                 && (diffuseGiUpload.cacheUsable()
                 || diffuseGiUpload.surfaceRecordCount() > 0
                 || diffuseGiUpload.radianceRecordCount() > 0);
+        this.round6DiffuseGiPreviewCompositeState = Round6DiffuseGiPreviewCompositeState.from(
+                diffuseGiEnabled,
+                cacheEnabled,
+                cacheRecordCount,
+                diffuseGiUpload
+        );
 
         String dispatchKey = width
                 + "x"
@@ -1044,9 +1063,12 @@ public final class LucernaController {
         this.lastLoggedDirectPreviewCompositeKey = "";
         this.lastLoggedPublicMojangPreviewPassKey = "";
         this.lastLoggedPublicMojangFinalCompositeKey = "";
+        this.lastLoggedRound6DiffuseGiPreviewKey = "";
         this.lastLoggedTickNoOpFrameKey = "";
         this.renderThreadFrameHookObserved = false;
         this.pendingDirectLightingUpload = null;
+        this.round6DiffuseGiPreviewCompositeState =
+                Round6DiffuseGiPreviewCompositeState.unavailable("Round 6 diffuse GI planning was reset");
         this.gBufferStagingGeneration = 0L;
         this.lightingDispatchGeneration = 0L;
         this.sparseRadianceCache.clear();
@@ -1209,6 +1231,63 @@ public final class LucernaController {
                 result.javaOpaqueRenderObjectsPresent(),
                 result.targetStatus(),
                 result.reason()
+        );
+    }
+
+    private void logRound6DiffuseGiPreviewStatusIfChanged(
+            Round6DiffuseGiPreviewCompositeState state,
+            DirectLightingCpuOutputPayload sourcePayload
+    ) {
+        if (state == null) {
+            return;
+        }
+
+        boolean sourceReady = sourcePayload != null && sourcePayload.readyForPreviewDraw();
+        String readinessReason = state.finalCompositeReadinessReason(sourcePayload);
+        String logKey = state.diffuseGiEnabled()
+                + "|"
+                + state.cacheEnabled()
+                + "|"
+                + state.generation()
+                + "|"
+                + state.gridWidth()
+                + "x"
+                + state.gridHeight()
+                + "|"
+                + state.rayCount()
+                + "|"
+                + state.cacheReadCount()
+                + "|"
+                + state.cacheWriteCount()
+                + "|"
+                + state.cacheRecordCount()
+                + "|"
+                + state.sourceDirectLightingReady()
+                + "|"
+                + sourceReady
+                + "|"
+                + readinessReason;
+        if (logKey.equals(this.lastLoggedRound6DiffuseGiPreviewKey)) {
+            return;
+        }
+
+        this.lastLoggedRound6DiffuseGiPreviewKey = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna Round 6 diffuse GI preview composite: ready={} diffuseGiEnabled={} cacheEnabled={} generation={} grid={}x{} samples={} rays={} cacheReads={} cacheWrites={} cacheRecords={} sourceDirectReady={} temporarySourceReady={} reason={}.",
+                state.readyForFinalComposite(sourcePayload),
+                state.diffuseGiEnabled(),
+                state.cacheEnabled(),
+                state.generation(),
+                state.gridWidth(),
+                state.gridHeight(),
+                state.samplesPerCell(),
+                state.rayCount(),
+                state.cacheReadCount(),
+                state.cacheWriteCount(),
+                state.cacheRecordCount(),
+                state.sourceDirectLightingReady(),
+                sourceReady,
+                readinessReason
         );
     }
 

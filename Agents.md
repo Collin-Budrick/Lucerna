@@ -2,7 +2,7 @@
 
 ## Progress Audit
 
-Current controller estimate: **about 98% complete against this file**.
+Current controller estimate: **about 98.5% complete against this file**.
 
 This percentage is conservative:
 - Rounds 0-3 are mostly implemented and controller-validated.
@@ -11,7 +11,7 @@ This percentage is conservative:
 - Latest controller work also adds a HUD-safe, explicitly labeled Round 5 visual-proof marker gated by the same preview-ready native direct-light CPU payload used by the sampled draw path. This proves screenshot-visible native direct-light readiness, but it is not a substitute for real surface lighting.
 - Latest controller work moves the final world-color composite hook from `GameRenderer.renderLevel` tail to immediately after `LevelRenderer.render(...)`, removes the older sampled public preview draw from that hook, adds final-composite frame/pass intent contracts, and validates final-composite public Mojang draw submission before hand/HUD composition. Screenshot delta still shows no focused wall-region brightening, so real surface lighting remains open.
 - Latest controller work restores the launchable native DLL path after the unvalidated native spatialization generated an Application Control-blocked DLL, then moves the Round 5 visible proof into a final-composite-only focus-window shader. Sodium + Iris + Vulkan now loads the native DLL, submits the focus-window final composite, and screenshot delta proves visible brightening in the focused wall region while preserving the HUD.
-- Current Round 6 preparation has controller-validated Java/cache scaffolding for GI source summaries, native diffuse-GI upload metadata, dirty-region listener hooks, sparse voxel radiance cache records/confidence/invalidation/debug status, Round 6 debug overlay presentation, and native Round 6 dispatch telemetry. Sodium + Iris + Vulkan launch validation proves low-res GI dispatch metadata can become enabled with nonzero rays/cache reads, and a separate cache proof now validates nonzero cache records/writes. Visible GI remains open.
+- Current Round 6 preparation has controller-validated Java/cache scaffolding for GI source summaries, native diffuse-GI upload metadata, dirty-region listener hooks, sparse voxel radiance cache records/confidence/invalidation/debug status, Round 6 debug overlay presentation, native Round 6 dispatch telemetry, a bounded native diffuse-GI visible-signal telemetry marker, a GI-labeled final-composite preview path, and a screenshot-delta proof for a Round 6 GI-gated preview. Sodium + Iris + Vulkan launch validation proves low-res GI dispatch metadata can become enabled with nonzero rays/cache reads, a separate cache proof validates nonzero cache records/writes, and the GI preview path produces a focused screenshot difference. True native low-res GI output/tracing remains open because the current visible preview still uses the direct-light RGBA payload as its temporary source.
 - The remaining work is the hardest part: turning Phase 5 metadata/planning into visible direct light, low-res GI, denoise, composite behavior, and richer debug telemetry.
 
 Legend:
@@ -301,6 +301,10 @@ Status:
 
 This does not prove screenshot-visible low-resolution GI output, visible indirect lighting, or screenshot-visible GI debug output.
 
+~~Controller launch/screenshot validation now proves a bounded Round 6 GI-gated final-composite preview path can produce a focused visible image delta with enabled diffuse-GI/cache metadata and a submitted `round6-diffuse-gi-focus-window-additive` draw.~~ **DONE/VALIDATED as preview-only in `run/validation-logs/latest-round6-visible-gi-enabled-20260619-103414.log`, `run/validation-screenshots/round6-visible-gi-enabled-20260619-103414-Enabled.png`, `run/validation-screenshots/round6-visible-gi-baseline-20260619-103615-Baseline.png`, `run/validation-screenshots/round6-visible-gi-debug-20260619-103655-Debug.png`, and `run/validation-logs/round6-visible-gi-proof-20260619-103414.json`**
+
+This is not yet real native low-resolution GI lighting. The visible preview is explicitly gated by Round 6 diffuse-GI/cache metadata but uses the current direct-light RGBA payload as the temporary visible source until a native GI output buffer is exposed.
+
 Validation by controller:
 
 Build and launch with Sodium Vulkan active.
@@ -328,6 +332,8 @@ no invalid descriptor/native errors.
 Visible-GI proof is separate from cache-write proof:
 
 Controller must keep the log-only cache record/write evidence in a separate artifact from screenshot delta evidence. Nonzero cache records or `cache_writes` prove cache activity only; they do not prove visible diffuse GI. A Round 6 visible-GI pass still needs baseline/enabled screenshots, a focused image-delta report for the lit surface or cave region, and a debug GI/cache screenshot from the same scene.
+
+Controller-visible GI proof can use `scripts/Assert-LucernaRound6VisibleGiProof.ps1` to combine baseline/enabled focused screenshot delta, optional debug screenshot presence, and optional Round 6 GI dispatch log markers into one JSON report. This helper supports validation capture only; it does not replace controller-run Minecraft launch/screenshots and does not by itself mark visible GI validated.
 Agent T: First Sparse Voxel Radiance Cache
 
 Owns:
@@ -369,17 +375,18 @@ Use a controller-captured `run/validation-logs/*.log` from the same launch and e
 Round 6 Acceptance Criteria
 ~~Java GI source-summary and sparse radiance-cache scaffolding exists and survives build/native staging plus Sodium + Iris + Vulkan launch.~~ **DONE/VALIDATED**
 ~~Low-res GI dispatch metadata becomes enabled with nonzero rays/cache reads.~~ **DONE/VALIDATED**
-Low-res GI visibly affects the scene. **OPEN**
+Low-res GI visibly affects the scene. **PARTIAL/PREVIEW-VALIDATED**
 ~~Radiance cache exists and produces nonzero records/writes under controller-run gameplay.~~ **DONE/VALIDATED for log-only cache-write proof**
 Dirty block/emissive changes affect cache state in validated runtime logs/screenshots. **PARTIAL/LOG-VALIDATED**
-Debug overlay can show GI/cache state. **OPEN**
-Screenshots demonstrate visible GI difference. **OPEN**
+Debug overlay can show GI/cache state. **PARTIAL/PREVIEW DEBUG SCREENSHOT VALIDATED**
+Screenshots demonstrate visible GI difference. **PARTIAL/PREVIEW-VALIDATED**
 ~~Logs validate dispatch, dirty-region invalidation telemetry, cache records, and cache writes.~~ **DONE/VALIDATED**
 
 Round 6 evidence split:
 
 - ~~Cache record/write evidence: log-only, pass/fail, based on nonzero sparse/cache records plus nonzero cache writes in the Round 6 dispatch/cache telemetry.~~ **DONE/VALIDATED**
-- Visible-GI evidence: screenshot-based, pass/fail, based on baseline/enabled/debug captures and objective region delta for the target surface or cave area. This remains open until screenshots show indirect-light output.
+- ~~Visible-GI preview evidence: screenshot-based, pass/fail, based on baseline/enabled/debug captures and objective region delta for the target surface or cave area.~~ **DONE/VALIDATED for the GI-gated preview path in `run/validation-logs/round6-visible-gi-proof-20260619-103414.json`**
+- Real visible low-res GI evidence remains open until screenshots show native diffuse-GI output rather than the temporary direct-light RGBA source.
 - Combined Round 6 acceptance: only mark Round 6 GI/cache criteria **DONE/VALIDATED** after both evidence tracks pass in controller-run validation.
 Round 7: Denoise and Composite Path
 Goal
@@ -845,6 +852,7 @@ Latest strong validation evidence:
   - ~~Java-side Round 6 GI source-summary, native diffuse-GI upload metadata, dirty-region listener, sparse radiance-cache scaffolding, Round 6 overlay presentation, native Round 6 dispatch telemetry, and controller Round 6 dispatch/cache logs compile and launch under Sodium + Iris + Vulkan.~~ **DONE/VALIDATED in `run/validation-logs/latest-round6-gi-cache-partial-sodium-iris-vulkan-20260619-094433.log`**
   - ~~Low-res GI dispatch metadata becomes enabled with `diffuse_gi={{enabled=true,size=427x240,samples=2,rays=409920,cache_reads=14150,...}}`.~~ **DONE/VALIDATED in `run/validation-logs/latest-round6-gi-cache-partial-sodium-iris-vulkan-20260619-094433.log`**
   - ~~Sparse cache dirty-region telemetry, nonzero records, and nonzero cache writes are validated with `max.cacheRecords=128`, `max.cacheWrites=256`, and `max.cacheReads=7564`.~~ **DONE/VALIDATED in `run/validation-logs/latest-round6-cache-stage-sodium-iris-vulkan-20260619-095852.log` and `run/validation-logs/round6-cache-stage-proof-20260619-095852.json`**
+  - ~~Round 6 GI-gated final-composite preview is screenshot-validated with focused region delta `changedPixelPercent=57.5159`, `brighterPixelPercent=58.1384`, and `meanSignedLuma=8.8609`, plus `round6-diffuse-gi-focus-window-additive` draw submission.~~ **DONE/VALIDATED as preview-only in `run/validation-logs/round6-visible-gi-proof-20260619-103414.json` and `run/validation-logs/latest-round6-visible-gi-enabled-20260619-103414.log`**
   - Low-res GI, denoise, physically correct final surface projection, and full final composite remain open.
 
 ## Assumptions

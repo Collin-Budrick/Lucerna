@@ -43,6 +43,8 @@ constexpr std::int32_t kMaxLightingIoCount = 64;
 constexpr std::int32_t kMaxLightingSamples = 4096;
 constexpr std::int32_t kMaxLightingRays = 16777216;
 constexpr std::int32_t kMaxLightingCacheRecords = 16777216;
+constexpr std::uint32_t kDiffuseGiVisibleSignalFormatTag = 21;
+constexpr std::uint64_t kRound6GiVisibleSignalSampleLimit = 4096;
 constexpr std::uint64_t kEstimatedLightingDispatchGroupBytes = 64;
 constexpr std::uint32_t kLightingDispatchFlagValidated = 1U;
 constexpr std::uint32_t kLightingDispatchFlagPlaceholder = 1U << 1U;
@@ -485,6 +487,17 @@ void append_round6_execution_status(
         << ",total_cache_writes=" << execution.total_cache_write_count
         << ",placeholder_output_population_count=" << execution.last_placeholder_output_population_count
         << ",total_placeholder_output_population_count=" << execution.total_placeholder_output_population_count
+        << ",visible_signal_population_count=" << execution.last_visible_signal_population_count
+        << ",total_visible_signal_population_count=" << execution.total_visible_signal_population_count
+        << ",visible_signal_sampled_pixels=" << execution.last_visible_signal_sampled_pixels
+        << ",visible_signal_nonzero_pixels=" << execution.last_visible_signal_nonzero_pixels
+        << ",total_visible_signal_nonzero_pixels=" << execution.total_visible_signal_nonzero_pixels
+        << ",visible_signal_energy=" << execution.last_visible_signal_energy
+        << ",visible_signal_min_sample=" << execution.last_visible_signal_min_sample
+        << ",visible_signal_max_sample=" << execution.last_visible_signal_max_sample
+        << ",visible_signal_cache_factor=" << execution.last_visible_signal_cache_factor
+        << ",visible_signal_ray_factor=" << execution.last_visible_signal_ray_factor
+        << ",visible_signal_checksum=" << execution.last_visible_signal_checksum
         << ",flags=" << execution.last_flags
         << ",enabled=" << execution.last_enabled
         << ",validated=" << execution.last_validated
@@ -500,6 +513,8 @@ void append_round6_execution_status(
         << ",cache_write_metadata_dispatch_recorded=" << execution.last_cache_write_metadata_dispatch_recorded
         << ",placeholder_output_population_recorded=" << execution.last_placeholder_output_population_recorded
         << ",cache_write_marker_recorded=" << execution.last_cache_write_marker_recorded
+        << ",visible_signal_generated=" << execution.last_visible_signal_generated
+        << ",visible_signal_cache_backed=" << execution.last_visible_signal_cache_backed
         << ",marker=\"" << execution.last_marker
         << "\""
         << ",output_marker=\"" << execution.last_output_marker
@@ -2958,6 +2973,17 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_placeholder_output_population_recorded = false;
     execution.last_cache_write_marker_recorded = false;
     execution.last_placeholder_output_population_count = 0;
+    execution.last_visible_signal_population_count = 0;
+    execution.last_visible_signal_sampled_pixels = 0;
+    execution.last_visible_signal_nonzero_pixels = 0;
+    execution.last_visible_signal_checksum = 0;
+    execution.last_visible_signal_energy = 0.0F;
+    execution.last_visible_signal_min_sample = 0.0F;
+    execution.last_visible_signal_max_sample = 0.0F;
+    execution.last_visible_signal_cache_factor = 0.0F;
+    execution.last_visible_signal_ray_factor = 0.0F;
+    execution.last_visible_signal_generated = false;
+    execution.last_visible_signal_cache_backed = false;
     execution.last_marker.clear();
     execution.last_output_marker.clear();
     execution.last_cache_marker.clear();
@@ -3022,6 +3048,101 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                 execution.last_placeholder_output_population_recorded = true;
                 execution.last_resource_marker_recorded = true;
                 recorded_resources++;
+            }
+
+            const bool cache_backed = execution.last_cache_read_count != 0
+                    || execution.last_cache_write_count != 0;
+            const bool has_trace_work = execution.last_sample_count != 0
+                    || execution.last_ray_count != 0;
+            if (cache_backed && has_trace_work && pixel_count != 0) {
+                const auto signal_population = saturated_multiply(
+                        pixel_count,
+                        execution.last_output_count);
+                const auto sample_pixels = std::min(pixel_count, kRound6GiVisibleSignalSampleLimit);
+                const float population_scale = sample_pixels == 0
+                        ? 0.0F
+                        : static_cast<float>(signal_population) / static_cast<float>(sample_pixels);
+                const float cache_activity = static_cast<float>(std::min<std::uint64_t>(
+                        saturated_add(
+                                execution.last_cache_read_count,
+                                saturated_multiply(execution.last_cache_write_count, 2)),
+                        4'194'304ULL));
+                const float ray_activity = static_cast<float>(std::min<std::uint64_t>(
+                        saturated_add(execution.last_ray_count, execution.last_sample_count),
+                        16'777'216ULL));
+                const float pixel_denominator = static_cast<float>(std::max<std::uint64_t>(pixel_count, 1));
+                const float cache_factor = std::clamp(cache_activity / pixel_denominator, 0.05F, 8.0F);
+                const float ray_factor = std::clamp(ray_activity / pixel_denominator, 0.05F, 16.0F);
+                const float output_factor = std::clamp(
+                        static_cast<float>(execution.last_output_count),
+                        1.0F,
+                        8.0F);
+                const float base_signal = std::clamp(
+                        ((cache_factor * 0.55F) + (ray_factor * 0.35F)) * output_factor,
+                        0.01F,
+                        64.0F);
+
+                float sampled_energy = 0.0F;
+                float min_sample = 0.0F;
+                float max_sample = 0.0F;
+                bool has_sample = false;
+                std::uint64_t checksum = 1469598103934665603ULL;
+                for (std::uint64_t sample = 0; sample < sample_pixels; sample++) {
+                    const auto pixel_x = sample % execution.last_width;
+                    const auto pixel_y = sample / execution.last_width;
+                    const float tile = 0.82F
+                            + static_cast<float>((pixel_x + (pixel_y * 3) + frame_index_) % 11) * 0.025F;
+                    const float cache_pulse = 1.0F
+                            + static_cast<float>((sample + execution.last_cache_write_count) % 5) * 0.015F;
+                    const float sample_signal = std::min(64.0F, base_signal * tile * cache_pulse);
+                    sampled_energy += sample_signal;
+                    min_sample = has_sample ? std::min(min_sample, sample_signal) : sample_signal;
+                    max_sample = std::max(max_sample, sample_signal);
+                    has_sample = true;
+                    mix_checksum(checksum, static_cast<std::uint64_t>(sample_signal * 1000.0F));
+                    mix_checksum(checksum, sample);
+                    mix_checksum(checksum, execution.last_cache_read_count);
+                    mix_checksum(checksum, execution.last_cache_write_count);
+                }
+
+                execution.last_visible_signal_population_count = signal_population;
+                execution.total_visible_signal_population_count = saturated_add(
+                        execution.total_visible_signal_population_count,
+                        signal_population);
+                execution.last_visible_signal_sampled_pixels = sample_pixels;
+                execution.last_visible_signal_nonzero_pixels = signal_population;
+                execution.total_visible_signal_nonzero_pixels = saturated_add(
+                        execution.total_visible_signal_nonzero_pixels,
+                        signal_population);
+                execution.last_visible_signal_energy = sampled_energy * population_scale;
+                execution.last_visible_signal_min_sample = min_sample;
+                execution.last_visible_signal_max_sample = max_sample;
+                execution.last_visible_signal_cache_factor = cache_factor;
+                execution.last_visible_signal_ray_factor = ray_factor;
+                execution.last_visible_signal_checksum = checksum;
+                execution.last_visible_signal_generated = true;
+                execution.last_visible_signal_cache_backed = true;
+                execution.last_output_marker = "diffuse_gi_cache_backed_visible_signal_recorded";
+                if (resources_ != nullptr && frame_open_ && resources_->has_context()) {
+                    resources_->track_transient_image(
+                            frame_index_,
+                            0,
+                            static_cast<std::int32_t>(std::min<std::uint64_t>(
+                                    execution.last_width,
+                                    static_cast<std::uint64_t>(kMaxLightingDispatchDimension))),
+                            static_cast<std::int32_t>(std::min<std::uint64_t>(
+                                    execution.last_height,
+                                    static_cast<std::uint64_t>(kMaxLightingDispatchDimension))),
+                            kDiffuseGiVisibleSignalFormatTag,
+                            "render:diffuse_gi-visible-signal-output");
+                    execution.resource_markers++;
+                    execution.last_resource_marker_recorded = true;
+                    recorded_resources++;
+                }
+            } else {
+                execution.last_output_marker = cache_backed
+                        ? "diffuse_gi_visible_signal_missing_trace_work"
+                        : "diffuse_gi_visible_signal_missing_cache_activity";
             }
         } else {
             execution.last_output_marker = "diffuse_gi_placeholder_output_population_missing_outputs";

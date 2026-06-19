@@ -2,6 +2,9 @@ param(
     [ValidateSet("Baseline", "Enabled", "Debug")]
     [string] $Mode,
 
+    [ValidateSet("Round5Direct", "Round6DiffuseGi")]
+    [string] $ValidationProfile = "Round5Direct",
+
     [string] $WorldName = "New World",
 
     [string] $ScenarioName = "",
@@ -304,11 +307,19 @@ try {
         "Lucerna backend status: SODIUM_VULKAN",
         "joined the game"
     )
-    $enabledPatterns = @(
+    $enabledPatterns = if ($ValidationProfile -eq "Round6DiffuseGi") {
+        @(
+            "Lucerna Round 6 lighting dispatch prepared: .*diffuse_gi=\{\{enabled=true,.*rays=[1-9][0-9]*,cache_reads=[1-9][0-9]*",
+            "Lucerna Round 6 diffuse GI preview composite: ready=true .*temporarySourceReady=true",
+            "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*mode=round6-diffuse-gi-focus-window-additive"
+        )
+    } else {
+        @(
         "Lucerna direct lighting plan: .*emissive=[1-9][0-9]*.*shadowCandidates=[1-9][0-9]*.*surfaceSampleSections=[1-9][0-9]*.*surfaceSamples=[1-9][0-9]*\.",
         "Lucerna native direct lighting execution: .*outputWriteRecorded=true.*resolveRecorded=true.*ready=true.*cpuOutput=true.*cpuOutputEnergy=[1-9][0-9.eE+-]*.*cpuOutputChecksum=[1-9][0-9]*.*reason=direct_lighting_surface_sample_cpu_output_generated",
         "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*mode=final-composite-direct-light-focus-window-additive"
-    )
+        )
+    }
     Wait-LatestLogPattern $latestLog $commonPatterns $deadline
 
     Invoke-OptionalSceneSetup

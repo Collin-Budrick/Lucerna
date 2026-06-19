@@ -488,6 +488,17 @@ struct NativeRound6DispatchExecutionTelemetry {
     std::uint64_t total_cache_write_count = 0;
     std::uint64_t last_placeholder_output_population_count = 0;
     std::uint64_t total_placeholder_output_population_count = 0;
+    std::uint64_t last_visible_signal_population_count = 0;
+    std::uint64_t total_visible_signal_population_count = 0;
+    std::uint64_t last_visible_signal_sampled_pixels = 0;
+    std::uint64_t last_visible_signal_nonzero_pixels = 0;
+    std::uint64_t total_visible_signal_nonzero_pixels = 0;
+    std::uint64_t last_visible_signal_checksum = 0;
+    float last_visible_signal_energy = 0.0F;
+    float last_visible_signal_min_sample = 0.0F;
+    float last_visible_signal_max_sample = 0.0F;
+    float last_visible_signal_cache_factor = 0.0F;
+    float last_visible_signal_ray_factor = 0.0F;
     std::uint32_t last_flags = 0;
     bool last_enabled = false;
     bool last_validated = false;
@@ -503,6 +514,8 @@ struct NativeRound6DispatchExecutionTelemetry {
     bool last_cache_write_metadata_dispatch_recorded = false;
     bool last_placeholder_output_population_recorded = false;
     bool last_cache_write_marker_recorded = false;
+    bool last_visible_signal_generated = false;
+    bool last_visible_signal_cache_backed = false;
     std::string last_marker;
     std::string last_output_marker;
     std::string last_cache_marker;
