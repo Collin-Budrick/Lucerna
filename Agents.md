@@ -321,6 +321,10 @@ Latest controller result:
 
 Native status now records deterministic diffuse-GI CPU output markers, nonzero energy/checksum booleans, and scene-tied input counters from the latest direct-light payload. The Round 6 final-composite shader now samples the native GI texture across the world target instead of a narrow focus-window mapping, and the debug overlay explicitly labels Direct Lighting as Round 5 while adding low-res GI/cache status lines. Controller build/native/signing passed and Sodium + Iris + Vulkan enabled/baseline/debug launches completed, but the formal focused wall proof still failed. `run/validation-logs/round6-world-gi-composite-v5-proof-20260619-130129.json` reports `nativeGiOutputSourcePresent=True`, `temporaryDirectLightSourcePresent=False`, `max.giRays=409920`, `max.giCacheReads=14726`, `nativeErrorPresent=False`, and `focus.meanSignedLuma=0.5173`, but `focus.changedPixelPercent=0` and `focus.brighterPixelPercent=0`. Treat this as stronger runtime/log evidence and partial visual movement only, not visible-GI completion.
 
+Latest focused-pixel investigation:
+
+The proof script is not the blocker. The controller inspected the latest failed screenshots directly and confirmed the focus region receives only sub-threshold per-pixel deltas, while stronger changes land elsewhere in the frame. A follow-up native broad-projection signal plus per-pixel composite shader path still failed the formal proof: `run/validation-logs/round6-pixel-gi-composite-v2-proof-20260619-131345.json` reports `nativeGiOutputSourcePresent=True`, `temporaryDirectLightSourcePresent=False`, `max.giRays=409920`, `max.giCacheReads=13885`, and `nativeErrorPresent=False`, but `focus.changedPixelPercent=0`, `focus.brighterPixelPercent=0`, and `focus.meanSignedLuma=0.2402`. Treat this as additional build/runtime progress only. The remaining issue is still real screen-space delivery/surface projection into the wall proof region.
+
 Validation by controller:
 
 Build and launch with Sodium Vulkan active.
@@ -427,6 +431,7 @@ Round 6 evidence split:
 - Deterministic native low-res GI output evidence remains open until controller proof shows repeatable native GI sample/output population, nonzero GI writes/energy/checksum, scene-tied input counters, baseline/enabled/debug screenshots, and no metadata-backed preview/focus-window/proof-marker fallback.
 - Deterministic native output implementation is build/launch green but screenshot-proof failed for the focused wall region. **OPEN in `run/validation-logs/round6-deterministic-native-gi-v5-proof-20260619-123851.json`; logs prove native source markers and no temporary direct-light fallback, but the wall-region visual delta is still zero.**
 - Composite alignment/native telemetry follow-up is build/launch green but screenshot-proof still failed for changed/brighter-pixel thresholds. **OPEN in `run/validation-logs/round6-world-gi-composite-v5-proof-20260619-130129.json`; focused mean luma is positive, but individual focused-region pixels still do not cross the proof helper thresholds.**
+- Native broad-projection plus per-pixel composite follow-up is build/launch green but screenshot-proof still failed. **OPEN in `run/validation-logs/round6-pixel-gi-composite-v2-proof-20260619-131345.json`; the proof helper is behaving correctly and the wall-region deltas remain below changed/brighter-pixel thresholds.**
 - Combined Round 6 acceptance: only mark Round 6 GI/cache criteria **DONE/VALIDATED** after both evidence tracks pass in controller-run validation.
 Round 7: Denoise and Composite Path
 Goal
@@ -989,11 +994,11 @@ Do not jump to neural/ReSTIR/Nanite-like systems before the first lighting miles
 
 Current implementation focus:
 
-Round 5 has a controller-validated focus-window final-composite proof, but physically correct direct/emissive surface projection remains open. Round 6 native diffuse-GI source replacement is controller-validated as a metadata-backed native preview source, and the deterministic native-output/composite alignment attempts are build/launch green but still screenshot-proof failed in the focused wall region; do not present any of these as real low-res GI tracing or physically correct diffuse GI.
+Round 5 has a controller-validated focus-window final-composite proof, but physically correct direct/emissive surface projection remains open. Round 6 native diffuse-GI source replacement is controller-validated as a metadata-backed native preview source, and the deterministic native-output/composite alignment/broad-projection attempts are build/launch green but still screenshot-proof failed in the focused wall region; do not present any of these as real low-res GI tracing or physically correct diffuse GI.
 
 Immediate Round 6 documentation/validation boundary:
 
-Java-side GI source-summary, native upload metadata, dirty-region listener, sparse radiance-cache scaffolding, Round 6 overlay text, native Round 6 telemetry, controller GI/cache metadata logs, log-only cache records/writes, native diffuse-GI source replacement, build-green deterministic native output generation, scene-tied native telemetry, and clearer Round 5-versus-Round 6 debug overlay wording are now implemented. The remaining Round 6 gap is making that native output cross the focused wall-region visual proof thresholds through a real composite or surface-projection path, plus a dedicated GI/cache debug overlay screenshot that is not hidden by the Direct Lighting overlay line cap.
+Java-side GI source-summary, native upload metadata, dirty-region listener, sparse radiance-cache scaffolding, Round 6 overlay text, native Round 6 telemetry, controller GI/cache metadata logs, log-only cache records/writes, native diffuse-GI source replacement, build-green deterministic native output generation, scene-tied native telemetry, clearer Round 5-versus-Round 6 debug overlay wording, and native broad-projection/per-pixel composite attempts are now implemented. The remaining Round 6 gap is making that native output cross the focused wall-region visual proof thresholds through a real composite or surface-projection path, plus a dedicated GI/cache debug overlay screenshot that is not hidden by the Direct Lighting overlay line cap.
 
 The next immediate milestone is:
 

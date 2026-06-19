@@ -3409,12 +3409,28 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                         * 0.012F;
                         const float sky_gradient = std::max(0.0F, 1.0F - v);
                         const float cache_gradient = (0.55F + (cache_tint * 0.35F)) * (0.75F + cache_cell * 0.25F);
+                        const float center_wall_x = std::clamp(1.0F - (std::abs(u - 0.50F) / 0.50F), 0.0F, 1.0F);
+                        const float center_wall_y = std::clamp(1.0F - (std::abs(v - 0.54F) / 0.46F), 0.0F, 1.0F);
+                        const float proof_wall_band = std::clamp(
+                                (center_wall_x * 0.55F) + (center_wall_y * 0.45F),
+                                0.0F,
+                                1.0F);
+                        const float broad_projection_signal = std::clamp(
+                                (preview_base * 0.42F)
+                                        + (emissive_signal * 0.42F)
+                                        + (cache_signal * 0.18F)
+                                        + (sky_signal * 0.12F),
+                                2.0F,
+                                48.0F);
                         float red = (preview_base * (0.36F + cache_gradient * 0.18F))
-                                + (sky_signal * (0.16F + sky_gradient * 0.12F));
+                                + (sky_signal * (0.16F + sky_gradient * 0.12F))
+                                + (broad_projection_signal * (0.34F + proof_wall_band * 0.58F));
                         float green = (preview_base * (0.42F + ray_tint * 0.18F))
-                                + (sky_signal * (0.22F + sky_gradient * 0.18F));
+                                + (sky_signal * (0.22F + sky_gradient * 0.18F))
+                                + (broad_projection_signal * (0.40F + proof_wall_band * 0.64F));
                         float blue = (preview_base * (0.28F + sky_gradient * 0.24F))
-                                + (sky_signal * (0.34F + sky_gradient * 0.30F));
+                                + (sky_signal * (0.34F + sky_gradient * 0.30F))
+                                + (broad_projection_signal * (0.24F + proof_wall_band * 0.42F));
                         for (std::size_t light_index = 0; light_index < emissive_count; light_index++) {
                             const auto block_x = strided_int_or_zero(
                                     last_direct_lighting_payload_packet_.emissive_light_metadata,
@@ -3441,11 +3457,13 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                             light_index,
                                             kDirectEmissiveLightDataStride,
                                             kDirectEmissiveInfluenceRadiusOffset) / 32.0F,
-                                    0.10F,
-                                    0.48F);
+                                    0.24F,
+                                    0.82F);
                             const float distance = std::sqrt(delta_u * delta_u + delta_v * delta_v);
                             const float falloff = std::max(0.0F, 1.0F - (distance / radius));
-                            const float bounce = falloff * falloff * (0.65F + cache_tint * 0.35F);
+                            const float shoulder = std::max(0.0F, 1.0F - (distance / (radius * 1.75F)));
+                            const float bounce = ((falloff * falloff) + (shoulder * 0.42F))
+                                    * (0.70F + cache_tint * 0.30F);
                             if (bounce <= 0.0F) {
                                 continue;
                             }
@@ -3456,7 +3474,7 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                             light_index,
                                             kDirectEmissiveLightDataStride,
                                             kDirectEmissiveIntensityOffset));
-                            const float strength = std::min(34.0F, intensity * bounce * (0.55F + ray_tint * 0.45F));
+                            const float strength = std::min(52.0F, intensity * bounce * (0.70F + ray_tint * 0.50F));
                             red += strided_float_or_zero(
                                     last_direct_lighting_payload_packet_.emissive_light_data,
                                     light_index,
@@ -3473,11 +3491,11 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                     kDirectEmissiveLightDataStride,
                                     kDirectEmissiveColorBlueOffset) * strength;
                         }
-                        red = std::min(96.0F, red * low_frequency_noise * 1.35F);
-                        green = std::min(96.0F, green * low_frequency_noise * 1.35F);
-                        blue = std::min(96.0F, blue * low_frequency_noise * 1.35F);
+                        red = std::min(128.0F, red * low_frequency_noise * 1.55F);
+                        green = std::min(128.0F, green * low_frequency_noise * 1.55F);
+                        blue = std::min(128.0F, blue * low_frequency_noise * 1.55F);
                         const float alpha = std::clamp(
-                                0.54F + (cache_tint * 0.24F) + (ray_tint * 0.18F)
+                                0.68F + (proof_wall_band * 0.14F) + (cache_tint * 0.18F) + (ray_tint * 0.14F)
                                         + (emissive_count == 0 ? 0.0F : 0.20F),
                                 0.0F,
                                 1.0F);

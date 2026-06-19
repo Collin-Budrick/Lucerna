@@ -288,7 +288,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang Round 6 diffuse GI final composite can bind a native diffuse GI output texture and issue one bounded focus-window additive draw"
+                "public Mojang Round 6 diffuse GI final composite can bind a native diffuse GI output texture and issue one bounded per-pixel additive draw"
         );
     }
 
@@ -330,7 +330,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang Round 6 diffuse GI final composite focus-window additive draw issued"
+                "public Mojang Round 6 diffuse GI final composite per-pixel additive draw issued"
         );
     }
 
