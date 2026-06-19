@@ -188,6 +188,34 @@ public final class NativeLightingDispatchUploadPacket {
         return enabledCount;
     }
 
+    public boolean directLightingStageEnabled() {
+        return this.stageEnabled(this.stageIndex(Phase5Stage.DIRECT_LIGHTING));
+    }
+
+    public int directLightingInputCount() {
+        return this.stageInputCount(this.stageIndex(Phase5Stage.DIRECT_LIGHTING));
+    }
+
+    public int directLightingOutputCount() {
+        return this.stageOutputCount(this.stageIndex(Phase5Stage.DIRECT_LIGHTING));
+    }
+
+    public int directLightingCandidateCount() {
+        return this.directLightingSampleCount();
+    }
+
+    public int directLightingSampleCount() {
+        return this.stageSampleCount(this.stageIndex(Phase5Stage.DIRECT_LIGHTING));
+    }
+
+    public int directLightingRayCount() {
+        return this.stageRayCount(this.stageIndex(Phase5Stage.DIRECT_LIGHTING));
+    }
+
+    public int directLightingFlags() {
+        return this.stageFlags[this.stageIndex(Phase5Stage.DIRECT_LIGHTING)];
+    }
+
     public int[] stageIds() {
         return copy(this.stageIds, "stageIds");
     }
@@ -234,6 +262,36 @@ public final class NativeLightingDispatchUploadPacket {
 
     public int[] stageFlags() {
         return copy(this.stageFlags, "stageFlags");
+    }
+
+    private int stageIndex(Phase5Stage stage) {
+        int id = stage.id();
+        for (int index = 0; index < this.stageIds.length; index++) {
+            if (this.stageIds[index] == id) {
+                return index;
+            }
+        }
+        throw new IllegalStateException("lighting dispatch stage is missing: " + stage.nativeName());
+    }
+
+    private boolean stageEnabled(int stageIndex) {
+        return this.stageEnabled[stageIndex] == 1;
+    }
+
+    private int stageInputCount(int stageIndex) {
+        return this.stageIoCounts[stageIndex * IO_COUNT_STRIDE];
+    }
+
+    private int stageOutputCount(int stageIndex) {
+        return this.stageIoCounts[stageIndex * IO_COUNT_STRIDE + 1];
+    }
+
+    private int stageSampleCount(int stageIndex) {
+        return this.stageSampleRayCounts[stageIndex * SAMPLE_RAY_STRIDE];
+    }
+
+    private int stageRayCount(int stageIndex) {
+        return this.stageSampleRayCounts[stageIndex * SAMPLE_RAY_STRIDE + 1];
     }
 
     private static long requireNonNegative(long value, String name) {

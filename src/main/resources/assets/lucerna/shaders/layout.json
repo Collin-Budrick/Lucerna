@@ -220,7 +220,8 @@
     ],
     "firstLightingMilestone": {
       "id": "round4.first_lighting_milestone",
-      "goal": "Visible basic emissive/direct light plus low-resolution diffuse GI through denoise and final composite, under controller-run testing.",
+      "round5FocusId": "round5.first_visible_direct_lighting",
+      "goal": "Visible basic emissive/direct light plus direct-light resolve through final composite, under controller-run screenshot and log validation.",
       "entryBoundary": [
         "Lucerna is active only on Sodium Vulkan",
         "World/material upload generations have reached native queues",
@@ -245,9 +246,17 @@
       ],
       "exitBoundary": [
         "Controller observes non-placeholder direct lighting in lucerna.lighting.direct",
-        "Controller observes low-resolution diffuse GI and confidence/variance/ray-budget outputs",
-        "Controller observes denoise/composite behavior without HUD or late-translucency corruption",
+        "Controller observes a direct-light resolve into lucerna.composite.worldColor without consuming Iris shader-pack outputs",
+        "Controller observes the disabled or baseline screenshot return to vanilla/no-op behavior",
+        "Controller observes debug overlay telemetry for candidate counts, dispatch frame, output-buffer status, and no HUD corruption",
         "Stage readiness debug labels distinguish contract-ready stages from algorithm-complete stages"
+      ],
+      "controllerScreenshotMarkers": [
+        "baseline_disabled_or_noop: Lucerna disabled or no-op path shows the same test wall without direct-light contribution",
+        "enabled_direct: Lucerna enabled shows nearby surfaces brightened by one emissive block, sun, or moon input",
+        "debug_overlay_direct: overlay text or heatmap shows direct lighting enabled, emissive candidate count, shadow candidate count, dispatch frame, and output/resolve status",
+        "hud_integrity: crosshair, hotbar, chat, and debug text remain readable and are not tinted or overwritten",
+        "iris_isolation: Iris may expose Lucerna status/settings, but no Iris shader-pack color, depth, or lighting output is sampled by this pass"
       ]
     },
     "placeholderPolicy": "All noop.glsl files must remain side-effect free and document future reads/writes without declaring storage images, atomics, barriers, discard, color output, or depth output."
@@ -319,6 +328,20 @@
         "channels": "rgb direct radiance in linear scene space; alpha reserved for direct visibility or confidence",
         "clearBeforeWrite": true,
         "historySensitive": false
+      },
+      "round5ResolveContract": {
+        "resolveConsumerPass": "lucerna.composite.final",
+        "resolveTarget": "lucerna.composite.worldColor",
+        "baselineMode": "Lucerna disabled or direct-light resolve disabled must leave the borrowed world color target visually equivalent to the validated no-op or flat-composite path.",
+        "enabledMode": "Direct-light resolve samples lucerna.lighting.direct and current albedo/opacity to make one nearby surface visibly brighter when a bounded emissive, sun, or moon candidate is present.",
+        "outputMarkers": [
+          "native direct lighting dispatch logged for the current frame",
+          "emissive candidate count is greater than zero when a glowstone, lamp, lava, or torch candidate is near the viewed wall",
+          "direct output buffer write marker is present before resolve",
+          "direct resolve marker is present before vanilla HUD and late translucency",
+          "no native errors are reported"
+        ],
+        "irisIsolation": "The direct-light resolve must not read or derive color from Iris shader-pack outputs; Iris remains settings/status-visible only while Lucerna owns rendering."
       },
       "handoffRules": [
         "Do not blend into lucerna.composite.worldColor.",
@@ -419,6 +442,24 @@
         "lucerna.debug.overlay"
       ],
       "compositeOutput": "lucerna.composite.worldColor",
+      "round5DirectResolveMode": {
+        "modeKey": "direct_only_or_final_direct",
+        "requiredInputs": [
+          "lucerna.gbuffer.albedoOpacity",
+          "lucerna.lighting.direct"
+        ],
+        "optionalInputs": [
+          "lucerna.debug.overlay",
+          "lucerna.denoise.diffuse",
+          "lucerna.lighting.diffuseGi"
+        ],
+        "resolveRules": [
+          "Resolve happens before vanilla HUD and late translucency.",
+          "Resolve must preserve Minecraft/Sodium ownership of the world color target.",
+          "Resolve must be disableable so controller screenshots can compare baseline and enabled frames from the same scene.",
+          "Resolve must not consume Iris shader-pack color, depth, shadow, or lighting textures."
+        ]
+      },
       "handoffBoundary": [
         "Denoise owns upsampling and history rejection before composite.",
         "Composite owns final world color staging only and must preserve Minecraft/Sodium swapchain ownership.",
@@ -427,6 +468,16 @@
     },
     "debugReadinessPayload": {
       "descriptorSource": "DebugLabelTable",
+      "round5OverlayInputs": [
+        "lighting enabled/disabled state",
+        "emissive candidate count",
+        "direct shadow candidate count",
+        "last direct lighting dispatch frame",
+        "direct output buffer write status",
+        "direct resolve status",
+        "CPU/native/GPU timing placeholder or timing value when available",
+        "controller screenshot marker state"
+      ],
       "stageReadinessKeys": [
         "readiness.lucerna.lighting.direct",
         "readiness.lucerna.lighting.gi",
@@ -435,11 +486,17 @@
       ],
       "milestoneBoundaryKeys": [
         "milestone.round4.first_lighting.entry",
-        "milestone.round4.first_lighting.exit"
+        "milestone.round4.first_lighting.exit",
+        "milestone.round5.direct_lighting.baseline",
+        "milestone.round5.direct_lighting.enabled",
+        "milestone.round5.direct_lighting.debug_overlay",
+        "milestone.round5.direct_lighting.hud_integrity"
       ],
       "displayRules": [
         "Readiness labels report contract-ready versus algorithm-complete state.",
         "Milestone boundary labels must remain visible through debug overlay metadata even before real lighting shaders land.",
+        "Round 5 overlay text must identify whether visible direct output is still pending controller validation.",
+        "Overlay inputs are Lucerna-owned telemetry; they do not sample Iris shader-pack outputs.",
         "Labels are descriptive until the debug telemetry worker backs DebugLabelTable with runtime data."
       ]
     }
@@ -1285,7 +1342,7 @@
       ],
       "pushConstants": "LucernaPassPushConstants",
       "sideEffectFreePlaceholder": true,
-      "handoff": "Direct sun, moon, and emissive block lighting target.",
+      "handoff": "Direct sun, moon, and emissive block lighting target for Round 5 direct-light resolve.",
       "dependsOn": [
         "lucerna.gbuffer.main"
       ],
@@ -1297,7 +1354,7 @@
           "required": true,
           "clearBeforeWrite": true,
           "historySensitive": false,
-          "notes": "Writes full-resolution direct sun, moon, emissive, and shadow-ray lighting into a Lucerna-owned storage image."
+          "notes": "Writes full-resolution direct sun, moon, emissive, and shadow-ray lighting into a Lucerna-owned storage image. Round 5 composite resolve may sample this target to produce controller-visible lighting before HUD and late translucency."
         }
       ]
     },
@@ -1891,6 +1948,16 @@
       "id": "debug.stage_readiness_labels",
       "owner": "controller",
       "description": "Confirm DebugLabelTable can expose readiness.lucerna.* stage labels and milestone.round4.first_lighting.* boundary labels before real lighting shaders replace placeholders."
+    },
+    {
+      "id": "round5.direct_lighting_screenshot_markers",
+      "owner": "controller",
+      "description": "Capture baseline/disabled, enabled direct-light, and direct debug-overlay screenshots for one emissive block lighting one visible surface; confirm HUD readability and matching native dispatch/output/resolve log markers."
+    },
+    {
+      "id": "round5.direct_lighting_iris_isolation",
+      "owner": "controller",
+      "description": "Confirm the Round 5 direct-light output and resolve path consumes Lucerna-owned G-buffer/direct-light/debug resources only and does not sample Iris shader-pack color, depth, shadow, or lighting outputs."
     },
     {
       "id": "lighting.adaptive_sampling_metadata",

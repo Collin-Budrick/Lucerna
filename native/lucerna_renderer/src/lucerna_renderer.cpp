@@ -22,6 +22,7 @@ constexpr std::uint64_t kVoxelMaterialIndexBytesPerSection = kSectionVoxelCount 
 constexpr std::uint64_t kSectionEmissiveEntryBytes =
         (sizeof(std::int32_t) * 3) + sizeof(std::uint64_t);
 constexpr std::uint64_t kLightingConstantsBytes = 256;
+constexpr std::uint32_t kDirectLightingOutputFormatTag = 20;
 constexpr std::uint32_t kNoopCompositeFormatTag = 1;
 constexpr std::uint32_t kGBufferDepthFormatTag = 10;
 constexpr std::uint32_t kGBufferNormalMaterialFormatTag = 11;
@@ -379,6 +380,31 @@ void append_phase5_lighting_status(
         << "}"
         << ",readiness={ready_for_native_execution=" << lighting.last_ready_for_native_execution
         << ",reason=\"" << readiness_reason
+        << "\"}"
+        << ",direct_execution={attempts=" << lighting.direct_execution.attempts
+        << ",submitted=" << lighting.direct_execution.submitted
+        << ",skipped=" << lighting.direct_execution.skipped
+        << ",last_frame=" << lighting.direct_execution.last_frame_index
+        << ",packet_generation=" << lighting.direct_execution.last_packet_generation
+        << ",dispatch_generation=" << lighting.direct_execution.last_dispatch_generation
+        << ",candidate_count=" << lighting.direct_execution.last_candidate_count
+        << ",sample_count=" << lighting.direct_execution.last_sample_count
+        << ",ray_count=" << lighting.direct_execution.last_ray_count
+        << ",output_count=" << lighting.direct_execution.last_output_count
+        << ",total_candidates=" << lighting.direct_execution.total_candidate_count
+        << ",total_samples=" << lighting.direct_execution.total_sample_count
+        << ",total_rays=" << lighting.direct_execution.total_ray_count
+        << ",output_writes=" << lighting.direct_execution.output_writes
+        << ",resolves=" << lighting.direct_execution.resolves
+        << ",enabled=" << lighting.direct_execution.last_enabled
+        << ",ready=" << lighting.direct_execution.last_ready
+        << ",output_write_recorded=" << lighting.direct_execution.last_output_write_recorded
+        << ",resolve_recorded=" << lighting.direct_execution.last_resolve_recorded
+        << ",output_marker=\"" << lighting.direct_execution.last_output_marker
+        << "\""
+        << ",readiness_reason=\"" << (lighting.direct_execution.last_readiness_reason.empty()
+            ? "direct_stage_not_evaluated"
+            : lighting.direct_execution.last_readiness_reason)
         << "\"}";
     append_phase5_payload_categories(out, lighting);
     out
@@ -1129,7 +1155,9 @@ void Renderer::render_lighting() {
     last_render_lighting_order_valid_ = true;
     current_frame_render_lighting_submitted_ = true;
     lighting_pass_count_++;
-    mark_pass_submitted(NativeRenderPass::NoopLighting, track_noop_lighting_placeholder());
+    const auto lighting_placeholder_resources =
+        track_noop_lighting_placeholder() + track_direct_lighting_execution_scaffold();
+    mark_pass_submitted(NativeRenderPass::NoopLighting, lighting_placeholder_resources);
     mark_pass_submitted(NativeRenderPass::FlatComposite, track_flat_composite_placeholder());
 
     // Milestone placeholder: no-op until Lucerna owns real Vulkan render passes.
@@ -1433,6 +1461,31 @@ std::string Renderer::status() const {
         << ",reason=\"" << (staging_.lighting.last_readiness_reason.empty()
             ? "no_phase5_dispatch_payload"
             : staging_.lighting.last_readiness_reason)
+        << "\"}"
+        << ",direct_execution={attempts=" << staging_.lighting.direct_execution.attempts
+        << ",submitted=" << staging_.lighting.direct_execution.submitted
+        << ",skipped=" << staging_.lighting.direct_execution.skipped
+        << ",last_frame=" << staging_.lighting.direct_execution.last_frame_index
+        << ",packet_generation=" << staging_.lighting.direct_execution.last_packet_generation
+        << ",dispatch_generation=" << staging_.lighting.direct_execution.last_dispatch_generation
+        << ",candidate_count=" << staging_.lighting.direct_execution.last_candidate_count
+        << ",sample_count=" << staging_.lighting.direct_execution.last_sample_count
+        << ",ray_count=" << staging_.lighting.direct_execution.last_ray_count
+        << ",output_count=" << staging_.lighting.direct_execution.last_output_count
+        << ",total_candidates=" << staging_.lighting.direct_execution.total_candidate_count
+        << ",total_samples=" << staging_.lighting.direct_execution.total_sample_count
+        << ",total_rays=" << staging_.lighting.direct_execution.total_ray_count
+        << ",output_writes=" << staging_.lighting.direct_execution.output_writes
+        << ",resolves=" << staging_.lighting.direct_execution.resolves
+        << ",enabled=" << staging_.lighting.direct_execution.last_enabled
+        << ",ready=" << staging_.lighting.direct_execution.last_ready
+        << ",output_write_recorded=" << staging_.lighting.direct_execution.last_output_write_recorded
+        << ",resolve_recorded=" << staging_.lighting.direct_execution.last_resolve_recorded
+        << ",output_marker=\"" << staging_.lighting.direct_execution.last_output_marker
+        << "\""
+        << ",readiness_reason=\"" << (staging_.lighting.direct_execution.last_readiness_reason.empty()
+            ? "direct_stage_not_evaluated"
+            : staging_.lighting.direct_execution.last_readiness_reason)
         << "\"}";
     append_phase5_payload_categories(out, staging_.lighting);
     out
@@ -2134,6 +2187,90 @@ std::uint64_t Renderer::track_noop_lighting_placeholder() {
 
     resources_->track_transient_buffer(frame_index_, 0, kLightingConstantsBytes, "render:lighting-constants");
     return 1;
+}
+
+std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
+    auto& execution = staging_.lighting.direct_execution;
+    auto& direct_stage = lighting_stage_telemetry(NativeLightingDispatchStage::DirectLighting);
+
+    execution.last_frame_index = frame_index_;
+    execution.last_packet_generation = staging_.lighting.last_packet_generation;
+    execution.last_dispatch_generation = direct_stage.last_generation;
+    execution.last_candidate_count = static_cast<std::uint64_t>(direct_stage.last_sample_count);
+    execution.last_sample_count = static_cast<std::uint64_t>(direct_stage.last_sample_count);
+    execution.last_ray_count = static_cast<std::uint64_t>(direct_stage.last_ray_count);
+    execution.last_output_count = static_cast<std::uint64_t>(direct_stage.last_output_count);
+    execution.last_enabled = direct_stage.enabled_this_packet;
+    execution.last_output_write_recorded = false;
+    execution.last_resolve_recorded = false;
+    execution.last_output_marker.clear();
+
+    if (!direct_stage.enabled_this_packet) {
+        execution.last_ready = false;
+        execution.last_readiness_reason = direct_stage.last_readiness_reason.empty()
+            ? "direct_stage_disabled"
+            : direct_stage.last_readiness_reason;
+        return 0;
+    }
+
+    execution.attempts++;
+    const bool scaffold_ready = direct_stage.last_validated && direct_stage.last_output_count > 0;
+    execution.last_ready = scaffold_ready;
+    if (!scaffold_ready) {
+        execution.skipped++;
+        if (!direct_stage.last_validated) {
+            execution.last_readiness_reason = "direct_stage_validation_missing";
+        } else {
+            execution.last_readiness_reason = "direct_stage_has_no_outputs";
+        }
+        return 0;
+    }
+
+    execution.submitted++;
+    execution.total_candidate_count = saturated_add(
+            execution.total_candidate_count,
+            execution.last_candidate_count);
+    execution.total_sample_count = saturated_add(
+            execution.total_sample_count,
+            execution.last_sample_count);
+    execution.total_ray_count = saturated_add(
+            execution.total_ray_count,
+            execution.last_ray_count);
+
+    std::uint64_t recorded_resources = 0;
+    if (resources_ != nullptr && frame_open_ && resources_->has_context()) {
+        const auto output_width = direct_stage.last_width > 0 ? direct_stage.last_width : width_;
+        const auto output_height = direct_stage.last_height > 0 ? direct_stage.last_height : height_;
+        if (direct_stage.last_output_count > 0 && output_width > 0 && output_height > 0) {
+            resources_->track_transient_image(
+                    frame_index_,
+                    0,
+                    output_width,
+                    output_height,
+                    kDirectLightingOutputFormatTag,
+                    "render:direct-light-output-write");
+            execution.output_writes++;
+            execution.last_output_write_recorded = true;
+            recorded_resources++;
+        }
+
+        resources_->track_transient_buffer(
+                frame_index_,
+                0,
+                kLightingConstantsBytes,
+                "render:direct-light-resolve-marker");
+        execution.resolves++;
+        execution.last_resolve_recorded = true;
+        recorded_resources++;
+    }
+
+    execution.last_output_marker = execution.last_output_write_recorded
+        ? "direct_light_output_write_resolve_recorded"
+        : "direct_light_resolve_recorded_without_output";
+    execution.last_readiness_reason = direct_stage.last_placeholder
+        ? "direct_lighting_validated_placeholder_scaffold_executed"
+        : "direct_lighting_scaffold_executed";
+    return recorded_resources;
 }
 
 std::uint64_t Renderer::track_flat_composite_placeholder() {

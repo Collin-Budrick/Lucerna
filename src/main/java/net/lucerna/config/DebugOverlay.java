@@ -6,6 +6,7 @@ public enum DebugOverlay {
     DIRTY_REGIONS("Dirty regions"),
     MATERIAL_IDS("Material ids"),
     FRAME_TIMINGS("Frame timings"),
+    DIRECT_LIGHTING("Direct lighting"),
     NATIVE_QUEUE("Native queue");
 
     private final String displayName;

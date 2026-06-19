@@ -360,6 +360,30 @@ struct NativeLightingDispatchPayloadCategoryTelemetry {
     std::uint64_t last_debug_overlay_stage_count = 0;
 };
 
+struct NativeDirectLightingExecutionTelemetry {
+    std::uint64_t attempts = 0;
+    std::uint64_t submitted = 0;
+    std::uint64_t skipped = 0;
+    std::uint64_t output_writes = 0;
+    std::uint64_t resolves = 0;
+    std::uint64_t last_frame_index = 0;
+    std::uint64_t last_packet_generation = 0;
+    std::uint64_t last_dispatch_generation = 0;
+    std::uint64_t last_candidate_count = 0;
+    std::uint64_t last_sample_count = 0;
+    std::uint64_t last_ray_count = 0;
+    std::uint64_t last_output_count = 0;
+    std::uint64_t total_candidate_count = 0;
+    std::uint64_t total_sample_count = 0;
+    std::uint64_t total_ray_count = 0;
+    bool last_enabled = false;
+    bool last_ready = false;
+    bool last_output_write_recorded = false;
+    bool last_resolve_recorded = false;
+    std::string last_output_marker;
+    std::string last_readiness_reason;
+};
+
 struct NativeLightingDispatchTelemetry {
     std::uint64_t packets = 0;
     std::uint64_t advertised_dispatches = 0;
@@ -412,6 +436,7 @@ struct NativeLightingDispatchTelemetry {
     bool last_payload_recorded_this_frame = false;
     std::string last_enabled_stage_names;
     std::string last_readiness_reason;
+    NativeDirectLightingExecutionTelemetry direct_execution;
     std::array<NativeLightingDispatchStageTelemetry, kNativeLightingDispatchStageCount> stages;
     std::array<NativeLightingDispatchPayloadCategoryTelemetry, kNativeLightingDispatchPayloadCategoryCount> payload_categories;
 };
@@ -466,6 +491,7 @@ private:
     void track_gbuffer_placeholder_intent();
     [[nodiscard]] std::uint64_t track_noop_lighting_placeholder();
     [[nodiscard]] std::uint64_t track_flat_composite_placeholder();
+    [[nodiscard]] std::uint64_t track_direct_lighting_execution_scaffold();
     void reset_staging_telemetry();
     void reset_pass_counters();
     void prepare_frame_passes();

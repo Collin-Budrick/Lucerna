@@ -25,6 +25,7 @@ public final class LucernaNativeBridge {
     private long lastLoggedSectionSnapshotGeneration;
     private long lastLoggedGBufferStagingGeneration;
     private long lastLoggedLightingDispatchGeneration;
+    private String lastLoggedDirectLightingExecutionKey = "";
 
     public synchronized boolean hasLoadAttempted() {
         return this.loadAttempted;
@@ -96,6 +97,7 @@ public final class LucernaNativeBridge {
         this.lastLoggedSectionSnapshotGeneration = 0L;
         this.lastLoggedGBufferStagingGeneration = 0L;
         this.lastLoggedLightingDispatchGeneration = 0L;
+        this.lastLoggedDirectLightingExecutionKey = "";
         this.initialized = true;
         return true;
     }
@@ -113,6 +115,7 @@ public final class LucernaNativeBridge {
         this.lastLoggedSectionSnapshotGeneration = 0L;
         this.lastLoggedGBufferStagingGeneration = 0L;
         this.lastLoggedLightingDispatchGeneration = 0L;
+        this.lastLoggedDirectLightingExecutionKey = "";
         this.initialized = false;
     }
 
@@ -285,12 +288,19 @@ public final class LucernaNativeBridge {
             if (accepted && packet.lastDispatchGeneration() != this.lastLoggedLightingDispatchGeneration) {
                 this.lastLoggedLightingDispatchGeneration = packet.lastDispatchGeneration();
                 Lucerna.LOGGER.info(
-                        "Lucerna native lighting dispatch accepted: generation={} stages={} enabled={} gBufferGeneration={} sectionGeneration={}.",
+                        "Lucerna native lighting dispatch accepted: generation={} stages={} enabled={} gBufferGeneration={} sectionGeneration={} directEnabled={} directInputs={} directOutputs={} directCandidates={} directSamples={} directRays={} directFlags=0x{}.",
                         packet.generation(),
                         packet.dispatchCount(),
                         packet.enabledStageCount(),
                         packet.gBufferGeneration(),
-                        packet.sectionGeneration()
+                        packet.sectionGeneration(),
+                        packet.directLightingStageEnabled(),
+                        packet.directLightingInputCount(),
+                        packet.directLightingOutputCount(),
+                        packet.directLightingCandidateCount(),
+                        packet.directLightingSampleCount(),
+                        packet.directLightingRayCount(),
+                        Integer.toHexString(packet.directLightingFlags())
                 );
             }
         }
@@ -298,7 +308,10 @@ public final class LucernaNativeBridge {
 
     public synchronized void renderLighting() {
         if (this.isOperational()) {
-            this.invokeNative("renderLighting", LucernaNativeBridge::nativeRenderLighting, true);
+            boolean accepted = this.invokeNative("renderLighting", LucernaNativeBridge::nativeRenderLighting, true);
+            if (accepted) {
+                this.logDirectLightingExecutionStatus();
+            }
         }
     }
 
@@ -459,6 +472,118 @@ public final class LucernaNativeBridge {
         } catch (Throwable throwable) {
             return "native error unavailable: " + throwable.getMessage();
         }
+    }
+
+    private void logDirectLightingExecutionStatus() {
+        String nativeStatus = this.queryNativeStatus();
+        String directExecution = extractBlock(nativeStatus, "direct_execution={");
+        if (directExecution.isBlank()) {
+            return;
+        }
+
+        String dispatchGeneration = extractField(directExecution, "dispatch_generation");
+        String outputWrites = extractField(directExecution, "output_writes");
+        String resolves = extractField(directExecution, "resolves");
+        String key = dispatchGeneration
+                + "|" + extractField(directExecution, "candidate_count")
+                + "|" + extractField(directExecution, "output_write_recorded")
+                + "|" + extractField(directExecution, "resolve_recorded")
+                + "|" + extractField(directExecution, "ready");
+        if (key.equals(this.lastLoggedDirectLightingExecutionKey)) {
+            return;
+        }
+
+        this.lastLoggedDirectLightingExecutionKey = key;
+        Lucerna.LOGGER.info(
+                "Lucerna native direct lighting execution: dispatchGeneration={} candidates={} samples={} rays={} outputs={} outputWrites={} resolves={} outputWriteRecorded={} resolveRecorded={} ready={} reason={}.",
+                valueOrUnknown(dispatchGeneration),
+                valueOrUnknown(extractField(directExecution, "candidate_count")),
+                valueOrUnknown(extractField(directExecution, "sample_count")),
+                valueOrUnknown(extractField(directExecution, "ray_count")),
+                valueOrUnknown(extractField(directExecution, "output_count")),
+                valueOrUnknown(outputWrites),
+                valueOrUnknown(resolves),
+                booleanOrUnknown(extractField(directExecution, "output_write_recorded")),
+                booleanOrUnknown(extractField(directExecution, "resolve_recorded")),
+                booleanOrUnknown(extractField(directExecution, "ready")),
+                valueOrUnknown(extractField(directExecution, "readiness_reason"))
+        );
+    }
+
+    private static String extractBlock(String source, String marker) {
+        if (source == null || source.isBlank()) {
+            return "";
+        }
+        int markerStart = source.indexOf(marker);
+        if (markerStart < 0) {
+            return "";
+        }
+        int contentStart = markerStart + marker.length();
+        int depth = 1;
+        boolean quoted = false;
+        for (int index = contentStart; index < source.length(); index++) {
+            char character = source.charAt(index);
+            if (quoted) {
+                if (character == '"') {
+                    quoted = false;
+                }
+                continue;
+            }
+            if (character == '"') {
+                quoted = true;
+                continue;
+            }
+            if (character == '{') {
+                depth++;
+            } else if (character == '}') {
+                depth--;
+                if (depth == 0) {
+                    return source.substring(contentStart, index);
+                }
+            }
+        }
+        return "";
+    }
+
+    private static String extractField(String block, String fieldName) {
+        if (block == null || block.isBlank()) {
+            return "";
+        }
+        String marker = fieldName + "=";
+        int markerStart = block.indexOf(marker);
+        if (markerStart < 0) {
+            return "";
+        }
+        int valueStart = markerStart + marker.length();
+        boolean quoted = valueStart < block.length() && block.charAt(valueStart) == '"';
+        int contentStart = quoted ? valueStart + 1 : valueStart;
+        for (int index = contentStart; index < block.length(); index++) {
+            char character = block.charAt(index);
+            if (quoted && character == '"') {
+                return block.substring(contentStart, index);
+            }
+            if (!quoted && (character == ',' || character == '}')) {
+                return block.substring(contentStart, index).trim();
+            }
+        }
+        return block.substring(contentStart).trim();
+    }
+
+    private static String valueOrUnknown(String value) {
+        return value == null || value.isBlank() ? "?" : value;
+    }
+
+    private static String booleanOrUnknown(String value) {
+        if (value == null || value.isBlank()) {
+            return "?";
+        }
+        if ("1".equals(value) || "true".equalsIgnoreCase(value)) {
+            return "true";
+        }
+        if ("0".equals(value) || "false".equalsIgnoreCase(value)) {
+            return "false";
+        }
+        return value;
     }
 
     @FunctionalInterface

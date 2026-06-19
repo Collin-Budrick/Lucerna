@@ -25,7 +25,15 @@ public record LightingDispatchTelemetryStatus(
                     + "([a-z0-9_-]+)[._-]"
                     + "(enabled|enabled_this_packet|active|generation|last_generation|dispatch_generation|"
                     + "stage_generation|dispatch|last_dispatch|dispatch_groups|groups|rays|last_rays|ray_count|"
-                    + "cache|last_cache|cache_counts|cache_reads|cache_writes|cache_read_count|cache_write_count)"
+                    + "last_samples|samples|sample_count|last_sample_count|last_candidates|candidates|candidate_count|"
+                    + "last_candidate_count|shadow_candidates|shadow_candidate_count|direct_shadow_candidates|"
+                    + "cache|last_cache|cache_counts|cache_reads|cache_writes|cache_read_count|cache_write_count|"
+                    + "last_flags|flags|stage_flags|placeholder|metadata_only|validated|valid|debug_overlay|debug|"
+                    + "ready_for_native_execution|native_ready|ready|executable|readiness_reason|ready_reason|"
+                    + "native_readiness_reason|reason|recorded_this_frame|recorded|submitted_this_frame|"
+                    + "last_frame|frame|frame_index|last_frame_index|dispatch_frame|"
+                    + "last_size|size|dimensions|resolution|last_io|io|io_counts|inputs|input_count|last_input_count|"
+                    + "outputs|output_count|last_output_count)"
                     + "\\s*[:=]\\s*(\"[^\"]*\"|'[^']*'|[^\\s,;}\\]]+)"
     );
 
@@ -169,6 +177,7 @@ public record LightingDispatchTelemetryStatus(
         Map<String, Map<String, String>> stageFields = new LinkedHashMap<>();
         parseStageBlocks(nativeStatus, stageFields);
         parseLooseStageFields(nativeStatus, stageFields);
+        mergeDirectExecutionFields(nativeStatus, stageFields);
 
         if (stageFields.isEmpty()) {
             return Map.of();
@@ -219,6 +228,28 @@ public record LightingDispatchTelemetryStatus(
             target.putIfAbsent("id", stageId);
             target.putIfAbsent(fieldKey, fieldValue);
         }
+    }
+
+    private static void mergeDirectExecutionFields(String nativeStatus, Map<String, Map<String, String>> stageFields) {
+        String directExecution = extractBraceContent(nativeStatus, "direct_execution={");
+        if (directExecution.isBlank()) {
+            return;
+        }
+
+        Map<String, String> executionFields = parseDelimitedFields(directExecution);
+        if (executionFields.isEmpty()) {
+            return;
+        }
+
+        Map<String, String> target = stageFields.computeIfAbsent("direct_lighting", ignored -> new LinkedHashMap<>());
+        target.putIfAbsent("id", "direct_lighting");
+        putMissing(target, executionFields);
+        copyMissing(target, executionFields, "dispatch_generation", "generation");
+        copyMissing(target, executionFields, "candidate_count", "candidates");
+        copyMissing(target, executionFields, "sample_count", "samples");
+        copyMissing(target, executionFields, "ray_count", "rays");
+        copyMissing(target, executionFields, "ready", "ready_for_native_execution");
+        copyMissing(target, executionFields, "last_frame", "frame_index");
     }
 
     private static Map<String, String> extractLightingAggregateFields(String nativeStatus) {
@@ -276,6 +307,19 @@ public record LightingDispatchTelemetryStatus(
             return "";
         }
         return extractBracketContentAt(source, markerStart + marker.length() - 1);
+    }
+
+    private static String extractBraceContent(String source, String marker) {
+        int markerStart = source.indexOf(marker);
+        if (markerStart < 0) {
+            return "";
+        }
+        int braceIndex = markerStart + marker.length() - 1;
+        int end = findMatching(source, braceIndex, '{', '}');
+        if (end <= braceIndex) {
+            return "";
+        }
+        return source.substring(braceIndex + 1, end);
     }
 
     private static String extractBracketContentAt(String source, int bracketIndex) {
@@ -485,6 +529,13 @@ public record LightingDispatchTelemetryStatus(
         }
     }
 
+    private static void copyMissing(Map<String, String> target, Map<String, String> source, String sourceKey, String targetKey) {
+        String value = source.get(sourceKey);
+        if (value != null && !value.isBlank()) {
+            target.putIfAbsent(targetKey, value);
+        }
+    }
+
     private static Long firstLong(String... values) {
         for (String value : values) {
             Long parsed = parseLong(value);
@@ -594,9 +645,24 @@ public record LightingDispatchTelemetryStatus(
             case "generation", "dispatch_generation", "stage_generation" -> "last_generation";
             case "dispatch", "dispatch_groups", "groups" -> "last_dispatch";
             case "rays", "ray_count" -> "last_rays";
+            case "samples", "sample_count", "last_sample_count" -> "last_samples";
+            case "candidates", "candidate_count", "last_candidate_count", "shadow_candidates",
+                    "shadow_candidate_count", "direct_shadow_candidates" -> "last_candidates";
             case "cache", "cache_counts" -> "last_cache";
             case "cache_reads", "cache_read_count" -> "cache_reads";
             case "cache_writes", "cache_write_count" -> "cache_writes";
+            case "flags", "stage_flags" -> "last_flags";
+            case "metadata_only" -> "placeholder";
+            case "valid" -> "validated";
+            case "debug" -> "debug_overlay";
+            case "native_ready", "ready", "executable" -> "ready_for_native_execution";
+            case "ready_reason", "native_readiness_reason", "reason" -> "readiness_reason";
+            case "recorded", "submitted_this_frame" -> "recorded_this_frame";
+            case "frame", "frame_index", "last_frame_index", "dispatch_frame" -> "last_frame";
+            case "size", "dimensions", "resolution" -> "last_size";
+            case "io", "io_counts" -> "last_io";
+            case "input_count", "last_input_count" -> "inputs";
+            case "output_count", "last_output_count" -> "outputs";
             default -> normalizeFieldKey(value);
         };
     }

@@ -2,11 +2,11 @@
 
 ## Progress Audit
 
-Current controller estimate: **about 79% complete against this file**.
+Current controller estimate: **about 80% complete against this file**.
 
 This percentage is conservative:
 - Rounds 0-3 are mostly implemented and controller-validated.
-- Round 4 has Java/native/shader scaffolding, dirty-region GI inputs, direct shadow candidate planning, native direct/GI/post handoff DTOs, payload-category telemetry, and native dispatch validation, but the first real lighting milestone is not complete yet.
+- Round 4 has Java/native/shader scaffolding, dirty-region GI inputs, direct shadow candidate planning, native direct/GI/post handoff DTOs, payload-category telemetry, native dispatch validation, and Round 5 direct execution/output-marker telemetry, but the first real visible lighting milestone is not complete yet.
 - The remaining work is the hardest part: turning Phase 5 metadata/planning into visible direct light, low-res GI, denoise, composite behavior, and richer debug telemetry.
 
 Legend:
@@ -105,15 +105,15 @@ Legend:
 - **Agent L: Debug Telemetry** **PARTIAL**
   - Owns GPU/CPU timing labels, backend status overlay, dirty chunk overlay, material id overlay, and native error reporting.
   - Deliverable: debug views and structured logs for controller-led testing.
-  - ~~Status: backend/native/upload/frame telemetry, Phase 5 lighting dispatch telemetry, native payload-category summaries, and readiness reasons are implemented and compile/launch validated.~~ **DONE/VALIDATED**
+  - ~~Status: backend/native/upload/frame telemetry, Phase 5 lighting dispatch telemetry, native payload-category summaries, direct execution output/resolve telemetry, and readiness reasons are implemented and compile/launch validated.~~ **DONE/VALIDATED**
   - Status: full GPU timing labels and visual overlay validation are still open.
 
 ### Round 4: Lighting Feature Agents
 
 - **Agent M: Direct Lighting** **PARTIAL**
   - Owns sun/moon lighting, emissive block list sampling, voxel shadow ray scaffolding.
-  - ~~Status: Java planning contracts, emissive sampling, bounded direct shadow candidate generation, native direct-light handoff DTOs, resource-category stage counts, and native dispatch metadata exist and have been validated.~~ **DONE/VALIDATED**
-  - Status: real native direct-light execution is still open.
+  - ~~Status: Java planning contracts, emissive sampling, bounded direct shadow candidate generation, native direct-light handoff DTOs, resource-category stage counts, native dispatch metadata, and native direct execution output/resolve markers exist and have been validated.~~ **DONE/VALIDATED**
+  - Status: real visible direct-light execution is still open.
 
 - **Agent N: First GI** **PARTIAL**
   - Owns low-res single-bounce diffuse GI, temporal accumulation inputs, and cache confidence output.
@@ -180,7 +180,12 @@ Basic voxel shadow-ray hook or placeholder ray result path.
 Deliverable:
 
 Native lighting output buffer changes visibly when emissive blocks or sun/moon state are present.
-Lighting dispatch count, candidate count, and output-buffer status are logged.
+~~Lighting dispatch count, candidate count, and output-buffer status are logged.~~ **DONE/VALIDATED**
+
+Status:
+
+~~Native direct execution scaffold records direct candidate/sample/ray counts, output-write marker, resolve marker, and readiness reason in controller logs.~~ **DONE/VALIDATED**
+Visible direct-light output is still open.
 
 Must not own:
 
@@ -217,11 +222,17 @@ Visible indicator that lighting dispatch is active.
 Deliverable:
 
 Debug overlay can show:
-lighting enabled/disabled,
-emissive candidate count,
-direct shadow candidate count,
-last direct lighting dispatch frame,
+~~lighting enabled/disabled,~~ **DONE/VALIDATED**
+~~emissive candidate count,~~ **DONE/VALIDATED**
+~~direct shadow candidate count,~~ **DONE/VALIDATED**
+~~last direct lighting dispatch frame,~~ **DONE/VALIDATED**
+~~direct output write and resolve status,~~ **DONE/VALIDATED**
 CPU/native/GPU timing placeholder or timing if available.
+
+Status:
+
+~~Direct lighting overlay mode and native direct execution parser are implemented and compile/launch validated through native status/log telemetry.~~ **DONE/VALIDATED**
+Visual overlay screenshot validation is still open.
 
 Validation by controller:
 
@@ -234,10 +245,11 @@ Validate logs contain overlay mode changes and direct lighting telemetry.
 Round 5 Acceptance Criteria
 Direct/emissive lighting has a visible effect in-world.
 Controller screenshots show clear before/after difference.
-Native logs prove lighting dispatch executed.
+~~Native logs prove lighting dispatch executed with candidate count, output-write marker, and resolve marker.~~ **DONE/VALIDATED for the current scaffold**
 HUD/translucency are not corrupted.
 Disabling Lucerna restores vanilla/no-op behavior.
-No crash on world join, resize, world leave, or shutdown.
+~~No crash on world join, world leave, or shutdown.~~ **DONE/VALIDATED for current scaffold**
+Resize remains covered by prior lifecycle validation, but visible Round 5 resize behavior still needs targeted validation.
 Round 6: Low-Resolution Diffuse GI and First Radiance Cache
 Goal
 
@@ -727,6 +739,7 @@ Logs prove candidate reuse and reservoir invalidation behavior.
 - ~~No sub-agent is allowed to "verify" fixes by running tests or build-like checks. They patch, explain, and wait for controller feedback.~~ **DONE/ONGOING**
 
 Latest strong validation evidence:
+- ~~Sodium + Iris + Vulkan launches, joins `New World`, accepts native direct lighting dispatches with candidate count greater than zero, records native direct output-write and resolve markers, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-direct-execution-dedup-sodium-iris-vulkan-20260619-035011.log`**
 - ~~Sodium + Iris + Vulkan launches, joins `New World`, accepts native section/G-buffer/Phase 5 handoff dispatches from the direct/GI/post DTO integration, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-phase5-handoff-sodium-iris-vulkan-20260619-032114.log`**
 - ~~Sodium + Iris + Vulkan launches, joins a world, accepts native section/G-buffer/Phase 5 lighting dispatches, and shuts down cleanly.~~
 - ~~Sodium-only Vulkan launches, joins a world, accepts native section/G-buffer/Phase 5 lighting dispatches, and shuts down cleanly.~~
@@ -743,6 +756,8 @@ Latest strong validation evidence:
 - ~~World/material updates reach native upload queues with generation tracking.~~ **DONE/VALIDATED**
 - ~~First visual milestone: no-op or flat composite pass renders without corrupting vanilla HUD/translucency.~~ **DONE/VALIDATED as no-op/flat placeholder path**
 - First lighting milestone: basic emissive/direct light + low-res diffuse GI + denoise/composite path works under controller-run testing. **OPEN**
+  - ~~Native direct dispatch/candidate/output-write/resolve telemetry is validated.~~ **DONE/VALIDATED**
+  - Visible emissive/direct lighting, low-res GI, denoise, final composite, and screenshot proof are still open.
 
 ## Assumptions
 

@@ -9,11 +9,13 @@ These shader files are placeholders for the Sodium Vulkan integration milestones
 - `lighting/`: direct sun/moon, emissive sampling, first diffuse GI, cache confidence, variance, and reserved adaptive sampling metadata.
 - `denoise/`: temporal rejection, spatial denoise, variance-aware filtering, and history repair passes.
 - `composite/`: flat-composite staging into the active Minecraft target without corrupting vanilla HUD or late translucency.
-- `debug/`: overlays used by controller-run verification: backend state, dirty regions, material ids, timings, native queues, cache confidence, variance, adaptive sampling, and label views.
+- `debug/`: overlays used by controller-run verification: backend state, dirty regions, material ids, timings, native queues, direct-light candidate counts, output/resolve state, cache confidence, variance, adaptive sampling, and label views.
 
 ## Phase 5 Order
 
 The canonical Phase 5 dependency order is `lucerna.lighting.direct`, `lucerna.lighting.gi`, `lucerna.denoise.diffuse`, `lucerna.debug.overlay`, then `lucerna.composite.final`. Debug overlay is scheduled before composite because composite may consume `lucerna.debug.overlay` when overlay mode is active.
+
+Round 5 uses the same IDs but narrows the immediate target to visible direct light: `lucerna.lighting.direct` writes a Lucerna-owned direct-light target, and `lucerna.composite.final` resolves it into `lucerna.composite.worldColor` before vanilla HUD and late translucency.
 
 ## Round 4 Payload Handoffs
 
@@ -25,6 +27,10 @@ The canonical Phase 5 dependency order is `lucerna.lighting.direct`, `lucerna.li
 - Debug readiness: `DebugLabelTable` reserves labels for contract-ready versus algorithm-complete state and for first-lighting entry/exit boundaries.
 
 The first lighting milestone is reached only when the controller can observe visible direct light, low-resolution GI, denoise, and composite behavior without corrupting vanilla HUD or late translucency. Placeholder shaders remain side-effect free until that work lands.
+
+For the first visible direct-light proof, the controller needs three screenshot markers: baseline/disabled or no-op, enabled direct-light output, and direct-light debug overlay. The enabled shot should show one emissive block, sun, or moon path visibly brightening a surface; the overlay should expose candidate counts, shadow candidate count, dispatch frame, output-buffer status, resolve status, and HUD readability. Metadata in this folder only defines that contract; real visible output remains controller-validated.
+
+Lucerna must not consume Iris shader-pack outputs for this milestone. Iris can remain status/settings-visible, but shader-pack color, depth, shadow, and lighting resources are outside the Lucerna direct-light resolve contract.
 
 ## Naming
 

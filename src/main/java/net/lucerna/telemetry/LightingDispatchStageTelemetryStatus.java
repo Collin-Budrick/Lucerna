@@ -10,14 +10,29 @@ public record LightingDispatchStageTelemetryStatus(
         Boolean enabled,
         Long generation,
         String dispatchGroups,
+        String dimensions,
+        String ioCounts,
+        Long sampleCount,
+        Long candidateCount,
         Long rayCount,
         Long cacheReadCount,
         Long cacheWriteCount,
+        Long flags,
+        Boolean placeholder,
+        Boolean validated,
+        Boolean debugOverlay,
+        Boolean readyForNativeExecution,
+        String readinessReason,
+        Long frameIndex,
+        Boolean recordedThisFrame,
         Map<String, String> details
 ) {
     public LightingDispatchStageTelemetryStatus {
         stageId = cleanStageId(stageId);
         dispatchGroups = blankToEmpty(stripQuotes(dispatchGroups));
+        dimensions = blankToEmpty(stripQuotes(dimensions));
+        ioCounts = blankToEmpty(stripQuotes(ioCounts));
+        readinessReason = blankToEmpty(stripQuotes(readinessReason));
         details = immutable(details);
     }
 
@@ -48,6 +63,39 @@ public record LightingDispatchStageTelemetryStatus(
             );
         }
 
+        String dimensions = firstPresent(normalizedFields, "last_size", "size", "dimensions", "resolution");
+        if (dimensions.isBlank()) {
+            dimensions = xyLabel(
+                    firstPresent(normalizedFields, "width", "last_width"),
+                    firstPresent(normalizedFields, "height", "last_height")
+            );
+        }
+
+        String ioCounts = firstPresent(normalizedFields, "last_io", "io", "io_counts");
+        if (ioCounts.isBlank()) {
+            ioCounts = pairLabel(
+                    firstPresent(normalizedFields, "inputs", "input_count", "last_input_count"),
+                    firstPresent(normalizedFields, "outputs", "output_count", "last_output_count")
+            );
+        }
+
+        Long sampleCount = parseLong(firstPresent(
+                normalizedFields,
+                "last_samples",
+                "samples",
+                "sample_count",
+                "last_sample_count"
+        ));
+        Long candidateCount = parseLong(firstPresent(
+                normalizedFields,
+                "last_candidates",
+                "candidates",
+                "candidate_count",
+                "last_candidate_count",
+                "shadow_candidates",
+                "shadow_candidate_count",
+                "direct_shadow_candidates"
+        ));
         Long rayCount = parseLong(firstPresent(normalizedFields, "last_rays", "rays", "ray_count"));
         Long cacheReadCount = parseLong(firstPresent(
                 normalizedFields,
@@ -70,15 +118,59 @@ public record LightingDispatchStageTelemetryStatus(
         if (cacheWriteCount == null) {
             cacheWriteCount = parsedCachePair[1];
         }
+        Long flags = parseLong(firstPresent(normalizedFields, "last_flags", "flags", "stage_flags"));
+        Boolean placeholder = parseBoolean(firstPresent(normalizedFields, "placeholder", "metadata_only"));
+        Boolean validated = parseBoolean(firstPresent(normalizedFields, "validated", "valid"));
+        Boolean debugOverlay = parseBoolean(firstPresent(normalizedFields, "debug_overlay", "debug"));
+        Boolean readyForNativeExecution = parseBoolean(firstPresent(
+                normalizedFields,
+                "ready_for_native_execution",
+                "native_ready",
+                "ready",
+                "executable"
+        ));
+        String readinessReason = firstPresent(
+                normalizedFields,
+                "readiness_reason",
+                "ready_reason",
+                "native_readiness_reason",
+                "reason"
+        );
+        Long frameIndex = parseLong(firstPresent(
+                normalizedFields,
+                "last_frame",
+                "frame",
+                "frame_index",
+                "last_frame_index",
+                "dispatch_frame"
+        ));
+        Boolean recordedThisFrame = parseBoolean(firstPresent(
+                normalizedFields,
+                "recorded_this_frame",
+                "recorded",
+                "submitted_this_frame"
+        ));
 
         return new LightingDispatchStageTelemetryStatus(
                 stageId,
                 enabled,
                 generation,
                 dispatchGroups,
+                dimensions,
+                ioCounts,
+                sampleCount,
+                candidateCount,
                 rayCount,
                 cacheReadCount,
                 cacheWriteCount,
+                flags,
+                placeholder,
+                validated,
+                debugOverlay,
+                readyForNativeExecution,
+                readinessReason,
+                frameIndex,
+                recordedThisFrame,
                 normalizedFields
         );
     }
@@ -89,9 +181,13 @@ public record LightingDispatchStageTelemetryStatus(
         fieldCount += append(label, "enabled", this.enabled == null ? "" : Boolean.toString(this.enabled));
         fieldCount += append(label, "gen", this.generation == null ? "" : Long.toString(this.generation));
         fieldCount += append(label, "groups", this.dispatchGroups);
+        fieldCount += append(label, "samples", this.sampleCount == null ? "" : Long.toString(this.sampleCount));
+        fieldCount += append(label, "candidates", this.candidateCount == null ? "" : Long.toString(this.candidateCount));
         fieldCount += append(label, "rays", this.rayCount == null ? "" : Long.toString(this.rayCount));
         String cacheLabel = cacheLabel();
         fieldCount += append(label, "cache", cacheLabel);
+        fieldCount += append(label, "ready", this.readyForNativeExecution == null ? "" : Boolean.toString(this.readyForNativeExecution));
+        fieldCount += append(label, "frame", this.frameIndex == null ? "" : Long.toString(this.frameIndex));
         if (fieldCount == 0) {
             label.append(" reported");
         }
@@ -112,6 +208,18 @@ public record LightingDispatchStageTelemetryStatus(
         if (!this.dispatchGroups.isBlank()) {
             fields.put(normalizedPrefix + ".dispatchGroups", this.dispatchGroups);
         }
+        if (!this.dimensions.isBlank()) {
+            fields.put(normalizedPrefix + ".dimensions", this.dimensions);
+        }
+        if (!this.ioCounts.isBlank()) {
+            fields.put(normalizedPrefix + ".ioCounts", this.ioCounts);
+        }
+        if (this.sampleCount != null) {
+            fields.put(normalizedPrefix + ".samples", Long.toString(this.sampleCount));
+        }
+        if (this.candidateCount != null) {
+            fields.put(normalizedPrefix + ".candidates", Long.toString(this.candidateCount));
+        }
         if (this.rayCount != null) {
             fields.put(normalizedPrefix + ".rays", Long.toString(this.rayCount));
         }
@@ -123,6 +231,30 @@ public record LightingDispatchStageTelemetryStatus(
         }
         if (this.cacheWriteCount != null) {
             fields.put(normalizedPrefix + ".cacheWrites", Long.toString(this.cacheWriteCount));
+        }
+        if (this.flags != null) {
+            fields.put(normalizedPrefix + ".flags", Long.toString(this.flags));
+        }
+        if (this.placeholder != null) {
+            fields.put(normalizedPrefix + ".placeholder", Boolean.toString(this.placeholder));
+        }
+        if (this.validated != null) {
+            fields.put(normalizedPrefix + ".validated", Boolean.toString(this.validated));
+        }
+        if (this.debugOverlay != null) {
+            fields.put(normalizedPrefix + ".debugOverlay", Boolean.toString(this.debugOverlay));
+        }
+        if (this.readyForNativeExecution != null) {
+            fields.put(normalizedPrefix + ".readyForNativeExecution", Boolean.toString(this.readyForNativeExecution));
+        }
+        if (!this.readinessReason.isBlank()) {
+            fields.put(normalizedPrefix + ".readinessReason", this.readinessReason);
+        }
+        if (this.frameIndex != null) {
+            fields.put(normalizedPrefix + ".frameIndex", Long.toString(this.frameIndex));
+        }
+        if (this.recordedThisFrame != null) {
+            fields.put(normalizedPrefix + ".recordedThisFrame", Boolean.toString(this.recordedThisFrame));
         }
         for (Map.Entry<String, String> entry : this.details.entrySet()) {
             fields.put(normalizedPrefix + ".raw." + sanitizeKey(entry.getKey()), entry.getValue());
@@ -218,6 +350,20 @@ public record LightingDispatchStageTelemetryStatus(
             return "";
         }
         return x + "x" + y + "x" + z;
+    }
+
+    private static String xyLabel(String x, String y) {
+        if (x.isBlank() || y.isBlank()) {
+            return "";
+        }
+        return x + "x" + y;
+    }
+
+    private static String pairLabel(String first, String second) {
+        if (first.isBlank() || second.isBlank()) {
+            return "";
+        }
+        return first + "/" + second;
     }
 
     private static Map<String, String> immutable(Map<String, String> source) {

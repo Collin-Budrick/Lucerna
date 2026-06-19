@@ -53,6 +53,7 @@ public final class LucernaDebugOverlayLines {
             case DIRTY_REGIONS -> addDirtyRegionLines(lines, snapshot);
             case MATERIAL_IDS -> addMaterialLines(lines, snapshot);
             case FRAME_TIMINGS -> addTimingLines(lines, snapshot);
+            case DIRECT_LIGHTING -> addDirectLightingLines(lines, snapshot);
             case NATIVE_QUEUE -> addNativeQueueLines(lines, snapshot);
             case OFF -> lines.add(statusLine(snapshot));
         }
@@ -167,6 +168,52 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("First-pass validation: " + snapshot.firstPassValidationSummary()));
     }
 
+    private static void addDirectLightingLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        LightingDispatchTelemetryStatus lightingDispatch = snapshot.lightingDispatchStatus();
+        LightingDispatchStageTelemetryStatus directStage = lightingDispatch.stages().get("direct_lighting");
+
+        lines.add(Component.literal("Overlay state: " + snapshot.debugOverlay().name()
+                + " | Renderer: " + snapshot.rendererStateLabel()
+                + " | Native: " + snapshot.nativeBridgeLabel()));
+
+        if (!lightingDispatch.hasLightingDispatchStatus()) {
+            lines.add(Component.literal("Lighting dispatch: unavailable"));
+            lines.add(Component.literal("Reason: " + shorten(lightingDispatch.message(), 96)));
+            lines.add(Component.literal("Frame: " + snapshot.frameLifecycle().frameIndex()
+                    + " | Context: " + snapshot.frameLifecycle().contextStatus()));
+            return;
+        }
+
+        lines.add(Component.literal("Lighting dispatch: " + lightingDispatch.compactLabel()));
+        if (directStage == null) {
+            lines.add(Component.literal("Direct stage: not reported"));
+            lines.add(Component.literal("Frame: " + snapshot.frameLifecycle().frameIndex()
+                    + " | submitted=" + yesNo(snapshot.frameLifecycle().lightingSubmitted())));
+            return;
+        }
+
+        lines.add(Component.literal("Direct stage: enabled=" + yesNoUnknown(directStage.enabled())
+                + " native=" + nativeExecutionLabel(directStage)
+                + " debug=" + yesNoUnknown(directStage.debugOverlay())));
+        lines.add(Component.literal("Direct counts: candidates=" + countOrFallback(directStage.candidateCount(), directStage.sampleCount())
+                + " samples=" + valueOrUnknown(directStage.sampleCount())
+                + " rays=" + valueOrUnknown(directStage.rayCount())));
+        lines.add(Component.literal("Direct dispatch: frame=" + directDispatchFrameLabel(snapshot, directStage)
+                + " gen=" + valueOrUnknown(directStage.generation())
+                + " groups=" + valueOrUnknown(directStage.dispatchGroups())));
+        lines.add(Component.literal("Direct output: writes=" + detailOrUnknown(directStage, "output_writes")
+                + " resolves=" + detailOrUnknown(directStage, "resolves")
+                + " writeRecorded=" + detailOrUnknown(directStage, "output_write_recorded")
+                + " resolveRecorded=" + detailOrUnknown(directStage, "resolve_recorded")));
+        lines.add(Component.literal("Direct native: attempts=" + detailOrUnknown(directStage, "attempts")
+                + " submitted=" + detailOrUnknown(directStage, "submitted")
+                + " skipped=" + detailOrUnknown(directStage, "skipped")
+                + " marker=" + shorten(detailOrUnknown(directStage, "output_marker"), 48)));
+        lines.add(Component.literal("Direct flags: " + directFlagLabel(directStage)));
+        String reason = directStage.readinessReason().isBlank() ? lightingDispatch.message() : directStage.readinessReason();
+        lines.add(Component.literal("Direct readiness: " + shorten(reason, 96)));
+    }
+
     private static void addNativePassStateLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
         NativePassTelemetryStatus nativePassStates = snapshot.nativePassStates();
         lines.add(Component.literal("Native pass states: " + nativePassStates.compactLabel()));
@@ -189,6 +236,107 @@ public final class LucernaDebugOverlayLines {
         for (LightingDispatchStageTelemetryStatus stage : lightingDispatch.stages().values()) {
             lines.add(Component.literal("Lighting stage: " + stage.compactLabel()));
         }
+    }
+
+    private static String nativeExecutionLabel(LightingDispatchStageTelemetryStatus stage) {
+        if (isTruthy(stage.details().get("output_write_recorded"))
+                && isTruthy(stage.details().get("resolve_recorded"))) {
+            return "executed";
+        }
+        if (parsePositive(stage.details().get("submitted"))) {
+            return "submitted";
+        }
+        if (Boolean.TRUE.equals(stage.readyForNativeExecution())) {
+            return Boolean.TRUE.equals(stage.placeholder()) ? "placeholder" : "ready";
+        }
+        if (Boolean.FALSE.equals(stage.readyForNativeExecution())) {
+            return "blocked";
+        }
+        if (Boolean.TRUE.equals(stage.placeholder())) {
+            return "placeholder";
+        }
+        return "unknown";
+    }
+
+    private static String directFlagLabel(LightingDispatchStageTelemetryStatus stage) {
+        List<String> flags = new ArrayList<>();
+        if (Boolean.TRUE.equals(stage.placeholder())) {
+            flags.add("placeholder");
+        }
+        if (Boolean.TRUE.equals(stage.validated())) {
+            flags.add("validated");
+        }
+        if (Boolean.TRUE.equals(stage.recordedThisFrame())) {
+            flags.add("recorded");
+        }
+        if (stage.flags() != null) {
+            flags.add("raw=" + stage.flags());
+        }
+        return flags.isEmpty() ? "unreported" : String.join(",", flags);
+    }
+
+    private static String countOrFallback(Long count, Long fallback) {
+        if (count != null) {
+            return Long.toString(count);
+        }
+        if (fallback != null) {
+            return Long.toString(fallback) + " inferred";
+        }
+        return "?";
+    }
+
+    private static String directDispatchFrameLabel(
+            LucernaStatusSnapshot snapshot,
+            LightingDispatchStageTelemetryStatus stage
+    ) {
+        if (stage.frameIndex() != null) {
+            return Long.toString(stage.frameIndex());
+        }
+        if (Boolean.TRUE.equals(stage.recordedThisFrame())) {
+            return snapshot.frameLifecycle().frameIndex() + " current";
+        }
+        return "?";
+    }
+
+    private static String valueOrUnknown(Long value) {
+        return value == null ? "?" : Long.toString(value);
+    }
+
+    private static String valueOrUnknown(String value) {
+        return value == null || value.isBlank() ? "?" : value;
+    }
+
+    private static String detailOrUnknown(LightingDispatchStageTelemetryStatus stage, String key) {
+        return valueOrUnknown(stage.details().get(key));
+    }
+
+    private static boolean isTruthy(String value) {
+        return "1".equals(value) || "true".equalsIgnoreCase(value);
+    }
+
+    private static boolean parsePositive(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        try {
+            return Long.parseLong(value) > 0L;
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
+    }
+
+    private static String yesNoUnknown(Boolean value) {
+        if (value == null) {
+            return "?";
+        }
+        return yesNo(value);
+    }
+
+    private static String shorten(String value, int maxLength) {
+        if (value == null || value.isBlank() || value.length() <= maxLength) {
+            return value == null || value.isBlank() ? "unreported" : value;
+        }
+        return value.substring(0, Math.max(0, maxLength - 3)) + "...";
     }
 
     private static String formatMillis(double millis) {

@@ -30,6 +30,7 @@ Debug overlay runs before final composite so `lucerna.composite.final` can blend
 ## Phase 5 Write Semantics
 
 - Direct lighting writes `lucerna.lighting.direct` after clearing it; it never blends into Minecraft/Sodium color targets.
+- Round 5 direct-light resolve is the first visible use of that target: composite may sample `lucerna.lighting.direct` and current albedo/opacity to brighten the borrowed world color target, but only after the direct output buffer write has completed.
 - GI writes `lucerna.lighting.diffuseGi`, `lucerna.lighting.cacheConfidence`, `lucerna.lighting.variance`, and `lucerna.lighting.rayBudget` after clearing them. `lucerna.lighting.rayBudget` is the canonical ray-budget debug target and reserved adaptive sampling metadata with values `0` reuse-only, `1` low, `2` medium, and `3` high.
 - Denoise writes `lucerna.denoise.diffuse` and `lucerna.denoise.rejectionMask` after clearing them. Both are history-sensitive and depend on cache confidence plus variance metadata.
 - Debug writes `lucerna.debug.overlay` only when overlay mode needs it. It is optional, clear-before-write, and consumes `DebugLabelTable` for stable display names.
@@ -53,6 +54,29 @@ Debug overlay runs before final composite so `lucerna.composite.final` can blend
 Entry requires active Sodium Vulkan, native world/material upload generations, allocated current-frame G-buffer targets, and the already validated no-op or flat-composite path. Exit requires controller-observable visible direct lighting, low-resolution diffuse GI plus confidence/variance/ray-budget output, denoise/composite behavior, and no HUD or late-translucency corruption.
 
 The milestone is limited to basic sun/moon, bounded emissive sampling, voxel shadow-ray visibility, low-resolution single-bounce diffuse GI, cache confidence/variance/ray-budget metadata, edge-aware denoise, and final composite. Iris shader-pack rendering, swapchain ownership, hardware RT, volumetrics, water/transparency handling, temporal upscaling, and ReSTIR reservoirs stay out of scope.
+
+## Round 5 Direct Output And Resolve
+
+Round 5 narrows the immediate visible milestone to one direct-lighting proof before later GI quality work. The public output remains `lucerna.lighting.direct`: full-resolution linear RGB direct radiance, with alpha reserved for direct visibility or confidence. The direct pass may use Lucerna-owned frame constants, G-buffer attachments, `MaterialTable`, `VoxelOccupancy`, `BlueNoiseTexture`, and `EmissiveBlockList`.
+
+`lucerna.composite.final` owns the resolve into `lucerna.composite.worldColor`. The resolve must be switchable between baseline/no-op and enabled direct-light modes so the controller can capture paired screenshots from the same test scene. It runs before vanilla HUD and late translucency, preserves Minecraft/Sodium target ownership, and must not sample Iris shader-pack color, depth, shadow, or lighting resources.
+
+Visible direct output is not considered complete from metadata alone. It remains controller-validated only after screenshots show an emissive, sun, or moon candidate brightening a visible surface and logs show native direct dispatch, candidate count, direct output write, direct resolve, and no native errors.
+
+## Round 5 Debug Overlay Inputs
+
+The debug overlay contract reserves Lucerna-owned inputs for direct-light validation:
+
+- lighting enabled/disabled state
+- emissive candidate count
+- direct shadow candidate count
+- last direct lighting dispatch frame
+- direct output buffer write status
+- direct resolve status
+- CPU/native/GPU timing placeholder or timing value when available
+- controller screenshot marker state
+
+Overlay text or visualization must remain readable with the vanilla HUD and must identify when visible direct output is still pending controller validation.
 
 ## Phase 5 Telemetry Names
 
@@ -93,6 +117,8 @@ Readiness labels report contract-ready versus algorithm-complete state. The dire
 ## Validation Notes
 
 The validation scenarios in `layout.json` are controller-run only. Sub-agents may edit this metadata and placeholder files, but must not run shader compilation, Gradle checks, compiler checks, native builds, Minecraft launches, or render smoke tests.
+
+For Round 5, the controller screenshot set is baseline/disabled or no-op, enabled direct-light output, and direct-light debug overlay. The validation markers are one emissive block such as glowstone, a redstone lamp, lava, or torch near a visible wall; clear surface brightening in enabled mode; unchanged readable HUD; dispatch/candidate/output/resolve log markers; and no Iris shader-pack output consumption.
 
 ## Java Metadata Scaffold
 
