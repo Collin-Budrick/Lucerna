@@ -108,6 +108,14 @@ std::uint64_t saturated_add(std::uint64_t left, std::uint64_t right) {
     return left + right;
 }
 
+std::uint64_t saturated_multiply(std::uint64_t left, std::uint64_t right) {
+    constexpr std::uint64_t maximum = ~std::uint64_t{0};
+    if (left != 0 && right > maximum / left) {
+        return maximum;
+    }
+    return left * right;
+}
+
 std::uint64_t non_negative_u64(std::int32_t value) {
     return value <= 0 ? 0 : static_cast<std::uint64_t>(value);
 }
@@ -453,6 +461,10 @@ void append_round6_execution_status(
         << ",skipped=" << execution.skipped
         << ",accepted=" << execution.accepted
         << ",resource_markers=" << execution.resource_markers
+        << ",metadata_dispatches=" << execution.metadata_dispatches
+        << ",cache_read_metadata_dispatches=" << execution.cache_read_metadata_dispatches
+        << ",cache_write_metadata_dispatches=" << execution.cache_write_metadata_dispatches
+        << ",cache_write_markers=" << execution.cache_write_markers
         << ",last_frame=" << execution.last_frame_index
         << ",packet_generation=" << execution.last_packet_generation
         << ",dispatch_generation=" << execution.last_dispatch_generation
@@ -471,6 +483,8 @@ void append_round6_execution_status(
         << ",total_rays=" << execution.total_ray_count
         << ",total_cache_reads=" << execution.total_cache_read_count
         << ",total_cache_writes=" << execution.total_cache_write_count
+        << ",placeholder_output_population_count=" << execution.last_placeholder_output_population_count
+        << ",total_placeholder_output_population_count=" << execution.total_placeholder_output_population_count
         << ",flags=" << execution.last_flags
         << ",enabled=" << execution.last_enabled
         << ",validated=" << execution.last_validated
@@ -481,7 +495,16 @@ void append_round6_execution_status(
         << ",ready=" << execution.last_ready
         << ",accepted_this_dispatch=" << execution.last_accepted
         << ",resource_marker_recorded=" << execution.last_resource_marker_recorded
+        << ",metadata_dispatch_recorded=" << execution.last_metadata_dispatch_recorded
+        << ",cache_read_metadata_dispatch_recorded=" << execution.last_cache_read_metadata_dispatch_recorded
+        << ",cache_write_metadata_dispatch_recorded=" << execution.last_cache_write_metadata_dispatch_recorded
+        << ",placeholder_output_population_recorded=" << execution.last_placeholder_output_population_recorded
+        << ",cache_write_marker_recorded=" << execution.last_cache_write_marker_recorded
         << ",marker=\"" << execution.last_marker
+        << "\""
+        << ",output_marker=\"" << execution.last_output_marker
+        << "\""
+        << ",cache_marker=\"" << execution.last_cache_marker
         << "\""
         << ",readiness_reason=\"" << (execution.last_readiness_reason.empty()
             ? "round6_stage_not_evaluated"
@@ -2929,7 +2952,15 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_ready = stage.ready_for_native_execution_this_packet;
     execution.last_accepted = false;
     execution.last_resource_marker_recorded = false;
+    execution.last_metadata_dispatch_recorded = false;
+    execution.last_cache_read_metadata_dispatch_recorded = false;
+    execution.last_cache_write_metadata_dispatch_recorded = false;
+    execution.last_placeholder_output_population_recorded = false;
+    execution.last_cache_write_marker_recorded = false;
+    execution.last_placeholder_output_population_count = 0;
     execution.last_marker.clear();
+    execution.last_output_marker.clear();
+    execution.last_cache_marker.clear();
 
     if (!stage.enabled_this_packet) {
         execution.last_readiness_reason = stage.last_readiness_reason.empty()
@@ -2951,6 +2982,7 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.accepted++;
     execution.last_accepted = true;
     execution.last_marker = accepted_marker == nullptr ? "" : accepted_marker;
+    execution.metadata_dispatches++;
     execution.total_sample_count = saturated_add(execution.total_sample_count, execution.last_sample_count);
     execution.total_ray_count = saturated_add(execution.total_ray_count, execution.last_ray_count);
     execution.total_cache_read_count = saturated_add(
@@ -2962,11 +2994,78 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
 
     std::uint64_t recorded_resources = 0;
     if (resources_ != nullptr && frame_open_ && resources_->has_context()) {
-        const auto marker_label = std::string("render:") + to_string(dispatch_stage) + "-dispatch-accepted";
+        const auto marker_label = std::string("render:") + to_string(dispatch_stage) + "-metadata-dispatch";
         resources_->track_transient_buffer(frame_index_, 0, kLightingConstantsBytes, marker_label);
         execution.resource_markers++;
+        execution.last_metadata_dispatch_recorded = true;
         execution.last_resource_marker_recorded = true;
         recorded_resources++;
+    }
+
+    if (dispatch_stage == NativeLightingDispatchStage::DiffuseGi) {
+        if (execution.last_output_count != 0 && execution.last_width != 0 && execution.last_height != 0) {
+            const auto pixel_count = saturated_multiply(execution.last_width, execution.last_height);
+            execution.last_placeholder_output_population_count = saturated_multiply(
+                    pixel_count,
+                    execution.last_output_count);
+            execution.total_placeholder_output_population_count = saturated_add(
+                    execution.total_placeholder_output_population_count,
+                    execution.last_placeholder_output_population_count);
+            execution.last_output_marker = "diffuse_gi_placeholder_output_population_recorded";
+            if (resources_ != nullptr && frame_open_ && resources_->has_context()) {
+                resources_->track_transient_buffer(
+                        frame_index_,
+                        0,
+                        kLightingConstantsBytes,
+                        "render:diffuse_gi-output-placeholder-population");
+                execution.resource_markers++;
+                execution.last_placeholder_output_population_recorded = true;
+                execution.last_resource_marker_recorded = true;
+                recorded_resources++;
+            }
+        } else {
+            execution.last_output_marker = "diffuse_gi_placeholder_output_population_missing_outputs";
+        }
+    }
+
+    if (execution.last_cache_read_count != 0) {
+        execution.cache_read_metadata_dispatches++;
+        execution.last_cache_read_metadata_dispatch_recorded = true;
+        if (resources_ != nullptr && frame_open_ && resources_->has_context()) {
+            resources_->track_transient_buffer(
+                    frame_index_,
+                    0,
+                    kLightingConstantsBytes,
+                    std::string("render:") + to_string(dispatch_stage) + "-cache-read-metadata-dispatch");
+            execution.resource_markers++;
+            execution.last_resource_marker_recorded = true;
+            recorded_resources++;
+        }
+    }
+
+    if (execution.last_cache_write_count != 0) {
+        execution.cache_write_metadata_dispatches++;
+        execution.cache_write_markers++;
+        execution.last_cache_write_metadata_dispatch_recorded = true;
+        execution.last_cache_write_marker_recorded = true;
+        execution.last_cache_marker = std::string(to_string(dispatch_stage)) + "_cache_write_marker_recorded";
+        if (resources_ != nullptr && frame_open_ && resources_->has_context()) {
+            resources_->track_transient_buffer(
+                    frame_index_,
+                    0,
+                    kLightingConstantsBytes,
+                    std::string("render:") + to_string(dispatch_stage) + "-cache-write-metadata-dispatch");
+            resources_->track_transient_buffer(
+                    frame_index_,
+                    0,
+                    kLightingConstantsBytes,
+                    std::string("render:") + to_string(dispatch_stage) + "-cache-write-marker");
+            execution.resource_markers += 2;
+            execution.last_resource_marker_recorded = true;
+            recorded_resources += 2;
+        }
+    } else if (dispatch_stage == NativeLightingDispatchStage::Cache) {
+        execution.last_cache_marker = "lighting_cache_write_marker_absent_zero_writes";
     }
 
     execution.last_readiness_reason = execution.last_resource_marker_recorded

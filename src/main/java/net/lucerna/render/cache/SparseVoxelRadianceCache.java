@@ -17,6 +17,8 @@ import java.util.concurrent.atomic.AtomicLong;
 
 public final class SparseVoxelRadianceCache implements DirtyRegionListener {
     private static final float DEFAULT_USABLE_CONFIDENCE_FLOOR = 0.25F;
+    private static final int MAX_RECORDS = 512;
+    private static final int MAX_NEW_RECORDS_PER_SNAPSHOT = 128;
 
     private final SparseVoxelRadianceCacheInvalidationPolicy invalidationPolicy;
     private final Map<SparseVoxelRadianceCacheKey, SparseVoxelRadianceCacheRecord> records = new ConcurrentHashMap<>();
@@ -37,6 +39,7 @@ public final class SparseVoxelRadianceCache implements DirtyRegionListener {
         Objects.requireNonNull(record, "record");
         this.records.put(record.key(), record);
         this.cacheGeneration.accumulateAndGet(record.generation(), Math::max);
+        this.trimToRecordLimit();
     }
 
     public void clear() {
@@ -117,7 +120,7 @@ public final class SparseVoxelRadianceCache implements DirtyRegionListener {
             long nextGeneration
     ) {
         Set<SparseVoxelRadianceCacheKey> affectedKeys = new HashSet<>();
-        int createdDirtyPlaceholders = 0;
+        int createdDirtyRecords = 0;
         int originalRecordCount = this.records.size();
 
         for (DirtyRegion dirtyRegion : dirtyRegionSnapshot.regions()) {
@@ -134,7 +137,10 @@ public final class SparseVoxelRadianceCache implements DirtyRegionListener {
                 }
             }
 
-            if (dirtyRegion.sectionScoped() && !matchedExistingRecord) {
+            if (dirtyRegion.sectionScoped()
+                    && !matchedExistingRecord
+                    && createdDirtyRecords < MAX_NEW_RECORDS_PER_SNAPSHOT
+                    && this.records.size() < MAX_RECORDS) {
                 SparseVoxelRadianceCacheKey key = SparseVoxelRadianceCacheKey.fromDirtyRegion(
                         dirtyRegion,
                         0,
@@ -142,17 +148,18 @@ public final class SparseVoxelRadianceCache implements DirtyRegionListener {
                 );
                 SparseVoxelRadianceCacheRecord previous = this.records.putIfAbsent(
                         key,
-                        SparseVoxelRadianceCacheRecord.dirtyPlaceholder(
+                        SparseVoxelRadianceCacheRecord.allocatedFromDirtyRegion(
                                 key,
-                                dirtyRegion.generation(),
-                                "dirty region created sparse voxel radiance cache placeholder"
+                                dirtyRegion,
+                                nextGeneration
                         )
                 );
                 if (previous == null) {
-                    createdDirtyPlaceholders++;
+                    createdDirtyRecords++;
                 }
             }
         }
+        this.trimToRecordLimit();
 
         return new SparseVoxelRadianceCacheInvalidationSummary(
                 nextGeneration,
@@ -162,10 +169,10 @@ public final class SparseVoxelRadianceCache implements DirtyRegionListener {
                 dirtyRegionSnapshot.pendingRegionCountAfterDrain(),
                 affectedKeys.size(),
                 Math.max(0, originalRecordCount - affectedKeys.size()),
-                createdDirtyPlaceholders,
+                createdDirtyRecords,
                 false,
-                !affectedKeys.isEmpty() || createdDirtyPlaceholders > 0
-                        ? "section dirty regions invalidated sparse voxel radiance cache records"
+                !affectedKeys.isEmpty() || createdDirtyRecords > 0
+                        ? "section dirty regions invalidated or allocated sparse voxel radiance cache records"
                         : "dirty regions did not overlap sparse voxel radiance cache records"
         );
     }
@@ -223,5 +230,21 @@ public final class SparseVoxelRadianceCache implements DirtyRegionListener {
                         ? "sparse voxel radiance cache has no records"
                         : "sparse voxel radiance cache status"
         );
+    }
+
+    private void trimToRecordLimit() {
+        int overflow = this.records.size() - MAX_RECORDS;
+        if (overflow <= 0) {
+            return;
+        }
+
+        List<SparseVoxelRadianceCacheRecord> orderedRecords = new ArrayList<>(this.records.values());
+        orderedRecords.sort(Comparator
+                .comparingLong(SparseVoxelRadianceCacheRecord::generation)
+                .thenComparing(record -> record.key().stableKey()));
+        for (int index = 0; index < overflow && index < orderedRecords.size(); index++) {
+            SparseVoxelRadianceCacheRecord record = orderedRecords.get(index);
+            this.records.remove(record.key(), record);
+        }
     }
 }

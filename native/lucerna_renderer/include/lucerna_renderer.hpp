@@ -461,6 +461,10 @@ struct NativeRound6DispatchExecutionTelemetry {
     std::uint64_t skipped = 0;
     std::uint64_t accepted = 0;
     std::uint64_t resource_markers = 0;
+    std::uint64_t metadata_dispatches = 0;
+    std::uint64_t cache_read_metadata_dispatches = 0;
+    std::uint64_t cache_write_metadata_dispatches = 0;
+    std::uint64_t cache_write_markers = 0;
     std::uint64_t last_frame_index = 0;
     std::uint64_t last_packet_generation = 0;
     std::uint64_t last_dispatch_generation = 0;
@@ -482,6 +486,8 @@ struct NativeRound6DispatchExecutionTelemetry {
     std::uint64_t total_ray_count = 0;
     std::uint64_t total_cache_read_count = 0;
     std::uint64_t total_cache_write_count = 0;
+    std::uint64_t last_placeholder_output_population_count = 0;
+    std::uint64_t total_placeholder_output_population_count = 0;
     std::uint32_t last_flags = 0;
     bool last_enabled = false;
     bool last_validated = false;
@@ -492,7 +498,14 @@ struct NativeRound6DispatchExecutionTelemetry {
     bool last_ready = false;
     bool last_accepted = false;
     bool last_resource_marker_recorded = false;
+    bool last_metadata_dispatch_recorded = false;
+    bool last_cache_read_metadata_dispatch_recorded = false;
+    bool last_cache_write_metadata_dispatch_recorded = false;
+    bool last_placeholder_output_population_recorded = false;
+    bool last_cache_write_marker_recorded = false;
     std::string last_marker;
+    std::string last_output_marker;
+    std::string last_cache_marker;
     std::string last_readiness_reason;
 };
 

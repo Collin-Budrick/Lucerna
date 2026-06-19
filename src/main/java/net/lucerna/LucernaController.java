@@ -34,8 +34,10 @@ import net.lucerna.render.lighting.gi.DiffuseGiSourceSummary;
 import net.lucerna.render.lighting.gi.DiffuseGiSettings;
 import net.lucerna.render.lighting.gi.GiCacheInvalidationPolicy;
 import net.lucerna.render.lighting.gi.GiCachePlannerInputs;
+import net.lucerna.render.lighting.gi.GiCacheSnapshot;
 import net.lucerna.render.lighting.gi.LowResDiffuseGiPlan;
 import net.lucerna.render.lighting.gi.LowResDiffuseGiPlanner;
+import net.lucerna.render.lighting.gi.SparseVoxelRadianceCacheSnapshotAdapter;
 import net.lucerna.render.lighting.post.PostProcessingPipelinePlan;
 import net.lucerna.render.lighting.post.PostProcessingPlanBuilder;
 import net.lucerna.render.mixin.PublicMojangPreviewPassSubmissionResult;
@@ -498,6 +500,7 @@ public final class LucernaController {
         SparseVoxelRadianceCacheSnapshot sparseCacheSnapshot = this.sparseRadianceCache.applyDirtyRegionSnapshot(
                 sectionExtraction == null ? null : sectionExtraction.dirtyRegionSnapshot()
         );
+        GiCacheSnapshot adaptedGiCacheSnapshot = SparseVoxelRadianceCacheSnapshotAdapter.toGiCacheSnapshot(sparseCacheSnapshot);
         DirectLightingPlan directLightingPlan = this.buildDirectLightingPlan(
                 this.currentSectionSnapshots(sectionExtraction),
                 sectionReferences,
@@ -524,7 +527,9 @@ public final class LucernaController {
                 frameConstants,
                 writeIntent,
                 this.frameConstantsCapture.matrixHistory(),
-                giCacheInputs.snapshot(),
+                adaptedGiCacheSnapshot.hasSurfaceRecords() || adaptedGiCacheSnapshot.hasRadianceRecords()
+                        ? adaptedGiCacheSnapshot
+                        : giCacheInputs.snapshot(),
                 DiffuseGiSettings.fromQuality(this.getConfig().qualityPreset(), 2),
                 AdaptiveGiRayBudgetPolicy.firstMilestone(),
                 GiCacheInvalidationPolicy.conservative(),
@@ -552,7 +557,10 @@ public final class LucernaController {
         int cacheRecordCount = diffuseGiUpload.dirtyRegionCount()
                 + diffuseGiUpload.surfaceRecordCount()
                 + diffuseGiUpload.radianceRecordCount();
-        boolean cacheEnabled = diffuseGiUpload.cacheUsable() && cacheRecordCount > 0;
+        boolean cacheEnabled = cacheRecordCount > 0
+                && (diffuseGiUpload.cacheUsable()
+                || diffuseGiUpload.surfaceRecordCount() > 0
+                || diffuseGiUpload.radianceRecordCount() > 0);
 
         String dispatchKey = width
                 + "x"
