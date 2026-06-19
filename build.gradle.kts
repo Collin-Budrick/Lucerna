@@ -55,8 +55,28 @@ java {
 val nativeSourceDir = layout.projectDirectory.dir("native/lucerna_renderer")
 val nativeBuildDir = layout.buildDirectory.dir("native/lucerna_renderer")
 val nativeRuntimeDir = nativeBuildDir.map { it.dir("RelWithDebInfo") }
-val nativeStagedRuntimeDir = layout.projectDirectory.dir("run/native/lucerna_renderer")
-val nativeStagedLibrary = nativeStagedRuntimeDir.file("lucerna_renderer.dll")
+val nativeStagedRuntimeDirOverride = providers.gradleProperty("lucernaNativeRuntimeDir")
+    .orElse(providers.environmentVariable("LUCERNA_NATIVE_RUNTIME_DIR"))
+    .orNull
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
+val nativeStagedRuntimeDir = nativeStagedRuntimeDirOverride
+    ?.let { file(it) }
+    ?: layout.projectDirectory.dir("run/native/lucerna_renderer").asFile
+val nativeStagedLibrary = nativeStagedRuntimeDir.resolve("lucerna_renderer.dll")
+val useExplicitNativePath = providers.gradleProperty("lucernaNativeUseExplicitPath")
+    .map(String::toBoolean)
+    .orElse(false)
+    .get()
+val nativeSignThumbprint = providers.gradleProperty("lucernaNativeSignThumbprint")
+    .orElse(providers.environmentVariable("LUCERNA_NATIVE_SIGN_THUMBPRINT"))
+    .orNull
+    ?.trim()
+    ?.takeIf { it.isNotEmpty() }
+val nativeSignTool = providers.gradleProperty("lucernaNativeSignTool")
+    .orElse(providers.environmentVariable("LUCERNA_NATIVE_SIGN_TOOL"))
+    .orElse("C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/signtool.exe")
+    .get()
 
 loom {
     runs {
@@ -64,8 +84,10 @@ loom {
             client()
             configName = "Lucerna Fabric Client"
             runDir("run")
-            vmArg("-Djava.library.path=${nativeStagedRuntimeDir.asFile.absolutePath}")
-            vmArg("-Dlucerna.native.path=${nativeStagedLibrary.asFile.absolutePath}")
+            vmArg("-Djava.library.path=${nativeStagedRuntimeDir.absolutePath}")
+            if (useExplicitNativePath) {
+                vmArg("-Dlucerna.native.path=${nativeStagedLibrary.absolutePath}")
+            }
         }
     }
 }
@@ -93,8 +115,24 @@ tasks.register<Copy>("stageNativeRuntime") {
     into(nativeStagedRuntimeDir)
 }
 
-tasks.named("runClient") {
+tasks.register<Exec>("signNativeRuntime") {
+    group = "lucerna native"
+    description = "Optionally sign the staged Lucerna native renderer for local development policies."
     dependsOn("stageNativeRuntime")
+    onlyIf { nativeSignThumbprint != null }
+    commandLine(
+        nativeSignTool,
+        "sign",
+        "/fd",
+        "SHA256",
+        "/sha1",
+        nativeSignThumbprint ?: "",
+        nativeStagedLibrary.absolutePath
+    )
+}
+
+tasks.named("runClient") {
+    dependsOn("signNativeRuntime")
 }
 
 publishing {

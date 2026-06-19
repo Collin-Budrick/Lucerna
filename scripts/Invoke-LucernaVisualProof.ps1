@@ -103,7 +103,7 @@ function Wait-LatestLogPattern {
             }
             foreach ($pattern in $earlyFailurePatterns) {
                 if ($candidateLog -match $pattern) {
-                    throw "Lucerna visual proof failed early before required markers were observed. Matched native-load failure marker '$pattern' in $path."
+                    throw "Lucerna visual proof is blocked before required markers were observed. Matched native-load failure marker '$pattern' in $path. For Round6NativeDiffuseGi, this means Windows Application Control/native DLL loading must be resolved before the controller can validate native diffuse-GI output-source replacement; do not count the temporary direct-light RGBA preview path as this proof."
                 }
             }
         }

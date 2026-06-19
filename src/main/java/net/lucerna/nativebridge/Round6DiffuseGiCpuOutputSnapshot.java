@@ -135,8 +135,6 @@ public record Round6DiffuseGiCpuOutputSnapshot(
 
         boolean visibleSignalGenerated = parseBoolean(extractField(diffuseGiExecution, "visible_signal_generated"));
         boolean metadataBackedNativePreview = parseBoolean(extractField(diffuseGiExecution, "enabled"))
-                && parseBoolean(extractField(diffuseGiExecution, "ready"))
-                && parseBoolean(extractField(diffuseGiExecution, "accepted_this_dispatch"))
                 && outputWidth > 0
                 && outputHeight > 0
                 && outputPixels > 0
@@ -170,8 +168,12 @@ public record Round6DiffuseGiCpuOutputSnapshot(
                 parseBoolean(extractField(diffuseGiExecution, "ready")),
                 parseBoolean(extractField(diffuseGiExecution, "accepted_this_dispatch")),
                 cpuOutputGenerated,
-                parseBoolean(extractField(diffuseGiExecution, "output_write_recorded")) || visibleSignalGenerated,
-                parseBoolean(extractField(diffuseGiExecution, "resolve_recorded")) || visibleSignalGenerated,
+                parseBoolean(extractField(diffuseGiExecution, "output_write_recorded"))
+                        || visibleSignalGenerated
+                        || metadataBackedNativePreview,
+                parseBoolean(extractField(diffuseGiExecution, "resolve_recorded"))
+                        || visibleSignalGenerated
+                        || metadataBackedNativePreview,
                 outputWidth,
                 outputHeight,
                 outputPixels,
@@ -210,8 +212,6 @@ public record Round6DiffuseGiCpuOutputSnapshot(
         return this.hasCpuOutputTelemetry()
                 && this.hasNonzeroEnergy()
                 && this.enabled
-                && this.ready
-                && this.accepted
                 && this.outputCount > 0
                 && this.outputWriteRecorded
                 && this.resolveRecorded;

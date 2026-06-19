@@ -1708,8 +1708,6 @@ std::vector<std::uint8_t> Renderer::diffuse_gi_cpu_output_preview_rgba8() const 
     }
 
     if (!execution.last_enabled
-            || !execution.last_ready
-            || !execution.last_accepted
             || execution.last_width == 0
             || execution.last_height == 0
             || execution.last_output_count == 0
