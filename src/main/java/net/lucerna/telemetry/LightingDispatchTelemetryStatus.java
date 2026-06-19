@@ -27,6 +27,11 @@ public record LightingDispatchTelemetryStatus(
                     + "stage_generation|dispatch|last_dispatch|dispatch_groups|groups|rays|last_rays|ray_count|"
                     + "last_samples|samples|sample_count|last_sample_count|last_candidates|candidates|candidate_count|"
                     + "last_candidate_count|shadow_candidates|shadow_candidate_count|direct_shadow_candidates|"
+                    + "budgeted_shadow_candidate_count|budgeted_shadow_candidates|section_snapshot_count|section_snapshots|"
+                    + "celestial_count|emissive_count|payload_accepted|payload_generation|payload_generation_range|"
+                    + "payload_frame|payload_frame_index|payload_validated|payload_has_direct_work|"
+                    + "payload_ready_for_shadow_tracing|payload_metadata_only|cpu_output_generated|"
+                    + "output_width|output_height|output_pixels|output_pixel_count|output_energy|output_checksum|"
                     + "cache|last_cache|cache_counts|cache_reads|cache_writes|cache_read_count|cache_write_count|"
                     + "last_flags|flags|stage_flags|placeholder|metadata_only|validated|valid|debug_overlay|debug|"
                     + "ready_for_native_execution|native_ready|ready|executable|readiness_reason|ready_reason|"
@@ -178,6 +183,7 @@ public record LightingDispatchTelemetryStatus(
         parseStageBlocks(nativeStatus, stageFields);
         parseLooseStageFields(nativeStatus, stageFields);
         mergeDirectExecutionFields(nativeStatus, stageFields);
+        mergeDirectPayloadSummaryFields(nativeStatus, stageFields);
 
         if (stageFields.isEmpty()) {
             return Map.of();
@@ -250,6 +256,27 @@ public record LightingDispatchTelemetryStatus(
         copyMissing(target, executionFields, "ray_count", "rays");
         copyMissing(target, executionFields, "ready", "ready_for_native_execution");
         copyMissing(target, executionFields, "last_frame", "frame_index");
+    }
+
+    private static void mergeDirectPayloadSummaryFields(String nativeStatus, Map<String, Map<String, String>> stageFields) {
+        String payloadGeneration = findLooseValue(nativeStatus, "direct_lighting_payload_generation");
+        String payloadPackets = findLooseValue(nativeStatus, "direct_lighting_payloads");
+        String payloadCounts = extractBraceContent(nativeStatus, "direct_lighting_payload_counts={");
+        if (payloadGeneration.isBlank() && payloadPackets.isBlank() && payloadCounts.isBlank()) {
+            return;
+        }
+
+        Map<String, String> target = stageFields.computeIfAbsent("direct_lighting", ignored -> new LinkedHashMap<>());
+        target.putIfAbsent("id", "direct_lighting");
+        putIfPresent(target, "payload_generation", payloadGeneration);
+        putIfPresent(target, "payload_packets", payloadPackets);
+
+        Map<String, String> countFields = parseDelimitedFields(payloadCounts);
+        copyMissing(target, countFields, "celestial", "celestial_count");
+        copyMissing(target, countFields, "emissive", "emissive_count");
+        copyMissing(target, countFields, "shadow", "shadow_candidate_count");
+        copyMissing(target, countFields, "budgeted_shadow", "budgeted_shadow_candidate_count");
+        copyMissing(target, countFields, "sections", "section_snapshot_count");
     }
 
     private static Map<String, String> extractLightingAggregateFields(String nativeStatus) {
@@ -536,6 +563,12 @@ public record LightingDispatchTelemetryStatus(
         }
     }
 
+    private static void putIfPresent(Map<String, String> target, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            target.putIfAbsent(key, value);
+        }
+    }
+
     private static Long firstLong(String... values) {
         for (String value : values) {
             Long parsed = parseLong(value);
@@ -648,11 +681,15 @@ public record LightingDispatchTelemetryStatus(
             case "samples", "sample_count", "last_sample_count" -> "last_samples";
             case "candidates", "candidate_count", "last_candidate_count", "shadow_candidates",
                     "shadow_candidate_count", "direct_shadow_candidates" -> "last_candidates";
+            case "budgeted_shadow_candidates" -> "budgeted_shadow_candidate_count";
+            case "section_snapshots" -> "section_snapshot_count";
+            case "payload_frame_index" -> "payload_frame";
+            case "payload_metadata_only" -> "metadata_only";
             case "cache", "cache_counts" -> "last_cache";
             case "cache_reads", "cache_read_count" -> "cache_reads";
             case "cache_writes", "cache_write_count" -> "cache_writes";
             case "flags", "stage_flags" -> "last_flags";
-            case "metadata_only" -> "placeholder";
+            case "metadata_only" -> "metadata_only";
             case "valid" -> "validated";
             case "debug" -> "debug_overlay";
             case "native_ready", "ready", "executable" -> "ready_for_native_execution";

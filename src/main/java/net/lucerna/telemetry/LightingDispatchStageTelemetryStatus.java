@@ -25,6 +25,24 @@ public record LightingDispatchStageTelemetryStatus(
         String readinessReason,
         Long frameIndex,
         Boolean recordedThisFrame,
+        Boolean payloadAccepted,
+        Long payloadGeneration,
+        String payloadGenerationRange,
+        Long payloadFrameIndex,
+        Long celestialCount,
+        Long emissiveCount,
+        Long shadowCandidateCount,
+        Long budgetedShadowCandidateCount,
+        Long sectionSnapshotCount,
+        Boolean metadataOnly,
+        Boolean cpuOutputGenerated,
+        String outputDimensions,
+        Long outputPixelCount,
+        String outputEnergy,
+        Long outputChecksum,
+        Boolean payloadValidated,
+        Boolean payloadHasDirectWork,
+        Boolean payloadReadyForShadowTracing,
         Map<String, String> details
 ) {
     public LightingDispatchStageTelemetryStatus {
@@ -33,6 +51,9 @@ public record LightingDispatchStageTelemetryStatus(
         dimensions = blankToEmpty(stripQuotes(dimensions));
         ioCounts = blankToEmpty(stripQuotes(ioCounts));
         readinessReason = blankToEmpty(stripQuotes(readinessReason));
+        payloadGenerationRange = blankToEmpty(stripQuotes(payloadGenerationRange));
+        outputDimensions = blankToEmpty(stripQuotes(outputDimensions));
+        outputEnergy = blankToEmpty(stripQuotes(outputEnergy));
         details = immutable(details);
     }
 
@@ -150,6 +171,110 @@ public record LightingDispatchStageTelemetryStatus(
                 "recorded",
                 "submitted_this_frame"
         ));
+        Boolean payloadAccepted = parseBoolean(firstPresent(
+                normalizedFields,
+                "payload_accepted",
+                "direct_payload_accepted",
+                "accepted"
+        ));
+        Long payloadGeneration = parseLong(firstPresent(
+                normalizedFields,
+                "payload_generation",
+                "last_payload_generation",
+                "direct_lighting_payload_generation"
+        ));
+        String payloadGenerationRange = firstPresent(
+                normalizedFields,
+                "payload_generation_range",
+                "last_payload_generation_range",
+                "direct_lighting_payload_generation_range"
+        );
+        Long payloadFrameIndex = parseLong(firstPresent(
+                normalizedFields,
+                "payload_frame",
+                "payload_frame_index",
+                "last_payload_frame",
+                "last_payload_frame_index"
+        ));
+        Long celestialCount = parseLong(firstPresent(
+                normalizedFields,
+                "celestial_count",
+                "celestial",
+                "celestial_lights",
+                "celestial_light_count"
+        ));
+        Long emissiveCount = parseLong(firstPresent(
+                normalizedFields,
+                "emissive_count",
+                "emissive",
+                "emissive_lights",
+                "emissive_light_count"
+        ));
+        Long shadowCandidateCount = parseLong(firstPresent(
+                normalizedFields,
+                "shadow_candidate_count",
+                "shadow_candidates",
+                "shadow",
+                "direct_shadow_candidates"
+        ));
+        Long budgetedShadowCandidateCount = parseLong(firstPresent(
+                normalizedFields,
+                "budgeted_shadow_candidate_count",
+                "budgeted_shadow_candidates",
+                "budgeted_shadow"
+        ));
+        Long sectionSnapshotCount = parseLong(firstPresent(
+                normalizedFields,
+                "section_snapshot_count",
+                "section_snapshots",
+                "sections",
+                "section_count"
+        ));
+        Boolean metadataOnly = parseBoolean(firstPresent(
+                normalizedFields,
+                "metadata_only",
+                "payload_metadata_only"
+        ));
+        Boolean cpuOutputGenerated = parseBoolean(firstPresent(
+                normalizedFields,
+                "cpu_output_generated",
+                "direct_cpu_output_generated"
+        ));
+        String outputDimensions = xyLabel(
+                firstPresent(normalizedFields, "output_width", "direct_output_width"),
+                firstPresent(normalizedFields, "output_height", "direct_output_height")
+        );
+        Long outputPixelCount = parseLong(firstPresent(
+                normalizedFields,
+                "output_pixels",
+                "output_pixel_count",
+                "direct_output_pixels"
+        ));
+        String outputEnergy = firstPresent(
+                normalizedFields,
+                "output_energy",
+                "direct_output_energy"
+        );
+        Long outputChecksum = parseLong(firstPresent(
+                normalizedFields,
+                "output_checksum",
+                "direct_output_checksum"
+        ));
+        Boolean payloadValidated = parseBoolean(firstPresent(
+                normalizedFields,
+                "payload_validated",
+                "direct_payload_validated"
+        ));
+        Boolean payloadHasDirectWork = parseBoolean(firstPresent(
+                normalizedFields,
+                "payload_has_direct_work",
+                "has_direct_work"
+        ));
+        Boolean payloadReadyForShadowTracing = parseBoolean(firstPresent(
+                normalizedFields,
+                "payload_ready_for_shadow_tracing",
+                "ready_for_shadow_tracing"
+        ));
 
         return new LightingDispatchStageTelemetryStatus(
                 stageId,
@@ -171,6 +296,24 @@ public record LightingDispatchStageTelemetryStatus(
                 readinessReason,
                 frameIndex,
                 recordedThisFrame,
+                payloadAccepted,
+                payloadGeneration,
+                payloadGenerationRange,
+                payloadFrameIndex,
+                celestialCount,
+                emissiveCount,
+                shadowCandidateCount,
+                budgetedShadowCandidateCount,
+                sectionSnapshotCount,
+                metadataOnly,
+                cpuOutputGenerated,
+                outputDimensions,
+                outputPixelCount,
+                outputEnergy,
+                outputChecksum,
+                payloadValidated,
+                payloadHasDirectWork,
+                payloadReadyForShadowTracing,
                 normalizedFields
         );
     }
@@ -187,6 +330,8 @@ public record LightingDispatchStageTelemetryStatus(
         String cacheLabel = cacheLabel();
         fieldCount += append(label, "cache", cacheLabel);
         fieldCount += append(label, "ready", this.readyForNativeExecution == null ? "" : Boolean.toString(this.readyForNativeExecution));
+        fieldCount += append(label, "payload", this.payloadAccepted == null ? "" : Boolean.toString(this.payloadAccepted));
+        fieldCount += append(label, "payloadGen", this.payloadGeneration == null ? "" : Long.toString(this.payloadGeneration));
         fieldCount += append(label, "frame", this.frameIndex == null ? "" : Long.toString(this.frameIndex));
         if (fieldCount == 0) {
             label.append(" reported");
@@ -255,6 +400,60 @@ public record LightingDispatchStageTelemetryStatus(
         }
         if (this.recordedThisFrame != null) {
             fields.put(normalizedPrefix + ".recordedThisFrame", Boolean.toString(this.recordedThisFrame));
+        }
+        if (this.payloadAccepted != null) {
+            fields.put(normalizedPrefix + ".payloadAccepted", Boolean.toString(this.payloadAccepted));
+        }
+        if (this.payloadGeneration != null) {
+            fields.put(normalizedPrefix + ".payloadGeneration", Long.toString(this.payloadGeneration));
+        }
+        if (!this.payloadGenerationRange.isBlank()) {
+            fields.put(normalizedPrefix + ".payloadGenerationRange", this.payloadGenerationRange);
+        }
+        if (this.payloadFrameIndex != null) {
+            fields.put(normalizedPrefix + ".payloadFrameIndex", Long.toString(this.payloadFrameIndex));
+        }
+        if (this.celestialCount != null) {
+            fields.put(normalizedPrefix + ".celestialCount", Long.toString(this.celestialCount));
+        }
+        if (this.emissiveCount != null) {
+            fields.put(normalizedPrefix + ".emissiveCount", Long.toString(this.emissiveCount));
+        }
+        if (this.shadowCandidateCount != null) {
+            fields.put(normalizedPrefix + ".shadowCandidateCount", Long.toString(this.shadowCandidateCount));
+        }
+        if (this.budgetedShadowCandidateCount != null) {
+            fields.put(normalizedPrefix + ".budgetedShadowCandidateCount", Long.toString(this.budgetedShadowCandidateCount));
+        }
+        if (this.sectionSnapshotCount != null) {
+            fields.put(normalizedPrefix + ".sectionSnapshotCount", Long.toString(this.sectionSnapshotCount));
+        }
+        if (this.metadataOnly != null) {
+            fields.put(normalizedPrefix + ".metadataOnly", Boolean.toString(this.metadataOnly));
+        }
+        if (this.cpuOutputGenerated != null) {
+            fields.put(normalizedPrefix + ".cpuOutputGenerated", Boolean.toString(this.cpuOutputGenerated));
+        }
+        if (!this.outputDimensions.isBlank()) {
+            fields.put(normalizedPrefix + ".outputDimensions", this.outputDimensions);
+        }
+        if (this.outputPixelCount != null) {
+            fields.put(normalizedPrefix + ".outputPixelCount", Long.toString(this.outputPixelCount));
+        }
+        if (!this.outputEnergy.isBlank()) {
+            fields.put(normalizedPrefix + ".outputEnergy", this.outputEnergy);
+        }
+        if (this.outputChecksum != null) {
+            fields.put(normalizedPrefix + ".outputChecksum", Long.toString(this.outputChecksum));
+        }
+        if (this.payloadValidated != null) {
+            fields.put(normalizedPrefix + ".payloadValidated", Boolean.toString(this.payloadValidated));
+        }
+        if (this.payloadHasDirectWork != null) {
+            fields.put(normalizedPrefix + ".payloadHasDirectWork", Boolean.toString(this.payloadHasDirectWork));
+        }
+        if (this.payloadReadyForShadowTracing != null) {
+            fields.put(normalizedPrefix + ".payloadReadyForShadowTracing", Boolean.toString(this.payloadReadyForShadowTracing));
         }
         for (Map.Entry<String, String> entry : this.details.entrySet()) {
             fields.put(normalizedPrefix + ".raw." + sanitizeKey(entry.getKey()), entry.getValue());

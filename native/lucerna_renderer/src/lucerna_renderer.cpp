@@ -2,6 +2,8 @@
 
 #include "lucerna_resource_manager.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <sstream>
 #include <stdexcept>
@@ -68,6 +70,10 @@ constexpr std::size_t kDirectShadowCandidateMetadataStride = 3;
 constexpr std::size_t kDirectShadowCandidateRayStride = 9;
 constexpr std::size_t kDirectSectionSnapshotMetadataStride = 15;
 constexpr std::size_t kDirectSectionSnapshotGenerationStride = 7;
+constexpr std::int32_t kMaxDirectCpuOutputWidth = 64;
+constexpr std::int32_t kMaxDirectCpuOutputHeight = 36;
+constexpr float kDirectCpuCelestialScale = 0.02F;
+constexpr float kDirectCpuEmissiveScale = 0.0005F;
 constexpr std::size_t kLightingPayloadCategoryDirect = 0;
 constexpr std::size_t kLightingPayloadCategoryGi = 1;
 constexpr std::size_t kLightingPayloadCategoryPost = 2;
@@ -79,6 +85,38 @@ std::uint64_t saturated_add(std::uint64_t left, std::uint64_t right) {
         return maximum;
     }
     return left + right;
+}
+
+float finite_non_negative(float value) {
+    if (!std::isfinite(value) || value < 0.0F) {
+        return 0.0F;
+    }
+    return value;
+}
+
+float sum_strided_float_field(
+        const std::vector<float>& values,
+        std::size_t count,
+        std::size_t stride,
+        std::size_t offset) {
+    if (stride == 0 || offset >= stride) {
+        return 0.0F;
+    }
+
+    float total = 0.0F;
+    for (std::size_t index = 0; index < count; index++) {
+        const auto value_index = index * stride + offset;
+        if (value_index >= values.size()) {
+            break;
+        }
+        total += finite_non_negative(values[value_index]);
+    }
+    return total;
+}
+
+void mix_checksum(std::uint64_t& checksum, std::uint64_t value) {
+    checksum ^= value;
+    checksum *= 1099511628211ULL;
 }
 
 std::size_t pass_index(NativeRenderPass pass) {
@@ -436,6 +474,13 @@ void append_phase5_lighting_status(
         << ",sample_count=" << lighting.direct_execution.last_sample_count
         << ",ray_count=" << lighting.direct_execution.last_ray_count
         << ",output_count=" << lighting.direct_execution.last_output_count
+        << ",output_width=" << lighting.direct_execution.last_output_width
+        << ",output_height=" << lighting.direct_execution.last_output_height
+        << ",output_pixels=" << lighting.direct_execution.last_output_pixel_count
+        << ",output_energy=" << lighting.direct_execution.last_output_energy
+        << ",output_min_sample=" << lighting.direct_execution.last_output_min_sample
+        << ",output_max_sample=" << lighting.direct_execution.last_output_max_sample
+        << ",output_checksum=" << lighting.direct_execution.last_output_checksum
         << ",total_celestial=" << lighting.direct_execution.total_celestial_light_count
         << ",total_emissive=" << lighting.direct_execution.total_emissive_light_count
         << ",total_shadow_candidates=" << lighting.direct_execution.total_shadow_candidate_count
@@ -447,6 +492,7 @@ void append_phase5_lighting_status(
         << ",enabled=" << lighting.direct_execution.last_enabled
         << ",ready=" << lighting.direct_execution.last_ready
         << ",metadata_only=" << lighting.direct_execution.last_metadata_only
+        << ",cpu_output_generated=" << lighting.direct_execution.last_cpu_output_generated
         << ",output_write_recorded=" << lighting.direct_execution.last_output_write_recorded
         << ",resolve_recorded=" << lighting.direct_execution.last_resolve_recorded
         << ",output_marker=\"" << lighting.direct_execution.last_output_marker
@@ -529,6 +575,7 @@ void Renderer::init() {
     last_gbuffer_staging_packet_ = {};
     last_lighting_dispatch_packet_ = {};
     last_direct_lighting_payload_packet_ = {};
+    direct_lighting_cpu_output_.clear();
     last_tick_delta_ = 0.0F;
     resize_count_ = 0;
     begin_frame_count_ = 0;
@@ -583,6 +630,7 @@ void Renderer::shutdown() {
     last_gbuffer_staging_packet_ = {};
     last_lighting_dispatch_packet_ = {};
     last_direct_lighting_payload_packet_ = {};
+    direct_lighting_cpu_output_.clear();
     last_tick_delta_ = 0.0F;
     resize_count_ = 0;
     begin_frame_count_ = 0;
@@ -1664,6 +1712,13 @@ std::string Renderer::status() const {
         << ",sample_count=" << staging_.lighting.direct_execution.last_sample_count
         << ",ray_count=" << staging_.lighting.direct_execution.last_ray_count
         << ",output_count=" << staging_.lighting.direct_execution.last_output_count
+        << ",output_width=" << staging_.lighting.direct_execution.last_output_width
+        << ",output_height=" << staging_.lighting.direct_execution.last_output_height
+        << ",output_pixels=" << staging_.lighting.direct_execution.last_output_pixel_count
+        << ",output_energy=" << staging_.lighting.direct_execution.last_output_energy
+        << ",output_min_sample=" << staging_.lighting.direct_execution.last_output_min_sample
+        << ",output_max_sample=" << staging_.lighting.direct_execution.last_output_max_sample
+        << ",output_checksum=" << staging_.lighting.direct_execution.last_output_checksum
         << ",total_celestial=" << staging_.lighting.direct_execution.total_celestial_light_count
         << ",total_emissive=" << staging_.lighting.direct_execution.total_emissive_light_count
         << ",total_shadow_candidates=" << staging_.lighting.direct_execution.total_shadow_candidate_count
@@ -1675,6 +1730,7 @@ std::string Renderer::status() const {
         << ",enabled=" << staging_.lighting.direct_execution.last_enabled
         << ",ready=" << staging_.lighting.direct_execution.last_ready
         << ",metadata_only=" << staging_.lighting.direct_execution.last_metadata_only
+        << ",cpu_output_generated=" << staging_.lighting.direct_execution.last_cpu_output_generated
         << ",output_write_recorded=" << staging_.lighting.direct_execution.last_output_write_recorded
         << ",resolve_recorded=" << staging_.lighting.direct_execution.last_resolve_recorded
         << ",output_marker=\"" << staging_.lighting.direct_execution.last_output_marker
@@ -2398,8 +2454,16 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
     execution.last_output_count = static_cast<std::uint64_t>(direct_stage.last_output_count);
     execution.last_enabled = direct_stage.enabled_this_packet;
     execution.last_metadata_only = true;
+    execution.last_cpu_output_generated = false;
     execution.last_output_write_recorded = false;
     execution.last_resolve_recorded = false;
+    execution.last_output_width = 0;
+    execution.last_output_height = 0;
+    execution.last_output_pixel_count = 0;
+    execution.last_output_energy = 0.0F;
+    execution.last_output_min_sample = 0.0F;
+    execution.last_output_max_sample = 0.0F;
+    execution.last_output_checksum = 0;
     execution.last_output_marker.clear();
 
     if (!direct_stage.enabled_this_packet) {
@@ -2434,16 +2498,90 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
             execution.total_ray_count,
             execution.last_ray_count);
 
+    const auto output_width = static_cast<std::uint64_t>(std::min(
+            direct_stage.last_width > 0 ? direct_stage.last_width : width_,
+            kMaxDirectCpuOutputWidth));
+    const auto output_height = static_cast<std::uint64_t>(std::min(
+            direct_stage.last_height > 0 ? direct_stage.last_height : height_,
+            kMaxDirectCpuOutputHeight));
+    const auto pixel_count = output_width * output_height;
+    const bool has_payload = execution.last_payload_accepted
+            && execution.last_payload_generation != 0
+            && execution.last_payload_has_direct_work;
+    if (has_payload && pixel_count != 0) {
+        const auto celestial_count = static_cast<std::size_t>(last_direct_lighting_payload_packet_.celestial_light_count);
+        const auto emissive_count = static_cast<std::size_t>(last_direct_lighting_payload_packet_.selected_emissive_count);
+        const auto shadow_count = static_cast<std::size_t>(last_direct_lighting_payload_packet_.shadow_candidate_count);
+        const float celestial_energy = sum_strided_float_field(
+                last_direct_lighting_payload_packet_.celestial_light_data,
+                celestial_count,
+                kDirectCelestialLightDataStride,
+                8);
+        const float emissive_energy = sum_strided_float_field(
+                last_direct_lighting_payload_packet_.emissive_light_data,
+                emissive_count,
+                kDirectEmissiveLightDataStride,
+                5);
+        const float shadow_weight = sum_strided_float_field(
+                last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                shadow_count,
+                kDirectShadowCandidateRayStride,
+                8);
+        const float normalized_shadow_weight = shadow_count == 0
+                ? 1.0F
+                : std::max(0.05F, shadow_weight / static_cast<float>(shadow_count));
+        const float base_direct_energy = (celestial_energy * kDirectCpuCelestialScale
+                + emissive_energy * kDirectCpuEmissiveScale)
+                * normalized_shadow_weight;
+        const float red = std::min(64.0F, base_direct_energy);
+        const float green = std::min(64.0F, base_direct_energy * 0.86F);
+        const float blue = std::min(64.0F, base_direct_energy * 0.64F);
+
+        direct_lighting_cpu_output_.assign(static_cast<std::size_t>(pixel_count) * 4, 0.0F);
+        float total_energy = 0.0F;
+        float min_sample = red + green + blue;
+        float max_sample = 0.0F;
+        std::uint64_t checksum = 1469598103934665603ULL;
+        for (std::uint64_t pixel = 0; pixel < pixel_count; pixel++) {
+            const auto offset = static_cast<std::size_t>(pixel * 4);
+            const float tile_factor = 1.0F + static_cast<float>((pixel + frame_index_) % 17) * 0.001F;
+            direct_lighting_cpu_output_[offset] = red * tile_factor;
+            direct_lighting_cpu_output_[offset + 1] = green * tile_factor;
+            direct_lighting_cpu_output_[offset + 2] = blue * tile_factor;
+            direct_lighting_cpu_output_[offset + 3] = normalized_shadow_weight;
+            const float sample_energy = direct_lighting_cpu_output_[offset]
+                    + direct_lighting_cpu_output_[offset + 1]
+                    + direct_lighting_cpu_output_[offset + 2];
+            total_energy += sample_energy;
+            min_sample = std::min(min_sample, sample_energy);
+            max_sample = std::max(max_sample, sample_energy);
+            mix_checksum(checksum, static_cast<std::uint64_t>(sample_energy * 1000.0F));
+            mix_checksum(checksum, pixel);
+        }
+
+        execution.last_output_width = output_width;
+        execution.last_output_height = output_height;
+        execution.last_output_pixel_count = pixel_count;
+        execution.last_output_energy = total_energy;
+        execution.last_output_min_sample = min_sample;
+        execution.last_output_max_sample = max_sample;
+        execution.last_output_checksum = checksum;
+        execution.last_cpu_output_generated = true;
+        execution.last_metadata_only = false;
+    } else {
+        direct_lighting_cpu_output_.clear();
+    }
+
     std::uint64_t recorded_resources = 0;
     if (resources_ != nullptr && frame_open_ && resources_->has_context()) {
-        const auto output_width = direct_stage.last_width > 0 ? direct_stage.last_width : width_;
-        const auto output_height = direct_stage.last_height > 0 ? direct_stage.last_height : height_;
-        if (direct_stage.last_output_count > 0 && output_width > 0 && output_height > 0) {
+        const auto tracked_output_width = direct_stage.last_width > 0 ? direct_stage.last_width : width_;
+        const auto tracked_output_height = direct_stage.last_height > 0 ? direct_stage.last_height : height_;
+        if (direct_stage.last_output_count > 0 && tracked_output_width > 0 && tracked_output_height > 0) {
             resources_->track_transient_image(
                     frame_index_,
                     0,
-                    output_width,
-                    output_height,
+                    tracked_output_width,
+                    tracked_output_height,
                     kDirectLightingOutputFormatTag,
                     "render:direct-light-output-write");
             execution.output_writes++;
@@ -2464,9 +2602,13 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
     execution.last_output_marker = execution.last_output_write_recorded
         ? "direct_light_output_write_resolve_recorded"
         : "direct_light_resolve_recorded_without_output";
-    execution.last_readiness_reason = direct_stage.last_placeholder
-        ? "direct_lighting_validated_placeholder_scaffold_executed_metadata_only"
-        : "direct_lighting_scaffold_executed_metadata_only";
+    if (execution.last_cpu_output_generated) {
+        execution.last_readiness_reason = "direct_lighting_cpu_output_generated";
+    } else {
+        execution.last_readiness_reason = direct_stage.last_placeholder
+            ? "direct_lighting_validated_placeholder_scaffold_executed_metadata_only"
+            : "direct_lighting_scaffold_executed_metadata_only";
+    }
     return recorded_resources;
 }
 

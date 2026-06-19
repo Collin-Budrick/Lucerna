@@ -423,6 +423,10 @@ struct NativeDirectLightingExecutionTelemetry {
     std::uint64_t last_sample_count = 0;
     std::uint64_t last_ray_count = 0;
     std::uint64_t last_output_count = 0;
+    std::uint64_t last_output_width = 0;
+    std::uint64_t last_output_height = 0;
+    std::uint64_t last_output_pixel_count = 0;
+    std::uint64_t last_output_checksum = 0;
     std::uint64_t total_celestial_light_count = 0;
     std::uint64_t total_emissive_light_count = 0;
     std::uint64_t total_shadow_candidate_count = 0;
@@ -431,6 +435,9 @@ struct NativeDirectLightingExecutionTelemetry {
     std::uint64_t total_ray_count = 0;
     float last_celestial_light_energy = 0.0F;
     float last_emissive_light_energy = 0.0F;
+    float last_output_energy = 0.0F;
+    float last_output_min_sample = 0.0F;
+    float last_output_max_sample = 0.0F;
     std::uint32_t last_payload_flags = 0;
     bool last_payload_accepted = false;
     bool last_payload_validated = false;
@@ -439,6 +446,7 @@ struct NativeDirectLightingExecutionTelemetry {
     bool last_enabled = false;
     bool last_ready = false;
     bool last_metadata_only = true;
+    bool last_cpu_output_generated = false;
     bool last_output_write_recorded = false;
     bool last_resolve_recorded = false;
     std::string last_payload_dimension_id;
@@ -587,6 +595,7 @@ private:
     GBufferStagingPacket last_gbuffer_staging_packet_;
     LightingDispatchPacket last_lighting_dispatch_packet_;
     DirectLightingPayloadPacket last_direct_lighting_payload_packet_;
+    std::vector<float> direct_lighting_cpu_output_;
     float last_tick_delta_ = 0.0F;
     std::uint64_t resize_count_ = 0;
     std::uint64_t begin_frame_count_ = 0;

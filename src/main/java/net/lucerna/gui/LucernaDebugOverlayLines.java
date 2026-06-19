@@ -201,10 +201,25 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Direct dispatch: frame=" + directDispatchFrameLabel(snapshot, directStage)
                 + " gen=" + valueOrUnknown(directStage.generation())
                 + " groups=" + valueOrUnknown(directStage.dispatchGroups())));
+        lines.add(Component.literal("Direct payload: accepted=" + yesNoUnknown(directStage.payloadAccepted())
+                + " gen=" + valueOrUnknown(directStage.payloadGeneration())
+                + " frame=" + valueOrUnknown(directStage.payloadFrameIndex())
+                + " range=" + valueOrUnknown(directStage.payloadGenerationRange())));
+        lines.add(Component.literal("Direct payload counts: celestial=" + valueOrUnknown(directStage.celestialCount())
+                + " emissive=" + valueOrUnknown(directStage.emissiveCount())
+                + " shadow=" + valueOrUnknown(directStage.shadowCandidateCount())
+                + " budgetedShadow=" + valueOrUnknown(directStage.budgetedShadowCandidateCount())
+                + " sections=" + valueOrUnknown(directStage.sectionSnapshotCount())));
+        lines.add(Component.literal("Direct payload readiness: " + payloadReadinessLabel(directStage)));
         lines.add(Component.literal("Direct output: writes=" + detailOrUnknown(directStage, "output_writes")
                 + " resolves=" + detailOrUnknown(directStage, "resolves")
                 + " writeRecorded=" + detailOrUnknown(directStage, "output_write_recorded")
                 + " resolveRecorded=" + detailOrUnknown(directStage, "resolve_recorded")));
+        lines.add(Component.literal("Direct CPU output: generated=" + yesNoUnknown(directStage.cpuOutputGenerated())
+                + " size=" + valueOrUnknown(directStage.outputDimensions())
+                + " pixels=" + valueOrUnknown(directStage.outputPixelCount())
+                + " energy=" + valueOrUnknown(directStage.outputEnergy())
+                + " checksum=" + valueOrUnknown(directStage.outputChecksum())));
         lines.add(Component.literal("Direct native: attempts=" + detailOrUnknown(directStage, "attempts")
                 + " submitted=" + detailOrUnknown(directStage, "submitted")
                 + " skipped=" + detailOrUnknown(directStage, "skipped")
@@ -263,6 +278,9 @@ public final class LucernaDebugOverlayLines {
         if (Boolean.TRUE.equals(stage.placeholder())) {
             flags.add("placeholder");
         }
+        if (Boolean.TRUE.equals(stage.metadataOnly())) {
+            flags.add("metadata_only");
+        }
         if (Boolean.TRUE.equals(stage.validated())) {
             flags.add("validated");
         }
@@ -273,6 +291,15 @@ public final class LucernaDebugOverlayLines {
             flags.add("raw=" + stage.flags());
         }
         return flags.isEmpty() ? "unreported" : String.join(",", flags);
+    }
+
+    private static String payloadReadinessLabel(LightingDispatchStageTelemetryStatus stage) {
+        List<String> fields = new ArrayList<>();
+        fields.add("metadata_only=" + yesNoUnknown(stage.metadataOnly()));
+        fields.add("validated=" + yesNoUnknown(stage.payloadValidated()));
+        fields.add("hasWork=" + yesNoUnknown(stage.payloadHasDirectWork()));
+        fields.add("shadowReady=" + yesNoUnknown(stage.payloadReadyForShadowTracing()));
+        return String.join(" ", fields);
     }
 
     private static String countOrFallback(Long count, Long fallback) {

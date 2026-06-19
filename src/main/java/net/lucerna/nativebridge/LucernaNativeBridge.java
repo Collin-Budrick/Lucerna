@@ -567,14 +567,16 @@ public final class LucernaNativeBridge {
                 + "|" + extractField(directExecution, "candidate_count")
                 + "|" + extractField(directExecution, "output_write_recorded")
                 + "|" + extractField(directExecution, "resolve_recorded")
-                + "|" + extractField(directExecution, "ready");
+                + "|" + extractField(directExecution, "ready")
+                + "|" + extractField(directExecution, "cpu_output_generated")
+                + "|" + extractField(directExecution, "output_checksum");
         if (key.equals(this.lastLoggedDirectLightingExecutionKey)) {
             return;
         }
 
         this.lastLoggedDirectLightingExecutionKey = key;
         Lucerna.LOGGER.info(
-                "Lucerna native direct lighting execution: dispatchGeneration={} candidates={} samples={} rays={} outputs={} outputWrites={} resolves={} outputWriteRecorded={} resolveRecorded={} ready={} reason={}.",
+                "Lucerna native direct lighting execution: dispatchGeneration={} candidates={} samples={} rays={} outputs={} outputWrites={} resolves={} outputWriteRecorded={} resolveRecorded={} ready={} cpuOutput={} cpuOutputSize={}x{} cpuOutputPixels={} cpuOutputEnergy={} cpuOutputChecksum={} reason={}.",
                 valueOrUnknown(dispatchGeneration),
                 valueOrUnknown(extractField(directExecution, "candidate_count")),
                 valueOrUnknown(extractField(directExecution, "sample_count")),
@@ -585,6 +587,12 @@ public final class LucernaNativeBridge {
                 booleanOrUnknown(extractField(directExecution, "output_write_recorded")),
                 booleanOrUnknown(extractField(directExecution, "resolve_recorded")),
                 booleanOrUnknown(extractField(directExecution, "ready")),
+                booleanOrUnknown(extractField(directExecution, "cpu_output_generated")),
+                valueOrUnknown(extractField(directExecution, "output_width")),
+                valueOrUnknown(extractField(directExecution, "output_height")),
+                valueOrUnknown(extractField(directExecution, "output_pixels")),
+                valueOrUnknown(extractField(directExecution, "output_energy")),
+                valueOrUnknown(extractField(directExecution, "output_checksum")),
                 valueOrUnknown(extractField(directExecution, "readiness_reason"))
         );
     }

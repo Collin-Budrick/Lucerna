@@ -2,11 +2,11 @@
 
 ## Progress Audit
 
-Current controller estimate: **about 81% complete against this file**.
+Current controller estimate: **about 82% complete against this file**.
 
 This percentage is conservative:
 - Rounds 0-3 are mostly implemented and controller-validated.
-- Round 4 has Java/native/shader scaffolding, dirty-region GI inputs, direct shadow candidate planning, native direct/GI/post handoff DTOs, payload-category telemetry, native dispatch validation, Round 5 direct payload handoff, and direct execution/output-marker telemetry, but the first real visible lighting milestone is not complete yet.
+- Round 4 has Java/native/shader scaffolding, dirty-region GI inputs, direct shadow candidate planning, native direct/GI/post handoff DTOs, payload-category telemetry, native dispatch validation, Round 5 direct payload handoff, direct execution/output-marker telemetry, and a native CPU direct-light output buffer with energy/checksum telemetry, but the first real visible lighting milestone is not complete yet.
 - The remaining work is the hardest part: turning Phase 5 metadata/planning into visible direct light, low-res GI, denoise, composite behavior, and richer debug telemetry.
 
 Legend:
@@ -112,7 +112,7 @@ Legend:
 
 - **Agent M: Direct Lighting** **PARTIAL**
   - Owns sun/moon lighting, emissive block list sampling, voxel shadow ray scaffolding.
-  - ~~Status: Java planning contracts, emissive sampling, bounded direct shadow candidate generation, native direct-light handoff DTOs, direct payload JNI/native storage, resource-category stage counts, native dispatch metadata, and native direct execution output/resolve markers exist and have been validated.~~ **DONE/VALIDATED**
+  - ~~Status: Java planning contracts, emissive sampling, bounded direct shadow candidate generation, native direct-light handoff DTOs, direct payload JNI/native storage, resource-category stage counts, native dispatch metadata, native direct execution output/resolve markers, and a native CPU direct-light output buffer with nonzero energy/checksum telemetry exist and have been validated.~~ **DONE/VALIDATED**
   - Status: real visible direct-light execution is still open.
 
 - **Agent N: First GI** **PARTIAL**
@@ -186,6 +186,7 @@ Status:
 
 ~~Native direct execution scaffold records direct candidate/sample/ray counts, output-write marker, resolve marker, and readiness reason in controller logs.~~ **DONE/VALIDATED**
 ~~Java-to-native direct-light payload handoff records celestial, emissive, shadow-candidate, budgeted-shadow-candidate, section, generation, and flag metadata in controller logs.~~ **DONE/VALIDATED**
+~~Native direct execution now produces a bounded CPU direct-light output buffer with dimensions, pixel count, nonzero energy, and checksum telemetry in controller logs.~~ **DONE/VALIDATED**
 Visible direct-light output is still open.
 
 Must not own:
@@ -740,6 +741,7 @@ Logs prove candidate reuse and reservoir invalidation behavior.
 - ~~No sub-agent is allowed to "verify" fixes by running tests or build-like checks. They patch, explain, and wait for controller feedback.~~ **DONE/ONGOING**
 
 Latest strong validation evidence:
+- ~~Sodium + Iris + Vulkan launches, joins `New World`, accepts direct lighting payloads, generates a native 64x36 CPU direct-light output with nonzero energy/checksum telemetry, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-direct-cpu-output-sodium-iris-vulkan-20260619-040915.log`**
 - ~~Sodium + Iris + Vulkan launches, joins `New World`, accepts Java-to-native direct lighting payloads with celestial/emissive/shadow/section counts, accepts native direct lighting dispatches, records direct output-write and resolve markers, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-direct-payload-sodium-iris-vulkan-20260619-035920.log`**
 - ~~Sodium + Iris + Vulkan launches, joins `New World`, accepts native direct lighting dispatches with candidate count greater than zero, records native direct output-write and resolve markers, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-direct-execution-dedup-sodium-iris-vulkan-20260619-035011.log`**
 - ~~Sodium + Iris + Vulkan launches, joins `New World`, accepts native section/G-buffer/Phase 5 handoff dispatches from the direct/GI/post DTO integration, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-phase5-handoff-sodium-iris-vulkan-20260619-032114.log`**
@@ -760,6 +762,7 @@ Latest strong validation evidence:
 - First lighting milestone: basic emissive/direct light + low-res diffuse GI + denoise/composite path works under controller-run testing. **OPEN**
   - ~~Direct payload transfer from Java to native is validated.~~ **DONE/VALIDATED**
   - ~~Native direct dispatch/candidate/output-write/resolve telemetry is validated.~~ **DONE/VALIDATED**
+  - ~~Native CPU direct-light output buffer generation is validated with nonzero energy/checksum telemetry.~~ **DONE/VALIDATED**
   - Visible emissive/direct lighting, low-res GI, denoise, final composite, and screenshot proof are still open.
 
 ## Assumptions
