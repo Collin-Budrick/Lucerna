@@ -65,6 +65,12 @@ constexpr std::uint32_t kDirectPayloadKnownFlags =
         | kDirectPayloadFlagAllowTranslucentOccluders
         | kDirectPayloadFlagWorldTimeAvailable;
 constexpr std::size_t kDirectRayBudgetStride = 6;
+constexpr std::size_t kDirectRayBudgetPrimaryRaysPerPixelOffset = 0;
+constexpr std::size_t kDirectRayBudgetShadowRaysPerHitOffset = 1;
+constexpr std::size_t kDirectRayBudgetGiRaysPerHitOffset = 2;
+constexpr std::size_t kDirectRayBudgetMaxRaysPerFrameOffset = 3;
+constexpr std::size_t kDirectRayBudgetMaxVisitedVoxelsPerRayOffset = 4;
+constexpr std::size_t kDirectRayBudgetMaxVisitedSectionsPerRayOffset = 5;
 constexpr std::size_t kDirectCelestialLightDataStride = 9;
 constexpr std::size_t kDirectEmissiveLightMetadataStride = 5;
 constexpr std::size_t kDirectEmissiveLightDataStride = 6;
@@ -89,16 +95,11 @@ constexpr std::int32_t kMaxDirectCpuOutputHeight = 36;
 constexpr std::int32_t kMaxDiffuseGiCpuOutputWidth = 1024;
 constexpr std::int32_t kMaxDiffuseGiCpuOutputHeight = 1024;
 constexpr float kDirectCpuCelestialScale = 0.02F;
-constexpr float kDirectCpuEmissiveScale = 0.0005F;
 constexpr float kDirectCpuMinimumSurfaceRadius = 8.0F;
-constexpr float kDirectCpuSurfacePreviewScale = 72.0F;
-constexpr float kDirectCpuSurfacePreviewFalloffGain = 1.75F;
-constexpr float kDirectCpuSurfacePreviewAlphaFloor = 0.42F;
-constexpr float kDirectCpuSurfacePreviewAlphaGain = 0.58F;
-constexpr float kDirectCpuSurfacePreviewCoverageRed = 10.0F;
-constexpr float kDirectCpuSurfacePreviewCoverageGreen = 6.0F;
-constexpr float kDirectCpuSurfacePreviewCoverageBlue = 1.5F;
-constexpr float kDirectCpuSurfacePreviewCoverageAlpha = 0.32F;
+constexpr float kDirectCpuEmissiveSurfaceScale = 118.0F;
+constexpr float kDirectCpuEmissiveScreenScale = 46.0F;
+constexpr float kDirectCpuEmissiveAlphaFloor = 0.34F;
+constexpr float kDirectCpuEmissiveAlphaGain = 0.66F;
 constexpr std::size_t kLightingPayloadCategoryDirect = 0;
 constexpr std::size_t kLightingPayloadCategoryGi = 1;
 constexpr std::size_t kLightingPayloadCategoryPost = 2;
@@ -309,6 +310,138 @@ void append_stage_name(std::string& names, const LightingDispatchStageUpload& di
         names += "|";
     }
     names += dispatch.stage_name.empty() ? to_string(dispatch.stage) : dispatch.stage_name;
+}
+
+std::uint64_t absolute_delta(std::uint64_t current, std::uint64_t previous) {
+    return current > previous ? current - previous : previous - current;
+}
+
+const char* adaptive_budget_bucket_name(
+        const LightingDispatchStageUpload& dispatch,
+        std::uint64_t rays_per_cell) {
+    if (!dispatch.enabled) {
+        return "disabled";
+    }
+    if (has_lighting_flag(dispatch.flags, kLightingDispatchFlagReuseOnly)) {
+        return "reuse";
+    }
+    if (rays_per_cell <= 1) {
+        return "low";
+    }
+    if (rays_per_cell == 2) {
+        return "medium";
+    }
+    return "high";
+}
+
+void record_adaptive_budget_rejection(
+        NativeAdaptiveBudgetTelemetry& telemetry,
+        std::uint64_t frame_index,
+        std::uint64_t packet_generation,
+        const LightingDispatchStageUpload& dispatch,
+        std::string reason) {
+    telemetry.invalid_budget_rejections++;
+    telemetry.last_frame_index = frame_index;
+    telemetry.last_packet_generation = packet_generation;
+    telemetry.last_dispatch_generation = dispatch.generation;
+    telemetry.last_invalid_budget_generation = dispatch.generation;
+    telemetry.last_ingested = true;
+    telemetry.last_valid = false;
+    telemetry.last_enabled = dispatch.enabled;
+    telemetry.last_cell_count = saturated_multiply(
+            non_negative_u64(dispatch.width),
+            non_negative_u64(dispatch.height));
+    telemetry.last_rays_per_cell = non_negative_u64(dispatch.sample_count);
+    telemetry.last_requested_rays = saturated_multiply(
+            telemetry.last_cell_count,
+            telemetry.last_rays_per_cell);
+    telemetry.last_capped_rays = non_negative_u64(dispatch.ray_count);
+    telemetry.last_reuse_only = has_lighting_flag(dispatch.flags, kLightingDispatchFlagReuseOnly);
+    telemetry.last_temporal_history = has_lighting_flag(dispatch.flags, kLightingDispatchFlagTemporalHistory);
+    telemetry.last_bucket = "invalid";
+    telemetry.last_budget_marker = "round8_adaptive_budget_rejected";
+    telemetry.last_variance_marker = "round8_variance_confidence_unavailable_invalid_budget";
+    telemetry.last_history_confidence_marker = "round8_history_confidence_unavailable_invalid_budget";
+    telemetry.last_invalid_budget_reason = std::move(reason);
+}
+
+void record_adaptive_budget_ingestion(
+        NativeAdaptiveBudgetTelemetry& telemetry,
+        std::uint64_t frame_index,
+        std::uint64_t packet_generation,
+        const LightingDispatchStageUpload& dispatch) {
+    const auto cell_count = saturated_multiply(
+            non_negative_u64(dispatch.width),
+            non_negative_u64(dispatch.height));
+    const auto capped_rays = non_negative_u64(dispatch.ray_count);
+    const auto sample_rays_per_cell = non_negative_u64(dispatch.sample_count);
+    const auto effective_rays_per_cell = cell_count == 0
+            ? sample_rays_per_cell
+            : saturated_add(capped_rays / cell_count, (capped_rays % cell_count) == 0 ? 0 : 1);
+    const auto rays_per_cell = std::max(sample_rays_per_cell, effective_rays_per_cell);
+    const auto requested_rays = std::max(saturated_multiply(cell_count, sample_rays_per_cell), capped_rays);
+    const auto* bucket = adaptive_budget_bucket_name(dispatch, rays_per_cell);
+    const std::string previous_bucket = telemetry.last_bucket.empty()
+            ? "none"
+            : telemetry.last_bucket;
+    const auto previous_rays = telemetry.last_capped_rays;
+    const bool had_previous = telemetry.packets != 0 && telemetry.last_valid;
+    const bool changed = had_previous && (previous_bucket != bucket || previous_rays != capped_rays);
+
+    telemetry.packets++;
+    telemetry.last_frame_index = frame_index;
+    telemetry.last_packet_generation = packet_generation;
+    telemetry.last_dispatch_generation = dispatch.generation;
+    telemetry.last_cell_count = cell_count;
+    telemetry.last_rays_per_cell = rays_per_cell;
+    telemetry.last_requested_rays = requested_rays;
+    telemetry.last_capped_rays = capped_rays;
+    telemetry.last_budget_delta_rays = had_previous ? absolute_delta(capped_rays, previous_rays) : 0;
+    telemetry.last_reuse_bucket_count = 0;
+    telemetry.last_low_bucket_count = 0;
+    telemetry.last_medium_bucket_count = 0;
+    telemetry.last_high_bucket_count = 0;
+    telemetry.last_ingested = true;
+    telemetry.last_valid = true;
+    telemetry.last_enabled = dispatch.enabled;
+    telemetry.last_budget_changed = changed;
+    telemetry.last_budget_capped = sample_rays_per_cell != 0 && capped_rays < requested_rays;
+    telemetry.last_reuse_only = has_lighting_flag(dispatch.flags, kLightingDispatchFlagReuseOnly);
+    telemetry.last_temporal_history = has_lighting_flag(dispatch.flags, kLightingDispatchFlagTemporalHistory);
+    telemetry.last_variance_marker_available = dispatch.enabled && !telemetry.last_reuse_only && rays_per_cell > 0;
+    telemetry.last_history_confidence_available = telemetry.last_temporal_history || telemetry.last_reuse_only;
+    telemetry.last_previous_bucket = previous_bucket;
+    telemetry.last_bucket = bucket;
+    telemetry.last_invalid_budget_reason.clear();
+
+    if (changed) {
+        telemetry.total_budget_changes++;
+    }
+    if (telemetry.last_reuse_only) {
+        telemetry.last_reuse_bucket_count = cell_count;
+        telemetry.total_reuse_bucket_count = saturated_add(telemetry.total_reuse_bucket_count, cell_count);
+    } else if (telemetry.last_bucket == "low") {
+        telemetry.last_low_bucket_count = cell_count;
+        telemetry.total_low_bucket_count = saturated_add(telemetry.total_low_bucket_count, cell_count);
+    } else if (telemetry.last_bucket == "medium") {
+        telemetry.last_medium_bucket_count = cell_count;
+        telemetry.total_medium_bucket_count = saturated_add(telemetry.total_medium_bucket_count, cell_count);
+    } else if (telemetry.last_bucket == "high") {
+        telemetry.last_high_bucket_count = cell_count;
+        telemetry.total_high_bucket_count = saturated_add(telemetry.total_high_bucket_count, cell_count);
+    }
+
+    telemetry.last_budget_marker = changed
+            ? "round8_adaptive_budget_changed"
+            : "round8_adaptive_budget_ingested";
+    telemetry.last_variance_marker = telemetry.last_variance_marker_available
+            ? "round8_variance_budget_marker_available"
+            : "round8_variance_budget_marker_unavailable";
+    telemetry.last_history_confidence_marker = telemetry.last_history_confidence_available
+            ? (telemetry.last_reuse_only
+                    ? "round8_history_confidence_reuse_bucket"
+                    : "round8_history_confidence_temporal_history")
+            : "round8_history_confidence_unavailable";
 }
 
 bool is_power_of_two(std::int32_t value) {
@@ -644,6 +777,54 @@ void append_denoise_execution_status(
         << "\"}";
 }
 
+void append_adaptive_budget_status(
+        std::ostringstream& out,
+        const NativeAdaptiveBudgetTelemetry& budget) {
+    out << ",round8_adaptive_budget={packets=" << budget.packets
+        << ",last_frame=" << budget.last_frame_index
+        << ",packet_generation=" << budget.last_packet_generation
+        << ",dispatch_generation=" << budget.last_dispatch_generation
+        << ",ingested=" << budget.last_ingested
+        << ",valid=" << budget.last_valid
+        << ",enabled=" << budget.last_enabled
+        << ",bucket=\"" << budget.last_bucket
+        << "\""
+        << ",previous_bucket=\"" << budget.last_previous_bucket
+        << "\""
+        << ",cells=" << budget.last_cell_count
+        << ",rays_per_cell=" << budget.last_rays_per_cell
+        << ",requested_rays=" << budget.last_requested_rays
+        << ",capped_rays=" << budget.last_capped_rays
+        << ",budget_capped=" << budget.last_budget_capped
+        << ",budget_changed=" << budget.last_budget_changed
+        << ",budget_delta_rays=" << budget.last_budget_delta_rays
+        << ",total_budget_changes=" << budget.total_budget_changes
+        << ",bucket_counts={reuse=" << budget.last_reuse_bucket_count
+        << ",low=" << budget.last_low_bucket_count
+        << ",medium=" << budget.last_medium_bucket_count
+        << ",high=" << budget.last_high_bucket_count
+        << "}"
+        << ",total_bucket_counts={reuse=" << budget.total_reuse_bucket_count
+        << ",low=" << budget.total_low_bucket_count
+        << ",medium=" << budget.total_medium_bucket_count
+        << ",high=" << budget.total_high_bucket_count
+        << "}"
+        << ",reuse_only=" << budget.last_reuse_only
+        << ",temporal_history=" << budget.last_temporal_history
+        << ",variance_marker_available=" << budget.last_variance_marker_available
+        << ",history_confidence_available=" << budget.last_history_confidence_available
+        << ",invalid_budget_rejections=" << budget.invalid_budget_rejections
+        << ",last_invalid_budget_generation=" << budget.last_invalid_budget_generation
+        << ",budget_marker=\"" << budget.last_budget_marker
+        << "\""
+        << ",variance_marker=\"" << budget.last_variance_marker
+        << "\""
+        << ",history_confidence_marker=\"" << budget.last_history_confidence_marker
+        << "\""
+        << ",invalid_budget_reason=\"" << budget.last_invalid_budget_reason
+        << "\"}";
+}
+
 void append_phase5_lighting_status(
         std::ostringstream& out,
         const NativeLightingDispatchTelemetry& lighting,
@@ -758,6 +939,19 @@ void append_phase5_lighting_status(
         << ",total_candidates=" << lighting.direct_execution.total_candidate_count
         << ",total_samples=" << lighting.direct_execution.total_sample_count
         << ",total_rays=" << lighting.direct_execution.total_ray_count
+        << ",ray_budget={ingested=" << lighting.direct_execution.last_ray_budget_ingested
+        << ",valid=" << lighting.direct_execution.last_ray_budget_valid
+        << ",primary_rays_per_pixel=" << lighting.direct_execution.last_ray_budget_primary_rays_per_pixel
+        << ",shadow_rays_per_hit=" << lighting.direct_execution.last_ray_budget_shadow_rays_per_hit
+        << ",gi_rays_per_hit=" << lighting.direct_execution.last_ray_budget_gi_rays_per_hit
+        << ",max_rays_per_frame=" << lighting.direct_execution.last_ray_budget_max_rays_per_frame
+        << ",max_visited_voxels_per_ray=" << lighting.direct_execution.last_ray_budget_max_visited_voxels_per_ray
+        << ",max_visited_sections_per_ray=" << lighting.direct_execution.last_ray_budget_max_visited_sections_per_ray
+        << ",invalid_rejections=" << lighting.direct_execution.invalid_ray_budget_rejections
+        << ",marker=\"" << lighting.direct_execution.last_ray_budget_marker
+        << "\""
+        << ",rejection_reason=\"" << lighting.direct_execution.last_ray_budget_rejection_reason
+        << "\"}"
         << ",output_writes=" << lighting.direct_execution.output_writes
         << ",resolves=" << lighting.direct_execution.resolves
         << ",enabled=" << lighting.direct_execution.last_enabled
@@ -775,6 +969,7 @@ void append_phase5_lighting_status(
     append_round6_execution_status(out, "diffuse_gi_execution", lighting.diffuse_gi_execution);
     append_round6_execution_status(out, "cache_execution", lighting.cache_execution);
     append_denoise_execution_status(out, lighting.denoise_execution);
+    append_adaptive_budget_status(out, lighting.adaptive_budget);
     append_phase5_payload_categories(out, lighting);
     out
         << ",total_estimated_bytes=" << lighting.total_estimated_bytes
@@ -1454,6 +1649,30 @@ void Renderer::upload_lighting_dispatch(LightingDispatchPacket packet) {
         require_range(dispatch.cache_read_count, 0, kMaxLightingCacheRecords, "lighting dispatch cache read count");
         require_range(dispatch.cache_write_count, 0, kMaxLightingCacheRecords, "lighting dispatch cache write count");
 
+        if (dispatch.stage == NativeLightingDispatchStage::DiffuseGi) {
+            const bool reuse_only = has_lighting_flag(dispatch.flags, kLightingDispatchFlagReuseOnly);
+            const auto capped_rays = non_negative_u64(dispatch.ray_count);
+
+            if (dispatch.enabled && reuse_only && capped_rays != 0) {
+                record_adaptive_budget_rejection(
+                        staging_.lighting.adaptive_budget,
+                        frame_index_,
+                        packet.generation,
+                        dispatch,
+                        "reuse-only diffuse GI budget must not request rays");
+                fail("reuse-only diffuse GI budget must not request rays");
+            }
+            if (dispatch.enabled && !reuse_only && dispatch.sample_count == 0 && capped_rays != 0) {
+                record_adaptive_budget_rejection(
+                        staging_.lighting.adaptive_budget,
+                        frame_index_,
+                        packet.generation,
+                        dispatch,
+                        "diffuse GI budget cannot request rays with zero rays per cell");
+                fail("diffuse GI budget cannot request rays with zero rays per cell");
+            }
+        }
+
         if (dispatch.enabled && dispatch.stage == NativeLightingDispatchStage::Composite && dispatch.output_count == 0) {
             fail("enabled composite lighting dispatch must advertise at least one output");
         }
@@ -1539,7 +1758,41 @@ void Renderer::upload_direct_lighting_payload(DirectLightingPayloadPacket packet
         fail("direct budgeted shadow candidate count cannot exceed shadow candidate count");
     }
 
-    require_length(kDirectRayBudgetStride, packet.ray_budget.size(), "direct ray budget");
+    auto& direct_execution = staging_.lighting.direct_execution;
+    if (packet.ray_budget.size() != kDirectRayBudgetStride) {
+        direct_execution.invalid_ray_budget_rejections++;
+        direct_execution.last_ray_budget_ingested = true;
+        direct_execution.last_ray_budget_valid = false;
+        direct_execution.last_ray_budget_marker = "round8_direct_ray_budget_rejected";
+        direct_execution.last_ray_budget_rejection_reason = "direct ray budget length is invalid";
+        fail("direct ray budget length is invalid");
+    }
+    auto reject_ray_budget = [&direct_execution, &fail](const char* reason) {
+        direct_execution.invalid_ray_budget_rejections++;
+        direct_execution.last_ray_budget_ingested = true;
+        direct_execution.last_ray_budget_valid = false;
+        direct_execution.last_ray_budget_marker = "round8_direct_ray_budget_rejected";
+        direct_execution.last_ray_budget_rejection_reason = reason;
+        fail(reason);
+    };
+    if (packet.ray_budget[kDirectRayBudgetPrimaryRaysPerPixelOffset] < 0) {
+        reject_ray_budget("direct primary rays per pixel must be non-negative");
+    }
+    if (packet.ray_budget[kDirectRayBudgetShadowRaysPerHitOffset] < 0) {
+        reject_ray_budget("direct shadow rays per hit must be non-negative");
+    }
+    if (packet.ray_budget[kDirectRayBudgetGiRaysPerHitOffset] < 0) {
+        reject_ray_budget("direct GI rays per hit must be non-negative");
+    }
+    if (packet.ray_budget[kDirectRayBudgetMaxRaysPerFrameOffset] <= 0) {
+        reject_ray_budget("direct max rays per frame must be positive");
+    }
+    if (packet.ray_budget[kDirectRayBudgetMaxVisitedVoxelsPerRayOffset] <= 0) {
+        reject_ray_budget("direct max visited voxels per ray must be positive");
+    }
+    if (packet.ray_budget[kDirectRayBudgetMaxVisitedSectionsPerRayOffset] <= 0) {
+        reject_ray_budget("direct max visited sections per ray must be positive");
+    }
     require_length(celestial_count, packet.celestial_light_sources.size(), "direct celestial light sources");
     require_length(celestial_count, packet.celestial_light_flags.size(), "direct celestial light flags");
     require_length(celestial_count * kDirectCelestialLightDataStride, packet.celestial_light_data.size(), "direct celestial light data");
@@ -1584,6 +1837,22 @@ void Renderer::upload_direct_lighting_payload(DirectLightingPayloadPacket packet
     execution.last_shadow_candidate_count = shadow_count;
     execution.last_budgeted_shadow_candidate_count = static_cast<std::uint64_t>(packet.budgeted_shadow_candidate_count);
     execution.last_section_snapshot_count = section_count;
+    execution.last_ray_budget_ingested = true;
+    execution.last_ray_budget_valid = true;
+    execution.last_ray_budget_primary_rays_per_pixel = static_cast<std::uint64_t>(
+            packet.ray_budget[kDirectRayBudgetPrimaryRaysPerPixelOffset]);
+    execution.last_ray_budget_shadow_rays_per_hit = static_cast<std::uint64_t>(
+            packet.ray_budget[kDirectRayBudgetShadowRaysPerHitOffset]);
+    execution.last_ray_budget_gi_rays_per_hit = static_cast<std::uint64_t>(
+            packet.ray_budget[kDirectRayBudgetGiRaysPerHitOffset]);
+    execution.last_ray_budget_max_rays_per_frame = static_cast<std::uint64_t>(
+            packet.ray_budget[kDirectRayBudgetMaxRaysPerFrameOffset]);
+    execution.last_ray_budget_max_visited_voxels_per_ray = static_cast<std::uint64_t>(
+            packet.ray_budget[kDirectRayBudgetMaxVisitedVoxelsPerRayOffset]);
+    execution.last_ray_budget_max_visited_sections_per_ray = static_cast<std::uint64_t>(
+            packet.ray_budget[kDirectRayBudgetMaxVisitedSectionsPerRayOffset]);
+    execution.last_ray_budget_marker = "round8_direct_ray_budget_ingested";
+    execution.last_ray_budget_rejection_reason.clear();
     execution.last_celestial_light_energy = packet.celestial_light_energy;
     execution.last_emissive_light_energy = packet.selected_emissive_energy;
     execution.total_celestial_light_count = saturated_add(execution.total_celestial_light_count, celestial_count);
@@ -2838,6 +3107,14 @@ void Renderer::track_lighting_dispatch_upload(const LightingDispatchPacket& pack
         stage.ready_for_native_execution_this_packet = lighting_dispatch_ready_for_native_execution(dispatch);
         stage.last_readiness_reason = lighting_dispatch_readiness_reason(dispatch);
 
+        if (dispatch.stage == NativeLightingDispatchStage::DiffuseGi) {
+            record_adaptive_budget_ingestion(
+                    staging_.lighting.adaptive_budget,
+                    frame_index_,
+                    packet.generation,
+                    dispatch);
+        }
+
         staging_.lighting.last_input_count = saturated_add(staging_.lighting.last_input_count, input_count);
         staging_.lighting.last_output_count = saturated_add(staging_.lighting.last_output_count, output_count);
         staging_.lighting.last_sample_count = saturated_add(staging_.lighting.last_sample_count, sample_count);
@@ -3108,8 +3385,9 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
     const bool has_payload = execution.last_payload_accepted
             && execution.last_payload_generation != 0
             && execution.last_payload_has_direct_work
+            && execution.last_emissive_light_count > 0
             && execution.last_candidate_count > 0
-            && execution.last_shadow_candidate_count > 0;
+            && execution.last_emissive_light_energy > 0.0F;
     if (has_payload && pixel_count != 0) {
         const auto celestial_count = static_cast<std::size_t>(last_direct_lighting_payload_packet_.celestial_light_count);
         const auto emissive_count = static_cast<std::size_t>(last_direct_lighting_payload_packet_.selected_emissive_count);
@@ -3128,7 +3406,85 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
                 ? 1.0F
                 : std::max(0.05F, shadow_weight / static_cast<float>(shadow_count));
         const float celestial_base = celestial_energy * kDirectCpuCelestialScale * normalized_shadow_weight;
-        const bool preview_has_visible_direct_work = emissive_count > 0 && shadow_count > 0;
+
+        float emissive_red = 0.0F;
+        float emissive_green = 0.0F;
+        float emissive_blue = 0.0F;
+        float emissive_x = 0.0F;
+        float emissive_y = 0.0F;
+        float emissive_z = 0.0F;
+        float emissive_weight = 0.0F;
+        for (std::size_t light_index = 0; light_index < emissive_count; light_index++) {
+            const float intensity = std::max(0.05F, strided_float_or_zero(
+                    last_direct_lighting_payload_packet_.emissive_light_data,
+                    light_index,
+                    kDirectEmissiveLightDataStride,
+                    kDirectEmissiveIntensityOffset));
+            const float radius = std::max(kDirectCpuMinimumSurfaceRadius, strided_float_or_zero(
+                    last_direct_lighting_payload_packet_.emissive_light_data,
+                    light_index,
+                    kDirectEmissiveLightDataStride,
+                    kDirectEmissiveInfluenceRadiusOffset));
+            const float weight = intensity * std::sqrt(radius);
+            emissive_red += strided_float_or_zero(
+                    last_direct_lighting_payload_packet_.emissive_light_data,
+                    light_index,
+                    kDirectEmissiveLightDataStride,
+                    kDirectEmissiveColorRedOffset) * weight;
+            emissive_green += strided_float_or_zero(
+                    last_direct_lighting_payload_packet_.emissive_light_data,
+                    light_index,
+                    kDirectEmissiveLightDataStride,
+                    kDirectEmissiveColorGreenOffset) * weight;
+            emissive_blue += strided_float_or_zero(
+                    last_direct_lighting_payload_packet_.emissive_light_data,
+                    light_index,
+                    kDirectEmissiveLightDataStride,
+                    kDirectEmissiveColorBlueOffset) * weight;
+            emissive_x += (static_cast<float>(strided_int_or_zero(
+                    last_direct_lighting_payload_packet_.emissive_light_metadata,
+                    light_index,
+                    kDirectEmissiveLightMetadataStride,
+                    kDirectEmissiveBlockXOffset)) + 0.5F) * weight;
+            emissive_y += (static_cast<float>(strided_int_or_zero(
+                    last_direct_lighting_payload_packet_.emissive_light_metadata,
+                    light_index,
+                    kDirectEmissiveLightMetadataStride,
+                    kDirectEmissiveBlockYOffset)) + 0.5F) * weight;
+            emissive_z += (static_cast<float>(strided_int_or_zero(
+                    last_direct_lighting_payload_packet_.emissive_light_metadata,
+                    light_index,
+                    kDirectEmissiveLightMetadataStride,
+                    kDirectEmissiveBlockZOffset)) + 0.5F) * weight;
+            emissive_weight += weight;
+        }
+        if (emissive_weight > 0.0F) {
+            emissive_red /= emissive_weight;
+            emissive_green /= emissive_weight;
+            emissive_blue /= emissive_weight;
+            emissive_x /= emissive_weight;
+            emissive_y /= emissive_weight;
+            emissive_z /= emissive_weight;
+        } else {
+            emissive_red = 1.0F;
+            emissive_green = 0.88F;
+            emissive_blue = 0.62F;
+        }
+
+        const float scene_anchor_u = std::clamp(
+                0.50F + std::sin((emissive_x * 0.071F) + (emissive_z * 0.037F)) * 0.18F,
+                0.24F,
+                0.76F);
+        const float scene_anchor_v = std::clamp(
+                0.58F + std::sin((emissive_y * 0.053F) + (emissive_z * 0.041F)) * 0.16F,
+                0.34F,
+                0.82F);
+        const float scene_emissive_energy = std::clamp(
+                finite_non_negative(last_direct_lighting_payload_packet_.selected_emissive_energy)
+                        * 0.035F
+                        + static_cast<float>(emissive_count) * 0.65F,
+                0.35F,
+                7.5F);
 
         direct_lighting_cpu_output_.assign(static_cast<std::size_t>(pixel_count) * 4, 0.0F);
         float total_energy = 0.0F;
@@ -3142,7 +3498,13 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
             const auto pixel_y = static_cast<std::uint64_t>(pixel / output_width);
             const std::size_t surface_index = shadow_count == 0
                     ? 0
-                    : static_cast<std::size_t>((pixel + frame_index_) % shadow_count);
+                    : static_cast<std::size_t>(pixel % shadow_count);
+            const float u = output_width <= 1
+                    ? 0.5F
+                    : static_cast<float>(pixel_x) / static_cast<float>(output_width - 1);
+            const float v = output_height <= 1
+                    ? 0.5F
+                    : static_cast<float>(pixel_y) / static_cast<float>(output_height - 1);
 
             float surface_x = static_cast<float>(pixel_x);
             float surface_y = static_cast<float>(pixel_y);
@@ -3175,12 +3537,6 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
             float green = celestial_base * 0.2F;
             float blue = celestial_base * 0.24F;
             float surface_mask = 0.0F;
-            if (preview_has_visible_direct_work) {
-                red += kDirectCpuSurfacePreviewCoverageRed;
-                green += kDirectCpuSurfacePreviewCoverageGreen;
-                blue += kDirectCpuSurfacePreviewCoverageBlue;
-                surface_mask = kDirectCpuSurfacePreviewCoverageAlpha;
-            }
             for (std::size_t light_index = 0; light_index < emissive_count; light_index++) {
                 const float light_x = static_cast<float>(strided_int_or_zero(
                         last_direct_lighting_payload_packet_.emissive_light_metadata,
@@ -3208,26 +3564,24 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
                         kDirectEmissiveInfluenceRadiusOffset));
                 const float falloff = std::max(0.0F, 1.0F - (distance / radius));
                 const float shaped_falloff = std::max(falloff * falloff, falloff * 0.55F);
-                const float preview_falloff = std::clamp(
-                        shaped_falloff * kDirectCpuSurfacePreviewFalloffGain,
+                const float surface_falloff = std::clamp(
+                        shaped_falloff * (shadow_count == 0 ? 1.0F : 1.55F),
                         0.0F,
                         1.0F);
-                if (preview_falloff <= 0.0F) {
+                if (surface_falloff <= 0.0F) {
                     continue;
                 }
-                surface_mask = std::max(surface_mask, preview_falloff);
+                surface_mask = std::max(surface_mask, surface_falloff);
 
                 const float intensity = strided_float_or_zero(
                         last_direct_lighting_payload_packet_.emissive_light_data,
                         light_index,
                         kDirectEmissiveLightDataStride,
                         kDirectEmissiveIntensityOffset);
-                const float preview_energy = intensity
-                        * (1.0F + static_cast<float>(emissive_count) * kDirectCpuEmissiveScale);
-                const float strength = preview_energy
-                        * preview_falloff
+                const float strength = intensity
+                        * surface_falloff
                         * surface_weight
-                        * kDirectCpuSurfacePreviewScale;
+                        * kDirectCpuEmissiveSurfaceScale;
                 red += strided_float_or_zero(
                         last_direct_lighting_payload_packet_.emissive_light_data,
                         light_index,
@@ -3245,14 +3599,31 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
                         kDirectEmissiveColorBlueOffset) * strength;
             }
 
-            const float tile_factor = 1.0F + static_cast<float>((pixel + frame_index_) % 7) * 0.0005F;
-            direct_lighting_cpu_output_[offset] = std::min(64.0F, red * tile_factor);
-            direct_lighting_cpu_output_[offset + 1] = std::min(64.0F, green * tile_factor);
-            direct_lighting_cpu_output_[offset + 2] = std::min(64.0F, blue * tile_factor);
-            const float preview_alpha = surface_mask <= 0.0F
+            const float du = (u - scene_anchor_u) / 0.34F;
+            const float dv = (v - scene_anchor_v) / 0.30F;
+            const float screen_lobe = smooth_unit_response(std::max(
+                    0.0F,
+                    1.0F - std::sqrt((du * du) + (dv * dv))));
+            const float broad_lobe = broad_surface_response(u, v) * 0.42F;
+            const float emissive_projection = std::max(surface_mask, std::max(screen_lobe, broad_lobe));
+            if (emissive_projection > 0.0F) {
+                const float screen_strength = scene_emissive_energy
+                        * emissive_projection
+                        * kDirectCpuEmissiveScreenScale;
+                red += emissive_red * screen_strength;
+                green += emissive_green * screen_strength;
+                blue += emissive_blue * screen_strength;
+            }
+
+            direct_lighting_cpu_output_[offset] = std::min(96.0F, red);
+            direct_lighting_cpu_output_[offset + 1] = std::min(96.0F, green);
+            direct_lighting_cpu_output_[offset + 2] = std::min(96.0F, blue);
+            const float preview_alpha = emissive_projection <= 0.0F
                     ? 0.0F
-                    : kDirectCpuSurfacePreviewAlphaFloor
-                            + surface_mask * surface_weight * kDirectCpuSurfacePreviewAlphaGain;
+                    : kDirectCpuEmissiveAlphaFloor
+                            + emissive_projection
+                                    * std::max(0.35F, std::min(surface_weight, 1.0F))
+                                    * kDirectCpuEmissiveAlphaGain;
             direct_lighting_cpu_output_[offset + 3] = std::clamp(preview_alpha, 0.0F, 1.0F);
             const float sample_energy = direct_lighting_cpu_output_[offset]
                     + direct_lighting_cpu_output_[offset + 1]
@@ -3264,6 +3635,7 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
             mix_checksum(checksum, static_cast<std::uint64_t>(sample_energy * 1000.0F));
             mix_checksum(checksum, pixel);
             mix_checksum(checksum, surface_index);
+            mix_checksum(checksum, last_direct_lighting_payload_packet_.emissive_generation);
         }
 
         execution.last_output_width = output_width;
@@ -3306,11 +3678,17 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
         recorded_resources++;
     }
 
-    execution.last_output_marker = execution.last_output_write_recorded
-        ? "direct_light_output_write_resolve_recorded"
-        : "direct_light_resolve_recorded_without_output";
     if (execution.last_cpu_output_generated) {
-        execution.last_readiness_reason = "direct_lighting_surface_sample_cpu_output_generated";
+        execution.last_output_marker = execution.last_output_write_recorded
+            ? "direct_light_emissive_candidate_output_write_resolve_recorded"
+            : "direct_light_emissive_candidate_cpu_output_without_resource_write";
+    } else {
+        execution.last_output_marker = execution.last_output_write_recorded
+            ? "direct_light_output_write_resolve_recorded_no_emissive_candidate_output"
+            : "direct_light_resolve_recorded_without_output";
+    }
+    if (execution.last_cpu_output_generated) {
+        execution.last_readiness_reason = "direct_lighting_emissive_candidate_cpu_output_generated";
     } else {
         execution.last_readiness_reason = direct_stage.last_placeholder
             ? "direct_lighting_validated_placeholder_scaffold_executed_metadata_only"

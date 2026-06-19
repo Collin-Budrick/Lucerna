@@ -94,6 +94,7 @@ public record LowResDiffuseGiPlan(
         return this.rayBudget.tier().name().toLowerCase()
                 + " rays=" + this.rayBudget.cappedRays() + "/" + this.rayBudget.requestedRays()
                 + " cells=" + this.rayBudget.lowResolutionCellCount()
+                + " classes=" + this.rayBudget.adaptiveMap().compactLabel()
                 + " reason=" + this.rayBudget.reason();
     }
 

@@ -94,7 +94,8 @@ public final class LowResDiffuseGiPlanner {
                 cacheConfidence,
                 temporalInput,
                 resolvedCacheSnapshot,
-                resolvedSettings
+                resolvedSettings,
+                resolvedSourceSummary
         );
         DiffuseGiValidationReport validationReport = validate(
                 frameInput,

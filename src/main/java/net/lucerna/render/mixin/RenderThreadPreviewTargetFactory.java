@@ -9,6 +9,7 @@ import com.mojang.blaze3d.textures.GpuTexture;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
+import net.lucerna.LucernaController;
 import net.lucerna.nativebridge.DenoisedDiffuseGiCpuOutputPayload;
 import net.lucerna.nativebridge.DirectLightingCpuOutputPayload;
 import net.lucerna.nativebridge.Round6DiffuseGiCpuOutputPayload;
@@ -375,6 +376,15 @@ public final class RenderThreadPreviewTargetFactory {
                     "public Mojang final composite skipped because native direct-light RGBA8 payload is unavailable"
             );
         }
+        if (!hasNativeDirectLightCandidatePayload(directOutputPayload)) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang final composite skipped because native direct-light RGBA8 payload has no emissive/direct candidate evidence; refusing metadata-only or proof-marker-only readiness: "
+                            + directOutputPayload.debugSummary()
+            );
+        }
         if (!directOutputPayload.readyForPreviewDraw()) {
             return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
                     true,
@@ -424,13 +434,21 @@ public final class RenderThreadPreviewTargetFactory {
                 drawScaffold.drawCallsIssued(),
                 target.attachmentMetadata().javaOpaque(),
                 PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
-                "public Mojang final composite direct-light render pass submitted; payload: "
+                "public Mojang final composite native direct-light surface-source render pass submitted; candidateEvidence=true; payload: "
                         + directOutputPayload.debugSummary()
                         + "; upload: "
                         + upload.summary()
                         + "; draw scaffold: "
                         + drawScaffold.summary()
         );
+    }
+
+    private static boolean hasNativeDirectLightCandidatePayload(DirectLightingCpuOutputPayload payload) {
+        return payload != null
+                && payload.snapshot().hasExecutionTelemetry()
+                && payload.snapshot().candidateCount() > 0
+                && payload.snapshot().sampleCount() > 0
+                && payload.snapshot().outputCount() > 0;
     }
 
     public static PublicMojangFinalCompositeSubmissionResult submitRound6DiffuseGiFinalCompositePublicDraw(
@@ -773,6 +791,20 @@ public final class RenderThreadPreviewTargetFactory {
             );
         }
 
+        DirectLightingCpuOutputPayload directSourcePayload = resolveNativeDirectLightCandidatePayload();
+        ByteBuffer directSourceBuffer = null;
+        DirectLightPreviewTextureUploadResult directUpload = null;
+        if (directSourcePayload != null) {
+            directSourceBuffer = directSourcePayload.copyToByteBuffer();
+            directUpload = DIRECT_LIGHT_FINAL_COMPOSITE_TEXTURE_UPLOADER.upload(
+                    RenderSystem.getDevice(),
+                    commandEncoder,
+                    directSourceBuffer,
+                    directSourcePayload.width(),
+                    directSourcePayload.height()
+            );
+        }
+
         ByteBuffer denoisedSourceBuffer = denoisedGiPayload.copyToByteBuffer();
         DirectLightPreviewTextureUploadResult denoisedUpload = ROUND7_DENOISED_GI_TEXTURE_UPLOADER.upload(
                 RenderSystem.getDevice(),
@@ -783,6 +815,7 @@ public final class RenderThreadPreviewTargetFactory {
         );
         if (!denoisedUpload.availableForDraw()) {
             Reference.reachabilityFence(rawSourceBuffer);
+            Reference.reachabilityFence(directSourceBuffer);
             Reference.reachabilityFence(denoisedSourceBuffer);
             return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
                     true,
@@ -800,10 +833,12 @@ public final class RenderThreadPreviewTargetFactory {
         }
 
         boolean rawUploadAvailable = rawUpload != null && rawUpload.availableForDraw();
+        boolean directUploadAvailable = directUpload != null && directUpload.availableForDraw();
         PublicMojangPreviewDrawScaffold drawScaffold;
+        PublicMojangPreviewDrawScaffold directDrawScaffold = null;
         try (RenderPass renderPass = createFullTargetRenderPass(
                 commandEncoder,
-                () -> "lucerna public Round 7 FINAL_COMPOSITE raw plus denoised GI visual draw pass",
+                () -> "lucerna public Round 7 FINAL_COMPOSITE direct plus raw plus denoised visual draw pass",
                 colorView,
                 target
         )) {
@@ -815,12 +850,20 @@ public final class RenderThreadPreviewTargetFactory {
                     denoisedUpload.textureView(),
                     denoisedUpload.sampler()
             );
+            if (directUploadAvailable) {
+                directDrawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenDirectLightFinalCompositeDraw(
+                        renderPass,
+                        directUpload.textureView(),
+                        directUpload.sampler()
+                );
+            }
         }
         commandEncoder.submit();
         Reference.reachabilityFence(rawSourceBuffer);
+        Reference.reachabilityFence(directSourceBuffer);
         Reference.reachabilityFence(denoisedSourceBuffer);
         return PublicMojangFinalCompositeSubmissionResult.submitted(
-                drawScaffold.drawCallsIssued(),
+                drawScaffold.drawCallsIssued() || (directDrawScaffold != null && directDrawScaffold.drawCallsIssued()),
                 target.attachmentMetadata().javaOpaque(),
                 PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
                 "public Mojang Round 7 FINAL_COMPOSITE visual render pass submitted; "
@@ -828,10 +871,15 @@ public final class RenderThreadPreviewTargetFactory {
                         + ",evidence=round7.composite.final.base_direct_gi"
                         + ",readiness=\"denoised diffuse-GI CPU output is displayable"
                         + (rawUploadAvailable ? " and raw native diffuse-GI source is blended" : " and raw native diffuse-GI source is unavailable")
+                        + (directUploadAvailable ? " and native direct-light emissive source is blended" : " and native direct-light emissive source is unavailable")
                         + "\",raw source: "
                         + rawGiSource.summary()
                         + "; denoised source: "
                         + denoisedGiSource.summary()
+                        + "; direct native source payload: "
+                        + (directSourcePayload == null ? "missing-or-no-candidate-evidence" : directSourcePayload.debugSummary())
+                        + "; direct upload: "
+                        + (directUpload == null ? "not-attempted" : directUpload.summary())
                         + "; target: "
                         + targetAttachmentSummary(target)
                         + "; javaOpaquePublicFallback="
@@ -846,7 +894,17 @@ public final class RenderThreadPreviewTargetFactory {
                         + denoisedUpload.summary()
                         + "; draw scaffold: "
                         + drawScaffold.summary()
+                        + "; direct draw scaffold: "
+                        + (directDrawScaffold == null ? "not-attempted" : directDrawScaffold.summary())
         );
+    }
+
+    private static DirectLightingCpuOutputPayload resolveNativeDirectLightCandidatePayload() {
+        DirectLightingCpuOutputPayload payload = LucernaController.getInstance().directLightingCpuOutputPayload();
+        if (!hasNativeDirectLightCandidatePayload(payload) || !payload.readyForPreviewDraw()) {
+            return null;
+        }
+        return payload;
     }
 
     private static String targetAttachmentSummary(LucernaFramePassTarget target) {

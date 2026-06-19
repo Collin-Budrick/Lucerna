@@ -3,6 +3,7 @@ package net.lucerna.gui;
 import net.lucerna.LucernaController;
 import net.lucerna.config.DebugOverlay;
 import net.lucerna.render.preview.FinalCompositeModeStatus;
+import net.lucerna.render.preview.Round8AdaptiveDebugStatus;
 import net.lucerna.telemetry.LightingDispatchStageTelemetryStatus;
 import net.lucerna.telemetry.LightingDispatchTelemetryStatus;
 import net.lucerna.telemetry.NativePassTelemetryStatus;
@@ -52,6 +53,7 @@ public final class LucernaDebugOverlayLines {
         }
         FinalCompositeModeStatus compositeStatus = currentCompositeModeStatus();
         lines.add(Component.literal("Round 7 composite: " + compositeStatus.summary()));
+        lines.add(Component.literal("Round 8 adaptive debug: " + Round8AdaptiveDebugStatus.fromSnapshot(snapshot).summary()));
         return lines;
     }
 
@@ -67,6 +69,11 @@ public final class LucernaDebugOverlayLines {
             case FRAME_TIMINGS -> addTimingLines(lines, snapshot);
             case DIRECT_LIGHTING -> addDirectLightingLines(lines, snapshot);
             case NATIVE_QUEUE -> addNativeQueueLines(lines, snapshot);
+            case ADAPTIVE_SAMPLING -> addAdaptiveSamplingLines(lines, snapshot);
+            case RAY_BUDGET_HEATMAP -> addRayBudgetHeatmapLines(lines, snapshot);
+            case VARIANCE_MAP -> addVarianceMapLines(lines, snapshot);
+            case HISTORY_CONFIDENCE -> addHistoryConfidenceLines(lines, snapshot);
+            case DISOCCLUSION_MASK -> addDisocclusionMaskLines(lines, snapshot);
             case OFF -> lines.add(statusLine(snapshot));
         }
         addCompositeModeLines(lines);
@@ -88,6 +95,9 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Round 7 composite evidence: " + compositeStatus.controllerEvidenceLine()));
         lines.add(Component.literal("Round 7 composite reason: " + compositeStatus.modeReason()));
         lines.add(Component.literal("Round 7 selected source: " + compositeStatus.selectedSourcePolicy()));
+        lines.add(Component.literal("Round 7 submission policy: " + compositeStatus.finalCompositeSubmissionPolicy()));
+        lines.add(Component.literal("Round 7 source authenticity: "
+                + compositeStatus.selectedSourceAuthenticityPolicy()));
         lines.add(Component.literal("Round 7 focused proof: " + compositeStatus.focusedRegionProofExpectation()));
         lines.add(Component.literal("Round 7 boundary: " + compositeStatus.foundationBoundary()));
     }
@@ -108,12 +118,26 @@ public final class LucernaDebugOverlayLines {
                 + yesNo(compositeStatus.diffuseGiEnabled())));
         lines.add(Component.literal("round7.compositeIsolation=" + compositeStatus.signalIsolationLabel()));
         lines.add(Component.literal("round7.selectedSourcePolicy=" + compositeStatus.selectedSourcePolicy()));
+        lines.add(Component.literal("round7.finalCompositeSubmissionPolicy="
+                + compositeStatus.finalCompositeSubmissionPolicy()));
+        lines.add(Component.literal("round7.selectedSourceAuthenticityPolicy="
+                + compositeStatus.selectedSourceAuthenticityPolicy()));
         lines.add(Component.literal("round7.focusedRegionProofExpectation="
                 + compositeStatus.focusedRegionProofExpectation()));
         lines.add(Component.literal("round7.visualProofBoundary=" + compositeStatus.visualProofBoundarySummary()));
         lines.add(Component.literal("round7.compositeReason=" + compositeStatus.modeReason()));
         lines.add(Component.literal("round7.compositeExpectedEvidence=" + compositeStatus.expectedEvidence()));
         lines.add(Component.literal("round7.compositeValidation=" + compositeStatus.validationSummary()));
+        Round8AdaptiveDebugStatus round8 = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
+        lines.add(Component.literal("round8.adaptiveDebugSummary=" + round8.summary()));
+        lines.add(Component.literal("round8.adaptiveSampling=" + round8.adaptiveSamplingLine()));
+        lines.add(Component.literal("round8.rayBudget=" + round8.rayBudgetLine()));
+        lines.add(Component.literal("round8.rayBudgetHeatmap=" + round8.rayBudgetHeatmapLine()));
+        lines.add(Component.literal("round8.varianceMap=" + round8.varianceMapLine()));
+        lines.add(Component.literal("round8.historyConfidence=" + round8.historyConfidenceLine()));
+        lines.add(Component.literal("round8.disocclusionMask=" + round8.disocclusionMaskLine()));
+        lines.add(Component.literal("round8.readiness=" + round8.readinessLine()));
+        lines.add(Component.literal("round8.evidenceBoundary=" + round8.evidenceBoundaryLine()));
         snapshot.validationFields().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> Component.literal(entry.getKey() + "=" + entry.getValue()))
@@ -192,6 +216,58 @@ public final class LucernaDebugOverlayLines {
         }
     }
 
+    private static void addAdaptiveSamplingLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        Round8AdaptiveDebugStatus status = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
+        lines.add(Component.literal("Overlay scope: Round 8 adaptive sampling status."));
+        lines.add(Component.literal(status.adaptiveSamplingLine()));
+        lines.add(Component.literal(status.rayBudgetLine()));
+        lines.add(Component.literal(status.varianceMapLine()));
+        lines.add(Component.literal(status.historyConfidenceLine()));
+        lines.add(Component.literal(status.disocclusionMaskLine()));
+        lines.add(Component.literal(status.readinessLine()));
+        lines.add(Component.literal(status.evidenceBoundaryLine()));
+    }
+
+    private static void addRayBudgetHeatmapLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        Round8AdaptiveDebugStatus status = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
+        lines.add(Component.literal("Overlay scope: Round 8 ray-budget heatmap readiness."));
+        lines.add(Component.literal(status.rayBudgetHeatmapLine()));
+        lines.add(Component.literal(status.rayBudgetLine()));
+        lines.add(Component.literal("Heatmap legend: reuse=blue low=green medium=yellow high=red missing=gray"));
+        lines.add(Component.literal(status.readinessLine()));
+        lines.add(Component.literal(status.evidenceBoundaryLine()));
+    }
+
+    private static void addVarianceMapLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        Round8AdaptiveDebugStatus status = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
+        lines.add(Component.literal("Overlay scope: Round 8 variance map readiness."));
+        lines.add(Component.literal(status.varianceMapLine()));
+        lines.add(Component.literal(status.rayBudgetLine()));
+        lines.add(Component.literal("Variance legend: stable=blue refresh=yellow high=red missing=gray"));
+        lines.add(Component.literal(status.readinessLine()));
+        lines.add(Component.literal(status.evidenceBoundaryLine()));
+    }
+
+    private static void addHistoryConfidenceLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        Round8AdaptiveDebugStatus status = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
+        lines.add(Component.literal("Overlay scope: Round 8 history confidence readiness."));
+        lines.add(Component.literal(status.historyConfidenceLine()));
+        lines.add(Component.literal(status.varianceMapLine()));
+        lines.add(Component.literal("History legend: reset=red low=yellow reusable=green missing=gray"));
+        lines.add(Component.literal(status.readinessLine()));
+        lines.add(Component.literal(status.evidenceBoundaryLine()));
+    }
+
+    private static void addDisocclusionMaskLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        Round8AdaptiveDebugStatus status = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
+        lines.add(Component.literal("Overlay scope: Round 8 disocclusion mask readiness."));
+        lines.add(Component.literal(status.disocclusionMaskLine()));
+        lines.add(Component.literal(status.historyConfidenceLine()));
+        lines.add(Component.literal("Disocclusion legend: stable=transparent moving=yellow reset=red missing=gray"));
+        lines.add(Component.literal(status.readinessLine()));
+        lines.add(Component.literal(status.evidenceBoundaryLine()));
+    }
+
     private static void addNativeQueueLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
         lines.add(Component.literal("Native state: " + snapshot.nativeBridgeLabel()));
         lines.add(Component.literal("Native loadAttempted=" + yesNo(snapshot.nativeBridge().loadAttempted())
@@ -260,6 +336,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Direct R5 payload accepted: " + yesNoUnknown(directStage.payloadAccepted())
                 + " | validated=" + yesNoUnknown(directStage.payloadValidated())
                 + " | hasWork=" + yesNoUnknown(directStage.payloadHasDirectWork())));
+        lines.add(Component.literal("Direct R5 payload source: " + directPayloadSourceLabel(directStage)));
         lines.add(Component.literal("Direct payload counts: celestial=" + valueOrUnknown(directStage.celestialCount())
                 + " emissive=" + valueOrUnknown(directStage.emissiveCount())
                 + " shadow=" + valueOrUnknown(directStage.shadowCandidateCount())
@@ -277,7 +354,8 @@ public final class LucernaDebugOverlayLines {
                 + " checksum=" + valueOrUnknown(directStage.outputChecksum())));
         lines.add(Component.literal("Direct R5 CPU output generated: " + yesNoUnknown(directStage.cpuOutputGenerated())
                 + " | evidence=" + directOutputEvidenceLabel(directStage)));
-        lines.add(Component.literal("Direct R5 composite: direct-light proof/status only; not Round 6 diffuse GI output"));
+        lines.add(Component.literal("Direct R5 composite: final-composite proof requires submitted full-target draw; "
+                + "focus/proof/status-only evidence is not enough"));
         lines.add(Component.literal("Direct native: attempts=" + detailOrUnknown(directStage, "attempts")
                 + " submitted=" + detailOrUnknown(directStage, "submitted")
                 + " skipped=" + detailOrUnknown(directStage, "skipped")
@@ -517,6 +595,60 @@ public final class LucernaDebugOverlayLines {
             flags.add("raw=" + stage.flags());
         }
         return flags.isEmpty() ? "unreported" : String.join(",", flags);
+    }
+
+    private static String directPayloadSourceLabel(LightingDispatchStageTelemetryStatus stage) {
+        if (Boolean.TRUE.equals(stage.placeholder())) {
+            return "proof-placeholder";
+        }
+        if (Boolean.TRUE.equals(stage.metadataOnly())) {
+            return "metadata-only";
+        }
+        if (isTruthy(firstDetailOrUnknown(
+                stage,
+                "proof_marker",
+                "proof_marker_source",
+                "proof_only",
+                "proof_source"
+        ))) {
+            return "proof-only";
+        }
+        if (isTruthy(firstDetailOrUnknown(
+                stage,
+                "focus_window_only",
+                "focus_window_source",
+                "focus_only",
+                "focus_window"
+        ))) {
+            return "focus-window-only";
+        }
+        boolean accepted = Boolean.TRUE.equals(stage.payloadAccepted());
+        boolean validated = Boolean.TRUE.equals(stage.payloadValidated()) || Boolean.TRUE.equals(stage.validated());
+        boolean hasWork = Boolean.TRUE.equals(stage.payloadHasDirectWork());
+        boolean wroteOutput = isTruthy(stage.details().get("output_write_recorded"))
+                || parsePositive(stage.details().get("output_writes"));
+        boolean resolvedOutput = isTruthy(stage.details().get("resolve_recorded"))
+                || parsePositive(stage.details().get("resolves"));
+        if (accepted && validated && hasWork && wroteOutput && resolvedOutput) {
+            return "real-direct-light-payload";
+        }
+        List<String> missing = new ArrayList<>();
+        if (!accepted) {
+            missing.add("accepted");
+        }
+        if (!validated) {
+            missing.add("validated");
+        }
+        if (!hasWork) {
+            missing.add("hasWork");
+        }
+        if (!wroteOutput) {
+            missing.add("outputWrite");
+        }
+        if (!resolvedOutput) {
+            missing.add("resolve");
+        }
+        return "not-real-yet:missing-" + String.join("/", missing);
     }
 
     private static String payloadReadinessLabel(LightingDispatchStageTelemetryStatus stage) {

@@ -7,7 +7,12 @@ public enum DebugOverlay {
     MATERIAL_IDS("Material ids"),
     FRAME_TIMINGS("Frame timings"),
     DIRECT_LIGHTING("Direct lighting"),
-    NATIVE_QUEUE("Native queue");
+    NATIVE_QUEUE("Native queue"),
+    ADAPTIVE_SAMPLING("Adaptive sampling"),
+    RAY_BUDGET_HEATMAP("Ray budget heatmap"),
+    VARIANCE_MAP("Variance map"),
+    HISTORY_CONFIDENCE("History confidence"),
+    DISOCCLUSION_MASK("Disocclusion mask");
 
     private final String displayName;
 

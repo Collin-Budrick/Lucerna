@@ -30,6 +30,10 @@ public final class LucernaHudDebugOverlay {
     private static final int GI_PROOF_FILL_COLOR = 0x78FFB040;
     private static final int GI_PROOF_BORDER_COLOR = 0xFFFFF0A8;
     private static final int GI_PROOF_LABEL_BACKGROUND_COLOR = 0xD0182418;
+    private static final int ROUND8_LEGEND_WIDTH = 172;
+    private static final int ROUND8_LEGEND_HEIGHT = 44;
+    private static final int ROUND8_LEGEND_SWATCH_WIDTH = 28;
+    private static final int ROUND8_LEGEND_BACKGROUND_COLOR = 0xD0182028;
 
     private LucernaHudDebugOverlay() {
     }
@@ -52,6 +56,7 @@ public final class LucernaHudDebugOverlay {
 
         if (debugOverlayVisible) {
             renderDebugLines(graphics, client, snapshot);
+            renderRoundEightLegendIfNeeded(graphics, client, snapshot.debugOverlay());
         }
         if (proofOverlayVisible) {
             renderDirectLightProofOverlay(graphics, client, controller.directLightingCpuOutputPayload());
@@ -137,6 +142,69 @@ public final class LucernaHudDebugOverlay {
             y += LINE_HEIGHT;
         }
         return lineCount;
+    }
+
+    private static void renderRoundEightLegendIfNeeded(
+            GuiGraphicsExtractor graphics,
+            Minecraft client,
+            DebugOverlay overlay
+    ) {
+        if (!isRoundEightHeatmapOverlay(overlay)) {
+            return;
+        }
+
+        int left = Math.max(PROOF_MARGIN, graphics.guiWidth() - ROUND8_LEGEND_WIDTH - PROOF_MARGIN);
+        int top = PROOF_MARGIN + PROOF_HEIGHT + PROOF_MARGIN;
+        int right = left + ROUND8_LEGEND_WIDTH;
+        int bottom = top + ROUND8_LEGEND_HEIGHT;
+        graphics.fill(left, top, right, bottom, ROUND8_LEGEND_BACKGROUND_COLOR);
+        graphics.text(client.font, Component.literal(roundEightLegendTitle(overlay)), left + 5, top + 5, 0xFFFFFFFF);
+
+        int swatchTop = top + 19;
+        int swatchLeft = left + 5;
+        int[] colors = roundEightLegendColors(overlay);
+        for (int index = 0; index < colors.length; index++) {
+            int x0 = swatchLeft + (index * ROUND8_LEGEND_SWATCH_WIDTH);
+            graphics.fill(x0, swatchTop, x0 + ROUND8_LEGEND_SWATCH_WIDTH, swatchTop + 8, colors[index]);
+        }
+        graphics.text(client.font, Component.literal(roundEightLegendLabels(overlay)), left + 5, top + 31, 0xFFE5F0FF);
+    }
+
+    private static boolean isRoundEightHeatmapOverlay(DebugOverlay overlay) {
+        return overlay == DebugOverlay.RAY_BUDGET_HEATMAP
+                || overlay == DebugOverlay.VARIANCE_MAP
+                || overlay == DebugOverlay.HISTORY_CONFIDENCE
+                || overlay == DebugOverlay.DISOCCLUSION_MASK;
+    }
+
+    private static String roundEightLegendTitle(DebugOverlay overlay) {
+        return switch (overlay) {
+            case RAY_BUDGET_HEATMAP -> "R8 ray budget";
+            case VARIANCE_MAP -> "R8 variance";
+            case HISTORY_CONFIDENCE -> "R8 history confidence";
+            case DISOCCLUSION_MASK -> "R8 disocclusion";
+            default -> "R8 adaptive";
+        };
+    }
+
+    private static int[] roundEightLegendColors(DebugOverlay overlay) {
+        return switch (overlay) {
+            case RAY_BUDGET_HEATMAP -> new int[]{0xFF4D8CFF, 0xFF42D66B, 0xFFFFD34D, 0xFFFF5A4D, 0xFF707780};
+            case VARIANCE_MAP -> new int[]{0xFF4D8CFF, 0xFF42D66B, 0xFFFFD34D, 0xFFFF5A4D, 0xFF707780};
+            case HISTORY_CONFIDENCE -> new int[]{0xFFFF5A4D, 0xFFFFD34D, 0xFF42D66B, 0xFF4D8CFF, 0xFF707780};
+            case DISOCCLUSION_MASK -> new int[]{0x40203038, 0xFF42D66B, 0xFFFFD34D, 0xFFFF5A4D, 0xFF707780};
+            default -> new int[]{0xFF707780, 0xFF42D66B, 0xFFFFD34D, 0xFFFF5A4D, 0xFF4D8CFF};
+        };
+    }
+
+    private static String roundEightLegendLabels(DebugOverlay overlay) {
+        return switch (overlay) {
+            case RAY_BUDGET_HEATMAP -> "reuse low med high ?";
+            case VARIANCE_MAP -> "low ok med high ?";
+            case HISTORY_CONFIDENCE -> "reset low ok high ?";
+            case DISOCCLUSION_MASK -> "still ok move reset ?";
+            default -> "missing ok med high ready";
+        };
     }
 
     private static void renderDirectLightProofOverlay(

@@ -10,7 +10,12 @@ public record AdaptiveGiRayBudgetConfig(
         float highVarianceThreshold,
         float lowConfidenceThreshold,
         float reuseConfidenceThreshold,
-        int dirtyRegionBoostThreshold
+        int dirtyRegionBoostThreshold,
+        float dirtyRegionCellFraction,
+        float emissiveCellFraction,
+        float noisyCellFraction,
+        float lowConfidenceCellFraction,
+        int minBoostedCells
 ) {
     public AdaptiveGiRayBudgetConfig {
         requireNonNegative(reuseOnlyRaysPerCell, "reuseOnlyRaysPerCell");
@@ -33,6 +38,11 @@ public record AdaptiveGiRayBudgetConfig(
             throw new IllegalArgumentException("reuseConfidenceThreshold must be greater than or equal to lowConfidenceThreshold");
         }
         dirtyRegionBoostThreshold = Math.max(0, dirtyRegionBoostThreshold);
+        dirtyRegionCellFraction = clampUnit(dirtyRegionCellFraction);
+        emissiveCellFraction = clampUnit(emissiveCellFraction);
+        noisyCellFraction = clampUnit(noisyCellFraction);
+        lowConfidenceCellFraction = clampUnit(lowConfidenceCellFraction);
+        minBoostedCells = Math.max(0, minBoostedCells);
     }
 
     public static AdaptiveGiRayBudgetConfig firstMilestone() {
@@ -46,7 +56,12 @@ public record AdaptiveGiRayBudgetConfig(
                 0.50F,
                 0.45F,
                 0.80F,
-                1
+                1,
+                0.20F,
+                0.12F,
+                0.30F,
+                0.25F,
+                64
         );
     }
 

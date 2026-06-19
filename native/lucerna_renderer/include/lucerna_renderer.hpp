@@ -395,6 +395,44 @@ struct NativeLightingDispatchPayloadCategoryTelemetry {
     std::uint64_t last_debug_overlay_stage_count = 0;
 };
 
+struct NativeAdaptiveBudgetTelemetry {
+    std::uint64_t packets = 0;
+    std::uint64_t last_frame_index = 0;
+    std::uint64_t last_packet_generation = 0;
+    std::uint64_t last_dispatch_generation = 0;
+    std::uint64_t last_cell_count = 0;
+    std::uint64_t last_rays_per_cell = 0;
+    std::uint64_t last_requested_rays = 0;
+    std::uint64_t last_capped_rays = 0;
+    std::uint64_t last_budget_delta_rays = 0;
+    std::uint64_t total_budget_changes = 0;
+    std::uint64_t last_reuse_bucket_count = 0;
+    std::uint64_t last_low_bucket_count = 0;
+    std::uint64_t last_medium_bucket_count = 0;
+    std::uint64_t last_high_bucket_count = 0;
+    std::uint64_t total_reuse_bucket_count = 0;
+    std::uint64_t total_low_bucket_count = 0;
+    std::uint64_t total_medium_bucket_count = 0;
+    std::uint64_t total_high_bucket_count = 0;
+    std::uint64_t invalid_budget_rejections = 0;
+    std::uint64_t last_invalid_budget_generation = 0;
+    bool last_ingested = false;
+    bool last_valid = false;
+    bool last_enabled = false;
+    bool last_budget_changed = false;
+    bool last_budget_capped = false;
+    bool last_reuse_only = false;
+    bool last_temporal_history = false;
+    bool last_variance_marker_available = false;
+    bool last_history_confidence_available = false;
+    std::string last_bucket;
+    std::string last_previous_bucket;
+    std::string last_budget_marker;
+    std::string last_variance_marker;
+    std::string last_history_confidence_marker;
+    std::string last_invalid_budget_reason;
+};
+
 struct NativeDirectLightingExecutionTelemetry {
     std::uint64_t payload_packets = 0;
     std::uint64_t attempts = 0;
@@ -433,6 +471,13 @@ struct NativeDirectLightingExecutionTelemetry {
     std::uint64_t total_candidate_count = 0;
     std::uint64_t total_sample_count = 0;
     std::uint64_t total_ray_count = 0;
+    std::uint64_t invalid_ray_budget_rejections = 0;
+    std::uint64_t last_ray_budget_primary_rays_per_pixel = 0;
+    std::uint64_t last_ray_budget_shadow_rays_per_hit = 0;
+    std::uint64_t last_ray_budget_gi_rays_per_hit = 0;
+    std::uint64_t last_ray_budget_max_rays_per_frame = 0;
+    std::uint64_t last_ray_budget_max_visited_voxels_per_ray = 0;
+    std::uint64_t last_ray_budget_max_visited_sections_per_ray = 0;
     float last_celestial_light_energy = 0.0F;
     float last_emissive_light_energy = 0.0F;
     float last_output_energy = 0.0F;
@@ -449,9 +494,13 @@ struct NativeDirectLightingExecutionTelemetry {
     bool last_cpu_output_generated = false;
     bool last_output_write_recorded = false;
     bool last_resolve_recorded = false;
+    bool last_ray_budget_valid = false;
+    bool last_ray_budget_ingested = false;
     std::string last_payload_dimension_id;
     std::string last_output_marker;
     std::string last_readiness_reason;
+    std::string last_ray_budget_marker;
+    std::string last_ray_budget_rejection_reason;
 };
 
 struct NativeRound6DispatchExecutionTelemetry {
@@ -672,6 +721,7 @@ struct NativeLightingDispatchTelemetry {
     NativeRound6DispatchExecutionTelemetry diffuse_gi_execution;
     NativeRound6DispatchExecutionTelemetry cache_execution;
     NativeDenoiseExecutionTelemetry denoise_execution;
+    NativeAdaptiveBudgetTelemetry adaptive_budget;
     std::array<NativeLightingDispatchStageTelemetry, kNativeLightingDispatchStageCount> stages;
     std::array<NativeLightingDispatchPayloadCategoryTelemetry, kNativeLightingDispatchPayloadCategoryCount> payload_categories;
 };

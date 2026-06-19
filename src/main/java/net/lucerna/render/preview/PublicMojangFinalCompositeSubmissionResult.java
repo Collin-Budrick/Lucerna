@@ -70,18 +70,42 @@ public record PublicMojangFinalCompositeSubmissionResult(
         return this.attempted && !this.submitted;
     }
 
+    public String submissionStateLabel() {
+        if (this.submitted && this.drawCallsIssued) {
+            return "submitted-with-draw";
+        }
+        if (this.submitted) {
+            return "submitted-without-draw";
+        }
+        if (this.skipped()) {
+            return "skipped-after-attempt";
+        }
+        return "not-attempted";
+    }
+
     public String submittedSourceIdentity() {
         String normalizedReason = this.reason.toLowerCase(Locale.ROOT);
         if (!this.submitted) {
             return "not-submitted";
         }
-        if (normalizedReason.contains("denoised diffuse-gi")) {
+        boolean directLight = normalizedReason.contains("candidateevidence=true")
+                || normalizedReason.contains("native direct-light emissive source is blended")
+                || normalizedReason.contains("native direct-light surface-source");
+        boolean denoisedGi = normalizedReason.contains("denoised diffuse-gi");
+        boolean rawGi = normalizedReason.contains("raw_gi") || normalizedReason.contains("native diffuse-gi");
+        if (directLight && denoisedGi) {
+            return "native-denoised-diffuse-gi-rgba8+native-direct-light-rgba8";
+        }
+        if (directLight && rawGi) {
+            return "native-diffuse-gi-rgba8+native-direct-light-rgba8";
+        }
+        if (denoisedGi) {
             return "native-denoised-diffuse-gi-rgba8";
         }
-        if (normalizedReason.contains("raw_gi") || normalizedReason.contains("native diffuse-gi")) {
+        if (rawGi) {
             return "native-diffuse-gi-rgba8";
         }
-        if (normalizedReason.contains("direct-light")) {
+        if (directLight) {
             return "native-direct-light-rgba8";
         }
         return "unknown-submitted-source";
@@ -92,19 +116,42 @@ public record PublicMojangFinalCompositeSubmissionResult(
     }
 
     public boolean submittedDirectLightSource() {
-        return "native-direct-light-rgba8".equals(this.submittedSourceIdentity());
+        return this.submittedSourceIdentity().contains("native-direct-light-rgba8");
     }
 
     public boolean submittedRawGiSource() {
-        return "native-diffuse-gi-rgba8".equals(this.submittedSourceIdentity());
+        return this.submittedSourceIdentity().contains("native-diffuse-gi-rgba8")
+                && !this.submittedSourceIdentity().contains("native-denoised-diffuse-gi-rgba8");
     }
 
     public boolean submittedDenoisedGiSource() {
-        return "native-denoised-diffuse-gi-rgba8".equals(this.submittedSourceIdentity());
+        return this.submittedSourceIdentity().contains("native-denoised-diffuse-gi-rgba8");
     }
 
     public boolean submittedRound7GiSource() {
         return this.submittedRawGiSource() || this.submittedDenoisedGiSource();
+    }
+
+    public String sourceAuthenticityLabel() {
+        if (!this.submitted) {
+            return "no-submitted-source";
+        }
+        if (this.submittedFocusWindowOnly()) {
+            return "rejected:focus-window-only";
+        }
+        if (this.submittedDirectLightSource() && this.submittedRound7GiSource()) {
+            return "accepted:final-composite-direct-plus-gi";
+        }
+        if (this.submittedDirectLightSource()) {
+            return "accepted:native-direct-light-surface-source";
+        }
+        if (this.submittedDenoisedGiSource()) {
+            return "accepted:denoised-gi-output";
+        }
+        if (this.submittedRawGiSource()) {
+            return "accepted:raw-gi-output";
+        }
+        return "unknown-source";
     }
 
     public String focusedRegionReadiness() {
@@ -121,7 +168,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
             return "not-ready:focus-window-only";
         }
         if (this.submittedDirectLightSource()) {
-            return "not-ready:direct-light-substitution";
+            return "ready-for-controller-direct-light-surface-delta";
         }
         if (!this.submittedRound7GiSource()) {
             return "not-ready:unknown-source";
@@ -140,7 +187,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
             return "visual proof should not pass because Round 7 rejects focus-window-only brightness";
         }
         if (this.submittedDirectLightSource()) {
-            return "visual proof should not pass because Round 7 rejects direct-light payload substitution";
+            return "direct-light visual proof can only pass if controller screenshots show an emissive native direct-light surface delta";
         }
         if (this.submittedRound7GiSource()) {
             return "visual proof can only pass if controller screenshots show focused-surface delta for this submitted source";
@@ -148,16 +195,44 @@ public record PublicMojangFinalCompositeSubmissionResult(
         return "visual proof should remain inconclusive because the submitted source identity is unknown";
     }
 
+    public String visualProofMissingReason() {
+        if (!this.attempted) {
+            return "final-composite-not-attempted";
+        }
+        if (!this.submitted) {
+            return "final-composite-skipped";
+        }
+        if (!this.drawCallsIssued) {
+            return "submitted-without-draw-calls";
+        }
+        if (this.targetStatus != TargetStatus.READY) {
+            return "target-not-ready:" + this.targetStatus.name().toLowerCase(Locale.ROOT);
+        }
+        if (this.submittedFocusWindowOnly()) {
+            return "focus-window-only-source";
+        }
+        if (this.submittedDirectLightSource()) {
+            return "awaiting-controller-direct-light-before-after-surface-delta";
+        }
+        if (!this.submittedRound7GiSource()) {
+            return "unknown-submitted-source";
+        }
+        return "awaiting-controller-before-after-focused-surface-delta";
+    }
+
     public String summary() {
-        return "attempted=" + this.attempted
+        return "state=" + this.submissionStateLabel()
+                + ",attempted=" + this.attempted
                 + ",submitted=" + this.submitted
                 + ",drawCallsIssued=" + this.drawCallsIssued
                 + ",javaOpaqueRenderObjectsPresent=" + this.javaOpaqueRenderObjectsPresent
                 + ",targetStatus=" + this.targetStatus
                 + ",sourceIdentity=" + this.submittedSourceIdentity()
+                + ",sourceAuthenticity=" + this.sourceAuthenticityLabel()
                 + ",focusWindowOnly=" + this.submittedFocusWindowOnly()
                 + ",round7GiSource=" + this.submittedRound7GiSource()
                 + ",focusedRegionReadiness=" + this.focusedRegionReadiness()
+                + ",visualProofMissingReason=" + this.visualProofMissingReason()
                 + ",visualProofExpectation=\"" + this.visualProofExpectation() + "\""
                 + ",reason=" + this.reason;
     }

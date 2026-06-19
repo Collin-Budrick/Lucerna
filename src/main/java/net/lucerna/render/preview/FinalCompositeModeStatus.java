@@ -146,7 +146,7 @@ public record FinalCompositeModeStatus(
     }
 
     public boolean rejectsDirectLightSubstitution() {
-        return this.rawGiVisualMode() || this.denoisedGiVisualMode() || this.finalCompositeVisualMode();
+        return this.rawGiVisualMode() || this.denoisedGiVisualMode();
     }
 
     public String substitutionBoundarySummary(
@@ -213,9 +213,41 @@ public record FinalCompositeModeStatus(
             return "direct-light/native-direct-light-rgba8";
         }
         if (this.finalCompositeVisualMode()) {
-            return "final-composite/denoised-gi-preferred/raw-gi-fallback";
+            return "final-composite/direct-emissive-plus-denoised-gi/raw-gi-fallback";
         }
         return "custom/unspecified";
+    }
+
+    public String finalCompositeSubmissionPolicy() {
+        if (this.baselineVisualMode()) {
+            return "not-attempted:baseline-control";
+        }
+        if (this.directLightingEnabled && !this.diffuseGiEnabled) {
+            return "diagnostic-direct-light-only; not final emissive surface proof";
+        }
+        if (this.finalCompositeVisualMode()) {
+            return "submit full-target final composite; blend native direct emissive payload when candidate-ready, with denoised GI preferred and raw GI as fallback";
+        }
+        if (this.rawGiVisualMode() || this.denoisedGiVisualMode()) {
+            return "submit isolated full-target " + this.selectedSourcePolicy();
+        }
+        return "mode-specific submission policy; controller log carries submitted/skipped result";
+    }
+
+    public String selectedSourceAuthenticityPolicy() {
+        if (this.baselineVisualMode()) {
+            return "baseline has no Lucerna payload";
+        }
+        if (this.directLightingEnabled && !this.diffuseGiEnabled) {
+            return "direct-light payload is real only when accepted, non-metadata, has work, and writes/resolves output";
+        }
+        if (this.rawGiVisualMode() || this.denoisedGiVisualMode()) {
+            return "reject metadata-only, proof-marker, focus-window-only, and direct-light substitution sources";
+        }
+        if (this.finalCompositeVisualMode()) {
+            return "reject metadata-only, proof-marker, and focus-window-only sources; accept native direct-light only as candidate-backed blended emissive input";
+        }
+        return "require mode-specific source identity before screenshot proof";
     }
 
     public String selectedSourceReadinessSummary(
@@ -237,10 +269,11 @@ public record FinalCompositeModeStatus(
         }
         if (this.finalCompositeVisualMode()) {
             if (denoisedSourceReady) {
-                return "final-selected=denoised-gi:ready";
+                return "final-selected=denoised-gi:ready,direct-blend=" + readyState(directSourceReady);
             }
             if (giSourceReady) {
-                return "final-selected=raw-gi-fallback:ready,denoised-gi=missing";
+                return "final-selected=raw-gi-fallback:ready,denoised-gi=missing,direct-blend="
+                        + readyState(directSourceReady);
             }
             return "final-selected=missing,denoised-gi=missing,raw-gi=missing,direct="
                     + readyState(directSourceReady);
@@ -271,6 +304,8 @@ public record FinalCompositeModeStatus(
 
     public String visualProofBoundarySummary() {
         return "selectedSourcePolicy=" + this.selectedSourcePolicy()
+                + ",submissionPolicy=\"" + this.finalCompositeSubmissionPolicy() + "\""
+                + ",sourceAuthenticityPolicy=\"" + this.selectedSourceAuthenticityPolicy() + "\""
                 + ",focusedRegionProof=\"" + this.focusedRegionProofExpectation() + "\""
                 + ",rejectsFocusWindowOnly=" + this.rejectsFocusWindowOnlyComposite()
                 + ",rejectsDirectLightSubstitution=" + this.rejectsDirectLightSubstitution();
@@ -282,6 +317,8 @@ public record FinalCompositeModeStatus(
                 + "\",visualMode=\"" + this.visualModeId
                 + "\",isolation=\"" + this.signalIsolationLabel()
                 + "\",selectedSourcePolicy=\"" + this.selectedSourcePolicy()
+                + "\",submissionPolicy=\"" + this.finalCompositeSubmissionPolicy()
+                + "\",sourceAuthenticityPolicy=\"" + this.selectedSourceAuthenticityPolicy()
                 + "\",focusedRegionProof=\"" + this.focusedRegionProofExpectation()
                 + "\",reason=\"" + this.modeReason
                 + "\",expectedEvidence=\"" + this.expectedEvidence + "\"";

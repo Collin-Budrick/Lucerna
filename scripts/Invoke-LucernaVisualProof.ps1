@@ -1,8 +1,8 @@
 param(
-    [ValidateSet("Baseline", "Enabled", "Debug", "RawGi", "DenoisedGi", "FinalComposite")]
+    [ValidateSet("Baseline", "Enabled", "Debug", "RawGi", "DenoisedGi", "FinalComposite", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved")]
     [string] $Mode,
 
-    [ValidateSet("Round5Direct", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round7DenoiseComposite")]
+    [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round7DenoiseComposite", "Round8AdaptiveHeatmaps")]
     [string] $ValidationProfile = "Round5Direct",
 
     [string] $WorldName = "New World",
@@ -191,6 +191,103 @@ function Get-Round7CaptureIntent {
     }
 }
 
+function Get-Round8CaptureIntent {
+    param([string] $CaptureMode)
+
+    $rayBudgetCommonPatterns = @(
+        "Lucerna Round 8 adaptive ray budget: .*adaptiveRayBudget(?:Enabled)?=true",
+        "Lucerna Round 8 adaptive ray budget buckets: .*reuse(?:Only)?=[0-9]+.*low=[0-9]+.*medium=[0-9]+.*high=[0-9]+",
+        "Lucerna Round 8 adaptive ray budget: .*cacheConfidenceContribution=.*",
+        "Lucerna Round 8 ray-budget heatmap: .*artifactRole="
+    )
+    $historyCommonPatterns = @(
+        "Lucerna Round 8 history confidence: .*historyAccepted=[0-9]+.*historyRejected=[0-9]+",
+        "Lucerna Round 8 history confidence: .*confidence(?:Map)?=.*",
+        "Lucerna Round 8 history-confidence heatmap: .*artifactRole="
+    )
+
+    switch ($CaptureMode) {
+        "StableHeatmap" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "DIRECT_LIGHTING"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "ray-budget-stable"
+                heatmapKind = "ray-budget"
+                sceneState = "stable"
+                sceneAction = "stationary"
+                requiredPatterns = @($rayBudgetCommonPatterns) + @(
+                    "Lucerna Round 8 adaptive ray budget buckets: .*(?:reuse(?:Only)?|low)=[1-9][0-9]*",
+                    "Lucerna Round 8 adaptive ray budget: .*sceneState=stable"
+                )
+            }
+        }
+        "MovedHeatmap" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "DIRECT_LIGHTING"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "ray-budget-moved"
+                heatmapKind = "ray-budget"
+                sceneState = "moved-noisy"
+                sceneAction = "moved"
+                requiredPatterns = @($rayBudgetCommonPatterns) + @(
+                    "Lucerna Round 8 adaptive ray budget buckets: .*high=[1-9][0-9]*",
+                    "Lucerna Round 8 adaptive ray budget: .*sceneState=(?:moved|noisy|moved-noisy)"
+                )
+            }
+        }
+        "EmissiveHeatmap" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "DIRECT_LIGHTING"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "ray-budget-emissive"
+                heatmapKind = "ray-budget"
+                sceneState = "emissive"
+                sceneAction = "emissive"
+                requiredPatterns = @($rayBudgetCommonPatterns) + @(
+                    "Lucerna Round 8 adaptive ray budget buckets: .*high=[1-9][0-9]*",
+                    "Lucerna Round 8 adaptive ray budget: .*emissive(?:Contribution|Proximity|Regions)=[1-9][0-9]*"
+                )
+            }
+        }
+        "HistoryStable" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "DIRECT_LIGHTING"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "history-confidence-stable"
+                heatmapKind = "history-confidence"
+                sceneState = "stable"
+                sceneAction = "stationary"
+                requiredPatterns = @($historyCommonPatterns) + @(
+                    "Lucerna Round 8 history confidence: .*historyAccepted=[1-9][0-9]*",
+                    "Lucerna Round 8 history confidence: .*sceneState=stable"
+                )
+            }
+        }
+        "HistoryMoved" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "DIRECT_LIGHTING"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "history-confidence-moved"
+                heatmapKind = "history-confidence"
+                sceneState = "moved-disoccluded"
+                sceneAction = "moved"
+                requiredPatterns = @($historyCommonPatterns) + @(
+                    "Lucerna Round 8 history confidence: .*historyRejected=[1-9][0-9]*",
+                    "Lucerna Round 8 history confidence: .*sceneState=(?:moved|disoccluded|moved-disoccluded)"
+                )
+            }
+        }
+        default {
+            throw "Unsupported Round 8 capture mode: $CaptureMode"
+        }
+    }
+}
+
 function Wait-LatestLogPattern {
     param(
         [string] $LogPath,
@@ -223,7 +320,7 @@ function Wait-LatestLogPattern {
             }
             foreach ($pattern in $ForbiddenPatterns) {
                 if ($candidateLog -match $pattern) {
-                    throw "Lucerna visual proof is contaminated before required markers were observed. Matched forbidden marker '$pattern' in $path. For no-marker Round 6 validation, capture a surface-composite run without proof-marker overlays, temporary direct-light payload sources, or focus-window-only preview modes."
+                    throw "Lucerna visual proof is contaminated before required markers were observed. Matched forbidden marker '$pattern' in $path. Capture the requested validation profile without proof-marker overlays, temporary direct-light payload sources, focus-window-only preview modes, or invalid Round 8 budget markers."
                 }
             }
         }
@@ -244,7 +341,7 @@ function Wait-LatestLogPattern {
             }
             foreach ($pattern in $ForbiddenPatterns) {
                 if ($log -match $pattern) {
-                    throw "Lucerna visual proof is contaminated. Matched forbidden marker '$pattern' in $LogPath. For no-marker Round 6 validation, capture a surface-composite run without proof-marker overlays, temporary direct-light payload sources, or focus-window-only preview modes."
+                    throw "Lucerna visual proof is contaminated. Matched forbidden marker '$pattern' in $LogPath. Capture the requested validation profile without proof-marker overlays, temporary direct-light payload sources, focus-window-only preview modes, or invalid Round 8 budget markers."
                 }
             }
             if ($allPresent) {
@@ -440,6 +537,10 @@ if (-not (Test-Path -LiteralPath $gradlew)) {
 $scenario = if ([string]::IsNullOrWhiteSpace($ScenarioName)) {
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
         "round7-denoise-composite-$($Mode.ToLowerInvariant())"
+    } elseif ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
+        "round8-adaptive-heatmap-$($Mode.ToLowerInvariant())"
+    } elseif ($ValidationProfile -eq "Round5DirectSurface") {
+        "round5-direct-surface-$($Mode.ToLowerInvariant())"
     } else {
         "round5-visual-proof-$($Mode.ToLowerInvariant())"
     }
@@ -466,6 +567,7 @@ $createdAlias = $false
 $process = $null
 try {
     $round7CaptureIntent = $null
+    $round8CaptureIntent = $null
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
         $round7CaptureIntent = Get-Round7CaptureIntent $Mode
         Write-LucernaConfig `
@@ -473,6 +575,13 @@ try {
             ([bool]$round7CaptureIntent.rendererEnabled) `
             ([string]$round7CaptureIntent.debugOverlay) `
             ([string]$round7CaptureIntent.compositeMode)
+    } elseif ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
+        $round8CaptureIntent = Get-Round8CaptureIntent $Mode
+        Write-LucernaConfig `
+            $root `
+            ([bool]$round8CaptureIntent.rendererEnabled) `
+            ([string]$round8CaptureIntent.debugOverlay) `
+            ([string]$round8CaptureIntent.compositeMode)
     } else {
         switch ($Mode) {
             "Baseline" { Write-LucernaConfig $root $false "OFF" }
@@ -523,11 +632,16 @@ try {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
-    if ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round7DenoiseComposite") {
+    if ($ValidationProfile -eq "Round5DirectSurface" -or $ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps") {
         $psi.Environment["LUCERNA_HIDE_PROOF_OVERLAYS"] = "true"
     }
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
         $psi.Environment["LUCERNA_ROUND7_CAPTURE_MODE"] = [string]$round7CaptureIntent.artifactRole
+    }
+    if ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
+        $psi.Environment["LUCERNA_ROUND8_CAPTURE_MODE"] = [string]$round8CaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_ROUND8_HEATMAP"] = [string]$round8CaptureIntent.heatmapKind
+        $psi.Environment["LUCERNA_ROUND8_SCENE_STATE"] = [string]$round8CaptureIntent.sceneState
     }
     $process = [System.Diagnostics.Process]::Start($psi)
     $process.BeginOutputReadLine()
@@ -547,6 +661,8 @@ try {
     )
     $enabledPatterns = if ($ValidationProfile -eq "Round7DenoiseComposite") {
         @($round7CaptureIntent.requiredPatterns)
+    } elseif ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
+        @($round8CaptureIntent.requiredPatterns)
     } elseif ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker") {
         @(
             "Lucerna Round 6 lighting dispatch prepared: .*diffuse_gi=\{\{enabled=true,.*rays=[1-9][0-9]*,cache_reads=[1-9][0-9]*",
@@ -567,6 +683,14 @@ try {
             "Lucerna Round 6 diffuse GI preview composite: ready=true .*temporarySourceReady=true",
             "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*mode=round6-diffuse-gi-focus-window-additive"
         )
+    } elseif ($ValidationProfile -eq "Round5DirectSurface" -and $Mode -ne "Baseline") {
+        @(
+            "Lucerna direct lighting plan: .*emissive=[1-9][0-9]*.*shadowCandidates=[1-9][0-9]*.*surfaceSampleSections=[1-9][0-9]*.*surfaceSamples=[1-9][0-9]*\.",
+            "Lucerna native direct lighting execution: .*outputWriteRecorded=true.*resolveRecorded=true.*ready=true.*cpuOutput=true.*cpuOutputEnergy=[1-9][0-9.eE+-]*.*cpuOutputChecksum=[1-9][0-9]*.*reason=direct_lighting_(?:surface_sample|emissive_candidate)_cpu_output_generated",
+            "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true(?=[^`r`n]*mode=(?![^`r`n]*focus-window)[^`r`n]*(?:direct|emissive))(?=[^`r`n]*(?:surface|world|final|composite))"
+        )
+    } elseif ($ValidationProfile -eq "Round5DirectSurface") {
+        @()
     } else {
         @(
         "Lucerna direct lighting plan: .*emissive=[1-9][0-9]*.*shadowCandidates=[1-9][0-9]*.*surfaceSampleSections=[1-9][0-9]*.*surfaceSamples=[1-9][0-9]*\.",
@@ -584,6 +708,21 @@ try {
             "proof marker",
             "CPU output proof"
         )
+    } elseif ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
+        @(
+            "temporarySourceReady=true",
+            "using the current direct-light RGBA payload as the temporary visible source",
+            "round6-diffuse-gi-focus-window-additive",
+            "round6-gi-proof",
+            "R6 GI proof",
+            "R7 proof",
+            "proof marker",
+            "CPU output proof",
+            "invalidRayBudget=true",
+            "invalid_budget_values=true",
+            "negative ray budget",
+            "rayBudget=.*(?:NaN|Infinity)"
+        )
     } elseif ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker") {
         @(
             "temporarySourceReady=true",
@@ -591,6 +730,23 @@ try {
             "round6-diffuse-gi-focus-window-additive",
             "round6-gi-proof",
             "R6 GI proof",
+            "proof marker",
+            "CPU output proof"
+        )
+    } elseif ($ValidationProfile -eq "Round5DirectSurface") {
+        @(
+            "temporarySourceReady=true",
+            "using the current direct-light RGBA payload as the temporary visible source",
+            "temporary direct-light",
+            "current direct-light RGBA payload",
+            "sourceIdentity=native-direct-light-rgba8,focusWindowOnly=true",
+            "final-composite-direct-light-focus-window-additive",
+            "focus-window-only",
+            "round5-direct-proof",
+            "R5 visual proof",
+            "round6-gi-proof",
+            "R6 GI proof",
+            "R7 proof",
             "proof marker",
             "CPU output proof"
         )
@@ -606,10 +762,20 @@ try {
         Start-Sleep -Seconds 8
     }
 
+    if ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
+        if ($round8CaptureIntent.sceneAction -eq "moved" -and $SetupScene) {
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -35 0"
+            Start-Sleep -Seconds 1
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -140 0"
+        } elseif ($round8CaptureIntent.sceneAction -eq "stationary") {
+            Start-Sleep -Seconds 5
+        }
+    }
+
     if ($enabledPatterns.Count -gt 0) {
         Wait-LatestLogPattern $markerLog $enabledPatterns $deadline $earlyFailureLogPaths $forbiddenPatterns
     }
-    if ($ValidationProfile -eq "Round7DenoiseComposite" -and -not $SetupScene) {
+    if (($ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps") -and -not $SetupScene) {
         Start-Sleep -Seconds 8
     }
 
@@ -636,6 +802,12 @@ try {
     if ($round7CaptureIntent) {
         Write-Host "round7ArtifactRole=$($round7CaptureIntent.artifactRole)"
         Write-Host "round7CompositeMode=$($round7CaptureIntent.compositeMode)"
+    }
+    if ($round8CaptureIntent) {
+        Write-Host "round8ArtifactRole=$($round8CaptureIntent.artifactRole)"
+        Write-Host "round8Heatmap=$($round8CaptureIntent.heatmapKind)"
+        Write-Host "round8SceneState=$($round8CaptureIntent.sceneState)"
+        Write-Host "round8CompositeMode=$($round8CaptureIntent.compositeMode)"
     }
     Write-Host "latestLog=$logPath"
     Write-Host "gradleOut=$gradleOut"
