@@ -29,6 +29,8 @@ public final class LucernaController {
     private BackendStatus backendStatus = BackendStatus.disabled(BackendKind.UNKNOWN, "Lucerna has not checked the renderer backend yet.");
     private boolean initialized;
     private boolean nativeInitialized;
+    private int viewportWidth = -1;
+    private int viewportHeight = -1;
 
     private LucernaController() {
     }
@@ -62,6 +64,7 @@ public final class LucernaController {
             var materialUpdates = this.materialRegistry.snapshotUpdatesAfter(this.uploadQueue.lastMaterialGeneration());
             var batch = this.uploadQueue.acceptWorldAndMaterialDeltas(dirtyRegions, materialUpdates);
             this.nativeBridge.uploadWorldDeltas(batch);
+            this.submitNoOpFrame(0.0F);
         }
     }
 
@@ -117,6 +120,20 @@ public final class LucernaController {
         return this.frameHooks;
     }
 
+    public LucernaNativeBridge.NativeBridgeStatus nativeBridgeStatus() {
+        return this.nativeBridge.status();
+    }
+
+    public void onViewportChanged(int width, int height) {
+        if (width == this.viewportWidth && height == this.viewportHeight) {
+            return;
+        }
+
+        this.viewportWidth = width;
+        this.viewportHeight = height;
+        this.frameHooks.onResize(width, height);
+    }
+
     private void refreshBackendStatus() {
         this.backendStatus = this.backendDetector.detect();
     }
@@ -146,5 +163,15 @@ public final class LucernaController {
         if (!this.nativeInitialized) {
             Lucerna.LOGGER.warn("Lucerna native renderer did not initialize: {}", this.nativeBridge.lastError());
         }
+    }
+
+    private void submitNoOpFrame(float tickDelta) {
+        var beginResult = this.frameHooks.beginFrame(this.backendStatus, tickDelta);
+        if (!beginResult.accepted()) {
+            return;
+        }
+
+        this.frameHooks.renderLighting();
+        this.frameHooks.endFrame();
     }
 }

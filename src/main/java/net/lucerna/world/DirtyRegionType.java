@@ -10,7 +10,9 @@ public enum DirtyRegionType {
     RESOURCE_PACK_RELOAD(7, false),
     DIMENSION_CHANGE(8, false),
     WEATHER_CHANGE(9, false),
-    TIME_OF_DAY_CHANGE(10, false);
+    TIME_OF_DAY_CHANGE(10, false),
+    WORLD_JOIN(11, false),
+    WORLD_LEAVE(12, false);
 
     private final int nativeTypeId;
     private final boolean sectionScoped;

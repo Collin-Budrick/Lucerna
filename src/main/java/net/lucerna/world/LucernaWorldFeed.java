@@ -40,6 +40,26 @@ public final class LucernaWorldFeed {
         this.mark(DirtyRegionType.RESOURCE_PACK_RELOAD, this.currentDimension, 0, 0, 0);
     }
 
+    public void markResourcePackReloaded(String dimension) {
+        this.mark(DirtyRegionType.RESOURCE_PACK_RELOAD, dimension, 0, 0, 0);
+    }
+
+    public void markWorldJoined(String dimension) {
+        Objects.requireNonNull(dimension, "dimension");
+        this.currentDimension = dimension;
+        this.mark(DirtyRegionType.WORLD_JOIN, dimension, 0, 0, 0);
+    }
+
+    public void markWorldLeft() {
+        this.markWorldLeft(this.currentDimension);
+    }
+
+    public void markWorldLeft(String dimension) {
+        Objects.requireNonNull(dimension, "dimension");
+        this.currentDimension = dimension;
+        this.mark(DirtyRegionType.WORLD_LEAVE, dimension, 0, 0, 0);
+    }
+
     public void markDimensionChanged(String dimension) {
         Objects.requireNonNull(dimension, "dimension");
         this.currentDimension = dimension;
@@ -50,8 +70,16 @@ public final class LucernaWorldFeed {
         this.mark(DirtyRegionType.WEATHER_CHANGE, this.currentDimension, 0, 0, 0);
     }
 
+    public void markWeatherChanged(String dimension) {
+        this.mark(DirtyRegionType.WEATHER_CHANGE, dimension, 0, 0, 0);
+    }
+
     public void markTimeOfDayChanged() {
         this.mark(DirtyRegionType.TIME_OF_DAY_CHANGE, this.currentDimension, 0, 0, 0);
+    }
+
+    public void markTimeOfDayChanged(String dimension) {
+        this.mark(DirtyRegionType.TIME_OF_DAY_CHANGE, dimension, 0, 0, 0);
     }
 
     public List<DirtyRegion> drainDirtyRegions() {
@@ -82,6 +110,10 @@ public final class LucernaWorldFeed {
 
     public long currentGeneration() {
         return this.generation.get();
+    }
+
+    public String currentDimension() {
+        return this.currentDimension;
     }
 
     public int pendingDirtyRegionCount() {

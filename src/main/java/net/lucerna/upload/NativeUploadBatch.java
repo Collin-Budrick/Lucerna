@@ -88,6 +88,10 @@ public record NativeUploadBatch(
         return !this.dirtyRegions.isEmpty() || !this.materialUpdates.isEmpty();
     }
 
+    public NativeUploadPacket toPacket() {
+        return NativeUploadPacket.from(this);
+    }
+
     private static long firstWorldGeneration(List<NativeDirtyRegionUpload> dirtyRegions) {
         Objects.requireNonNull(dirtyRegions, "dirtyRegions");
         return dirtyRegions.stream()

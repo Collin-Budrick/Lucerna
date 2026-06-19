@@ -2,6 +2,7 @@ package net.lucerna.nativebridge;
 
 import net.lucerna.Lucerna;
 import net.lucerna.upload.NativeUploadBatch;
+import net.lucerna.upload.NativeUploadPacket;
 
 public final class LucernaNativeBridge {
     private static final String LIBRARY_NAME = "lucerna_renderer";
@@ -110,7 +111,29 @@ public final class LucernaNativeBridge {
 
     public synchronized void uploadWorldDeltas(NativeUploadBatch batch) {
         if (this.isOperational() && batch != null && !batch.isEmpty()) {
-            this.invokeNative("uploadWorldDeltas", () -> nativeUploadWorldDeltas(batch.generation(), batch.dirtyRegionCount(), batch.materialUpdateCount()), true);
+            NativeUploadPacket packet = batch.toPacket();
+            this.invokeNative("uploadWorldDeltas", () -> nativeUploadWorldDeltas(
+                    packet.generation(),
+                    packet.dirtyRegionCount(),
+                    packet.materialUpdateCount(),
+                    packet.firstWorldGeneration(),
+                    packet.lastWorldGeneration(),
+                    packet.materialGeneration(),
+                    packet.dirtyRegionTypeIds(),
+                    packet.dirtyRegionDimensions(),
+                    packet.dirtyRegionSectionXs(),
+                    packet.dirtyRegionSectionYs(),
+                    packet.dirtyRegionSectionZs(),
+                    packet.dirtyRegionSectionScoped(),
+                    packet.dirtyRegionGenerations(),
+                    packet.materialIds(),
+                    packet.materialGenerations(),
+                    packet.materialBlockIds(),
+                    packet.materialFaceIds(),
+                    packet.materialAlbedoTextureIndices(),
+                    packet.materialProperties(),
+                    packet.materialFlags()
+            ), true);
         }
     }
 
@@ -244,7 +267,28 @@ public final class LucernaNativeBridge {
 
     private static native boolean nativeBeginFrame(long frameIndex, float tickDelta);
 
-    private static native boolean nativeUploadWorldDeltas(long generation, int dirtyRegionCount, int materialUpdateCount);
+    private static native boolean nativeUploadWorldDeltas(
+            long generation,
+            int dirtyRegionCount,
+            int materialUpdateCount,
+            long firstWorldGeneration,
+            long lastWorldGeneration,
+            long materialGeneration,
+            int[] dirtyRegionTypeIds,
+            String[] dirtyRegionDimensions,
+            int[] dirtyRegionSectionXs,
+            int[] dirtyRegionSectionYs,
+            int[] dirtyRegionSectionZs,
+            int[] dirtyRegionSectionScoped,
+            long[] dirtyRegionGenerations,
+            int[] materialIds,
+            long[] materialGenerations,
+            String[] materialBlockIds,
+            int[] materialFaceIds,
+            int[] materialAlbedoTextureIndices,
+            float[] materialProperties,
+            int[] materialFlags
+    );
 
     private static native boolean nativeRenderLighting();
 

@@ -7,6 +7,7 @@ import net.lucerna.Lucerna;
 import net.lucerna.compat.BackendKind;
 import net.lucerna.compat.BackendStatus;
 
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Locale;
 import java.util.Optional;
@@ -86,6 +87,10 @@ public final class LucernaBackendDetector {
 
             return BackendProbe.available(backendName);
         } catch (Throwable throwable) {
+            if (isExpectedDeviceUnavailable(throwable)) {
+                return BackendProbe.unavailable();
+            }
+
             Lucerna.LOGGER.debug("Could not read Minecraft renderer backend.", throwable);
             return BackendProbe.unavailable();
         }
@@ -137,6 +142,25 @@ public final class LucernaBackendDetector {
                 .toLowerCase(Locale.ROOT)
                 .replace('_', ' ')
                 .replace('-', ' ');
+    }
+
+    private static boolean isExpectedDeviceUnavailable(Throwable throwable) {
+        Throwable unwrapped = unwrapInvocationTarget(throwable);
+        if (!(unwrapped instanceof IllegalStateException)) {
+            return false;
+        }
+
+        String message = unwrapped.getMessage();
+        return message != null && message.contains("getDevice") && message.contains("initialized");
+    }
+
+    private static Throwable unwrapInvocationTarget(Throwable throwable) {
+        if (throwable instanceof InvocationTargetException invocationTargetException
+                && invocationTargetException.getCause() != null) {
+            return invocationTargetException.getCause();
+        }
+
+        return throwable;
     }
 
     private record BackendProbe(boolean available, String backendName) {

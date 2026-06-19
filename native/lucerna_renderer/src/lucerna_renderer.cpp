@@ -2,6 +2,7 @@
 
 #include "lucerna_resource_manager.hpp"
 
+#include <cstddef>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -35,7 +36,7 @@ void Renderer::shutdown() {
     width_ = 0;
     height_ = 0;
     frame_index_ = 0;
-    last_upload_generation_ = 0;
+    last_upload_packet_ = {};
     clear_error();
 }
 
@@ -60,17 +61,65 @@ void Renderer::begin_frame(FrameInfo info) {
     frame_open_ = true;
 }
 
-void Renderer::upload_world_deltas(UploadSummary summary) {
+void Renderer::upload_world_deltas(UploadPacket packet) {
     if (!initialized_) {
         return;
     }
 
-    if (summary.dirty_region_count < 0 || summary.material_update_count < 0) {
+    if (packet.dirty_region_count < 0 || packet.material_update_count < 0) {
         set_error("upload delta counts must be non-negative");
         throw std::invalid_argument(last_error_);
     }
 
-    last_upload_generation_ = summary.generation;
+    if (packet.first_world_generation > packet.last_world_generation) {
+        set_error("upload world generation bounds are invalid");
+        throw std::invalid_argument(last_error_);
+    }
+
+    if (packet.dirty_regions.size() > static_cast<std::size_t>(packet.dirty_region_count)) {
+        set_error("dirty region payload count exceeds advertised count");
+        throw std::invalid_argument(last_error_);
+    }
+    if (packet.material_updates.size() > static_cast<std::size_t>(packet.material_update_count)) {
+        set_error("material payload count exceeds advertised count");
+        throw std::invalid_argument(last_error_);
+    }
+
+    if (!packet.dirty_regions.empty()) {
+        std::uint64_t first_generation = packet.dirty_regions.front().generation;
+        std::uint64_t last_generation = packet.dirty_regions.front().generation;
+        for (const auto& dirty_region : packet.dirty_regions) {
+            if (dirty_region.type_id <= 0) {
+                set_error("dirty region type id must be positive");
+                throw std::invalid_argument(last_error_);
+            }
+            if (dirty_region.generation == 0) {
+                set_error("dirty region generation must be positive");
+                throw std::invalid_argument(last_error_);
+            }
+            if (dirty_region.generation < first_generation) {
+                first_generation = dirty_region.generation;
+            }
+            if (dirty_region.generation > last_generation) {
+                last_generation = dirty_region.generation;
+            }
+        }
+
+        if (packet.first_world_generation != first_generation || packet.last_world_generation != last_generation) {
+            set_error("dirty region generations do not match upload bounds");
+            throw std::invalid_argument(last_error_);
+        }
+    }
+
+    for (const auto& material : packet.material_updates) {
+        if (material.material_id <= 0) {
+            set_error("material id must be positive");
+            throw std::invalid_argument(last_error_);
+        }
+    }
+
+    last_upload_packet_ = std::move(packet);
+    clear_error();
 }
 
 void Renderer::render_lighting() {
@@ -112,7 +161,13 @@ std::string Renderer::status() const {
         << " size=" << width_ << "x" << height_
         << " frame=" << frame_index_
         << " frame_open=" << frame_open_
-        << " upload_generation=" << last_upload_generation_;
+        << " upload_generation=" << last_upload_packet_.generation
+        << " dirty_regions=" << last_upload_packet_.dirty_region_count
+        << " dirty_region_payloads=" << last_upload_packet_.dirty_regions.size()
+        << " material_updates=" << last_upload_packet_.material_update_count
+        << " material_payloads=" << last_upload_packet_.material_updates.size()
+        << " world_generation=" << last_upload_packet_.first_world_generation << "-" << last_upload_packet_.last_world_generation
+        << " material_generation=" << last_upload_packet_.material_generation;
     if (resources_ != nullptr) {
         out << " resources={" << resources_->status() << "}";
     } else {
