@@ -3,6 +3,7 @@ package net.lucerna.render.lighting.direct;
 import net.lucerna.render.voxel.VoxelRayBudgetConfig;
 import net.lucerna.render.voxel.VoxelSectionSnapshotReference;
 import net.lucerna.world.section.ChunkSectionOrigin;
+import net.lucerna.world.section.SectionSurfaceSampleMetadata;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -24,6 +25,7 @@ public final class DirectShadowRayPlanner {
     private static final float SECTION_CENTER_OFFSET_BLOCKS = ChunkSectionOrigin.SECTION_EDGE_LENGTH * 0.5F;
     private static final double SECTION_HALF_DIAGONAL_BLOCKS = Math.sqrt(3.0D) * SECTION_CENTER_OFFSET_BLOCKS;
     private static final float MIN_EMISSIVE_SAMPLE_DISTANCE_SQUARED = 0.0001F;
+    private static final float BLOCK_CENTER_OFFSET = 0.5F;
 
     private static final Comparator<VoxelSectionSnapshotReference> SECTION_REFERENCE_DETAIL_ORDER = Comparator
             .comparingLong(VoxelSectionSnapshotReference::combinedGeneration)
@@ -131,14 +133,21 @@ public final class DirectShadowRayPlanner {
                 if (candidates.size() >= candidateLimit) {
                     break;
                 }
-                if (!canSampleEmissiveLight(light, section, originX, originY, originZ)) {
+                SampleOrigin emissiveOrigin = emissiveSurfaceSampleOrigin(light, section);
+                if (emissiveOrigin == null || !canSampleEmissiveLight(
+                        light,
+                        section,
+                        emissiveOrigin.x(),
+                        emissiveOrigin.y(),
+                        emissiveOrigin.z()
+                )) {
                     continue;
                 }
                 candidates.add(DirectShadowRayCandidate.forEmissiveBlock(
                         light,
-                        originX,
-                        originY,
-                        originZ,
+                        emissiveOrigin.x(),
+                        emissiveOrigin.y(),
+                        emissiveOrigin.z(),
                         sectionIndex
                 ));
             }
@@ -239,6 +248,135 @@ public final class DirectShadowRayPlanner {
         return distanceSquared <= influenceDistance * influenceDistance;
     }
 
+    private static SampleOrigin emissiveSurfaceSampleOrigin(
+            DirectEmissiveBlockLight light,
+            VoxelSectionSnapshotReference section
+    ) {
+        if (!light.dimension().equals(section.origin().dimension()) || !hasPotentialReceiverSurface(section)) {
+            return null;
+        }
+
+        float targetX = light.blockX() + BLOCK_CENTER_OFFSET;
+        float targetY = light.blockY() + BLOCK_CENTER_OFFSET;
+        float targetZ = light.blockZ() + BLOCK_CENTER_OFFSET;
+        SampleOrigin extractedSurfaceOrigin = nearestExtractedSurfaceSampleOrigin(light, section, targetX, targetY, targetZ);
+        if (extractedSurfaceOrigin != null) {
+            return extractedSurfaceOrigin;
+        }
+
+        float minX = section.origin().minBlockX() + BLOCK_CENTER_OFFSET;
+        float minY = section.origin().minBlockY() + BLOCK_CENTER_OFFSET;
+        float minZ = section.origin().minBlockZ() + BLOCK_CENTER_OFFSET;
+        float maxX = section.origin().minBlockX() + ChunkSectionOrigin.SECTION_EDGE_LENGTH - BLOCK_CENTER_OFFSET;
+        float maxY = section.origin().minBlockY() + ChunkSectionOrigin.SECTION_EDGE_LENGTH - BLOCK_CENTER_OFFSET;
+        float maxZ = section.origin().minBlockZ() + ChunkSectionOrigin.SECTION_EDGE_LENGTH - BLOCK_CENTER_OFFSET;
+
+        SampleOrigin adjacentOrigin = nearestAdjacentOriginInSection(
+                targetX,
+                targetY,
+                targetZ,
+                minX,
+                minY,
+                minZ,
+                maxX,
+                maxY,
+                maxZ
+        );
+        if (adjacentOrigin != null) {
+            return adjacentOrigin;
+        }
+
+        float clampedX = clamp(targetX, minX, maxX);
+        float clampedY = clamp(targetY, minY, maxY);
+        float clampedZ = clamp(targetZ, minZ, maxZ);
+        if (squaredDistance(targetX, targetY, targetZ, clampedX, clampedY, clampedZ) > MIN_EMISSIVE_SAMPLE_DISTANCE_SQUARED) {
+            return new SampleOrigin(clampedX, clampedY, clampedZ);
+        }
+        return null;
+    }
+
+    private static boolean hasPotentialReceiverSurface(VoxelSectionSnapshotReference section) {
+        return section.hasSurfaceSamples() || section.opaqueVoxelCount() > 0 || section.occupiedVoxelCount() > 0;
+    }
+
+    private static SampleOrigin nearestExtractedSurfaceSampleOrigin(
+            DirectEmissiveBlockLight light,
+            VoxelSectionSnapshotReference section,
+            float targetX,
+            float targetY,
+            float targetZ
+    ) {
+        SampleOrigin nearestOrigin = null;
+        float nearestDistanceSquared = Float.MAX_VALUE;
+
+        for (SectionSurfaceSampleMetadata sample : section.surfaceSamples()) {
+            float sampleX = section.origin().minBlockX() + sample.localX() + BLOCK_CENTER_OFFSET;
+            float sampleY = section.origin().minBlockY() + sample.localY() + BLOCK_CENTER_OFFSET;
+            float sampleZ = section.origin().minBlockZ() + sample.localZ() + BLOCK_CENTER_OFFSET;
+            float distanceSquared = squaredDistance(targetX, targetY, targetZ, sampleX, sampleY, sampleZ);
+            if (distanceSquared <= MIN_EMISSIVE_SAMPLE_DISTANCE_SQUARED || distanceSquared >= nearestDistanceSquared) {
+                continue;
+            }
+            if (!light.dimension().equals(section.origin().dimension())) {
+                continue;
+            }
+            nearestOrigin = new SampleOrigin(sampleX, sampleY, sampleZ);
+            nearestDistanceSquared = distanceSquared;
+        }
+
+        return nearestOrigin;
+    }
+
+    private static SampleOrigin nearestAdjacentOriginInSection(
+            float targetX,
+            float targetY,
+            float targetZ,
+            float minX,
+            float minY,
+            float minZ,
+            float maxX,
+            float maxY,
+            float maxZ
+    ) {
+        SampleOrigin nearestOrigin = null;
+        float nearestDistanceSquared = Float.MAX_VALUE;
+
+        for (AdjacentBlockOffset offset : AdjacentBlockOffset.VALUES) {
+            float sampleX = targetX + offset.x();
+            float sampleY = targetY + offset.y();
+            float sampleZ = targetZ + offset.z();
+            if (sampleX < minX || sampleX > maxX || sampleY < minY || sampleY > maxY || sampleZ < minZ || sampleZ > maxZ) {
+                continue;
+            }
+            float distanceSquared = squaredDistance(targetX, targetY, targetZ, sampleX, sampleY, sampleZ);
+            if (distanceSquared <= MIN_EMISSIVE_SAMPLE_DISTANCE_SQUARED || distanceSquared >= nearestDistanceSquared) {
+                continue;
+            }
+            nearestDistanceSquared = distanceSquared;
+            nearestOrigin = new SampleOrigin(sampleX, sampleY, sampleZ);
+        }
+
+        return nearestOrigin;
+    }
+
+    private static float clamp(float value, float min, float max) {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private static float squaredDistance(
+            float firstX,
+            float firstY,
+            float firstZ,
+            float secondX,
+            float secondY,
+            float secondZ
+    ) {
+        float deltaX = firstX - secondX;
+        float deltaY = firstY - secondY;
+        float deltaZ = firstZ - secondZ;
+        return deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
+    }
+
     private static float celestialMaxDistance(VoxelRayBudgetConfig rayBudget) {
         long sectionDistanceBlocks = (long) rayBudget.maxVisitedSectionsPerRay() * ChunkSectionOrigin.SECTION_EDGE_LENGTH;
         float cappedSectionDistance = sectionDistanceBlocks > Integer.MAX_VALUE
@@ -257,5 +395,19 @@ public final class DirectShadowRayPlanner {
 
     private static float sectionCenterZ(VoxelSectionSnapshotReference section) {
         return section.origin().minBlockZ() + SECTION_CENTER_OFFSET_BLOCKS;
+    }
+
+    private record SampleOrigin(float x, float y, float z) {
+    }
+
+    private record AdjacentBlockOffset(float x, float y, float z) {
+        private static final AdjacentBlockOffset[] VALUES = {
+                new AdjacentBlockOffset(1.0F, 0.0F, 0.0F),
+                new AdjacentBlockOffset(-1.0F, 0.0F, 0.0F),
+                new AdjacentBlockOffset(0.0F, 1.0F, 0.0F),
+                new AdjacentBlockOffset(0.0F, -1.0F, 0.0F),
+                new AdjacentBlockOffset(0.0F, 0.0F, 1.0F),
+                new AdjacentBlockOffset(0.0F, 0.0F, -1.0F)
+        };
     }
 }

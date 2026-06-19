@@ -98,6 +98,7 @@ public final class LucernaController {
     private String lastPreparedGBufferStagingKey = "";
     private String lastLoggedGBufferStagingKey = "";
     private String lastLoggedFirstPassPlanKey = "";
+    private String lastLoggedDirectLightingPlanKey = "";
     private String lastPreparedLightingDispatchKey = "";
     private String lastLoggedLightingDispatchKey = "";
     private String lastLoggedDirectPreviewCompositeKey = "";
@@ -635,7 +636,9 @@ public final class LucernaController {
                 new VoxelRayBudgetConfig(0, 1, 0, this.shadowRayBudget(), 512, 64),
                 sectionReferences == null ? List.of() : sectionReferences
         );
-        return DirectLightingPlan.from(celestialLighting, emissiveBlockList, shadowRayPlan);
+        DirectLightingPlan directLightingPlan = DirectLightingPlan.from(celestialLighting, emissiveBlockList, shadowRayPlan);
+        this.logDirectLightingPlanStatusIfChanged(directLightingPlan);
+        return directLightingPlan;
     }
 
     private PostProcessingPipelinePlan buildPostProcessingPlan(
@@ -863,8 +866,20 @@ public final class LucernaController {
     ) {
         VoxelSectionSnapshotReference existing = referencesByKey.get(reference.stableKey());
         if (existing == null || reference.combinedGeneration() >= existing.combinedGeneration()) {
-            referencesByKey.put(reference.stableKey(), reference);
+            referencesByKey.put(reference.stableKey(), mergeSectionReferenceSurfaceSamples(reference, existing));
+        } else if (!existing.hasSurfaceSamples() && reference.hasSurfaceSamples()) {
+            referencesByKey.put(reference.stableKey(), existing.withSurfaceSamples(reference.surfaceSamples()));
         }
+    }
+
+    private VoxelSectionSnapshotReference mergeSectionReferenceSurfaceSamples(
+            VoxelSectionSnapshotReference selected,
+            VoxelSectionSnapshotReference previous
+    ) {
+        if (selected.hasSurfaceSamples() || previous == null || !previous.hasSurfaceSamples()) {
+            return selected;
+        }
+        return selected.withSurfaceSamples(previous.surfaceSamples());
     }
 
     private int[] currentViewportDimensions(Minecraft client) {
@@ -913,6 +928,7 @@ public final class LucernaController {
         this.lastPreparedGBufferStagingKey = "";
         this.lastLoggedGBufferStagingKey = "";
         this.lastLoggedFirstPassPlanKey = "";
+        this.lastLoggedDirectLightingPlanKey = "";
         this.lastPreparedLightingDispatchKey = "";
         this.lastLoggedLightingDispatchKey = "";
         this.lastLoggedDirectPreviewCompositeKey = "";
@@ -1170,6 +1186,44 @@ public final class LucernaController {
                 metadata.emissivePayloadSectionCount(),
                 metadata.expectedAttachmentWriteCount(),
                 plan.findings().size()
+        );
+    }
+
+    private void logDirectLightingPlanStatusIfChanged(DirectLightingPlan plan) {
+        if (plan == null) {
+            return;
+        }
+
+        int surfaceSampleSectionCount = 0;
+        int surfaceSampleCount = 0;
+        for (VoxelSectionSnapshotReference section : plan.shadowRayPlan().sectionSnapshots()) {
+            if (section.hasSurfaceSamples()) {
+                surfaceSampleSectionCount++;
+                surfaceSampleCount += section.surfaceSamples().size();
+            }
+        }
+
+        String logKey = plan.frameIndex()
+                + "|"
+                + plan.emissiveBlockList().selectedLightCount()
+                + "|"
+                + plan.shadowRayPlan().candidateCount()
+                + "|"
+                + surfaceSampleSectionCount
+                + "|"
+                + surfaceSampleCount;
+        if (logKey.equals(this.lastLoggedDirectLightingPlanKey)) {
+            return;
+        }
+
+        this.lastLoggedDirectLightingPlanKey = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna direct lighting plan: frame={} emissive={} shadowCandidates={} surfaceSampleSections={} surfaceSamples={}.",
+                plan.frameIndex(),
+                plan.emissiveBlockList().selectedLightCount(),
+                plan.shadowRayPlan().candidateCount(),
+                surfaceSampleSectionCount,
+                surfaceSampleCount
         );
     }
 

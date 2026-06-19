@@ -5,6 +5,7 @@ import net.lucerna.world.section.ChunkSectionGeneration;
 import net.lucerna.world.section.ChunkSectionOrigin;
 import net.lucerna.world.section.ChunkSectionVoxelSnapshot;
 import net.lucerna.world.section.SectionMaterialPaletteReference;
+import net.lucerna.world.section.SectionSurfaceSampleMetadata;
 import net.lucerna.world.section.VoxelOccupancyBitOrder;
 import net.lucerna.world.section.VoxelOccupancyMaskMetadata;
 import net.lucerna.world.section.VoxelOccupancySummary;
@@ -28,12 +29,15 @@ public record VoxelSectionSnapshotReference(
         int materialPaletteOffset,
         int materialPaletteSize,
         long materialGeneration,
-        boolean hasEmissivePayload
+        boolean hasEmissivePayload,
+        List<SectionSurfaceSampleMetadata> surfaceSamples
 ) {
     public VoxelSectionSnapshotReference {
         Objects.requireNonNull(origin, "origin");
         Objects.requireNonNull(generation, "generation");
         Objects.requireNonNull(occupancyBitOrder, "occupancyBitOrder");
+        Objects.requireNonNull(surfaceSamples, "surfaceSamples");
+        surfaceSamples = List.copyOf(surfaceSamples);
         requireVoxelCount(occupiedVoxelCount, "occupiedVoxelCount");
         requireVoxelCount(opaqueVoxelCount, "opaqueVoxelCount");
         requireVoxelCount(translucentVoxelCount, "translucentVoxelCount");
@@ -74,6 +78,9 @@ public record VoxelSectionSnapshotReference(
         if (generation.materialGeneration() < materialGeneration) {
             throw new IllegalArgumentException("section material generation must include material palette generation");
         }
+        if (surfaceSamples.size() > occupiedVoxelCount) {
+            throw new IllegalArgumentException("surface sample count cannot exceed occupiedVoxelCount");
+        }
     }
 
     public static VoxelSectionSnapshotReference from(ChunkSectionVoxelSnapshot snapshot) {
@@ -97,7 +104,8 @@ public record VoxelSectionSnapshotReference(
                 materialPalette.paletteOffset(),
                 materialPalette.paletteSize(),
                 materialPalette.materialGeneration(),
-                !snapshot.emissiveEntries().isEmpty()
+                !snapshot.emissiveEntries().isEmpty(),
+                snapshot.surfaceSamples()
         );
     }
 
@@ -130,7 +138,8 @@ public record VoxelSectionSnapshotReference(
                 upload.materialPaletteOffset(),
                 upload.materialPaletteSize(),
                 upload.materialPaletteGeneration(),
-                upload.emissiveEntryCount() > 0
+                upload.emissiveEntryCount() > 0,
+                List.of()
         );
     }
 
@@ -168,8 +177,38 @@ public record VoxelSectionSnapshotReference(
         return this.materialPaletteSize > 0;
     }
 
+    public boolean hasSurfaceSamples() {
+        return !this.surfaceSamples.isEmpty();
+    }
+
+    public VoxelSectionSnapshotReference withSurfaceSamples(List<SectionSurfaceSampleMetadata> surfaceSamples) {
+        return new VoxelSectionSnapshotReference(
+                this.origin,
+                this.generation,
+                this.occupiedVoxelCount,
+                this.opaqueVoxelCount,
+                this.translucentVoxelCount,
+                this.fluidVoxelCount,
+                this.emissiveVoxelCount,
+                this.occupancyBitOrder,
+                this.occupancyMaskWordOffset,
+                this.occupancyMaskWordCount,
+                this.occupancyMaskBitCount,
+                this.occupancyMaskGeneration,
+                this.materialPaletteOffset,
+                this.materialPaletteSize,
+                this.materialGeneration,
+                this.hasEmissivePayload,
+                surfaceSamples
+        );
+    }
+
     public boolean hasTraversalPayload() {
-        return this.hasOccupiedVoxels() || this.hasOccupancyMask() || this.hasMaterialPalette() || this.hasEmissivePayload;
+        return this.hasOccupiedVoxels()
+                || this.hasOccupancyMask()
+                || this.hasMaterialPalette()
+                || this.hasEmissivePayload
+                || this.hasSurfaceSamples();
     }
 
     private static void requireVoxelCount(int count, String name) {

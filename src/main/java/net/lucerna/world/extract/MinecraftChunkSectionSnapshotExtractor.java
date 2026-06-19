@@ -8,6 +8,7 @@ import net.lucerna.world.section.ChunkSectionOrigin;
 import net.lucerna.world.section.ChunkSectionVoxelSnapshot;
 import net.lucerna.world.section.SectionEmissiveEntryMetadata;
 import net.lucerna.world.section.SectionMaterialPaletteReference;
+import net.lucerna.world.section.SectionSurfaceSampleMetadata;
 import net.lucerna.world.section.VoxelOccupancyBitOrder;
 import net.lucerna.world.section.VoxelOccupancyMaskMetadata;
 import net.lucerna.world.section.VoxelOccupancySummary;
@@ -26,6 +27,10 @@ import java.util.Objects;
 import java.util.Set;
 
 public final class MinecraftChunkSectionSnapshotExtractor {
+    private static final int MAX_SURFACE_SAMPLES_PER_SECTION = 64;
+    private static final int MAX_SURFACE_SAMPLES_PER_EMISSIVE = 4;
+    private static final int MAX_SURFACE_SAMPLE_DISTANCE_SQUARED = 64;
+
     private final LucernaMaterialExtractionService materialExtractionService;
 
     public MinecraftChunkSectionSnapshotExtractor(LucernaMaterialExtractionService materialExtractionService) {
@@ -177,6 +182,7 @@ public final class MinecraftChunkSectionSnapshotExtractor {
     ) {
         Set<Integer> materialIds = new LinkedHashSet<>();
         List<SectionEmissiveEntryMetadata> emissiveEntries = new ArrayList<>();
+        List<SurfaceSampleCandidate> surfaceCandidates = new ArrayList<>();
         int opaqueVoxelCount = 0;
         int translucentVoxelCount = 0;
         int fluidVoxelCount = 0;
@@ -192,6 +198,12 @@ public final class MinecraftChunkSectionSnapshotExtractor {
             boolean translucent = MaterialFlags.has(materialFlags, MaterialFlags.TRANSLUCENT);
             if (opaque) {
                 opaqueVoxelCount++;
+                surfaceCandidates.add(new SurfaceSampleCandidate(
+                        voxel.localX(),
+                        voxel.localY(),
+                        voxel.localZ(),
+                        materialId
+                ));
             }
             if (translucent && !opaque) {
                 translucentVoxelCount++;
@@ -234,6 +246,12 @@ public final class MinecraftChunkSectionSnapshotExtractor {
                 0,
                 List.copyOf(materialIds)
         );
+        long surfaceSampleGeneration = Math.min(sectionGeneration, materialGeneration);
+        List<SectionSurfaceSampleMetadata> surfaceSamples = selectSurfaceSamples(
+                surfaceCandidates,
+                emissiveEntries,
+                surfaceSampleGeneration
+        );
 
         return new ChunkSectionVoxelSnapshot(
                 origin,
@@ -241,7 +259,8 @@ public final class MinecraftChunkSectionSnapshotExtractor {
                 summary,
                 maskMetadata,
                 paletteReference,
-                emissiveEntries
+                emissiveEntries,
+                surfaceSamples
         );
     }
 
@@ -253,8 +272,75 @@ public final class MinecraftChunkSectionSnapshotExtractor {
                 VoxelOccupancySummary.empty(),
                 VoxelOccupancyMaskMetadata.empty(),
                 new SectionMaterialPaletteReference(materialGeneration, 0, List.of()),
+                List.of(),
                 List.of()
         );
+    }
+
+    private static List<SectionSurfaceSampleMetadata> selectSurfaceSamples(
+            List<SurfaceSampleCandidate> surfaceCandidates,
+            List<SectionEmissiveEntryMetadata> emissiveEntries,
+            long surfaceSampleGeneration
+    ) {
+        if (surfaceCandidates.isEmpty()) {
+            return List.of();
+        }
+
+        List<SectionSurfaceSampleMetadata> samples = new ArrayList<>(Math.min(MAX_SURFACE_SAMPLES_PER_SECTION, surfaceCandidates.size()));
+        Set<Integer> selectedVoxelIndices = new LinkedHashSet<>();
+        for (SectionEmissiveEntryMetadata emissiveEntry : emissiveEntries) {
+            int selectedForEntry = 0;
+            while (selectedForEntry < MAX_SURFACE_SAMPLES_PER_EMISSIVE && samples.size() < MAX_SURFACE_SAMPLES_PER_SECTION) {
+                SurfaceSampleCandidate nearest = nearestUnselectedSurfaceSample(surfaceCandidates, selectedVoxelIndices, emissiveEntry);
+                if (nearest == null || squaredDistance(nearest, emissiveEntry) > MAX_SURFACE_SAMPLE_DISTANCE_SQUARED) {
+                    break;
+                }
+                selectedVoxelIndices.add(nearest.voxelIndex());
+                samples.add(nearest.toMetadata(surfaceSampleGeneration));
+                selectedForEntry++;
+            }
+            if (samples.size() >= MAX_SURFACE_SAMPLES_PER_SECTION) {
+                return List.copyOf(samples);
+            }
+        }
+
+        for (SurfaceSampleCandidate candidate : surfaceCandidates) {
+            if (samples.size() >= MAX_SURFACE_SAMPLES_PER_SECTION) {
+                break;
+            }
+            if (selectedVoxelIndices.add(candidate.voxelIndex())) {
+                samples.add(candidate.toMetadata(surfaceSampleGeneration));
+            }
+        }
+        return List.copyOf(samples);
+    }
+
+    private static SurfaceSampleCandidate nearestUnselectedSurfaceSample(
+            List<SurfaceSampleCandidate> surfaceCandidates,
+            Set<Integer> selectedVoxelIndices,
+            SectionEmissiveEntryMetadata emissiveEntry
+    ) {
+        SurfaceSampleCandidate nearest = null;
+        int nearestDistanceSquared = Integer.MAX_VALUE;
+        for (SurfaceSampleCandidate candidate : surfaceCandidates) {
+            if (selectedVoxelIndices.contains(candidate.voxelIndex())) {
+                continue;
+            }
+            int distanceSquared = squaredDistance(candidate, emissiveEntry);
+            if (distanceSquared == 0 || distanceSquared >= nearestDistanceSquared) {
+                continue;
+            }
+            nearest = candidate;
+            nearestDistanceSquared = distanceSquared;
+        }
+        return nearest;
+    }
+
+    private static int squaredDistance(SurfaceSampleCandidate candidate, SectionEmissiveEntryMetadata emissiveEntry) {
+        int deltaX = candidate.localX() - emissiveEntry.localX();
+        int deltaY = candidate.localY() - emissiveEntry.localY();
+        int deltaZ = candidate.localZ() - emissiveEntry.localZ();
+        return deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ;
     }
 
     private static SectionReadback readOccupiedVoxels(LevelChunkSection section) {
@@ -322,6 +408,30 @@ public final class MinecraftChunkSectionSnapshotExtractor {
             VoxelOccupancyBitOrder.requireLocalCoordinate(localZ, "localZ");
             Objects.requireNonNull(state, "state");
             Objects.requireNonNull(fluidState, "fluidState");
+        }
+    }
+
+    private record SurfaceSampleCandidate(
+            int localX,
+            int localY,
+            int localZ,
+            int materialId
+    ) {
+        private SurfaceSampleCandidate {
+            VoxelOccupancyBitOrder.requireLocalCoordinate(localX, "localX");
+            VoxelOccupancyBitOrder.requireLocalCoordinate(localY, "localY");
+            VoxelOccupancyBitOrder.requireLocalCoordinate(localZ, "localZ");
+            if (materialId <= 0) {
+                throw new IllegalArgumentException("materialId must be positive");
+            }
+        }
+
+        private int voxelIndex() {
+            return VoxelOccupancyBitOrder.MINECRAFT_SECTION_YZX.toIndex(this.localX, this.localY, this.localZ);
+        }
+
+        private SectionSurfaceSampleMetadata toMetadata(long generation) {
+            return new SectionSurfaceSampleMetadata(this.localX, this.localY, this.localZ, this.materialId, generation);
         }
     }
 }
