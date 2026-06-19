@@ -85,6 +85,8 @@ public final class LucernaDebugOverlayLines {
         FinalCompositeModeStatus compositeStatus = currentCompositeModeStatus();
         lines.add(Component.literal("Round 7 composite mode: " + compositeStatus.debugLine()));
         lines.add(Component.literal("Round 7 composite status: " + compositeStatus.statusText()));
+        lines.add(Component.literal("Round 7 composite evidence: " + compositeStatus.controllerEvidenceLine()));
+        lines.add(Component.literal("Round 7 composite reason: " + compositeStatus.modeReason()));
         lines.add(Component.literal("Round 7 boundary: " + compositeStatus.foundationBoundary()));
     }
 
@@ -93,6 +95,8 @@ public final class LucernaDebugOverlayLines {
         lines.add(statusLine(snapshot));
         FinalCompositeModeStatus compositeStatus = currentCompositeModeStatus();
         lines.add(Component.literal("round7.compositeMode=" + compositeStatus.statusKey()));
+        lines.add(Component.literal("round7.compositeDisplayName=" + compositeStatus.displayName()));
+        lines.add(Component.literal("round7.compositeEvidenceKey=" + compositeStatus.evidenceKey()));
         lines.add(Component.literal("round7.compositeDispatch=" + compositeStatus.dispatchLabel()));
         lines.add(Component.literal("round7.compositeSignals=baseWorldColor:"
                 + yesNo(compositeStatus.baseWorldColorEnabled())
@@ -100,6 +104,10 @@ public final class LucernaDebugOverlayLines {
                 + yesNo(compositeStatus.directLightingEnabled())
                 + ",diffuseGi:"
                 + yesNo(compositeStatus.diffuseGiEnabled())));
+        lines.add(Component.literal("round7.compositeIsolation=" + compositeStatus.signalIsolationLabel()));
+        lines.add(Component.literal("round7.compositeReason=" + compositeStatus.modeReason()));
+        lines.add(Component.literal("round7.compositeExpectedEvidence=" + compositeStatus.expectedEvidence()));
+        lines.add(Component.literal("round7.compositeValidation=" + compositeStatus.validationSummary()));
         snapshot.validationFields().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> Component.literal(entry.getKey() + "=" + entry.getValue()))

@@ -2,6 +2,8 @@ package net.lucerna.lighting;
 
 public record DenoiseSignalInputContract(
         DenoiseSignalKind kind,
+        String resourceName,
+        String evidenceLabel,
         boolean available,
         boolean required,
         boolean placeholder,
@@ -17,6 +19,8 @@ public record DenoiseSignalInputContract(
         if (kind == null) {
             kind = DenoiseSignalKind.DIFFUSE_GI;
         }
+        resourceName = normalizeText(resourceName, kind.statusName());
+        evidenceLabel = normalizeText(evidenceLabel, kind.statusName() + "_input");
         generation = Math.max(0L, generation);
         width = Math.max(0, width);
         height = Math.max(0, height);
@@ -40,6 +44,8 @@ public record DenoiseSignalInputContract(
     ) {
         return new DenoiseSignalInputContract(
                 DenoiseSignalKind.DIFFUSE_GI,
+                "lucerna.lighting.diffuseGi",
+                "raw_diffuse_gi_input",
                 available,
                 true,
                 false,
@@ -64,6 +70,8 @@ public record DenoiseSignalInputContract(
     ) {
         return new DenoiseSignalInputContract(
                 DenoiseSignalKind.DIRECT_SHADOWS,
+                "lucerna.lighting.direct",
+                "raw_direct_shadow_input",
                 available,
                 true,
                 false,
@@ -80,6 +88,8 @@ public record DenoiseSignalInputContract(
     public static DenoiseSignalInputContract optionalPlaceholder(DenoiseSignalKind kind, String readinessReason) {
         return new DenoiseSignalInputContract(
                 kind,
+                kind == null ? "optional_signal" : kind.statusName(),
+                "optional_placeholder_input",
                 false,
                 false,
                 true,
@@ -106,6 +116,8 @@ public record DenoiseSignalInputContract(
                 + ":available=" + this.available
                 + ",required=" + this.required
                 + ",placeholder=" + this.placeholder
+                + ",resource=" + this.resourceName
+                + ",evidence=" + this.evidenceLabel
                 + ",generation=" + this.generation
                 + ",size=" + this.width + "x" + this.height
                 + ",samples=" + this.sampleCount
@@ -122,5 +134,12 @@ public record DenoiseSignalInputContract(
             return "signal input available for denoise contract";
         }
         return required ? "required signal input unavailable" : "optional signal input unavailable";
+    }
+
+    private static String normalizeText(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value.trim();
     }
 }

@@ -40,6 +40,10 @@ param(
 
     [double] $MinRawChangedPixelPercent = 0.5,
 
+    [double] $MinDenoiseChangedPixelPercent = 0.1,
+
+    [double] $MinDenoiseMeanAbsLuma = 0.1,
+
     [double] $MinFinalChangedPixelPercent = 0.5,
 
     [double] $MinFinalMeanAbsLuma = 0.5,
@@ -59,7 +63,9 @@ param(
     [string[]] $FinalCompositePatterns = @(
         "Lucerna Round 7 final composite",
         "mode=round7-final-composite",
-        "final composite.*(?:submitted=true|dispatch)"
+        "final composite.*(?:submitted=true|dispatch)",
+        "composite mode.*(?:final|lucerna)",
+        "mode=final-lucerna-composite"
     ),
 
     [switch] $RequireLogProof,
@@ -178,6 +184,7 @@ function Measure-Round7LogProof {
     $denoiseDispatchPresent = Test-AnyRegex $log $DenoiseDispatchPatterns
     $finalCompositePresent = Test-AnyRegex $log $FinalCompositePatterns
     $temporaryDirectLightSourcePresent = Test-Regex $log "temporarySourceReady=true|temporary direct-light|current direct-light RGBA payload"
+    $metadataOnlyPreviewPresent = Test-Regex $log "metadata-only|metadata scaffold|signal_separated_denoise_metadata_scaffold_no_render_output|no_render_output"
     $proofMarkerPresent = Test-Regex $log "proof marker|R6 GI proof|R7 proof|CPU output proof"
     $focusWindowOnlyPresent = Test-Regex $log "focus-window"
     $nativeErrorPresent = Test-Regex $log "invalid descriptor|VK_ERROR|Lucerna native error|native error"
@@ -188,6 +195,7 @@ function Measure-Round7LogProof {
             denoiseDispatchPresent = $denoiseDispatchPresent
             finalCompositePresent = $finalCompositePresent
             temporaryDirectLightSourcePresent = $temporaryDirectLightSourcePresent
+            metadataOnlyPreviewPresent = $metadataOnlyPreviewPresent
             proofMarkerPresent = $proofMarkerPresent
             focusWindowOnlyPresent = $focusWindowOnlyPresent
             nativeErrorPresent = $nativeErrorPresent
@@ -237,6 +245,12 @@ foreach ($entry in @(
 if ([double]$rawDelta.focusRegionMetrics.changedPixelPercent -lt $MinRawChangedPixelPercent) {
     $failures.Add("Raw GI focused-region changed pixels below threshold. actual=$($rawDelta.focusRegionMetrics.changedPixelPercent) expected>=$MinRawChangedPixelPercent")
 }
+if ([double]$denoiseDelta.focusRegionMetrics.changedPixelPercent -lt $MinDenoiseChangedPixelPercent) {
+    $failures.Add("Denoised GI focused-region changed pixels below threshold when compared with raw GI. actual=$($denoiseDelta.focusRegionMetrics.changedPixelPercent) expected>=$MinDenoiseChangedPixelPercent")
+}
+if ([double]$denoiseDelta.focusRegionMetrics.meanAbsLuma -lt $MinDenoiseMeanAbsLuma) {
+    $failures.Add("Denoised GI focused-region mean absolute luma below threshold when compared with raw GI. actual=$($denoiseDelta.focusRegionMetrics.meanAbsLuma) expected>=$MinDenoiseMeanAbsLuma")
+}
 if ([double]$finalDelta.focusRegionMetrics.changedPixelPercent -lt $MinFinalChangedPixelPercent) {
     $failures.Add("Final composite focused-region changed pixels below threshold. actual=$($finalDelta.focusRegionMetrics.changedPixelPercent) expected>=$MinFinalChangedPixelPercent")
 }
@@ -262,6 +276,9 @@ if ($logProof) {
     if ($logProof.markers.temporaryDirectLightSourcePresent) {
         $failures.Add("Log contains temporary direct-light source marker; Round 7 proof must use raw GI/denoised/final paths.")
     }
+    if ($logProof.markers.metadataOnlyPreviewPresent) {
+        $failures.Add("Log contains metadata-only/scaffold marker; Round 7 visual proof must use real raw GI, denoised GI, and final composite outputs.")
+    }
     if ($logProof.markers.proofMarkerPresent) {
         $failures.Add("Log contains proof-marker evidence; Round 7 proof must use requested debug/composite modes.")
     }
@@ -282,6 +299,8 @@ $result = [ordered]@{
     logPath = $logResolved
     thresholds = [ordered]@{
         minRawChangedPixelPercent = $MinRawChangedPixelPercent
+        minDenoiseChangedPixelPercent = $MinDenoiseChangedPixelPercent
+        minDenoiseMeanAbsLuma = $MinDenoiseMeanAbsLuma
         minFinalChangedPixelPercent = $MinFinalChangedPixelPercent
         minFinalMeanAbsLuma = $MinFinalMeanAbsLuma
         changedPixelThreshold = $ChangedPixelThreshold
@@ -305,11 +324,41 @@ $result = [ordered]@{
     proofClarity = [ordered]@{
         classification = if ($failures.Count -eq 0) { "round7_raw_denoised_final_evidence_passed" } else { "round7_evidence_failed" }
         rawGiEvidencePresent = ([double]$rawDelta.focusRegionMetrics.changedPixelPercent -ge $MinRawChangedPixelPercent)
-        denoiseComparisonPresent = $true
+        denoiseComparisonPresent = (
+            ([double]$denoiseDelta.focusRegionMetrics.changedPixelPercent -ge $MinDenoiseChangedPixelPercent) -and
+            ([double]$denoiseDelta.focusRegionMetrics.meanAbsLuma -ge $MinDenoiseMeanAbsLuma)
+        )
         finalCompositeEvidencePresent = (
             ([double]$finalDelta.focusRegionMetrics.changedPixelPercent -ge $MinFinalChangedPixelPercent) -and
             ([double]$finalDelta.focusRegionMetrics.meanAbsLuma -ge $MinFinalMeanAbsLuma)
         )
+        tracks = [ordered]@{
+            rawGi = [ordered]@{
+                imageDeltaPresent = ([double]$rawDelta.focusRegionMetrics.changedPixelPercent -ge $MinRawChangedPixelPercent)
+                logMarkerPresent = if ($logProof) { [bool]$logProof.markers.rawGiSourcePresent } else { $null }
+            }
+            denoisedGi = [ordered]@{
+                imageDeltaPresent = (
+                    ([double]$denoiseDelta.focusRegionMetrics.changedPixelPercent -ge $MinDenoiseChangedPixelPercent) -and
+                    ([double]$denoiseDelta.focusRegionMetrics.meanAbsLuma -ge $MinDenoiseMeanAbsLuma)
+                )
+                logMarkerPresent = if ($logProof) { [bool]$logProof.markers.denoiseDispatchPresent } else { $null }
+            }
+            finalComposite = [ordered]@{
+                imageDeltaPresent = (
+                    ([double]$finalDelta.focusRegionMetrics.changedPixelPercent -ge $MinFinalChangedPixelPercent) -and
+                    ([double]$finalDelta.focusRegionMetrics.meanAbsLuma -ge $MinFinalMeanAbsLuma)
+                )
+                logMarkerPresent = if ($logProof) { [bool]$logProof.markers.finalCompositePresent } else { $null }
+            }
+            rejectionMarkers = [ordered]@{
+                temporaryDirectLightSourcePresent = if ($logProof) { [bool]$logProof.markers.temporaryDirectLightSourcePresent } else { $null }
+                metadataOnlyPreviewPresent = if ($logProof) { [bool]$logProof.markers.metadataOnlyPreviewPresent } else { $null }
+                proofMarkerPresent = if ($logProof) { [bool]$logProof.markers.proofMarkerPresent } else { $null }
+                focusWindowOnlyPresent = if ($logProof) { [bool]$logProof.markers.focusWindowOnlyPresent } else { $null }
+                nativeErrorPresent = if ($logProof) { [bool]$logProof.markers.nativeErrorPresent } else { $null }
+            }
+        }
     }
     passed = $failures.Count -eq 0
     failures = @($failures)
@@ -332,6 +381,7 @@ Write-Host "debugImage=$($result.debugImage)"
 Write-Host "logPath=$($result.logPath)"
 Write-Host "raw.focus.changedPixelPercent=$($rawDelta.focusRegionMetrics.changedPixelPercent)"
 Write-Host "denoise.focus.changedPixelPercent=$($denoiseDelta.focusRegionMetrics.changedPixelPercent)"
+Write-Host "denoise.focus.meanAbsLuma=$($denoiseDelta.focusRegionMetrics.meanAbsLuma)"
 Write-Host "final.focus.changedPixelPercent=$($finalDelta.focusRegionMetrics.changedPixelPercent)"
 Write-Host "final.focus.meanAbsLuma=$($finalDelta.focusRegionMetrics.meanAbsLuma)"
 if ($logProof) {
@@ -339,6 +389,7 @@ if ($logProof) {
     Write-Host "denoiseDispatchPresent=$($logProof.markers.denoiseDispatchPresent)"
     Write-Host "finalCompositePresent=$($logProof.markers.finalCompositePresent)"
     Write-Host "temporaryDirectLightSourcePresent=$($logProof.markers.temporaryDirectLightSourcePresent)"
+    Write-Host "metadataOnlyPreviewPresent=$($logProof.markers.metadataOnlyPreviewPresent)"
     Write-Host "proofMarkerPresent=$($logProof.markers.proofMarkerPresent)"
     Write-Host "focusWindowOnlyPresent=$($logProof.markers.focusWindowOnlyPresent)"
     Write-Host "nativeErrorPresent=$($logProof.markers.nativeErrorPresent)"

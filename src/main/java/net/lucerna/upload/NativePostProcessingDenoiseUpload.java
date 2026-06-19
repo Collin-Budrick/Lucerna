@@ -1,5 +1,7 @@
 package net.lucerna.upload;
 
+import net.lucerna.lighting.DenoiseHistoryCounters;
+import net.lucerna.lighting.SignalSeparatedDenoiseContract;
 import net.lucerna.render.GBufferDescriptor;
 import net.lucerna.render.lighting.post.DenoisePassPlan;
 import net.lucerna.render.lighting.post.EdgeAwareDenoiseSettings;
@@ -37,6 +39,23 @@ public final class NativePostProcessingDenoiseUpload {
     private final boolean directLightingAvailable;
     private final boolean diffuseGiAvailable;
     private final boolean cacheConfidenceAvailable;
+    private final boolean rawDiffuseGiInputAvailable;
+    private final boolean denoisedDiffuseOutputIntended;
+    private final boolean edgeRejectionMetadataAvailable;
+    private final boolean historyCountersAvailable;
+    private final int edgeCurrentInputMask;
+    private final int edgeHistoryInputMask;
+    private final long historyAcceptedPixels;
+    private final long historyRejectedPixels;
+    private final long historyResetPixels;
+    private final long historyMissingPixels;
+    private final long historyDisocclusionPixels;
+    private final long historyMaterialMismatchPixels;
+    private final float historyRejectionRatio;
+    private final String rawDiffuseGiResource;
+    private final String denoisedDiffuseResource;
+    private final String rejectionMaskResource;
+    private final String denoiseEvidenceLabel;
     private final int readResourceCount;
     private final int writeResourceCount;
     private final String[] readResources;
@@ -74,6 +93,23 @@ public final class NativePostProcessingDenoiseUpload {
             boolean directLightingAvailable,
             boolean diffuseGiAvailable,
             boolean cacheConfidenceAvailable,
+            boolean rawDiffuseGiInputAvailable,
+            boolean denoisedDiffuseOutputIntended,
+            boolean edgeRejectionMetadataAvailable,
+            boolean historyCountersAvailable,
+            int edgeCurrentInputMask,
+            int edgeHistoryInputMask,
+            long historyAcceptedPixels,
+            long historyRejectedPixels,
+            long historyResetPixels,
+            long historyMissingPixels,
+            long historyDisocclusionPixels,
+            long historyMaterialMismatchPixels,
+            float historyRejectionRatio,
+            String rawDiffuseGiResource,
+            String denoisedDiffuseResource,
+            String rejectionMaskResource,
+            String denoiseEvidenceLabel,
             String[] readResources,
             String[] writeResources,
             int radiusPixels,
@@ -108,6 +144,23 @@ public final class NativePostProcessingDenoiseUpload {
         this.directLightingAvailable = directLightingAvailable;
         this.diffuseGiAvailable = diffuseGiAvailable;
         this.cacheConfidenceAvailable = cacheConfidenceAvailable;
+        this.rawDiffuseGiInputAvailable = rawDiffuseGiInputAvailable;
+        this.denoisedDiffuseOutputIntended = denoisedDiffuseOutputIntended;
+        this.edgeRejectionMetadataAvailable = edgeRejectionMetadataAvailable;
+        this.historyCountersAvailable = historyCountersAvailable;
+        this.edgeCurrentInputMask = edgeCurrentInputMask;
+        this.edgeHistoryInputMask = edgeHistoryInputMask;
+        this.historyAcceptedPixels = historyAcceptedPixels;
+        this.historyRejectedPixels = historyRejectedPixels;
+        this.historyResetPixels = historyResetPixels;
+        this.historyMissingPixels = historyMissingPixels;
+        this.historyDisocclusionPixels = historyDisocclusionPixels;
+        this.historyMaterialMismatchPixels = historyMaterialMismatchPixels;
+        this.historyRejectionRatio = historyRejectionRatio;
+        this.rawDiffuseGiResource = normalizeText(rawDiffuseGiResource, "lucerna.lighting.diffuseGi");
+        this.denoisedDiffuseResource = normalizeText(denoisedDiffuseResource, "lucerna.denoise.diffuse");
+        this.rejectionMaskResource = normalizeText(rejectionMaskResource, "lucerna.denoise.rejectionMask");
+        this.denoiseEvidenceLabel = normalizeText(denoiseEvidenceLabel, "denoise_evidence");
         this.readResources = copy(readResources, "readResources");
         this.writeResources = copy(writeResources, "writeResources");
         this.readResourceCount = this.readResources.length;
@@ -133,6 +186,8 @@ public final class NativePostProcessingDenoiseUpload {
         Objects.requireNonNull(plan, "plan");
         EdgeAwareDenoiseSettings settings = plan.settings();
         GBufferDescriptor gBuffer = plan.inputs().gBuffer();
+        SignalSeparatedDenoiseContract signalContract = plan.signalContract();
+        DenoiseHistoryCounters historyCounters = signalContract.historyCounters();
         NativePostProcessingRejectionUpload rejection = NativePostProcessingRejectionUpload.from(plan.historyRejection());
         return new NativePostProcessingDenoiseUpload(
                 plan.enabled(),
@@ -153,6 +208,23 @@ public final class NativePostProcessingDenoiseUpload {
                 plan.inputs().directLightingAvailable(),
                 plan.inputs().diffuseGiAvailable(),
                 plan.inputs().cacheConfidenceAvailable(),
+                signalContract.rawDiffuseGiInputAvailable(),
+                signalContract.denoisedDiffuseOutputIntended(),
+                signalContract.edgeRejectionMetadataAvailable(),
+                signalContract.historyCountersAvailable(),
+                signalContract.edgeRejectionInputs().currentInputMask(),
+                signalContract.edgeRejectionInputs().historyInputMask(),
+                historyCounters.acceptedPixels(),
+                historyCounters.rejectedPixels(),
+                historyCounters.resetPixels(),
+                historyCounters.missingHistoryPixels(),
+                historyCounters.disocclusionPixels(),
+                historyCounters.materialMismatchPixels(),
+                historyCounters.rejectionRatio(),
+                signalContract.diffuseGi().resourceName(),
+                signalContract.output().denoisedDiffuseResource(),
+                signalContract.output().rejectionMaskResource(),
+                signalContract.output().evidenceLabel(),
                 toArray(plan.readResources()),
                 toArray(plan.writeResources()),
                 settings.radiusPixels(),
@@ -247,6 +319,74 @@ public final class NativePostProcessingDenoiseUpload {
         return this.cacheConfidenceAvailable;
     }
 
+    public boolean rawDiffuseGiInputAvailable() {
+        return this.rawDiffuseGiInputAvailable;
+    }
+
+    public boolean denoisedDiffuseOutputIntended() {
+        return this.denoisedDiffuseOutputIntended;
+    }
+
+    public boolean edgeRejectionMetadataAvailable() {
+        return this.edgeRejectionMetadataAvailable;
+    }
+
+    public boolean historyCountersAvailable() {
+        return this.historyCountersAvailable;
+    }
+
+    public int edgeCurrentInputMask() {
+        return this.edgeCurrentInputMask;
+    }
+
+    public int edgeHistoryInputMask() {
+        return this.edgeHistoryInputMask;
+    }
+
+    public long historyAcceptedPixels() {
+        return this.historyAcceptedPixels;
+    }
+
+    public long historyRejectedPixels() {
+        return this.historyRejectedPixels;
+    }
+
+    public long historyResetPixels() {
+        return this.historyResetPixels;
+    }
+
+    public long historyMissingPixels() {
+        return this.historyMissingPixels;
+    }
+
+    public long historyDisocclusionPixels() {
+        return this.historyDisocclusionPixels;
+    }
+
+    public long historyMaterialMismatchPixels() {
+        return this.historyMaterialMismatchPixels;
+    }
+
+    public float historyRejectionRatio() {
+        return this.historyRejectionRatio;
+    }
+
+    public String rawDiffuseGiResource() {
+        return this.rawDiffuseGiResource;
+    }
+
+    public String denoisedDiffuseResource() {
+        return this.denoisedDiffuseResource;
+    }
+
+    public String rejectionMaskResource() {
+        return this.rejectionMaskResource;
+    }
+
+    public String denoiseEvidenceLabel() {
+        return this.denoiseEvidenceLabel;
+    }
+
     public int readResourceCount() {
         return this.readResourceCount;
     }
@@ -323,6 +463,14 @@ public final class NativePostProcessingDenoiseUpload {
         requireNonNegative(this.historyGeneration, "historyGeneration");
         requireNonNegative(this.width, "width");
         requireNonNegative(this.height, "height");
+        requireNonNegative(this.edgeCurrentInputMask, "edgeCurrentInputMask");
+        requireNonNegative(this.edgeHistoryInputMask, "edgeHistoryInputMask");
+        requireNonNegative(this.historyAcceptedPixels, "historyAcceptedPixels");
+        requireNonNegative(this.historyRejectedPixels, "historyRejectedPixels");
+        requireNonNegative(this.historyResetPixels, "historyResetPixels");
+        requireNonNegative(this.historyMissingPixels, "historyMissingPixels");
+        requireNonNegative(this.historyDisocclusionPixels, "historyDisocclusionPixels");
+        requireNonNegative(this.historyMaterialMismatchPixels, "historyMaterialMismatchPixels");
         requireNonNegative(this.radiusPixels, "radiusPixels");
         requireNonNegative(this.sampleDiameterPixels, "sampleDiameterPixels");
         requireNonNegative(this.iterationCount, "iterationCount");
@@ -335,6 +483,10 @@ public final class NativePostProcessingDenoiseUpload {
         requireFiniteNonNegative(this.luminanceSigma, "luminanceSigma");
         requireFiniteNonNegative(this.historyBlend, "historyBlend");
         requireFiniteNonNegative(this.historyClampSigma, "historyClampSigma");
+        requireFiniteNonNegative(this.historyRejectionRatio, "historyRejectionRatio");
+        if (this.historyRejectionRatio > 1.0F) {
+            throw new IllegalArgumentException("historyRejectionRatio must be between 0 and 1");
+        }
         if (this.normalSigma > 1.0F) {
             throw new IllegalArgumentException("normalSigma must be between 0 and 1");
         }
@@ -348,6 +500,16 @@ public final class NativePostProcessingDenoiseUpload {
         }
         if (this.readyForScheduling && (!this.enabled || this.width == 0 || this.height == 0)) {
             throw new IllegalArgumentException("ready denoise upload requires enabled non-zero dimensions");
+        }
+        requireText(this.rawDiffuseGiResource, "rawDiffuseGiResource");
+        requireText(this.denoisedDiffuseResource, "denoisedDiffuseResource");
+        requireText(this.rejectionMaskResource, "rejectionMaskResource");
+        requireText(this.denoiseEvidenceLabel, "denoiseEvidenceLabel");
+        if (this.rawDiffuseGiInputAvailable && !this.diffuseGiAvailable) {
+            throw new IllegalArgumentException("rawDiffuseGiInputAvailable requires diffuseGiAvailable");
+        }
+        if (this.denoisedDiffuseOutputIntended && !this.writeResourcesContain(this.denoisedDiffuseResource)) {
+            throw new IllegalArgumentException("denoisedDiffuseOutputIntended requires the denoised diffuse write resource");
         }
         int expectedFlags = flags(
                 this.enabled,
@@ -441,6 +603,12 @@ public final class NativePostProcessingDenoiseUpload {
         }
     }
 
+    private static void requireText(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(name + " must not be blank");
+        }
+    }
+
     private static void requireNonNegative(long value, String name) {
         if (value < 0L) {
             throw new IllegalArgumentException(name + " must be non-negative");
@@ -450,5 +618,21 @@ public final class NativePostProcessingDenoiseUpload {
     private static String[] copy(String[] values, String name) {
         Objects.requireNonNull(values, name);
         return Arrays.copyOf(values, values.length);
+    }
+
+    private boolean writeResourcesContain(String resourceName) {
+        for (String writeResource : this.writeResources) {
+            if (writeResource.equals(resourceName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String normalizeText(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value.trim();
     }
 }

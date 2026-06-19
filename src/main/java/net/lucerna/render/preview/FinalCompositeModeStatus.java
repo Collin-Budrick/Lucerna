@@ -5,12 +5,18 @@ import net.lucerna.config.CompositeMode;
 public record FinalCompositeModeStatus(
         CompositeMode mode,
         String statusKey,
+        String displayName,
+        String evidenceKey,
         boolean baseWorldColorEnabled,
         boolean directLightingEnabled,
         boolean diffuseGiEnabled,
         boolean finalLucernaComposite,
+        boolean baselineOnly,
+        boolean isolatedLucernaSignal,
         String dispatchLabel,
-        String statusText
+        String statusText,
+        String modeReason,
+        String expectedEvidence
 ) {
     public FinalCompositeModeStatus {
         if (mode == null) {
@@ -21,6 +27,16 @@ public record FinalCompositeModeStatus(
         } else {
             statusKey = statusKey.trim();
         }
+        if (displayName == null || displayName.isBlank()) {
+            displayName = mode.displayName();
+        } else {
+            displayName = displayName.trim();
+        }
+        if (evidenceKey == null || evidenceKey.isBlank()) {
+            evidenceKey = mode.evidenceKey();
+        } else {
+            evidenceKey = evidenceKey.trim();
+        }
         baseWorldColorEnabled = baseWorldColorEnabled && mode.baseWorldColorEnabled();
         directLightingEnabled = directLightingEnabled && mode.directLightingEnabled();
         diffuseGiEnabled = diffuseGiEnabled && mode.diffuseGiEnabled();
@@ -28,6 +44,8 @@ public record FinalCompositeModeStatus(
                 && baseWorldColorEnabled
                 && directLightingEnabled
                 && diffuseGiEnabled;
+        baselineOnly = baselineOnly && baseWorldColorEnabled && !directLightingEnabled && !diffuseGiEnabled;
+        isolatedLucernaSignal = isolatedLucernaSignal && !baseWorldColorEnabled && directLightingEnabled != diffuseGiEnabled;
         if (dispatchLabel == null || dispatchLabel.isBlank()) {
             dispatchLabel = defaultDispatchLabel(mode);
         } else {
@@ -38,6 +56,16 @@ public record FinalCompositeModeStatus(
         } else {
             statusText = statusText.trim();
         }
+        if (modeReason == null || modeReason.isBlank()) {
+            modeReason = mode.modeReason();
+        } else {
+            modeReason = modeReason.trim();
+        }
+        if (expectedEvidence == null || expectedEvidence.isBlank()) {
+            expectedEvidence = mode.expectedEvidence();
+        } else {
+            expectedEvidence = expectedEvidence.trim();
+        }
     }
 
     public static FinalCompositeModeStatus fromConfigMode(CompositeMode mode) {
@@ -45,12 +73,18 @@ public record FinalCompositeModeStatus(
         return new FinalCompositeModeStatus(
                 resolvedMode,
                 resolvedMode.statusKey(),
+                resolvedMode.displayName(),
+                resolvedMode.evidenceKey(),
                 resolvedMode.baseWorldColorEnabled(),
                 resolvedMode.directLightingEnabled(),
                 resolvedMode.diffuseGiEnabled(),
                 resolvedMode == CompositeMode.FINAL_LUCERNA_COMPOSITE,
+                resolvedMode.baselineOnly(),
+                resolvedMode.isolatedLucernaSignal(),
                 defaultDispatchLabel(resolvedMode),
-                resolvedMode.statusDescription()
+                resolvedMode.statusDescription(),
+                resolvedMode.modeReason(),
+                resolvedMode.expectedEvidence()
         );
     }
 
@@ -60,6 +94,7 @@ public record FinalCompositeModeStatus(
 
     public String summary() {
         return "mode=" + this.statusKey
+                + ",evidenceKey=" + this.evidenceKey
                 + ",baseWorldColor=" + this.baseWorldColorEnabled
                 + ",directLighting=" + this.directLightingEnabled
                 + ",diffuseGi=" + this.diffuseGiEnabled
@@ -68,7 +103,32 @@ public record FinalCompositeModeStatus(
     }
 
     public String debugLine() {
-        return this.mode.displayName() + " | " + this.summary();
+        return this.displayName + " | " + this.summary();
+    }
+
+    public String controllerEvidenceLine() {
+        return this.evidenceKey + " | " + this.expectedEvidence;
+    }
+
+    public String signalIsolationLabel() {
+        if (this.baselineOnly) {
+            return "baseline/base-only";
+        }
+        if (this.isolatedLucernaSignal) {
+            return this.directLightingEnabled ? "isolated/direct-only" : "isolated/gi-only";
+        }
+        if (this.finalLucernaComposite) {
+            return "combined/final";
+        }
+        return "custom/partial";
+    }
+
+    public String validationSummary() {
+        return "displayName=\"" + this.displayName
+                + "\",evidenceKey=\"" + this.evidenceKey
+                + "\",isolation=\"" + this.signalIsolationLabel()
+                + "\",reason=\"" + this.modeReason
+                + "\",expectedEvidence=\"" + this.expectedEvidence + "\"";
     }
 
     public String foundationBoundary() {

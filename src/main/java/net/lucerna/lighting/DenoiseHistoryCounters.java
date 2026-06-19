@@ -33,4 +33,16 @@ public record DenoiseHistoryCounters(
     public boolean hasHistoryEvaluation() {
         return this.evaluatedPixels() > 0L;
     }
+
+    public long acceptedOrRejectedPixels() {
+        return this.acceptedPixels + this.rejectedPixels;
+    }
+
+    public float rejectionRatio() {
+        long evaluated = this.acceptedOrRejectedPixels();
+        if (evaluated <= 0L) {
+            return 0.0F;
+        }
+        return (float) this.rejectedPixels / (float) evaluated;
+    }
 }

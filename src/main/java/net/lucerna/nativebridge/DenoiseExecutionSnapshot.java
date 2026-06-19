@@ -12,6 +12,15 @@ public record DenoiseExecutionSnapshot(
         int sampleCount,
         int historyAcceptedCount,
         int historyRejectedCount,
+        int edgeRejectedCount,
+        int edgePreservedCount,
+        int rawGiPixels,
+        int rawGiSamples,
+        int rawGiRays,
+        int rawGiCacheReads,
+        int compositeWidth,
+        int compositeHeight,
+        int compositeOutputCount,
         boolean enabled,
         boolean validated,
         boolean placeholder,
@@ -21,9 +30,24 @@ public record DenoiseExecutionSnapshot(
         boolean diffuseGiSignalAvailable,
         boolean optionalSpecularPlaceholder,
         boolean optionalAoPlaceholder,
+        boolean rawGiInputAvailable,
+        boolean rawDirectInputAvailable,
+        boolean denoisedOutputIntent,
+        boolean realDenoiseShaderOutput,
+        boolean compositeStageRecorded,
+        boolean compositeEnabled,
+        boolean compositeReady,
+        boolean compositePlaceholder,
+        boolean edgeDepthAvailable,
+        boolean edgeNormalAvailable,
+        boolean edgeMaterialAvailable,
+        boolean historyConfidenceAvailable,
         boolean ready,
         boolean accepted,
         String outputMarker,
+        String rawInputMarker,
+        String denoisedOutputMarker,
+        String compositeMarker,
         String readinessReason
 ) {
     public DenoiseExecutionSnapshot {
@@ -36,7 +60,19 @@ public record DenoiseExecutionSnapshot(
         sampleCount = Math.max(0, sampleCount);
         historyAcceptedCount = Math.max(0, historyAcceptedCount);
         historyRejectedCount = Math.max(0, historyRejectedCount);
+        edgeRejectedCount = Math.max(0, edgeRejectedCount);
+        edgePreservedCount = Math.max(0, edgePreservedCount);
+        rawGiPixels = Math.max(0, rawGiPixels);
+        rawGiSamples = Math.max(0, rawGiSamples);
+        rawGiRays = Math.max(0, rawGiRays);
+        rawGiCacheReads = Math.max(0, rawGiCacheReads);
+        compositeWidth = Math.max(0, compositeWidth);
+        compositeHeight = Math.max(0, compositeHeight);
+        compositeOutputCount = Math.max(0, compositeOutputCount);
         outputMarker = outputMarker == null || outputMarker.isBlank() ? "unknown" : outputMarker;
+        rawInputMarker = rawInputMarker == null || rawInputMarker.isBlank() ? "unknown" : rawInputMarker;
+        denoisedOutputMarker = denoisedOutputMarker == null || denoisedOutputMarker.isBlank() ? "unknown" : denoisedOutputMarker;
+        compositeMarker = compositeMarker == null || compositeMarker.isBlank() ? "unknown" : compositeMarker;
         readinessReason = readinessReason == null || readinessReason.isBlank() ? "unknown" : readinessReason;
     }
 
@@ -53,6 +89,15 @@ public record DenoiseExecutionSnapshot(
                 0,
                 0,
                 0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
                 false,
                 false,
                 false,
@@ -64,6 +109,21 @@ public record DenoiseExecutionSnapshot(
                 true,
                 false,
                 false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                "unknown",
+                "unknown",
+                "unknown",
                 "unknown",
                 reason
         );
@@ -88,6 +148,15 @@ public record DenoiseExecutionSnapshot(
                     0,
                     0,
                     0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
                     false,
                     false,
                     false,
@@ -99,6 +168,21 @@ public record DenoiseExecutionSnapshot(
                     true,
                     false,
                     false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    "unknown",
+                    "unknown",
+                    "unknown",
                     "unknown",
                     "native denoise execution status unavailable"
             );
@@ -116,6 +200,15 @@ public record DenoiseExecutionSnapshot(
                 parseInt(extractField(denoiseExecution, "samples")),
                 parseInt(extractField(denoiseExecution, "history_accepted")),
                 parseInt(extractField(denoiseExecution, "history_rejected")),
+                parseInt(extractField(denoiseExecution, "edge_rejected")),
+                parseInt(extractField(denoiseExecution, "edge_preserved")),
+                parseInt(extractField(denoiseExecution, "raw_gi_pixels")),
+                parseInt(extractField(denoiseExecution, "raw_gi_samples")),
+                parseInt(extractField(denoiseExecution, "raw_gi_rays")),
+                parseInt(extractField(denoiseExecution, "raw_gi_cache_reads")),
+                dimensionComponentInt(extractField(denoiseExecution, "composite_size"), 0),
+                dimensionComponentInt(extractField(denoiseExecution, "composite_size"), 1),
+                parseInt(extractField(denoiseExecution, "composite_outputs")),
                 parseBoolean(extractField(denoiseExecution, "enabled")),
                 parseBoolean(extractField(denoiseExecution, "validated")),
                 parseBoolean(extractField(denoiseExecution, "placeholder")),
@@ -125,9 +218,24 @@ public record DenoiseExecutionSnapshot(
                 parseBoolean(extractField(denoiseExecution, "diffuse_gi_signal_available")),
                 parseBoolean(extractField(denoiseExecution, "optional_specular_placeholder")),
                 parseBoolean(extractField(denoiseExecution, "optional_ao_placeholder")),
+                parseBoolean(extractField(denoiseExecution, "raw_gi_input_available")),
+                parseBoolean(extractField(denoiseExecution, "raw_direct_input_available")),
+                parseBoolean(extractField(denoiseExecution, "denoised_output_intent")),
+                parseBoolean(extractField(denoiseExecution, "real_denoise_shader_output")),
+                parseBoolean(extractField(denoiseExecution, "composite_stage_recorded")),
+                parseBoolean(extractField(denoiseExecution, "composite_enabled")),
+                parseBoolean(extractField(denoiseExecution, "composite_ready")),
+                parseBoolean(extractField(denoiseExecution, "composite_placeholder")),
+                parseBoolean(extractField(denoiseExecution, "edge_depth_available")),
+                parseBoolean(extractField(denoiseExecution, "edge_normal_available")),
+                parseBoolean(extractField(denoiseExecution, "edge_material_available")),
+                parseBoolean(extractField(denoiseExecution, "history_confidence_available")),
                 parseBoolean(extractField(denoiseExecution, "ready")),
                 parseBoolean(extractField(denoiseExecution, "accepted_this_dispatch")),
                 extractField(denoiseExecution, "output_marker"),
+                extractField(denoiseExecution, "raw_input_marker"),
+                extractField(denoiseExecution, "denoised_output_marker"),
+                extractField(denoiseExecution, "composite_marker"),
                 extractField(denoiseExecution, "readiness_reason")
         );
     }
@@ -155,8 +263,32 @@ public record DenoiseExecutionSnapshot(
                 + " directShadowSignal=" + this.directShadowSignalAvailable
                 + " historyAccepted=" + this.historyAcceptedCount
                 + " historyRejected=" + this.historyRejectedCount
+                + " edgePreserved=" + this.edgePreservedCount
+                + " edgeRejected=" + this.edgeRejectedCount
+                + " rawGi=" + this.rawGiInputAvailable
+                + " rawGiPixels=" + this.rawGiPixels
+                + " rawGiSamples=" + this.rawGiSamples
+                + " rawGiRays=" + this.rawGiRays
+                + " rawGiCacheReads=" + this.rawGiCacheReads
+                + " denoisedIntent=" + this.denoisedOutputIntent
+                + " realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
+                + " composite=" + this.compositeSignalLabel()
+                + " compositeSize=" + this.compositeWidth + "x" + this.compositeHeight
                 + " outputMarker=" + this.outputMarker
+                + " rawInputMarker=" + this.rawInputMarker
+                + " denoisedOutputMarker=" + this.denoisedOutputMarker
+                + " compositeMarker=" + this.compositeMarker
                 + " reason=" + this.readinessReason;
+    }
+
+    public String compositeSignalLabel() {
+        if (!this.compositeStageRecorded) {
+            return "missing";
+        }
+        if (this.compositePlaceholder) {
+            return "placeholder";
+        }
+        return this.compositeReady ? "ready" : "metadata";
     }
 
     private static String extractBlock(String source, String marker) {

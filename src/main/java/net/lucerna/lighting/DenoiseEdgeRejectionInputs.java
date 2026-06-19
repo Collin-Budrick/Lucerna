@@ -56,6 +56,40 @@ public record DenoiseEdgeRejectionInputs(
         return this.currentEdgeInputsAvailable() && this.temporalHistoryInputsAvailable();
     }
 
+    public int currentInputMask() {
+        int mask = 0;
+        if (this.depthAvailable) {
+            mask |= 1;
+        }
+        if (this.normalAvailable) {
+            mask |= 1 << 1;
+        }
+        if (this.materialAvailable) {
+            mask |= 1 << 2;
+        }
+        if (this.motionHistoryAvailable) {
+            mask |= 1 << 3;
+        }
+        return mask;
+    }
+
+    public int historyInputMask() {
+        int mask = 0;
+        if (this.previousDepthAvailable) {
+            mask |= 1;
+        }
+        if (this.previousNormalAvailable) {
+            mask |= 1 << 1;
+        }
+        if (this.previousMaterialAvailable) {
+            mask |= 1 << 2;
+        }
+        if (this.previousLightingAvailable) {
+            mask |= 1 << 3;
+        }
+        return mask;
+    }
+
     private static String defaultReason(
             boolean depthAvailable,
             boolean normalAvailable,

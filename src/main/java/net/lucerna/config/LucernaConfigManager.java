@@ -79,13 +79,16 @@ public final class LucernaConfigManager {
         CompositeMode resolvedMode = mode == null ? LucernaConfig.defaults().compositeMode() : mode;
         if (before.compositeMode() != resolvedMode) {
             Lucerna.LOGGER.info(
-                    "Lucerna composite mode changed: previous={} current={} baseWorldColor={} directLighting={} diffuseGi={} lucernaLighting={} description={}.",
+                    "Lucerna composite mode changed: previous={} current={} evidenceKey={} baseWorldColor={} directLighting={} diffuseGi={} lucernaLighting={} reason={} expectedEvidence={} description={}.",
                     before.compositeMode().statusKey(),
                     resolvedMode.statusKey(),
+                    resolvedMode.evidenceKey(),
                     resolvedMode.baseWorldColorEnabled(),
                     resolvedMode.directLightingEnabled(),
                     resolvedMode.diffuseGiEnabled(),
                     resolvedMode.lucernaLightingEnabled(),
+                    resolvedMode.modeReason(),
+                    resolvedMode.expectedEvidence(),
                     resolvedMode.statusDescription()
             );
         }

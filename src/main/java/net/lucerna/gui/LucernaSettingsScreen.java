@@ -93,6 +93,22 @@ public final class LucernaSettingsScreen extends Screen {
                 y,
                 0xFFB8C7D9
         );
+        y += 12;
+        graphics.centeredText(
+                this.font,
+                this.fitLine(Component.literal("Composite evidence: " + compositeStatus.controllerEvidenceLine())),
+                this.width / 2,
+                y,
+                0xFFB8C7D9
+        );
+        y += 12;
+        graphics.centeredText(
+                this.font,
+                this.fitLine(Component.literal("Composite reason: " + compositeStatus.modeReason())),
+                this.width / 2,
+                y,
+                0xFFB8C7D9
+        );
 
         if (this.height >= 318) {
             y = 240;

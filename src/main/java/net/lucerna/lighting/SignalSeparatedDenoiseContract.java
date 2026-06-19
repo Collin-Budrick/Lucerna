@@ -84,6 +84,24 @@ public record SignalSeparatedDenoiseContract(
         );
     }
 
+    public boolean rawDiffuseGiInputAvailable() {
+        return this.diffuseGi.available()
+                && !this.diffuseGi.placeholder()
+                && this.diffuseGi.kind() == DenoiseSignalKind.DIFFUSE_GI;
+    }
+
+    public boolean denoisedDiffuseOutputIntended() {
+        return this.output.denoisedDiffuseOutput() && this.output.width() > 0 && this.output.height() > 0;
+    }
+
+    public boolean edgeRejectionMetadataAvailable() {
+        return this.edgeRejectionInputs.currentInputMask() != 0 || this.edgeRejectionInputs.historyInputMask() != 0;
+    }
+
+    public boolean historyCountersAvailable() {
+        return this.historyCounters.hasHistoryEvaluation();
+    }
+
     public String debugSummary() {
         return "signalSeparatedDenoise enabled=" + this.enabled
                 + " ready=" + this.readyForScheduling()

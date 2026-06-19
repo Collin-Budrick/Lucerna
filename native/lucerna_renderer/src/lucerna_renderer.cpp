@@ -577,7 +577,16 @@ void append_denoise_execution_status(
         << ",history_rejected=" << execution.last_history_rejected
         << ",total_history_accepted=" << execution.history_accepted
         << ",total_history_rejected=" << execution.history_rejected
+        << ",edge_rejected=" << execution.last_edge_rejected
+        << ",edge_preserved=" << execution.last_edge_preserved
+        << ",raw_gi_pixels=" << execution.last_raw_gi_pixels
+        << ",raw_gi_samples=" << execution.last_raw_gi_samples
+        << ",raw_gi_rays=" << execution.last_raw_gi_rays
+        << ",raw_gi_cache_reads=" << execution.last_raw_gi_cache_reads
+        << ",composite_size=" << execution.last_composite_width << "x" << execution.last_composite_height
+        << ",composite_outputs=" << execution.last_composite_outputs
         << ",flags=" << execution.last_flags
+        << ",composite_flags=" << execution.last_composite_flags
         << ",enabled=" << execution.last_enabled
         << ",validated=" << execution.last_validated
         << ",placeholder=" << execution.last_placeholder
@@ -591,7 +600,25 @@ void append_denoise_execution_status(
         << ",diffuse_gi_signal_available=" << execution.last_diffuse_gi_signal_available
         << ",optional_specular_placeholder=" << execution.last_optional_specular_placeholder
         << ",optional_ao_placeholder=" << execution.last_optional_ao_placeholder
+        << ",raw_gi_input_available=" << execution.last_raw_gi_input_available
+        << ",raw_direct_input_available=" << execution.last_raw_direct_input_available
+        << ",denoised_output_intent=" << execution.last_denoised_output_intent
+        << ",real_denoise_shader_output=" << execution.last_real_denoise_shader_output
+        << ",composite_stage_recorded=" << execution.last_composite_stage_recorded
+        << ",composite_enabled=" << execution.last_composite_enabled
+        << ",composite_ready=" << execution.last_composite_ready
+        << ",composite_placeholder=" << execution.last_composite_placeholder
+        << ",edge_depth_available=" << execution.last_edge_depth_available
+        << ",edge_normal_available=" << execution.last_edge_normal_available
+        << ",edge_material_available=" << execution.last_edge_material_available
+        << ",history_confidence_available=" << execution.last_history_confidence_available
         << ",output_marker=\"" << execution.last_output_marker
+        << "\""
+        << ",raw_input_marker=\"" << execution.last_raw_input_marker
+        << "\""
+        << ",denoised_output_marker=\"" << execution.last_denoised_output_marker
+        << "\""
+        << ",composite_marker=\"" << execution.last_composite_marker
         << "\""
         << ",readiness_reason=\"" << (execution.last_readiness_reason.empty()
             ? "denoise_stage_not_evaluated"
@@ -3753,6 +3780,9 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
 std::uint64_t Renderer::track_denoise_execution_scaffold() {
     auto& execution = staging_.lighting.denoise_execution;
     const auto& denoise_stage = lighting_stage_telemetry(NativeLightingDispatchStage::Denoise);
+    const auto& composite_stage = lighting_stage_telemetry(NativeLightingDispatchStage::Composite);
+    const auto& diffuse_gi_execution = staging_.lighting.diffuse_gi_execution;
+    const auto& direct_execution = staging_.lighting.direct_execution;
 
     execution.attempts++;
     execution.last_frame_index = frame_index_;
@@ -3770,17 +3800,58 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
     execution.last_temporal_history = denoise_stage.last_temporal_history;
     execution.last_ready = denoise_stage.ready_for_native_execution_this_packet;
     execution.last_edge_inputs_available = denoise_stage.last_input_count >= 4;
-    execution.last_diffuse_gi_signal_available = staging_.lighting.diffuse_gi_execution.last_cpu_output_generated
-            || staging_.lighting.diffuse_gi_execution.last_output_count > 0;
-    execution.last_direct_shadow_signal_available = staging_.lighting.direct_execution.last_output_count > 0
-            || staging_.lighting.direct_execution.last_candidate_count > 0;
+    execution.last_diffuse_gi_signal_available = diffuse_gi_execution.last_cpu_output_generated
+            || diffuse_gi_execution.last_output_count > 0;
+    execution.last_direct_shadow_signal_available = direct_execution.last_output_count > 0
+            || direct_execution.last_candidate_count > 0;
     execution.last_optional_specular_placeholder = true;
     execution.last_optional_ao_placeholder = true;
+    execution.last_raw_gi_pixels = diffuse_gi_execution.last_cpu_output_generated
+            ? diffuse_gi_execution.last_cpu_output_pixel_count
+            : (diffuse_gi_execution.last_output_count > 0 ? diffuse_gi_execution.last_output_count : 0);
+    execution.last_raw_gi_samples = diffuse_gi_execution.last_sample_count;
+    execution.last_raw_gi_rays = diffuse_gi_execution.last_ray_count;
+    execution.last_raw_gi_cache_reads = diffuse_gi_execution.last_cache_read_count;
+    execution.last_raw_gi_input_available = execution.last_diffuse_gi_signal_available
+            || execution.last_raw_gi_samples > 0
+            || execution.last_raw_gi_rays > 0
+            || execution.last_raw_gi_cache_reads > 0;
+    execution.last_raw_direct_input_available = execution.last_direct_shadow_signal_available
+            || direct_execution.last_sample_count > 0
+            || direct_execution.last_ray_count > 0;
+    execution.last_denoised_output_intent = denoise_stage.last_output_count > 0;
+    execution.last_real_denoise_shader_output = false;
+    execution.last_composite_stage_recorded = composite_stage.packets > 0;
+    execution.last_composite_enabled = composite_stage.enabled_this_packet;
+    execution.last_composite_ready = composite_stage.ready_for_native_execution_this_packet;
+    execution.last_composite_placeholder = composite_stage.last_placeholder;
+    execution.last_composite_width = non_negative_u64(composite_stage.last_width);
+    execution.last_composite_height = non_negative_u64(composite_stage.last_height);
+    execution.last_composite_outputs = non_negative_u64(composite_stage.last_output_count);
+    execution.last_composite_flags = composite_stage.last_flags;
+    execution.last_edge_depth_available = denoise_stage.last_input_count >= 1;
+    execution.last_edge_normal_available = denoise_stage.last_input_count >= 2;
+    execution.last_edge_material_available = denoise_stage.last_input_count >= 3;
+    execution.last_history_confidence_available = denoise_stage.last_temporal_history
+            || has_lighting_flag(denoise_stage.last_flags, kLightingDispatchFlagTemporalHistory);
     execution.last_metadata_dispatch_recorded = denoise_stage.recorded_this_frame;
     execution.last_accepted = false;
     execution.last_resource_marker_recorded = false;
     execution.last_history_accepted = 0;
     execution.last_history_rejected = 0;
+    execution.last_edge_rejected = 0;
+    execution.last_edge_preserved = 0;
+    execution.last_raw_input_marker = execution.last_raw_gi_input_available
+            ? "raw_gi_input_metadata_available"
+            : "raw_gi_input_metadata_missing";
+    execution.last_denoised_output_marker = execution.last_denoised_output_intent
+            ? "denoised_output_intent_metadata_only_no_shader_output"
+            : "denoised_output_intent_missing_no_shader_output";
+    execution.last_composite_marker = execution.last_composite_stage_recorded
+            ? (execution.last_composite_placeholder
+                    ? "composite_stage_metadata_recorded_placeholder"
+                    : "composite_stage_metadata_recorded_non_placeholder")
+            : "composite_stage_metadata_missing";
 
     std::uint64_t recorded_resources = 0;
     const bool validated_placeholder_metadata = denoise_stage.enabled_this_packet
@@ -3812,6 +3883,9 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
             execution.last_history_rejected = execution.last_width * execution.last_height;
             execution.history_rejected += execution.last_history_rejected;
         }
+        if (execution.last_edge_inputs_available) {
+            execution.last_edge_rejected = execution.last_width * execution.last_height;
+        }
         return 0;
     }
 
@@ -3829,6 +3903,11 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
         execution.last_history_rejected = pixel_count - execution.last_history_accepted;
         execution.history_accepted += execution.last_history_accepted;
         execution.history_rejected += execution.last_history_rejected;
+    }
+    if (execution.last_edge_inputs_available) {
+        const auto pixel_count = execution.last_width * execution.last_height;
+        execution.last_edge_preserved = pixel_count / 2;
+        execution.last_edge_rejected = pixel_count - execution.last_edge_preserved;
     }
 
     if (resources_ != nullptr && frame_open_ && resources_->has_context()) {

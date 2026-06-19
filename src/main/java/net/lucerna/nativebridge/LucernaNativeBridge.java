@@ -947,14 +947,17 @@ public final class LucernaNativeBridge {
                 + "|" + denoise.historyRejectedCount()
                 + "|" + denoise.ready()
                 + "|" + denoise.accepted()
-                + "|" + denoise.outputMarker();
+                + "|" + denoise.outputMarker()
+                + "|" + denoise.rawInputMarker()
+                + "|" + denoise.denoisedOutputMarker()
+                + "|" + denoise.compositeMarker();
         if (key.equals(this.lastLoggedDenoiseExecutionKey)) {
             return;
         }
 
         this.lastLoggedDenoiseExecutionKey = key;
         Lucerna.LOGGER.info(
-                "Lucerna native signal-separated denoise execution scaffold: dispatchGeneration={} size={}x{} inputs={} outputs={} samples={} enabled={} ready={} accepted={} diffuseGiSignal={} directShadowSignal={} edgeInputs={} temporalHistory={} historyAccepted={} historyRejected={} specularPlaceholder={} aoPlaceholder={} marker={} reason={}.",
+                "Lucerna native signal-separated denoise execution scaffold: dispatchGeneration={} size={}x{} inputs={} outputs={} samples={} enabled={} ready={} accepted={} diffuseGiSignal={} directShadowSignal={} edgeInputs={} temporalHistory={} historyAccepted={} historyRejected={} edgePreserved={} edgeRejected={} rawGi={} rawGiPixels={} rawGiSamples={} rawGiRays={} rawGiCacheReads={} rawDirect={} denoisedIntent={} realDenoiseShaderOutput={} composite={} compositeSize={}x{} compositeOutputs={} specularPlaceholder={} aoPlaceholder={} marker={} rawInputMarker={} denoisedOutputMarker={} compositeMarker={} reason={}.",
                 denoise.dispatchGeneration(),
                 denoise.width(),
                 denoise.height(),
@@ -970,9 +973,26 @@ public final class LucernaNativeBridge {
                 denoise.temporalHistory(),
                 denoise.historyAcceptedCount(),
                 denoise.historyRejectedCount(),
+                denoise.edgePreservedCount(),
+                denoise.edgeRejectedCount(),
+                denoise.rawGiInputAvailable(),
+                denoise.rawGiPixels(),
+                denoise.rawGiSamples(),
+                denoise.rawGiRays(),
+                denoise.rawGiCacheReads(),
+                denoise.rawDirectInputAvailable(),
+                denoise.denoisedOutputIntent(),
+                denoise.realDenoiseShaderOutput(),
+                denoise.compositeSignalLabel(),
+                denoise.compositeWidth(),
+                denoise.compositeHeight(),
+                denoise.compositeOutputCount(),
                 denoise.optionalSpecularPlaceholder(),
                 denoise.optionalAoPlaceholder(),
                 denoise.outputMarker(),
+                denoise.rawInputMarker(),
+                denoise.denoisedOutputMarker(),
+                denoise.compositeMarker(),
                 denoise.readinessReason()
         );
     }
