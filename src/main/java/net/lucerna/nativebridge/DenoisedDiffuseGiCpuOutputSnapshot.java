@@ -175,6 +175,21 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
                 && this.denoisedCpuOutputGenerated;
     }
 
+    public boolean cpuOutputReadbackReady() {
+        return this.readyForPreviewPayload()
+                && this.nativeOutputChecksum > 0L;
+    }
+
+    public boolean denoiseQualityEvidenceReady() {
+        return this.cpuOutputReadbackReady()
+                && this.denoisedOutputDiffersFromRaw
+                && this.edgeInputsAvailable
+                && (this.historyAcceptedCount > 0
+                || this.historyRejectedCount > 0
+                || this.edgePreservedCount > 0
+                || this.edgeRejectedCount > 0);
+    }
+
     public String previewReadinessReason() {
         if (!this.hasExecutionTelemetry()) {
             return this.readinessReason;
@@ -194,8 +209,7 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
         if (!this.denoisedOutputDiffersFromRaw) {
             return "native denoised diffuse GI RGBA8 output is available but currently matches the raw GI input";
         }
-        return "native CPU denoised diffuse GI RGBA8 output is ready for Java readback; shader denoise remains "
-                + this.realDenoiseShaderOutput;
+        return this.outputReadinessBoundary();
     }
 
     public String outputEvidenceMarker() {
@@ -211,11 +225,28 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
         return "denoised_diffuse_gi_rgba8_unavailable";
     }
 
+    public String outputReadinessBoundary() {
+        if (!this.cpuOutputReadbackReady()) {
+            return "denoised diffuse GI CPU output/readback is not ready";
+        }
+        if (this.realDenoiseShaderOutput) {
+            return this.denoiseQualityEvidenceReady()
+                    ? "real shader denoise output is ready with edge/history quality evidence"
+                    : "real shader denoise output is present but quality evidence is incomplete";
+        }
+        if (this.denoiseQualityEvidenceReady()) {
+            return "CPU denoised diffuse GI RGBA8 readback is ready and differs from raw GI; real shader denoise remains false";
+        }
+        return "CPU denoised diffuse GI RGBA8 readback is ready, but denoise quality is not proven; real shader denoise remains false";
+    }
+
     public String debugSummary() {
         if (!this.hasExecutionTelemetry()) {
             return this.readinessReason;
         }
         return "denoisedDiffuseGiOutput readyForPayload=" + this.readyForPreviewPayload()
+                + " cpuOutputReadbackReady=" + this.cpuOutputReadbackReady()
+                + " denoiseQualityEvidenceReady=" + this.denoiseQualityEvidenceReady()
                 + " evidence=" + this.outputEvidenceMarker()
                 + " size=" + this.outputWidth + "x" + this.outputHeight
                 + " pixels=" + this.outputPixels
@@ -235,6 +266,7 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
                 + " denoisedCpuOutputGenerated=" + this.denoisedCpuOutputGenerated
                 + " denoisedOutputDiffersFromRaw=" + this.denoisedOutputDiffersFromRaw
                 + " realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
+                + " readinessBoundary=\"" + this.outputReadinessBoundary() + "\""
                 + " outputMarker=" + this.outputMarker
                 + " rawInputMarker=" + this.rawInputMarker
                 + " denoisedOutputMarker=" + this.denoisedOutputMarker

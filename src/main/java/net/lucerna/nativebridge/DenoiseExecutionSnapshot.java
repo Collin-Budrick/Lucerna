@@ -276,6 +276,41 @@ public record DenoiseExecutionSnapshot(
         return this.historyAcceptedCount > 0 || this.historyRejectedCount > 0;
     }
 
+    public boolean cpuDenoisedOutputReadbackReady() {
+        return this.hasExecutionTelemetry()
+                && this.enabled
+                && this.accepted
+                && this.denoisedOutputIntent
+                && this.denoisedCpuOutputGenerated
+                && this.denoisedOutputPixels > 0
+                && this.denoisedOutputChecksum > 0L;
+    }
+
+    public boolean denoiseQualityEvidenceReady() {
+        return this.cpuDenoisedOutputReadbackReady()
+                && this.denoisedOutputDiffersFromRaw
+                && this.edgeInputsAvailable
+                && (this.hasHistoryCounters() || this.edgePreservedCount > 0 || this.edgeRejectedCount > 0);
+    }
+
+    public String denoiseReadinessBoundary() {
+        if (!this.hasExecutionTelemetry()) {
+            return "no-denoise-execution-telemetry";
+        }
+        if (!this.cpuDenoisedOutputReadbackReady()) {
+            return "not-ready:missing-accepted-cpu-output-readback";
+        }
+        if (this.realDenoiseShaderOutput) {
+            return this.denoiseQualityEvidenceReady()
+                    ? "real-shader-denoise-output-with-quality-evidence"
+                    : "real-shader-denoise-output-without-quality-evidence";
+        }
+        if (this.denoiseQualityEvidenceReady()) {
+            return "cpu-output-readback-ready; quality-evidence-present; real-shader-output=false";
+        }
+        return "cpu-output-readback-ready; denoise-quality-not-proven; real-shader-output=false";
+    }
+
     public String debugSummary() {
         if (!this.hasExecutionTelemetry()) {
             return this.readinessReason;
@@ -305,6 +340,9 @@ public record DenoiseExecutionSnapshot(
                 + " denoisedOutputMeanAbsDelta=" + this.denoisedOutputMeanAbsDelta
                 + " denoisedOutputDiffersFromRaw=" + this.denoisedOutputDiffersFromRaw
                 + " realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
+                + " cpuReadbackReady=" + this.cpuDenoisedOutputReadbackReady()
+                + " denoiseQualityEvidenceReady=" + this.denoiseQualityEvidenceReady()
+                + " readinessBoundary=" + this.denoiseReadinessBoundary()
                 + " composite=" + this.compositeSignalLabel()
                 + " compositeSize=" + this.compositeWidth + "x" + this.compositeHeight
                 + " outputMarker=" + this.outputMarker

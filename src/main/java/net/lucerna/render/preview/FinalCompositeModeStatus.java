@@ -141,6 +141,42 @@ public record FinalCompositeModeStatus(
         );
     }
 
+    public String compactSourceMixPolicy() {
+        return "direct=" + sourcePolicyState(this.directLightingEnabled, "native-direct")
+                + ",rawGI=" + sourcePolicyState(this.diffuseGiEnabled || this.rawGiVisualMode(), "native-raw")
+                + ",denoisedGI=" + denoisedPolicyState()
+                + ",final=" + (this.finalLucernaComposite ? "direct+rawGI+denoisedGI/real-sources" : "isolated");
+    }
+
+    public String denoiseSourcePolicy() {
+        if (this.baselineVisualMode()) {
+            return "excluded:baseline";
+        }
+        if (this.rawGiVisualMode()) {
+            return "excluded:raw-GI-control";
+        }
+        if (this.directLightingEnabled && !this.diffuseGiEnabled) {
+            return "excluded:direct-only-control";
+        }
+        if (this.denoisedGiVisualMode() || this.finalLucernaComposite) {
+            return "prefer real shader; current acceptable fallback=CPU denoised RGBA8 with explicit realShader=false";
+        }
+        return "mode-specific; require explicit shader-vs-CPU source label";
+    }
+
+    public String compactAuthenticityPolicy() {
+        if (this.baselineVisualMode()) {
+            return "baseline control; no Lucerna source";
+        }
+        if (this.finalLucernaComposite) {
+            return "reject marker/focus/metadata/substitution; direct/raw/denoised must be distinct ready sources";
+        }
+        if (this.directLightingEnabled && !this.diffuseGiEnabled) {
+            return "direct source must be accepted, candidate-backed, written, and resolved";
+        }
+        return "reject marker/focus/metadata/direct-substitution";
+    }
+
     public boolean rejectsFocusWindowOnlyComposite() {
         return this.rawGiVisualMode() || this.denoisedGiVisualMode() || this.finalCompositeVisualMode();
     }
@@ -213,7 +249,7 @@ public record FinalCompositeModeStatus(
             return "direct-light/native-direct-light-rgba8";
         }
         if (this.finalCompositeVisualMode()) {
-            return "final-composite/direct-emissive-plus-denoised-gi/raw-gi-fallback";
+            return "final-composite/direct-emissive-plus-raw-gi-plus-denoised-gi/real-sources-only";
         }
         return "custom/unspecified";
     }
@@ -226,7 +262,7 @@ public record FinalCompositeModeStatus(
             return "diagnostic-direct-light-only; not final emissive surface proof";
         }
         if (this.finalCompositeVisualMode()) {
-            return "submit full-target final composite; blend native direct emissive payload when candidate-ready, with denoised GI preferred and raw GI as fallback";
+            return "submit full-target final composite; blend native direct emissive, native raw GI, and CPU-denoised GI when each real source is ready; raw-only fallback is a degraded GI path, not final quality";
         }
         if (this.rawGiVisualMode() || this.denoisedGiVisualMode()) {
             return "submit isolated full-target " + this.selectedSourcePolicy();
@@ -245,7 +281,7 @@ public record FinalCompositeModeStatus(
             return "reject metadata-only, proof-marker, focus-window-only, and direct-light substitution sources";
         }
         if (this.finalCompositeVisualMode()) {
-            return "reject metadata-only, proof-marker, and focus-window-only sources; accept native direct-light only as candidate-backed blended emissive input";
+            return "reject metadata-only, proof-marker, focus-window-only, and direct-light-substitution sources; accept direct, raw GI, and denoised GI only as distinct ready payloads";
         }
         return "require mode-specific source identity before screenshot proof";
     }
@@ -268,11 +304,18 @@ public record FinalCompositeModeStatus(
             return "direct-light:" + readyState(directSourceReady);
         }
         if (this.finalCompositeVisualMode()) {
+            if (directSourceReady && giSourceReady && denoisedSourceReady) {
+                return "final-selected=direct+raw-gi+denoised-gi:ready";
+            }
+            if (denoisedSourceReady && giSourceReady) {
+                return "final-selected=raw-gi+denoised-gi:ready,direct-blend=" + readyState(directSourceReady);
+            }
             if (denoisedSourceReady) {
-                return "final-selected=denoised-gi:ready,direct-blend=" + readyState(directSourceReady);
+                return "final-selected=denoised-gi-only:degraded,raw-gi=missing,direct-blend="
+                        + readyState(directSourceReady);
             }
             if (giSourceReady) {
-                return "final-selected=raw-gi-fallback:ready,denoised-gi=missing,direct-blend="
+                return "final-selected=raw-gi-fallback:degraded,denoised-gi=missing,direct-blend="
                         + readyState(directSourceReady);
             }
             return "final-selected=missing,denoised-gi=missing,raw-gi=missing,direct="
@@ -297,9 +340,28 @@ public record FinalCompositeModeStatus(
             return "direct diagnostic mode; Round 7 raw/denoised/final visual proof should not pass from this source";
         }
         if (this.finalCompositeVisualMode()) {
-            return "requires final mode source identity, submitted full-target draw, HUD-safe target, and controller focused-surface screenshot delta";
+            return "requires distinct direct/raw-GI/denoised-GI source identities, submitted full-target draw, HUD-safe target, focused-surface delta, and raw-vs-denoised quality comparison";
         }
         return "requires mode-specific controller screenshot delta; status alone is not visual proof";
+    }
+
+    public String firstLightingMilestoneGate() {
+        if (this.baselineVisualMode()) {
+            return "control only; first-lighting proof must fail here";
+        }
+        if (this.rawGiVisualMode()) {
+            return "open until raw GI has full-target draw, focused delta, and debug/source identity";
+        }
+        if (this.denoisedGiVisualMode()) {
+            return "open until denoised beats raw visually and labels shader vs CPU fallback";
+        }
+        if (this.directLightingEnabled && !this.diffuseGiEnabled) {
+            return "direct proof is validated; full milestone still waits on GI/denoise/final quality";
+        }
+        if (this.finalLucernaComposite) {
+            return "open until direct+GI+denoised mix is stable, HUD-safe, and quality-proven";
+        }
+        return "open until controller screenshot/log quality proof passes";
     }
 
     public String visualProofBoundarySummary() {
@@ -343,6 +405,17 @@ public record FinalCompositeModeStatus(
             return "excluded";
         }
         return sourceReady ? "enabled-ready" : "enabled-missing";
+    }
+
+    private static String sourcePolicyState(boolean enabledByMode, String sourceName) {
+        return enabledByMode ? sourceName : "excluded";
+    }
+
+    private String denoisedPolicyState() {
+        if (this.denoisedGiVisualMode() || this.finalLucernaComposite) {
+            return "cpu-fallback-now/real-shader-required";
+        }
+        return "excluded";
     }
 
     private static String readyState(boolean sourceReady) {

@@ -862,16 +862,21 @@ public final class RenderThreadPreviewTargetFactory {
         Reference.reachabilityFence(rawSourceBuffer);
         Reference.reachabilityFence(directSourceBuffer);
         Reference.reachabilityFence(denoisedSourceBuffer);
+        boolean finalBlendComplete = directUploadAvailable && rawUploadAvailable;
         return PublicMojangFinalCompositeSubmissionResult.submitted(
                 drawScaffold.drawCallsIssued() || (directDrawScaffold != null && directDrawScaffold.drawCallsIssued()),
                 target.attachmentMetadata().javaOpaque(),
                 PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
                 "public Mojang Round 7 FINAL_COMPOSITE visual render pass submitted; "
                         + "mode=FINAL_LUCERNA_COMPOSITE,mode=round7-final-composite"
-                        + ",evidence=round7.composite.final.base_direct_gi"
+                        + ",evidence=round7.composite.final.direct_raw_denoised"
+                        + ",finalBlendComplete="
+                        + finalBlendComplete
                         + ",readiness=\"denoised diffuse-GI CPU output is displayable"
                         + (rawUploadAvailable ? " and raw native diffuse-GI source is blended" : " and raw native diffuse-GI source is unavailable")
                         + (directUploadAvailable ? " and native direct-light emissive source is blended" : " and native direct-light emissive source is unavailable")
+                        + "; "
+                        + denoisedGiPayload.readinessBoundarySummary()
                         + "\",raw source: "
                         + rawGiSource.summary()
                         + "; denoised source: "

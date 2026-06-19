@@ -14,6 +14,9 @@ public final class NativePostProcessingCompositeUpload {
     public static final int FLAG_USES_DENOISED_DIFFUSE = 1 << 4;
     public static final int FLAG_DEBUG_OVERLAY_AVAILABLE = 1 << 5;
     public static final int FLAG_WRITES_WORLD_COLOR_TARGET = 1 << 6;
+    public static final int FLAG_USES_DIRECT_LIGHTING = 1 << 7;
+    public static final int FLAG_USES_RAW_DIFFUSE_GI = 1 << 8;
+    public static final int FLAG_BLENDS_DIRECT_RAW_AND_DENOISED = 1 << 9;
 
     private final long frameIndex;
     private final long sourceGeneration;
@@ -28,7 +31,10 @@ public final class NativePostProcessingCompositeUpload {
     private final boolean borrowedWorldColorTarget;
     private final boolean beforeHudAndLateTranslucency;
     private final boolean clearBeforeWrite;
+    private final boolean usesDirectLighting;
+    private final boolean usesRawDiffuseGi;
     private final boolean usesDenoisedDiffuse;
+    private final boolean blendsDirectRawAndDenoised;
     private final boolean debugOverlayAvailable;
     private final boolean writesWorldColorTarget;
     private final boolean readyForWorldColorHandoff;
@@ -46,7 +52,10 @@ public final class NativePostProcessingCompositeUpload {
             boolean borrowedWorldColorTarget,
             boolean beforeHudAndLateTranslucency,
             boolean clearBeforeWrite,
+            boolean usesDirectLighting,
+            boolean usesRawDiffuseGi,
             boolean usesDenoisedDiffuse,
+            boolean blendsDirectRawAndDenoised,
             boolean debugOverlayAvailable,
             boolean writesWorldColorTarget,
             boolean readyForWorldColorHandoff,
@@ -65,7 +74,10 @@ public final class NativePostProcessingCompositeUpload {
         this.borrowedWorldColorTarget = borrowedWorldColorTarget;
         this.beforeHudAndLateTranslucency = beforeHudAndLateTranslucency;
         this.clearBeforeWrite = clearBeforeWrite;
+        this.usesDirectLighting = usesDirectLighting;
+        this.usesRawDiffuseGi = usesRawDiffuseGi;
         this.usesDenoisedDiffuse = usesDenoisedDiffuse;
+        this.blendsDirectRawAndDenoised = blendsDirectRawAndDenoised;
         this.debugOverlayAvailable = debugOverlayAvailable;
         this.writesWorldColorTarget = writesWorldColorTarget;
         this.readyForWorldColorHandoff = readyForWorldColorHandoff;
@@ -88,7 +100,10 @@ public final class NativePostProcessingCompositeUpload {
                 handoff.borrowedWorldColorTarget(),
                 handoff.beforeHudAndLateTranslucency(),
                 handoff.clearBeforeWrite(),
+                handoff.usesDirectLighting(),
+                handoff.usesRawDiffuseGi(),
                 handoff.usesDenoisedDiffuse(),
+                handoff.blendsDirectRawAndDenoisedSources(),
                 handoff.debugOverlayAvailable(),
                 handoff.writesWorldColorTarget(),
                 handoff.readyForWorldColorHandoff(),
@@ -148,8 +163,20 @@ public final class NativePostProcessingCompositeUpload {
         return this.clearBeforeWrite;
     }
 
+    public boolean usesDirectLighting() {
+        return this.usesDirectLighting;
+    }
+
+    public boolean usesRawDiffuseGi() {
+        return this.usesRawDiffuseGi;
+    }
+
     public boolean usesDenoisedDiffuse() {
         return this.usesDenoisedDiffuse;
+    }
+
+    public boolean blendsDirectRawAndDenoised() {
+        return this.blendsDirectRawAndDenoised;
     }
 
     public boolean debugOverlayAvailable() {
@@ -179,12 +206,19 @@ public final class NativePostProcessingCompositeUpload {
                 && (this.frameIndex == 0L || this.width == 0 || this.height == 0 || !this.writesWorldColorTarget)) {
             throw new IllegalArgumentException("ready composite handoff requires frame, dimensions, and world color write");
         }
+        if (this.blendsDirectRawAndDenoised
+                != (this.usesDirectLighting && this.usesRawDiffuseGi && this.usesDenoisedDiffuse)) {
+            throw new IllegalArgumentException("blendsDirectRawAndDenoised must match direct/raw/denoised source state");
+        }
         int expectedFlags = flags(
                 this.readyForWorldColorHandoff,
                 this.borrowedWorldColorTarget,
                 this.beforeHudAndLateTranslucency,
                 this.clearBeforeWrite,
+                this.usesDirectLighting,
+                this.usesRawDiffuseGi,
                 this.usesDenoisedDiffuse,
+                this.blendsDirectRawAndDenoised,
                 this.debugOverlayAvailable,
                 this.writesWorldColorTarget
         );
@@ -199,7 +233,10 @@ public final class NativePostProcessingCompositeUpload {
                 handoff.borrowedWorldColorTarget(),
                 handoff.beforeHudAndLateTranslucency(),
                 handoff.clearBeforeWrite(),
+                handoff.usesDirectLighting(),
+                handoff.usesRawDiffuseGi(),
                 handoff.usesDenoisedDiffuse(),
+                handoff.blendsDirectRawAndDenoisedSources(),
                 handoff.debugOverlayAvailable(),
                 handoff.writesWorldColorTarget()
         );
@@ -210,7 +247,10 @@ public final class NativePostProcessingCompositeUpload {
             boolean borrowedWorldColorTarget,
             boolean beforeHudAndLateTranslucency,
             boolean clearBeforeWrite,
+            boolean usesDirectLighting,
+            boolean usesRawDiffuseGi,
             boolean usesDenoisedDiffuse,
+            boolean blendsDirectRawAndDenoised,
             boolean debugOverlayAvailable,
             boolean writesWorldColorTarget
     ) {
@@ -227,8 +267,17 @@ public final class NativePostProcessingCompositeUpload {
         if (clearBeforeWrite) {
             flags |= FLAG_CLEAR_BEFORE_WRITE;
         }
+        if (usesDirectLighting) {
+            flags |= FLAG_USES_DIRECT_LIGHTING;
+        }
+        if (usesRawDiffuseGi) {
+            flags |= FLAG_USES_RAW_DIFFUSE_GI;
+        }
         if (usesDenoisedDiffuse) {
             flags |= FLAG_USES_DENOISED_DIFFUSE;
+        }
+        if (blendsDirectRawAndDenoised) {
+            flags |= FLAG_BLENDS_DIRECT_RAW_AND_DENOISED;
         }
         if (debugOverlayAvailable) {
             flags |= FLAG_DEBUG_OVERLAY_AVAILABLE;

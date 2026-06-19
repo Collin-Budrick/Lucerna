@@ -91,22 +91,17 @@ public record PublicMojangFinalCompositeSubmissionResult(
         boolean directLight = normalizedReason.contains("candidateevidence=true")
                 || normalizedReason.contains("native direct-light emissive source is blended")
                 || normalizedReason.contains("native direct-light surface-source");
-        boolean denoisedGi = normalizedReason.contains("denoised diffuse-gi");
-        boolean rawGi = normalizedReason.contains("raw_gi") || normalizedReason.contains("native diffuse-gi");
-        if (directLight && denoisedGi) {
-            return "native-denoised-diffuse-gi-rgba8+native-direct-light-rgba8";
-        }
-        if (directLight && rawGi) {
-            return "native-diffuse-gi-rgba8+native-direct-light-rgba8";
-        }
-        if (denoisedGi) {
-            return "native-denoised-diffuse-gi-rgba8";
-        }
-        if (rawGi) {
-            return "native-diffuse-gi-rgba8";
-        }
-        if (directLight) {
-            return "native-direct-light-rgba8";
+        boolean denoisedGi = normalizedReason.contains("denoised diffuse-gi")
+                || normalizedReason.contains("cpu-denoised-diffuse-gi-rgba8");
+        boolean rawGi = normalizedReason.contains("raw_gi")
+                || normalizedReason.contains("native diffuse-gi")
+                || normalizedReason.contains("native-diffuse-gi-rgba8/raw-gi");
+        StringBuilder identity = new StringBuilder();
+        appendIdentity(identity, directLight, "native-direct-light-rgba8");
+        appendIdentity(identity, rawGi, "native-diffuse-gi-rgba8");
+        appendIdentity(identity, denoisedGi, "cpu-denoised-diffuse-gi-rgba8");
+        if (identity.length() > 0) {
+            return identity.toString();
         }
         return "unknown-submitted-source";
     }
@@ -120,12 +115,11 @@ public record PublicMojangFinalCompositeSubmissionResult(
     }
 
     public boolean submittedRawGiSource() {
-        return this.submittedSourceIdentity().contains("native-diffuse-gi-rgba8")
-                && !this.submittedSourceIdentity().contains("native-denoised-diffuse-gi-rgba8");
+        return this.submittedSourceIdentity().contains("native-diffuse-gi-rgba8");
     }
 
     public boolean submittedDenoisedGiSource() {
-        return this.submittedSourceIdentity().contains("native-denoised-diffuse-gi-rgba8");
+        return this.submittedSourceIdentity().contains("denoised-diffuse-gi-rgba8");
     }
 
     public boolean submittedRound7GiSource() {
@@ -139,8 +133,11 @@ public record PublicMojangFinalCompositeSubmissionResult(
         if (this.submittedFocusWindowOnly()) {
             return "rejected:focus-window-only";
         }
+        if (this.submittedDirectLightSource() && this.submittedRawGiSource() && this.submittedDenoisedGiSource()) {
+            return "accepted:final-composite-direct-plus-raw-gi-plus-denoised-gi";
+        }
         if (this.submittedDirectLightSource() && this.submittedRound7GiSource()) {
-            return "accepted:final-composite-direct-plus-gi";
+            return "accepted:partial-final-composite-direct-plus-gi";
         }
         if (this.submittedDirectLightSource()) {
             return "accepted:native-direct-light-surface-source";
@@ -167,6 +164,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
         if (this.submittedFocusWindowOnly()) {
             return "not-ready:focus-window-only";
         }
+        if (this.submittedDirectLightSource() && this.submittedRawGiSource() && this.submittedDenoisedGiSource()) {
+            return "ready-for-controller-final-direct-raw-denoised-focused-region-delta";
+        }
         if (this.submittedDirectLightSource()) {
             return "ready-for-controller-direct-light-surface-delta";
         }
@@ -185,6 +185,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
         }
         if (this.submittedFocusWindowOnly()) {
             return "visual proof should not pass because Round 7 rejects focus-window-only brightness";
+        }
+        if (this.submittedDirectLightSource() && this.submittedRawGiSource() && this.submittedDenoisedGiSource()) {
+            return "final visual proof can only pass if controller screenshots show stable direct plus raw GI plus denoised GI surface contribution and HUD safety";
         }
         if (this.submittedDirectLightSource()) {
             return "direct-light visual proof can only pass if controller screenshots show an emissive native direct-light surface delta";
@@ -211,6 +214,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
         if (this.submittedFocusWindowOnly()) {
             return "focus-window-only-source";
         }
+        if (this.submittedDirectLightSource() && this.submittedRawGiSource() && this.submittedDenoisedGiSource()) {
+            return "awaiting-controller-final-direct-raw-denoised-focused-surface-delta-and-quality-proof";
+        }
         if (this.submittedDirectLightSource()) {
             return "awaiting-controller-direct-light-before-after-surface-delta";
         }
@@ -235,6 +241,16 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",visualProofMissingReason=" + this.visualProofMissingReason()
                 + ",visualProofExpectation=\"" + this.visualProofExpectation() + "\""
                 + ",reason=" + this.reason;
+    }
+
+    private static void appendIdentity(StringBuilder identity, boolean present, String label) {
+        if (!present) {
+            return;
+        }
+        if (identity.length() > 0) {
+            identity.append("+");
+        }
+        identity.append(label);
     }
 
     public enum TargetStatus {

@@ -52,7 +52,8 @@ public final class LucernaDebugOverlayLines {
             lines.add(Component.literal("Round 6 GI/cache: " + roundSixSummary));
         }
         FinalCompositeModeStatus compositeStatus = currentCompositeModeStatus();
-        lines.add(Component.literal("Round 7 composite: " + compositeStatus.summary()));
+        lines.add(Component.literal("Round 7 mix: " + compositeStatus.compactSourceMixPolicy()));
+        lines.add(Component.literal("Round 7 denoise: " + compositeStatus.denoiseSourcePolicy()));
         lines.add(Component.literal("Round 8 adaptive debug: " + Round8AdaptiveDebugStatus.fromSnapshot(snapshot).summary()));
         return lines;
     }
@@ -90,16 +91,13 @@ public final class LucernaDebugOverlayLines {
 
     private static void addCompositeModeLines(List<Component> lines) {
         FinalCompositeModeStatus compositeStatus = currentCompositeModeStatus();
-        lines.add(Component.literal("Round 7 composite mode: " + compositeStatus.debugLine()));
-        lines.add(Component.literal("Round 7 composite status: " + compositeStatus.statusText()));
-        lines.add(Component.literal("Round 7 composite evidence: " + compositeStatus.controllerEvidenceLine()));
-        lines.add(Component.literal("Round 7 composite reason: " + compositeStatus.modeReason()));
-        lines.add(Component.literal("Round 7 selected source: " + compositeStatus.selectedSourcePolicy()));
-        lines.add(Component.literal("Round 7 submission policy: " + compositeStatus.finalCompositeSubmissionPolicy()));
-        lines.add(Component.literal("Round 7 source authenticity: "
-                + compositeStatus.selectedSourceAuthenticityPolicy()));
-        lines.add(Component.literal("Round 7 focused proof: " + compositeStatus.focusedRegionProofExpectation()));
-        lines.add(Component.literal("Round 7 boundary: " + compositeStatus.foundationBoundary()));
+        lines.add(Component.literal("Round 7 mode: " + compositeStatus.statusKey()
+                + " | " + compositeStatus.signalIsolationLabel()));
+        lines.add(Component.literal("Round 7 mix: " + compositeStatus.compactSourceMixPolicy()));
+        lines.add(Component.literal("Round 7 denoise: " + compositeStatus.denoiseSourcePolicy()));
+        lines.add(Component.literal("Round 7 source guard: " + compositeStatus.compactAuthenticityPolicy()));
+        lines.add(Component.literal("Round 7 proof gate: " + compositeStatus.firstLightingMilestoneGate()));
+        lines.add(Component.literal("Round 7 evidence: " + compositeStatus.controllerEvidenceLine()));
     }
 
     public static List<Component> validationLines(LucernaStatusSnapshot snapshot) {
@@ -128,6 +126,10 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("round7.compositeReason=" + compositeStatus.modeReason()));
         lines.add(Component.literal("round7.compositeExpectedEvidence=" + compositeStatus.expectedEvidence()));
         lines.add(Component.literal("round7.compositeValidation=" + compositeStatus.validationSummary()));
+        lines.add(Component.literal("round7.compactSourceMix=" + compositeStatus.compactSourceMixPolicy()));
+        lines.add(Component.literal("round7.denoiseSourcePolicy=" + compositeStatus.denoiseSourcePolicy()));
+        lines.add(Component.literal("round7.firstLightingMilestoneGate="
+                + compositeStatus.firstLightingMilestoneGate()));
         Round8AdaptiveDebugStatus round8 = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("round8.adaptiveDebugSummary=" + round8.summary()));
         lines.add(Component.literal("round8.adaptiveSampling=" + round8.adaptiveSamplingLine()));
@@ -302,7 +304,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Overlay state: " + snapshot.debugOverlay().name()
                 + " | Renderer: " + snapshot.rendererStateLabel()
                 + " | Native: " + snapshot.nativeBridgeLabel()));
-        lines.add(Component.literal("Overlay scope: Round 5 direct lighting; Round 6 GI status uses a separate evidence panel."));
+        lines.add(Component.literal("Overlay scope: R5 direct source; R6/R7 GI+denoise lines stay separate."));
 
         if (!lightingDispatch.hasLightingDispatchStatus()) {
             lines.add(Component.literal("Lighting dispatch: unavailable"));
@@ -354,8 +356,7 @@ public final class LucernaDebugOverlayLines {
                 + " checksum=" + valueOrUnknown(directStage.outputChecksum())));
         lines.add(Component.literal("Direct R5 CPU output generated: " + yesNoUnknown(directStage.cpuOutputGenerated())
                 + " | evidence=" + directOutputEvidenceLabel(directStage)));
-        lines.add(Component.literal("Direct R5 composite: final-composite proof requires submitted full-target draw; "
-                + "focus/proof/status-only evidence is not enough"));
+        lines.add(Component.literal("Direct R5 proof: surface proof validated; remaining gate is GI/denoise/final quality."));
         lines.add(Component.literal("Direct native: attempts=" + detailOrUnknown(directStage, "attempts")
                 + " submitted=" + detailOrUnknown(directStage, "submitted")
                 + " skipped=" + detailOrUnknown(directStage, "skipped")
@@ -363,7 +364,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Direct flags: " + directFlagLabel(directStage)));
         String reason = directStage.readinessReason().isBlank() ? lightingDispatch.message() : directStage.readinessReason();
         lines.add(Component.literal("Direct readiness: " + shorten(reason, 96)));
-        lines.add(Component.literal("Round 6 GI/cache: rendered in separate evidence panel for screenshots."));
+        lines.add(Component.literal("R6/R7 status: raw GI, denoise, cache, and final mix shown in evidence panel."));
     }
 
     private static void addRoundSixStatusLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
@@ -386,12 +387,21 @@ public final class LucernaDebugOverlayLines {
                 "sparse_radiance_cache",
                 "sparse_voxel_radiance_cache"
         );
+        LightingDispatchStageTelemetryStatus denoiseStage = firstStage(
+                lightingDispatch,
+                "denoise",
+                "diffuse_gi_denoise",
+                "denoised_gi",
+                "round7_denoise"
+        );
+        FinalCompositeModeStatus compositeStatus = currentCompositeModeStatus();
 
         lines.add(Component.literal("Round 6 GI/cache status: " + roundSixSummary(snapshot)));
-        lines.add(Component.literal("Round 6 scope: low-res diffuse GI output/cache; separate from Direct Lighting overlay."));
+        lines.add(Component.literal("Round 7 mix policy: " + compositeStatus.compactSourceMixPolicy()));
         if (!lightingDispatch.hasLightingDispatchStatus()) {
             lines.add(Component.literal("Round 6 source: lighting dispatch telemetry unavailable"));
             lines.add(Component.literal("Round 6 reason: " + shorten(lightingDispatch.message(), 96)));
+            lines.add(Component.literal("First-lighting gate: " + compositeStatus.firstLightingMilestoneGate()));
             return;
         }
 
@@ -418,6 +428,19 @@ public final class LucernaDebugOverlayLines {
                     + " checksum=" + evidenceValueLabel(diffuseGiStage.outputChecksum())
                     + " temporaryDirectSource=" + giTemporaryDirectSourceLabel(diffuseGiStage)));
             lines.add(Component.literal("Diffuse GI readiness reason: " + readinessReason(diffuseGiStage)));
+        }
+
+        if (denoiseStage == null) {
+            lines.add(Component.literal("Denoised GI source: not reported; CPU fallback/shader state unknown"));
+        } else {
+            lines.add(Component.literal("Denoised GI source: " + denoiseSourceLabel(denoiseStage)
+                    + " realShader=" + realDenoiseShaderLabel(denoiseStage)
+                    + " cpuFallback=" + cpuDenoiseFallbackLabel(denoiseStage)));
+            lines.add(Component.literal("Denoised GI evidence: generated="
+                    + yesNoUnknown(denoiseStage.cpuOutputGenerated())
+                    + " size=" + valueOrUnknown(denoiseStage.outputDimensions())
+                    + " energy=" + evidenceValueLabel(denoiseStage.outputEnergy())
+                    + " checksum=" + evidenceValueLabel(denoiseStage.outputChecksum())));
         }
 
         if (cacheStage == null) {
@@ -454,6 +477,7 @@ public final class LucernaDebugOverlayLines {
                     "invalidations"
             ) + " reason=" + readinessReason(cacheStage)));
         }
+        lines.add(Component.literal("First-lighting gate: " + compositeStatus.firstLightingMilestoneGate()));
     }
 
     private static String roundFiveDirectSummary(LucernaStatusSnapshot snapshot) {
@@ -470,7 +494,7 @@ public final class LucernaDebugOverlayLines {
         return "payloadAccepted=" + yesNoUnknown(directStage.payloadAccepted())
                 + " cpuOutput=" + yesNoUnknown(directStage.cpuOutputGenerated())
                 + " evidence=" + directOutputEvidenceLabel(directStage)
-                + " visibleComposite=not_attached";
+                + " directSurfaceProof=validated qualityStack=open";
     }
 
     private static String roundSixSummary(LucernaStatusSnapshot snapshot) {
@@ -522,6 +546,49 @@ public final class LucernaDebugOverlayLines {
                 "using_direct_light_payload",
                 "direct_light_payload_source"
         );
+    }
+
+    private static String denoiseSourceLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "output_source",
+                "output_source_label",
+                "source",
+                "source_label",
+                "denoise_source",
+                "denoised_output_source",
+                "native_denoise_output_source"
+        );
+    }
+
+    private static String realDenoiseShaderLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "real_denoise_shader_output",
+                "realDenoiseShaderOutput",
+                "shader_output",
+                "shaderDenoiseOutput",
+                "gpu_denoise_output"
+        );
+    }
+
+    private static String cpuDenoiseFallbackLabel(LightingDispatchStageTelemetryStatus stage) {
+        String explicit = firstDetailOrUnknown(
+                stage,
+                "cpu_output_fallback",
+                "cpuFallback",
+                "cpu_denoise_fallback",
+                "cpu_denoised_output",
+                "cpu_denoised_diffuse_gi"
+        );
+        if (!"?".equals(explicit)) {
+            return explicit;
+        }
+        String realShader = realDenoiseShaderLabel(stage);
+        if ("false".equalsIgnoreCase(realShader) || "0".equals(realShader)) {
+            return "true";
+        }
+        return "?";
     }
 
     private static String stageSummary(LightingDispatchStageTelemetryStatus stage) {

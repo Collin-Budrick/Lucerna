@@ -43,7 +43,8 @@ public record Round7DenoisedGiVisualSource(
                 EVIDENCE_LABEL,
                 SHADER_LABEL,
                 true,
-                "Round 7 DENOISED_GI visual mode can draw the CPU denoised diffuse-GI RGBA8 payload"
+                "Round 7 DENOISED_GI visual mode can draw the CPU denoised diffuse-GI RGBA8 payload; "
+                        + payload.readinessBoundarySummary()
         );
     }
 
@@ -64,6 +65,7 @@ public record Round7DenoisedGiVisualSource(
                 + ",evidence=" + this.evidenceLabel
                 + ",shader=" + this.shaderLabel
                 + ",sourceIdentity=" + this.sourceIdentity()
+                + ",qualityBoundary=\"" + this.qualityBoundary() + "\""
                 + ",focusedRegionProof=\"" + this.focusedRegionProofExpectation() + "\""
                 + ",ready=" + this.sourceReady
                 + ",reason=\"" + this.reason + "\"";
@@ -77,9 +79,13 @@ public record Round7DenoisedGiVisualSource(
         return "cpu-denoised-diffuse-gi-rgba8/denoised-gi";
     }
 
+    public String qualityBoundary() {
+        return "CPU denoised RGBA8 source readiness is not real shader denoise quality unless realDenoiseShaderOutput=true and controller raw-vs-denoised proof improves";
+    }
+
     public String focusedRegionProofExpectation() {
         return this.sourceReady
-                ? "source-ready only; controller still needs focused-surface screenshot delta"
+                ? "source-ready only; controller still needs focused-surface screenshot delta and raw-vs-denoised quality comparison"
                 : "not ready; visual proof should not pass";
     }
 

@@ -20,6 +20,8 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $FinalCompositeImagePath,
 
+    [string] $DirectImagePath = "",
+
     [string] $DebugImagePath = "",
 
     [string] $LogPath = "",
@@ -56,13 +58,41 @@ param(
 
     [double] $MinRawChangedPixelPercent = 0.5,
 
+    [double] $MinDirectChangedPixelPercent = 0.5,
+
+    [double] $MinDirectMeanAbsLuma = 0.5,
+
     [double] $MinDenoiseChangedPixelPercent = 0.1,
 
     [double] $MinDenoiseMeanAbsLuma = 0.1,
 
+    [double] $MinDenoiseRoughnessReductionPercent = 0.0,
+
     [double] $MinFinalChangedPixelPercent = 0.5,
 
     [double] $MinFinalMeanAbsLuma = 0.5,
+
+    [string[]] $DirectSourcePatterns = @(
+        "Lucerna direct lighting plan: .*emissive=[1-9][0-9]*.*shadowCandidates=[1-9][0-9]*",
+        "Lucerna native direct lighting execution: .*outputWriteRecorded=true.*resolveRecorded=true.*ready=true.*cpuOutput=true",
+        "direct_lighting_(?:surface_sample|emissive_candidate)_cpu_output_generated",
+        "round7\.finalCompositeSourceMix=base=true,direct=enabled-ready",
+        "direct=enabled-ready",
+        "native direct.*(?:source|output|payload).*ready=true",
+        "mode=(?:DIRECT_ONLY|direct-only)",
+        "mode=(?:ROUND7_DIRECT|round7-direct|final-lucerna-composite).*direct"
+    ),
+
+    [string[]] $NativeGiSourcePatterns = @(
+        "Lucerna Round 6 lighting dispatch prepared: .*diffuse_gi=\{\{enabled=true,.*rays=[1-9][0-9]*,cache_reads=[1-9][0-9]*",
+        "nativeGiOutputSourcePresent=True",
+        "nativeGiOutputSourcePresent=true",
+        "sourceIdentity=native-diffuse-gi-rgba8",
+        "sourceIdentity=native-denoised-diffuse-gi-rgba8",
+        "round7\.rawGi\.nativeDiffuseGiPayload",
+        "nativeDiffuseGiPayload",
+        "native[-_ ]?diffuse[-_ ]?gi.*(?:source|output|payload).*ready"
+    ),
 
     [string[]] $RawGiSourcePatterns = @(
         "round7\.rawGiSource=lucerna\.lighting\.diffuseGi",
@@ -132,6 +162,8 @@ param(
 
     [switch] $RequireLogProof,
 
+    [switch] $RequireDirectImage,
+
     [switch] $RequireDebugScreenshot
 )
 
@@ -176,6 +208,88 @@ function Get-ImageDimensions {
         }
     } finally {
         $image.Dispose()
+    }
+}
+
+function Get-Luma {
+    param([System.Drawing.Color] $Color)
+
+    return (0.2126 * [int]$Color.R) + (0.7152 * [int]$Color.G) + (0.0722 * [int]$Color.B)
+}
+
+function Measure-ImageRoughness {
+    param(
+        [string] $Path,
+        [object] $Region
+    )
+
+    Add-Type -AssemblyName System.Drawing
+    $image = [System.Drawing.Bitmap]::new($Path)
+    try {
+        $left = [Math]::Max(0, [int]$Region.left)
+        $top = [Math]::Max(0, [int]$Region.top)
+        $right = [Math]::Min($image.Width, $left + [int]$Region.width)
+        $bottom = [Math]::Min($image.Height, $top + [int]$Region.height)
+        $edgeCount = 0L
+        $sumAbsLuma = 0.0
+        $sumSquaredLuma = 0.0
+        $maxAbsLuma = 0.0
+
+        for ($y = $top; $y -lt $bottom; $y++) {
+            for ($x = $left; $x -lt $right; $x++) {
+                $center = Get-Luma $image.GetPixel($x, $y)
+                if ($x + 1 -lt $right) {
+                    $delta = [Math]::Abs((Get-Luma $image.GetPixel($x + 1, $y)) - $center)
+                    $edgeCount++
+                    $sumAbsLuma += $delta
+                    $sumSquaredLuma += ($delta * $delta)
+                    $maxAbsLuma = [Math]::Max($maxAbsLuma, $delta)
+                }
+                if ($y + 1 -lt $bottom) {
+                    $delta = [Math]::Abs((Get-Luma $image.GetPixel($x, $y + 1)) - $center)
+                    $edgeCount++
+                    $sumAbsLuma += $delta
+                    $sumSquaredLuma += ($delta * $delta)
+                    $maxAbsLuma = [Math]::Max($maxAbsLuma, $delta)
+                }
+            }
+        }
+
+        if ($edgeCount -le 0) {
+            throw "Cannot measure roughness for an empty or one-pixel focus region in $Path."
+        }
+
+        $count = [double]$edgeCount
+        return [ordered]@{
+            edgeCount = $edgeCount
+            meanAbsNeighborLuma = [Math]::Round($sumAbsLuma / $count, 4)
+            rmsNeighborLuma = [Math]::Round([Math]::Sqrt($sumSquaredLuma / $count), 4)
+            maxAbsNeighborLuma = [Math]::Round($maxAbsLuma, 4)
+        }
+    } finally {
+        $image.Dispose()
+    }
+}
+
+function Compare-Roughness {
+    param(
+        [object] $RawRoughness,
+        [object] $DenoisedRoughness
+    )
+
+    $rawMean = [double]$RawRoughness.meanAbsNeighborLuma
+    $denoisedMean = [double]$DenoisedRoughness.meanAbsNeighborLuma
+    $meanReduction = if ($rawMean -gt 0.0) { 100.0 * ($rawMean - $denoisedMean) / $rawMean } else { 0.0 }
+    $rawRms = [double]$RawRoughness.rmsNeighborLuma
+    $denoisedRms = [double]$DenoisedRoughness.rmsNeighborLuma
+    $rmsReduction = if ($rawRms -gt 0.0) { 100.0 * ($rawRms - $denoisedRms) / $rawRms } else { 0.0 }
+
+    return [ordered]@{
+        raw = $RawRoughness
+        denoised = $DenoisedRoughness
+        meanAbsNeighborLumaReductionPercent = [Math]::Round($meanReduction, 4)
+        rmsNeighborLumaReductionPercent = [Math]::Round($rmsReduction, 4)
+        roughnessImproved = $meanReduction -ge $MinDenoiseRoughnessReductionPercent
     }
 }
 
@@ -263,13 +377,16 @@ function Measure-Round7LogProof {
     param([string] $ResolvedLogPath)
 
     $log = Get-Content -Raw -LiteralPath $ResolvedLogPath
+    $acceptedFinalCompositePresent = Test-Regex $log "sourceIdentity=native-direct-light-rgba8\+native-diffuse-gi-rgba8\+cpu-denoised-diffuse-gi-rgba8.*sourceAuthenticity=accepted:final-composite-direct-plus-raw-gi-plus-denoised-gi.*evidence=round7\.composite\.final\.direct_raw_denoised.*finalBlendComplete=true.*metadataOnly=false"
+    $directSourcePresent = Test-AnyRegex $log $DirectSourcePatterns
+    $nativeGiSourcePresent = Test-AnyRegex $log $NativeGiSourcePatterns
     $rawGiSourcePresent = Test-AnyRegex $log $RawGiSourcePatterns
     $denoiseDispatchPresent = Test-AnyRegex $log $DenoiseDispatchPatterns
     $denoisedGiOutputPresent = Test-AnyRegex $log $DenoisedGiOutputPatterns
-    $finalCompositePresent = Test-AnyRegex $log $FinalCompositePatterns
+    $finalCompositePresent = (Test-AnyRegex $log $FinalCompositePatterns) -or $acceptedFinalCompositePresent
     $hudSafeFinalCompositePresent = Test-AnyRegex $log $HudSafeFinalCompositePatterns
     $temporaryDirectLightSourcePresent = Test-Regex $log "temporarySourceReady=true|temporary direct-light|current direct-light RGBA payload"
-    $metadataOnlyPreviewPresent = Test-Regex $log "metadata-only|metadata scaffold|signal_separated_denoise_metadata_scaffold_no_render_output|no_render_output"
+    $metadataOnlyPreviewPresent = (Test-Regex $log "metadata-only|metadata scaffold|signal_separated_denoise_metadata_scaffold_no_render_output|no_render_output") -and -not $acceptedFinalCompositePresent
     $firstPracticalCpuOutputPresent = Test-Regex $log "first_practical_cpu_denoised_diffuse_gi_rgba8_generated|denoisedCpuOutputGenerated=true|denoised_cpu_output_generated=true"
     $realDenoiseShaderOutputPresent = Test-Regex $log "realDenoiseShaderOutput=true|real_denoise_shader_output=true"
     $realDenoiseShaderOutputFalsePresent = Test-Regex $log "realDenoiseShaderOutput=false|real_denoise_shader_output=false"
@@ -282,9 +399,12 @@ function Measure-Round7LogProof {
     return [ordered]@{
         markers = [ordered]@{
             rawGiSourcePresent = $rawGiSourcePresent
+            directSourcePresent = $directSourcePresent
+            nativeGiSourcePresent = $nativeGiSourcePresent
             denoiseDispatchPresent = $denoiseDispatchPresent
             denoisedGiOutputPresent = $denoisedGiOutputPresent
             finalCompositePresent = $finalCompositePresent
+            acceptedFinalCompositePresent = $acceptedFinalCompositePresent
             hudSafeFinalCompositePresent = $hudSafeFinalCompositePresent
             temporaryDirectLightSourcePresent = $temporaryDirectLightSourcePresent
             metadataOnlyPreviewPresent = $metadataOnlyPreviewPresent
@@ -299,6 +419,8 @@ function Measure-Round7LogProof {
         }
         patterns = [ordered]@{
             rawGiSourcePatterns = @($RawGiSourcePatterns)
+            directSourcePatterns = @($DirectSourcePatterns)
+            nativeGiSourcePatterns = @($NativeGiSourcePatterns)
             denoiseDispatchPatterns = @($DenoiseDispatchPatterns)
             denoisedGiOutputPatterns = @($DenoisedGiOutputPatterns)
             finalCompositePatterns = @($FinalCompositePatterns)
@@ -308,6 +430,7 @@ function Measure-Round7LogProof {
 }
 
 $baselineResolved = Resolve-ExistingFile $BaselineImagePath "Baseline image"
+$directResolved = Resolve-OptionalFile $DirectImagePath "Direct/emissive image"
 $rawResolved = Resolve-ExistingFile $RawGiImagePath "Raw GI image"
 $denoisedResolved = Resolve-ExistingFile $DenoisedGiImagePath "Denoised GI image"
 $finalResolved = Resolve-ExistingFile $FinalCompositeImagePath "Final composite image"
@@ -315,19 +438,25 @@ $debugResolved = Resolve-OptionalFile $DebugImagePath "Debug image"
 $logResolved = Resolve-OptionalFile $LogPath "Log"
 
 $baselineDimensions = Get-ImageDimensions $baselineResolved
+$directDimensions = if ([string]::IsNullOrWhiteSpace($directResolved)) { $null } else { Get-ImageDimensions $directResolved }
 $rawDimensions = Get-ImageDimensions $rawResolved
 $denoisedDimensions = Get-ImageDimensions $denoisedResolved
 $finalDimensions = Get-ImageDimensions $finalResolved
 $debugDimensions = if ([string]::IsNullOrWhiteSpace($debugResolved)) { $null } else { Get-ImageDimensions $debugResolved }
 
+$directDelta = if ([string]::IsNullOrWhiteSpace($directResolved)) { $null } else { Invoke-DeltaHelper $baselineResolved $directResolved "direct" }
 $rawDelta = Invoke-DeltaHelper $baselineResolved $rawResolved "raw"
 $denoiseDelta = Invoke-DeltaHelper $rawResolved $denoisedResolved "denoised"
 $finalDelta = Invoke-DeltaHelper $baselineResolved $finalResolved "final"
+$rawRoughnessInDenoiseRegion = Measure-ImageRoughness $rawResolved $denoiseDelta.focusRegion
+$denoisedRoughnessInDenoiseRegion = Measure-ImageRoughness $denoisedResolved $denoiseDelta.focusRegion
+$denoiseQuality = Compare-Roughness $rawRoughnessInDenoiseRegion $denoisedRoughnessInDenoiseRegion
 
 $logProof = if ([string]::IsNullOrWhiteSpace($logResolved)) { $null } else { Measure-Round7LogProof $logResolved }
 $failures = New-Object System.Collections.Generic.List[string]
 
 foreach ($entry in @(
+    @{ label = "direct/emissive"; dimensions = $directDimensions },
     @{ label = "raw GI"; dimensions = $rawDimensions },
     @{ label = "denoised GI"; dimensions = $denoisedDimensions },
     @{ label = "final composite"; dimensions = $finalDimensions },
@@ -341,6 +470,17 @@ foreach ($entry in @(
     }
 }
 
+if ($RequireDirectImage -and [string]::IsNullOrWhiteSpace($directResolved)) {
+    $failures.Add("Direct/emissive screenshot was required but no -DirectImagePath was provided.")
+}
+if ($directDelta) {
+    if ([double]$directDelta.focusRegionMetrics.changedPixelPercent -lt $MinDirectChangedPixelPercent) {
+        $failures.Add("Direct/emissive focused-region changed pixels below threshold. actual=$($directDelta.focusRegionMetrics.changedPixelPercent) expected>=$MinDirectChangedPixelPercent")
+    }
+    if ([double]$directDelta.focusRegionMetrics.meanAbsLuma -lt $MinDirectMeanAbsLuma) {
+        $failures.Add("Direct/emissive focused-region mean absolute luma below threshold. actual=$($directDelta.focusRegionMetrics.meanAbsLuma) expected>=$MinDirectMeanAbsLuma")
+    }
+}
 if ([double]$rawDelta.focusRegionMetrics.changedPixelPercent -lt $MinRawChangedPixelPercent) {
     $failures.Add("Raw GI focused-region changed pixels below threshold. actual=$($rawDelta.focusRegionMetrics.changedPixelPercent) expected>=$MinRawChangedPixelPercent")
 }
@@ -349,6 +489,9 @@ if ([double]$denoiseDelta.focusRegionMetrics.changedPixelPercent -lt $MinDenoise
 }
 if ([double]$denoiseDelta.focusRegionMetrics.meanAbsLuma -lt $MinDenoiseMeanAbsLuma) {
     $failures.Add("Denoised GI focused-region mean absolute luma below threshold when compared with raw GI. actual=$($denoiseDelta.focusRegionMetrics.meanAbsLuma) expected>=$MinDenoiseMeanAbsLuma")
+}
+if ([double]$denoiseQuality.meanAbsNeighborLumaReductionPercent -lt $MinDenoiseRoughnessReductionPercent) {
+    $failures.Add("Denoised GI roughness did not improve enough over raw GI in the denoise focus region. actualReductionPercent=$($denoiseQuality.meanAbsNeighborLumaReductionPercent) expected>=$MinDenoiseRoughnessReductionPercent rawMeanAbsNeighborLuma=$($denoiseQuality.raw.meanAbsNeighborLuma) denoisedMeanAbsNeighborLuma=$($denoiseQuality.denoised.meanAbsNeighborLuma)")
 }
 if ([double]$finalDelta.focusRegionMetrics.changedPixelPercent -lt $MinFinalChangedPixelPercent) {
     $failures.Add("Final composite focused-region changed pixels below threshold. actual=$($finalDelta.focusRegionMetrics.changedPixelPercent) expected>=$MinFinalChangedPixelPercent")
@@ -363,6 +506,12 @@ if ($RequireLogProof -and [string]::IsNullOrWhiteSpace($logResolved)) {
     $failures.Add("Log proof was required but no -LogPath was provided.")
 }
 if ($logProof) {
+    if (-not $logProof.markers.directSourcePresent) {
+        $failures.Add("Missing native direct/emissive source/output log marker.")
+    }
+    if (-not $logProof.markers.nativeGiSourcePresent) {
+        $failures.Add("Missing native GI source/output log marker.")
+    }
     if (-not $logProof.markers.rawGiSourcePresent) {
         $failures.Add("Missing Round 7 raw GI source/output log marker.")
     }
@@ -381,8 +530,8 @@ if ($logProof) {
     if ($logProof.markers.temporaryDirectLightSourcePresent) {
         $failures.Add("Log contains temporary direct-light source marker; Round 7 proof must use raw GI/denoised/final paths.")
     }
-    if ($logProof.markers.metadataOnlyPreviewPresent -and -not $logProof.markers.firstPracticalCpuOutputPresent) {
-        $failures.Add("Log contains metadata-only/scaffold marker without first practical CPU denoised output; Round 7 visual proof must use real raw GI, denoised GI, and final composite outputs.")
+    if ($logProof.markers.metadataOnlyPreviewPresent) {
+        $failures.Add("Log contains metadata-only/scaffold marker; Round 7 proof must use real direct, raw GI, denoised GI, and final composite outputs.")
     }
     if ($logProof.markers.proofMarkerPresent) {
         $failures.Add("Log contains proof-marker evidence; Round 7 proof must use requested debug/composite modes.")
@@ -397,6 +546,7 @@ if ($logProof) {
 
 $result = [ordered]@{
     baselineImage = $baselineResolved
+    directImage = $directResolved
     rawGiImage = $rawResolved
     denoisedGiImage = $denoisedResolved
     finalCompositeImage = $finalResolved
@@ -404,8 +554,11 @@ $result = [ordered]@{
     logPath = $logResolved
     thresholds = [ordered]@{
         minRawChangedPixelPercent = $MinRawChangedPixelPercent
+        minDirectChangedPixelPercent = $MinDirectChangedPixelPercent
+        minDirectMeanAbsLuma = $MinDirectMeanAbsLuma
         minDenoiseChangedPixelPercent = $MinDenoiseChangedPixelPercent
         minDenoiseMeanAbsLuma = $MinDenoiseMeanAbsLuma
+        minDenoiseRoughnessReductionPercent = $MinDenoiseRoughnessReductionPercent
         minFinalChangedPixelPercent = $MinFinalChangedPixelPercent
         minFinalMeanAbsLuma = $MinFinalMeanAbsLuma
         changedPixelThreshold = $ChangedPixelThreshold
@@ -422,49 +575,74 @@ $result = [ordered]@{
             paddingCells = $AutoRegionPaddingCells
         }
         requireLogProof = [bool]$RequireLogProof
+        requireDirectImage = [bool]$RequireDirectImage
         requireDebugScreenshot = [bool]$RequireDebugScreenshot
     }
     screenshots = [ordered]@{
         baselineDimensions = $baselineDimensions
+        directDimensions = $directDimensions
         rawDimensions = $rawDimensions
         denoisedDimensions = $denoisedDimensions
         finalDimensions = $finalDimensions
         debugDimensions = $debugDimensions
     }
     imageDelta = [ordered]@{
+        baselineToDirect = $directDelta
         baselineToRawGi = $rawDelta
         rawGiToDenoisedGi = $denoiseDelta
         baselineToFinalComposite = $finalDelta
     }
     selectedFocusRegions = [ordered]@{
+        baselineToDirect = if ($directDelta) { $directDelta.focusRegion } else { $null }
         baselineToRawGi = $rawDelta.focusRegion
         rawGiToDenoisedGi = $denoiseDelta.focusRegion
         baselineToFinalComposite = $finalDelta.focusRegion
     }
     logProof = $logProof
+    denoiseQuality = $denoiseQuality
     proofClarity = [ordered]@{
         classification = if ($failures.Count -eq 0) { "round7_raw_denoised_final_evidence_passed" } else { "round7_evidence_failed" }
+        directEvidencePresent = if ($directDelta) {
+            ([double]$directDelta.focusRegionMetrics.changedPixelPercent -ge $MinDirectChangedPixelPercent) -and
+            ([double]$directDelta.focusRegionMetrics.meanAbsLuma -ge $MinDirectMeanAbsLuma)
+        } else {
+            $false
+        }
         rawGiEvidencePresent = ([double]$rawDelta.focusRegionMetrics.changedPixelPercent -ge $MinRawChangedPixelPercent)
         denoiseComparisonPresent = (
             ([double]$denoiseDelta.focusRegionMetrics.changedPixelPercent -ge $MinDenoiseChangedPixelPercent) -and
-            ([double]$denoiseDelta.focusRegionMetrics.meanAbsLuma -ge $MinDenoiseMeanAbsLuma)
+            ([double]$denoiseDelta.focusRegionMetrics.meanAbsLuma -ge $MinDenoiseMeanAbsLuma) -and
+            ([double]$denoiseQuality.meanAbsNeighborLumaReductionPercent -ge $MinDenoiseRoughnessReductionPercent)
         )
         finalCompositeEvidencePresent = (
             ([double]$finalDelta.focusRegionMetrics.changedPixelPercent -ge $MinFinalChangedPixelPercent) -and
             ([double]$finalDelta.focusRegionMetrics.meanAbsLuma -ge $MinFinalMeanAbsLuma)
         )
         tracks = [ordered]@{
+            direct = [ordered]@{
+                imageProvided = -not [string]::IsNullOrWhiteSpace($directResolved)
+                imageDeltaPresent = if ($directDelta) {
+                    ([double]$directDelta.focusRegionMetrics.changedPixelPercent -ge $MinDirectChangedPixelPercent) -and
+                    ([double]$directDelta.focusRegionMetrics.meanAbsLuma -ge $MinDirectMeanAbsLuma)
+                } else {
+                    $null
+                }
+                logMarkerPresent = if ($logProof) { [bool]$logProof.markers.directSourcePresent } else { $null }
+            }
             rawGi = [ordered]@{
                 imageDeltaPresent = ([double]$rawDelta.focusRegionMetrics.changedPixelPercent -ge $MinRawChangedPixelPercent)
                 logMarkerPresent = if ($logProof) { [bool]$logProof.markers.rawGiSourcePresent } else { $null }
+                nativeGiLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.nativeGiSourcePresent } else { $null }
             }
             denoisedGi = [ordered]@{
                 imageDeltaPresent = (
                     ([double]$denoiseDelta.focusRegionMetrics.changedPixelPercent -ge $MinDenoiseChangedPixelPercent) -and
-                    ([double]$denoiseDelta.focusRegionMetrics.meanAbsLuma -ge $MinDenoiseMeanAbsLuma)
+                    ([double]$denoiseDelta.focusRegionMetrics.meanAbsLuma -ge $MinDenoiseMeanAbsLuma) -and
+                    ([double]$denoiseQuality.meanAbsNeighborLumaReductionPercent -ge $MinDenoiseRoughnessReductionPercent)
                 )
                 dispatchLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.denoiseDispatchPresent } else { $null }
                 outputLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.denoisedGiOutputPresent } else { $null }
+                roughnessReductionPercent = $denoiseQuality.meanAbsNeighborLumaReductionPercent
             }
             finalComposite = [ordered]@{
                 imageDeltaPresent = (
@@ -500,21 +678,33 @@ if (-not [string]::IsNullOrWhiteSpace($OutputJsonPath)) {
 }
 
 Write-Host "baselineImage=$($result.baselineImage)"
+Write-Host "directImage=$($result.directImage)"
 Write-Host "rawGiImage=$($result.rawGiImage)"
 Write-Host "denoisedGiImage=$($result.denoisedGiImage)"
 Write-Host "finalCompositeImage=$($result.finalCompositeImage)"
 Write-Host "debugImage=$($result.debugImage)"
 Write-Host "logPath=$($result.logPath)"
 Write-Host "focusRegionSelection=$($result.thresholds.focusRegionSelection)"
+if ($directDelta) {
+    Write-Host "direct.focusRegion=$($directDelta.focusRegion.left),$($directDelta.focusRegion.top),$($directDelta.focusRegion.width),$($directDelta.focusRegion.height)"
+    Write-Host "direct.focus.changedPixelPercent=$($directDelta.focusRegionMetrics.changedPixelPercent)"
+    Write-Host "direct.focus.meanAbsLuma=$($directDelta.focusRegionMetrics.meanAbsLuma)"
+}
 Write-Host "raw.focusRegion=$($rawDelta.focusRegion.left),$($rawDelta.focusRegion.top),$($rawDelta.focusRegion.width),$($rawDelta.focusRegion.height)"
 Write-Host "raw.focus.changedPixelPercent=$($rawDelta.focusRegionMetrics.changedPixelPercent)"
 Write-Host "denoise.focusRegion=$($denoiseDelta.focusRegion.left),$($denoiseDelta.focusRegion.top),$($denoiseDelta.focusRegion.width),$($denoiseDelta.focusRegion.height)"
 Write-Host "denoise.focus.changedPixelPercent=$($denoiseDelta.focusRegionMetrics.changedPixelPercent)"
 Write-Host "denoise.focus.meanAbsLuma=$($denoiseDelta.focusRegionMetrics.meanAbsLuma)"
+Write-Host "denoise.roughness.raw.meanAbsNeighborLuma=$($denoiseQuality.raw.meanAbsNeighborLuma)"
+Write-Host "denoise.roughness.denoised.meanAbsNeighborLuma=$($denoiseQuality.denoised.meanAbsNeighborLuma)"
+Write-Host "denoise.roughness.meanAbsNeighborLumaReductionPercent=$($denoiseQuality.meanAbsNeighborLumaReductionPercent)"
+Write-Host "denoise.roughness.rmsNeighborLumaReductionPercent=$($denoiseQuality.rmsNeighborLumaReductionPercent)"
 Write-Host "final.focusRegion=$($finalDelta.focusRegion.left),$($finalDelta.focusRegion.top),$($finalDelta.focusRegion.width),$($finalDelta.focusRegion.height)"
 Write-Host "final.focus.changedPixelPercent=$($finalDelta.focusRegionMetrics.changedPixelPercent)"
 Write-Host "final.focus.meanAbsLuma=$($finalDelta.focusRegionMetrics.meanAbsLuma)"
 if ($logProof) {
+    Write-Host "directSourcePresent=$($logProof.markers.directSourcePresent)"
+    Write-Host "nativeGiSourcePresent=$($logProof.markers.nativeGiSourcePresent)"
     Write-Host "rawGiSourcePresent=$($logProof.markers.rawGiSourcePresent)"
     Write-Host "denoiseDispatchPresent=$($logProof.markers.denoiseDispatchPresent)"
     Write-Host "denoisedGiOutputPresent=$($logProof.markers.denoisedGiOutputPresent)"

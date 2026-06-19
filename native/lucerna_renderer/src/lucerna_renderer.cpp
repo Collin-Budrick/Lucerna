@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdlib>
 #include <sstream>
 #include <stdexcept>
 #include <utility>
@@ -3869,13 +3870,13 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
             execution.total_placeholder_output_population_count = saturated_add(
                     execution.total_placeholder_output_population_count,
                     execution.last_placeholder_output_population_count);
-            execution.last_output_marker = "diffuse_gi_placeholder_output_population_recorded";
+            execution.last_output_marker = "diffuse_gi_output_extent_recorded_before_scene_tied_cpu_population";
             if (resources_ != nullptr && frame_open_ && resources_->has_context()) {
                 resources_->track_transient_buffer(
                         frame_index_,
                         0,
                         kLightingConstantsBytes,
-                        "render:diffuse_gi-output-placeholder-population");
+                        "render:diffuse_gi-output-extent-before-scene-tied-cpu-population");
                 execution.resource_markers++;
                 execution.last_placeholder_output_population_recorded = true;
                 execution.last_resource_marker_recorded = true;
@@ -3955,8 +3956,8 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                 execution.last_visible_signal_generated = true;
                 execution.last_visible_signal_cache_backed = cache_backed;
                 execution.last_output_marker = cache_backed
-                        ? "diffuse_gi_cache_backed_visible_signal_recorded"
-                        : "diffuse_gi_trace_backed_visible_signal_recorded";
+                        ? "diffuse_gi_scene_tied_cache_trace_signal_recorded"
+                        : "diffuse_gi_scene_tied_trace_signal_recorded";
 
                 const auto preview_width = std::min<std::uint64_t>(
                         execution.last_width,
@@ -3986,6 +3987,27 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                     const auto section_count = static_cast<std::size_t>(std::min<std::uint64_t>(
                             non_negative_u64(last_direct_lighting_payload_packet_.section_snapshot_count),
                             32));
+                    std::uint64_t scene_seed = 1469598103934665603ULL;
+                    mix_checksum(scene_seed, last_direct_lighting_payload_packet_.generation);
+                    mix_checksum(scene_seed, last_direct_lighting_payload_packet_.celestial_generation);
+                    mix_checksum(scene_seed, last_direct_lighting_payload_packet_.emissive_generation);
+                    mix_checksum(scene_seed, last_direct_lighting_payload_packet_.shadow_candidate_generation);
+                    mix_checksum(scene_seed, last_direct_lighting_payload_packet_.section_snapshot_generation);
+                    mix_checksum(scene_seed, last_lighting_dispatch_packet_.world_generation);
+                    mix_checksum(scene_seed, last_lighting_dispatch_packet_.material_generation);
+                    mix_checksum(scene_seed, last_lighting_dispatch_packet_.section_generation);
+                    mix_checksum(scene_seed, last_section_upload_packet_.section_dirty_region_generation);
+                    mix_checksum(scene_seed, execution.last_cache_read_count);
+                    mix_checksum(scene_seed, execution.last_cache_write_count);
+                    const float scene_phase = static_cast<float>(scene_seed % 997ULL) / 996.0F;
+                    const float dirty_activity = std::clamp(
+                            static_cast<float>(std::min<std::uint64_t>(
+                                    saturated_add(
+                                            last_section_upload_packet_.section_dirty_region_generation,
+                                            staging_.section.payload_dirty_regions),
+                                    4096ULL)) / 4096.0F,
+                            0.0F,
+                            1.0F);
                     const float payload_celestial_energy = std::max(
                             finite_non_negative(last_direct_lighting_payload_packet_.celestial_light_energy),
                             sum_strided_float_field(
@@ -4012,7 +4034,8 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                             0.0F,
                             18.0F);
                     const float cache_signal = std::clamp(
-                            cache_tint * (8.0F + static_cast<float>(execution.last_cache_write_count != 0) * 8.0F),
+                            cache_tint * (8.0F + static_cast<float>(execution.last_cache_write_count != 0) * 8.0F)
+                                    * (0.88F + dirty_activity * 0.24F),
                             0.0F,
                             20.0F);
                     const float emissive_signal = std::clamp(
@@ -4073,7 +4096,8 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                     + (base_signal * 0.24F)
                                     + (sky_signal * 0.34F)
                                     + (cache_signal * 0.34F)
-                                    + (emissive_signal * 0.52F),
+                                    + (emissive_signal * 0.52F)
+                                    + (dirty_activity * 4.0F),
                             0.01F,
                             92.0F);
                     for (std::uint64_t pixel = 0; pixel < preview_pixel_count; pixel++) {
@@ -4083,12 +4107,13 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                         const float u = static_cast<float>(pixel_x) * inverse_width;
                         const float v = static_cast<float>(pixel_y) * inverse_height;
                         const float cache_cell = static_cast<float>(
-                                ((pixel_x / 24) + ((pixel_y / 18) * 3) + execution.last_dispatch_generation) % 9)
+                                ((pixel_x / 24) + ((pixel_y / 18) * 3) + (scene_seed % 17ULL)) % 9)
                                 / 8.0F;
                         const float low_frequency_noise = 0.92F
                                 + static_cast<float>(
-                                        (pixel_x + (pixel_y * 7) + execution.last_dispatch_generation) % 13)
-                                        * 0.012F;
+                                        (pixel_x + (pixel_y * 7) + (scene_seed % 13ULL)) % 13)
+                                        * 0.012F
+                                + (scene_phase * 0.018F);
                         const float sky_gradient = std::max(0.0F, 1.0F - v);
                         const float view_surface_response = broad_surface_response(u, v);
                         const float cache_gradient = (0.55F + (cache_tint * 0.35F)) * (0.75F + cache_cell * 0.25F);
@@ -4099,9 +4124,40 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                         const float section_band = section_count == 0
                                 ? 0.0F
                                 : static_cast<float>(
-                                        ((pixel_x / 19) + (pixel_y / 13) + section_count) % 5)
+                                        ((pixel_x / 19) + (pixel_y / 13) + section_count + (scene_seed % 5ULL)) % 5)
                                         * 0.08F;
                         float surface_projection = section_count == 0 ? 0.18F : 0.34F + section_band;
+                        const auto section_limit = std::min<std::size_t>(section_count, 16);
+                        for (std::size_t section_index = 0; section_index < section_limit; section_index++) {
+                            const auto section_x = strided_int_or_zero(
+                                    last_direct_lighting_payload_packet_.section_snapshot_metadata,
+                                    section_index,
+                                    kDirectSectionSnapshotMetadataStride,
+                                    0);
+                            const auto section_y = strided_int_or_zero(
+                                    last_direct_lighting_payload_packet_.section_snapshot_metadata,
+                                    section_index,
+                                    kDirectSectionSnapshotMetadataStride,
+                                    1);
+                            const auto section_z = strided_int_or_zero(
+                                    last_direct_lighting_payload_packet_.section_snapshot_metadata,
+                                    section_index,
+                                    kDirectSectionSnapshotMetadataStride,
+                                    2);
+                            const auto section_u_hash = (static_cast<std::int64_t>(section_x) * 17)
+                                    + (static_cast<std::int64_t>(section_z) * 31);
+                            const auto section_v_hash = (static_cast<std::int64_t>(section_y) * 13)
+                                    + (static_cast<std::int64_t>(section_z) * 7);
+                            const float section_u = static_cast<float>(std::llabs(section_u_hash) % 127) / 126.0F;
+                            const float section_v = 1.0F
+                                    - (static_cast<float>(std::llabs(section_v_hash) % 89) / 88.0F);
+                            const float delta_u = u - section_u;
+                            const float delta_v = v - section_v;
+                            const float distance = std::sqrt(delta_u * delta_u + delta_v * delta_v);
+                            const float falloff = std::max(0.0F, 1.0F - (distance / 0.46F));
+                            surface_projection += falloff * falloff
+                                    * (0.08F + dirty_activity * 0.12F + cache_tint * 0.10F);
+                        }
                         const auto candidate_limit = std::min<std::size_t>(shadow_count, 24);
                         for (std::size_t candidate_index = 0; candidate_index < candidate_limit; candidate_index++) {
                             const float origin_x = strided_float_or_zero(
@@ -4131,7 +4187,8 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                     candidate_index,
                                     kDirectShadowCandidateRayStride,
                                     kDirectShadowRayContributionWeightOffset));
-                            const float radius = 0.18F + std::clamp(weight * 0.04F, 0.0F, 0.22F);
+                            const float radius = 0.18F + std::clamp(weight * 0.04F, 0.0F, 0.22F)
+                                    + dirty_activity * 0.04F;
                             const float falloff = std::max(0.0F, 1.0F - distance / radius);
                             surface_projection += falloff * falloff * (0.26F + ray_tint * 0.36F);
                         }
@@ -4143,7 +4200,8 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                 (preview_base * (0.62F + surface_projection * 0.52F))
                                         + (emissive_signal * (0.58F + surface_projection * 0.42F))
                                         + (cache_signal * (0.32F + cache_gradient * 0.34F))
-                                        + (sky_signal * (0.18F + sky_gradient * 0.26F)),
+                                        + (sky_signal * (0.18F + sky_gradient * 0.26F))
+                                        + (dirty_activity * 5.0F * surface_projection),
                                 4.0F,
                                 96.0F);
                         float red = (preview_base * (0.34F + cache_gradient * 0.20F))
@@ -4235,6 +4293,7 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                         blue = std::min(192.0F, blue * low_frequency_noise * cache_band * 1.72F);
                         const float alpha = std::clamp(
                                 0.72F + (surface_projection * 0.10F) + (cache_tint * 0.20F) + (ray_tint * 0.16F)
+                                        + (dirty_activity * 0.08F)
                                         + (emissive_count == 0 ? 0.0F : 0.20F),
                                 0.0F,
                                 1.0F);
@@ -4245,6 +4304,7 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                         preview_energy += red + green + blue;
                         mix_checksum(preview_checksum, static_cast<std::uint64_t>((red + green + blue) * 1000.0F));
                         mix_checksum(preview_checksum, pixel);
+                        mix_checksum(preview_checksum, scene_seed);
                         mix_checksum(preview_checksum, execution.last_visible_signal_checksum);
                     }
                     execution.last_cpu_output_width = preview_width;
@@ -4260,8 +4320,8 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                             && execution.last_cpu_output_checksum_nonzero;
                     execution.last_cpu_output_marker_recorded = execution.last_cpu_output_nonzero;
                     execution.last_cpu_output_marker = execution.last_cpu_output_nonzero
-                            ? "diffuse_gi_deterministic_cpu_output_generated_nonzero"
-                            : "diffuse_gi_deterministic_cpu_output_generated_zero_signal";
+                            ? "diffuse_gi_scene_tied_low_res_cpu_output_generated_nonzero"
+                            : "diffuse_gi_scene_tied_low_res_cpu_output_generated_zero_signal";
                 }
 
                 if (resources_ != nullptr && frame_open_ && resources_->has_context()) {
@@ -4286,7 +4346,7 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                         : "diffuse_gi_visible_signal_missing_trace_work_and_cache_activity";
             }
         } else {
-            execution.last_output_marker = "diffuse_gi_placeholder_output_population_missing_outputs";
+            execution.last_output_marker = "diffuse_gi_scene_tied_cpu_output_missing_dispatch_extent";
         }
     }
 
@@ -4331,18 +4391,33 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     }
 
     if (dispatch_stage == NativeLightingDispatchStage::DiffuseGi && execution.last_cpu_output_generated) {
-        if (execution.last_cpu_output_nonzero && execution.last_scene_inputs_recorded) {
+        const bool cache_inputs_recorded = execution.last_cache_read_count != 0
+                || execution.last_cache_write_count != 0;
+        const bool lighting_inputs_recorded = execution.last_scene_emissive_light_count != 0
+                || execution.last_scene_celestial_light_count != 0
+                || execution.last_scene_emissive_light_energy > 0.0F
+                || execution.last_scene_celestial_light_energy > 0.0F;
+        const bool surface_inputs_recorded = execution.last_scene_shadow_candidate_count != 0
+                || execution.last_scene_section_snapshot_count != 0;
+        if (execution.last_cpu_output_nonzero
+                && execution.last_scene_inputs_recorded
+                && cache_inputs_recorded
+                && lighting_inputs_recorded
+                && surface_inputs_recorded) {
             execution.last_readiness_reason =
-                    "diffuse_gi_deterministic_cpu_output_generated_nonzero_scene_inputs_recorded";
+                    "diffuse_gi_scene_tied_low_res_cpu_output_generated_nonzero_emissive_cache_surface_inputs_recorded";
+        } else if (execution.last_cpu_output_nonzero && execution.last_scene_inputs_recorded) {
+            execution.last_readiness_reason =
+                    "diffuse_gi_scene_tied_low_res_cpu_output_generated_nonzero_partial_scene_inputs_recorded";
         } else if (execution.last_cpu_output_nonzero) {
             execution.last_readiness_reason =
-                    "diffuse_gi_deterministic_cpu_output_generated_nonzero_scene_inputs_missing";
+                    "diffuse_gi_scene_tied_low_res_cpu_output_generated_nonzero_scene_inputs_missing";
         } else if (execution.last_scene_inputs_recorded) {
             execution.last_readiness_reason =
-                    "diffuse_gi_deterministic_cpu_output_generated_zero_signal_scene_inputs_recorded";
+                    "diffuse_gi_scene_tied_low_res_cpu_output_generated_zero_signal_scene_inputs_recorded";
         } else {
             execution.last_readiness_reason =
-                    "diffuse_gi_deterministic_cpu_output_generated_zero_signal_scene_inputs_missing";
+                    "diffuse_gi_scene_tied_low_res_cpu_output_generated_zero_signal_scene_inputs_missing";
         }
     } else {
         execution.last_readiness_reason = execution.last_resource_marker_recorded

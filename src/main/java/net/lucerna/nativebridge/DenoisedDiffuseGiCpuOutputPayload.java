@@ -48,6 +48,16 @@ public record DenoisedDiffuseGiCpuOutputPayload(
                 && this.peakChannel() > 0;
     }
 
+    public boolean cpuOutputReadbackReady() {
+        return this.snapshot.cpuOutputReadbackReady()
+                && this.available();
+    }
+
+    public boolean denoiseQualityEvidenceReady() {
+        return this.snapshot.denoiseQualityEvidenceReady()
+                && this.readyForPreviewDraw();
+    }
+
     public String previewReadinessReason() {
         if (!this.snapshot.readyForPreviewPayload()) {
             return this.snapshot.previewReadinessReason();
@@ -59,6 +69,14 @@ public record DenoisedDiffuseGiCpuOutputPayload(
             return "denoised diffuse GI RGBA8 payload contains no displayable nonzero pixels";
         }
         return "denoised diffuse GI RGBA8 payload is ready for preview draw";
+    }
+
+    public String readinessBoundarySummary() {
+        return "cpuOutputReadbackReady=" + this.cpuOutputReadbackReady()
+                + ",previewDrawReady=" + this.readyForPreviewDraw()
+                + ",denoiseQualityEvidenceReady=" + this.denoiseQualityEvidenceReady()
+                + ",realDenoiseShaderOutput=" + this.snapshot.realDenoiseShaderOutput()
+                + ",boundary=\"" + this.snapshot.outputReadinessBoundary() + "\"";
     }
 
     public int width() {
@@ -118,6 +136,7 @@ public record DenoisedDiffuseGiCpuOutputPayload(
     public String debugSummary() {
         return "available=" + this.available()
                 + " readyForPreviewDraw=" + this.readyForPreviewDraw()
+                + " " + this.readinessBoundarySummary()
                 + " evidence=" + this.snapshot.outputEvidenceMarker()
                 + " size=" + this.width() + "x" + this.height()
                 + " bytes=" + this.byteCount()

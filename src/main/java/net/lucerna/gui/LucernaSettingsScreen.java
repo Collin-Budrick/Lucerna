@@ -80,7 +80,8 @@ public final class LucernaSettingsScreen extends Screen {
         }
         graphics.centeredText(
                 this.font,
-                this.fitLine(Component.literal("Composite mode: " + compositeStatus.debugLine())),
+                this.fitLine(Component.literal("Composite mode: " + compositeStatus.statusKey()
+                        + " | " + compositeStatus.signalIsolationLabel())),
                 this.width / 2,
                 y,
                 0xFFB8C7D9
@@ -88,7 +89,7 @@ public final class LucernaSettingsScreen extends Screen {
         y += 12;
         graphics.centeredText(
                 this.font,
-                this.fitLine(Component.literal("Composite status: " + compositeStatus.statusText())),
+                this.fitLine(Component.literal("Composite mix: " + compositeStatus.compactSourceMixPolicy())),
                 this.width / 2,
                 y,
                 0xFFB8C7D9
@@ -96,7 +97,7 @@ public final class LucernaSettingsScreen extends Screen {
         y += 12;
         graphics.centeredText(
                 this.font,
-                this.fitLine(Component.literal("Composite evidence: " + compositeStatus.controllerEvidenceLine())),
+                this.fitLine(Component.literal("Composite denoise: " + compositeStatus.denoiseSourcePolicy())),
                 this.width / 2,
                 y,
                 0xFFB8C7D9
@@ -104,7 +105,7 @@ public final class LucernaSettingsScreen extends Screen {
         y += 12;
         graphics.centeredText(
                 this.font,
-                this.fitLine(Component.literal("Composite reason: " + compositeStatus.modeReason())),
+                this.fitLine(Component.literal("Composite gate: " + compositeStatus.firstLightingMilestoneGate())),
                 this.width / 2,
                 y,
                 0xFFB8C7D9

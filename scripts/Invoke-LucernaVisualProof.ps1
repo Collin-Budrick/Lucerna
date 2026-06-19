@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Baseline", "Enabled", "Debug", "RawGi", "DenoisedGi", "FinalComposite", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved")]
+    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved")]
     [string] $Mode,
 
     [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round7DenoiseComposite", "Round8AdaptiveHeatmaps")]
@@ -133,6 +133,19 @@ function Get-Round7CaptureIntent {
                 )
             }
         }
+        "Direct" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "DIRECT_ONLY"
+                artifactRole = "direct-emissive"
+                requiredPatterns = @(
+                    "Lucerna direct lighting plan: .*emissive=[1-9][0-9]*.*shadowCandidates=[1-9][0-9]*.*surfaceSampleSections=[1-9][0-9]*.*surfaceSamples=[1-9][0-9]*\.",
+                    "Lucerna native direct lighting execution: .*outputWriteRecorded=true.*resolveRecorded=true.*ready=true.*cpuOutput=true.*cpuOutputEnergy=[1-9][0-9.eE+-]*.*cpuOutputChecksum=[1-9][0-9]*.*reason=direct_lighting_(?:surface_sample|emissive_candidate)_cpu_output_generated",
+                    "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true(?=[^`r`n]*(?:selected=direct-light:ready|sourceIdentity=native-direct-light-rgba8|sourceAuthenticity=accepted:native-direct-light-surface-source))(?=[^`r`n]*mode=final-composite-native-direct-light-surface-additive)"
+                )
+            }
+        }
         "DenoisedGi" {
             return [ordered]@{
                 rendererEnabled = $true
@@ -157,7 +170,7 @@ function Get-Round7CaptureIntent {
                     "Lucerna Round 7 denoised GI CPU output: .*denoisedCpuOutputGenerated=true",
                     "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true",
                     "round7\.finalCompositeMode=final-composite.*round7\.finalCompositeSourceMix=base=true,direct=enabled-ready,gi=enabled-ready,denoised=enabled-ready",
-                    "public Mojang Round 7 FINAL_COMPOSITE visual render pass submitted; .*mode=FINAL_LUCERNA_COMPOSITE.*evidence=round7\.composite\.final\.base_direct_gi"
+                    "public Mojang Round 7 FINAL_COMPOSITE visual render pass submitted; .*mode=FINAL_LUCERNA_COMPOSITE.*evidence=round7\.composite\.final\.direct_raw_denoised.*finalBlendComplete=true"
                 )
             }
         }
