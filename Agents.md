@@ -2,11 +2,11 @@
 
 ## Progress Audit
 
-Current controller estimate: **about 86% complete against this file**.
+Current controller estimate: **about 88% complete against this file**.
 
 This percentage is conservative:
 - Rounds 0-3 are mostly implemented and controller-validated.
-- Round 4 has Java/native/shader scaffolding, dirty-region GI inputs, direct shadow candidate planning, native direct/GI/post handoff DTOs, payload-category telemetry, native dispatch validation, Round 5 direct payload handoff, direct execution/output-marker telemetry, a native CPU direct-light output buffer with energy/checksum telemetry, Java direct-output snapshot/status contracts, HUD-preserving world-color frame target contracts, metadata-only versus Java-opaque versus native-writable attachment contracts, direct-light preview submission result plumbing, a validated render-thread `GameRenderer.renderLevel` target hook, and validated public Mojang Java-opaque target capture, but the first real visible lighting milestone is not complete yet.
+- Round 4 has Java/native/shader scaffolding, dirty-region GI inputs, direct shadow candidate planning, native direct/GI/post handoff DTOs, payload-category telemetry, native dispatch validation, Round 5 direct payload handoff, direct execution/output-marker telemetry, a native CPU direct-light output buffer with energy/checksum telemetry, Java direct-output snapshot/status contracts, HUD-preserving world-color frame target contracts, metadata-only versus Java-opaque versus native-writable attachment contracts, direct-light preview submission result plumbing, a validated render-thread `GameRenderer.renderLevel` target hook, validated public Mojang Java-opaque target capture, validated public Mojang no-draw preview render-pass submission, and validated public Mojang diagnostic draw submission, but the first real visible lighting milestone is not complete yet.
 - The remaining work is the hardest part: turning Phase 5 metadata/planning into visible direct light, low-res GI, denoise, composite behavior, and richer debug telemetry.
 
 Legend:
@@ -122,7 +122,7 @@ Legend:
 
 - **Agent O: Denoise/Composite** **PARTIAL**
   - Owns edge-aware diffuse denoise, history rejection inputs, and final composite into the world color target.
-  - ~~Status: Java planning contracts, post-processing handoff DTOs, shader/resource contracts, native dispatch metadata, HUD-preserving world-color target contracts, metadata-only versus Java-opaque versus native-writable attachment contracts, conservative direct-light preview submission result plumbing, the render-thread target hook, and public Mojang Java-opaque target capture exist and have been validated.~~ **DONE/VALIDATED**
+  - ~~Status: Java planning contracts, post-processing handoff DTOs, shader/resource contracts, native dispatch metadata, HUD-preserving world-color target contracts, metadata-only versus Java-opaque versus native-writable attachment contracts, conservative direct-light preview submission result plumbing, the render-thread target hook, public Mojang Java-opaque target capture, public Mojang no-draw preview render-pass submission, and public Mojang diagnostic draw submission exist and have been validated.~~ **DONE/VALIDATED**
   - Status: real denoise shader/composite output is still open.
 
 - **Agent P: Cache/Adaptive Sampling** **PARTIAL**
@@ -191,6 +191,8 @@ Status:
 ~~Java now distinguishes metadata-only frame targets from native-writable direct-light preview targets, and frame-pass results can report real draw submission only through an explicit direct-light preview path.~~ **DONE/VALIDATED**
 ~~A client `GameRenderer.renderLevel(DeltaTracker)` Mixin now reaches the controller render-thread preview path after world rendering, supplies a HUD-preserving metadata-only target, and disables the tick no-op fallback after the render hook is observed.~~ **DONE/VALIDATED**
 ~~The render-thread target factory now captures public Mojang Java-opaque render objects, extent, format, and usage labels while still correctly reporting no native-writable handles.~~ **DONE/VALIDATED**
+~~A public Mojang `RenderPass` now opens, closes, and submits against the Java-opaque world color target with no draw calls and no visible-lighting claim.~~ **DONE/VALIDATED**
+~~A public Mojang diagnostic `RenderPass` now sets a Lucerna pipeline and issues a bounded fullscreen draw call against the Java-opaque world color target before HUD composition.~~ **DONE/VALIDATED**
 Visible direct-light output is still open.
 
 Must not own:
@@ -745,6 +747,8 @@ Logs prove candidate reuse and reservoir invalidation behavior.
 - ~~No sub-agent is allowed to "verify" fixes by running tests or build-like checks. They patch, explain, and wait for controller feedback.~~ **DONE/ONGOING**
 
 Latest strong validation evidence:
+- ~~Sodium + Iris + Vulkan launches, joins `New World`, the render-thread `GameRenderer` hook captures public Mojang Java-opaque render target objects, submits a public Mojang diagnostic direct-light preview draw with `drawCalls=true`, keeps native CPU direct-light output valid, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-public-mojang-diagnostic-draw-sodium-iris-vulkan-20260619-051631.log`**
+- ~~Sodium + Iris + Vulkan launches, joins `New World`, the render-thread `GameRenderer` hook captures public Mojang Java-opaque render target objects, submits a public no-draw Mojang preview render pass, keeps native CPU direct-light output valid, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-public-mojang-preview-pass-sodium-iris-vulkan-20260619-050258.log`**
 - ~~Sodium + Iris + Vulkan launches, joins `New World`, the render-thread `GameRenderer` hook captures public Mojang Java-opaque render target objects, native CPU direct-light output remains valid, direct preview reports no native-writable handles, and shutdown is clean.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-java-opaque-preview-target-sodium-iris-vulkan-20260619-045250.log`**
 - ~~Sodium + Iris + Vulkan launches, joins `New World`, the render-thread `GameRenderer` hook supplies a HUD-preserving metadata-only direct-light preview target, tick no-op fallback is skipped after hook activation, native CPU direct-light output remains valid, and shutdown is clean.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-render-thread-preview-target-dedup-sodium-iris-vulkan-20260619-044204.log`**
 - ~~Sodium + Iris + Vulkan launches, joins `New World`, accepts direct lighting payloads, generates native CPU direct-light output after direct-light preview target/submission contracts, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-direct-preview-contract-sodium-iris-vulkan-20260619-042839.log`**
@@ -775,7 +779,9 @@ Latest strong validation evidence:
   - ~~Metadata-only versus native-writable target contracts and conservative direct-light preview submission result plumbing are compile/build/launch validated.~~ **DONE/VALIDATED**
   - ~~Render-thread `GameRenderer` metadata target hook is compile/build/launch validated with tick fallback suppression.~~ **DONE/VALIDATED**
   - ~~Public Mojang Java-opaque target capture is compile/build/launch validated; public APIs do not expose Vulkan native handles.~~ **DONE/VALIDATED**
-  - Visible emissive/direct lighting, low-res GI, denoise, final composite, and screenshot proof are still open.
+  - ~~Public Mojang no-draw preview render-pass submission is compile/build/launch validated before HUD composition.~~ **DONE/VALIDATED**
+  - ~~Public Mojang diagnostic fullscreen draw submission is compile/build/launch validated before HUD composition.~~ **DONE/VALIDATED**
+  - Visible emissive/direct lighting on surfaces, low-res GI, denoise, final composite, and screenshot proof are still open.
 
 ## Assumptions
 
@@ -870,7 +876,7 @@ Do not jump to neural/ReSTIR/Nanite-like systems before the first lighting miles
 
 The next immediate implementation step is:
 
-Choose the first visible composite route: either implement a Java-side Mojang `RenderPass` preview draw using the public `CommandEncoder`/`GpuTextureView` API, or add an explicit unstable backend bridge/access-widener path for native Vulkan handles before wiring native direct-light preview composite submission.
+Replace the diagnostic public Mojang fullscreen draw with a real direct-light preview source texture or native-writable bridge so the draw samples Lucerna direct-light output instead of emitting a constant diagnostic tint.
 
 The next immediate visual milestone remains:
 

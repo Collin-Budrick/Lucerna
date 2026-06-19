@@ -10,6 +10,9 @@ These shader files are placeholders for the Sodium Vulkan integration milestones
 - `denoise/`: temporal rejection, spatial denoise, variance-aware filtering, and history repair passes.
 - `composite/`: flat-composite staging into the active Minecraft target without corrupting vanilla HUD or late translucency.
 - `debug/`: overlays used by controller-run verification: backend state, dirty regions, material ids, timings, native queues, direct-light candidate counts, output/resolve state, cache confidence, variance, adaptive sampling, and label views.
+- `core/`: public Mojang `RenderPipeline` shaders used only for Java-side preview/diagnostic draw plumbing before the native/direct-light texture path is available.
+
+`core/direct_light_preview_diagnostic.fsh` is a temporary diagnostic shader. It proves that Lucerna can set a public Mojang pipeline and issue a bounded draw call against the world color target before HUD composition. It is not the real direct-light resolve, does not sample Lucerna direct-light output, and must not be used as screenshot proof that one emissive block lights one surface.
 
 ## Phase 5 Order
 

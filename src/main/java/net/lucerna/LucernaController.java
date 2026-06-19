@@ -31,6 +31,8 @@ import net.lucerna.render.lighting.gi.LowResDiffuseGiPlan;
 import net.lucerna.render.lighting.gi.LowResDiffuseGiPlanner;
 import net.lucerna.render.lighting.post.PostProcessingPipelinePlan;
 import net.lucerna.render.lighting.post.PostProcessingPlanBuilder;
+import net.lucerna.render.mixin.PublicMojangPreviewPassSubmissionResult;
+import net.lucerna.render.mixin.RenderThreadPreviewTargetFactory;
 import net.lucerna.render.pass.LucernaFramePassRequest;
 import net.lucerna.render.pass.LucernaFramePassResult;
 import net.lucerna.render.pass.LucernaFramePassStatus;
@@ -98,6 +100,7 @@ public final class LucernaController {
     private String lastPreparedLightingDispatchKey = "";
     private String lastLoggedLightingDispatchKey = "";
     private String lastLoggedDirectPreviewCompositeKey = "";
+    private String lastLoggedPublicMojangPreviewPassKey = "";
     private String lastLoggedTickNoOpFrameKey = "";
     private boolean renderThreadFrameHookObserved;
     private NativeDirectLightingUploadPacket pendingDirectLightingUpload;
@@ -272,6 +275,9 @@ public final class LucernaController {
             DirectLightingPreviewCompositeSubmissionResult submission =
                     this.nativeBridge.submitDirectLightingPreviewComposite(request);
             this.logDirectPreviewCompositeStatusIfChanged(submission);
+            PublicMojangPreviewPassSubmissionResult publicPassSubmission =
+                    RenderThreadPreviewTargetFactory.submitDiagnosticPublicPreviewDraw(target);
+            this.logPublicMojangPreviewPassStatusIfChanged(publicPassSubmission);
             return this.frameHooks.attachFramePass(request);
         } finally {
             this.frameHooks.endFrame();
@@ -908,6 +914,7 @@ public final class LucernaController {
         this.lastPreparedLightingDispatchKey = "";
         this.lastLoggedLightingDispatchKey = "";
         this.lastLoggedDirectPreviewCompositeKey = "";
+        this.lastLoggedPublicMojangPreviewPassKey = "";
         this.lastLoggedTickNoOpFrameKey = "";
         this.renderThreadFrameHookObserved = false;
         this.pendingDirectLightingUpload = null;
@@ -1007,6 +1014,38 @@ public final class LucernaController {
                 result.targetNativeWritable(),
                 result.strength(),
                 result.alpha(),
+                result.reason()
+        );
+    }
+
+    private void logPublicMojangPreviewPassStatusIfChanged(PublicMojangPreviewPassSubmissionResult result) {
+        if (result == null) {
+            return;
+        }
+
+        String logKey = result.attempted()
+                + "|"
+                + result.submitted()
+                + "|"
+                + result.drawCallsIssued()
+                + "|"
+                + result.javaOpaqueRenderObjectsPresent()
+                + "|"
+                + result.targetStatus()
+                + "|"
+                + result.reason();
+        if (logKey.equals(this.lastLoggedPublicMojangPreviewPassKey)) {
+            return;
+        }
+
+        this.lastLoggedPublicMojangPreviewPassKey = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna public Mojang preview pass: attempted={} submitted={} drawCalls={} javaOpaque={} targetStatus={} reason={}.",
+                result.attempted(),
+                result.submitted(),
+                result.drawCallsIssued(),
+                result.javaOpaqueRenderObjectsPresent(),
+                result.targetStatus(),
                 result.reason()
         );
     }
