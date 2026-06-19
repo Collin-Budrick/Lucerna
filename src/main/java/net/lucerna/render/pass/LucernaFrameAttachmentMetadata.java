@@ -29,11 +29,6 @@ public record LucernaFrameAttachmentMetadata(
         colorLayout = normalizeLabel(colorLayout);
         depthFormat = normalizeLabel(depthFormat);
         depthLayout = normalizeLabel(depthLayout);
-        commandBufferHandle = Math.max(0L, commandBufferHandle);
-        colorImageHandle = Math.max(0L, colorImageHandle);
-        colorImageViewHandle = Math.max(0L, colorImageViewHandle);
-        depthImageHandle = Math.max(0L, depthImageHandle);
-        depthImageViewHandle = Math.max(0L, depthImageViewHandle);
         if (javaOpaqueObjects == null) {
             javaOpaqueObjects = LucernaJavaOpaqueRenderObjects.none();
         }
@@ -48,7 +43,9 @@ public record LucernaFrameAttachmentMetadata(
             description = nativeWritable
                     ? "Native-writable frame attachment metadata."
                     : javaOpaqueObjects.present()
-                    ? "Java opaque frame attachment metadata without native handles."
+                    ? javaOpaqueDescription(commandBufferHandle, colorImageHandle, colorImageViewHandle)
+                    : hasAnyNativeHandle(commandBufferHandle, colorImageHandle, colorImageViewHandle, depthImageHandle, depthImageViewHandle)
+                    ? "Frame attachment metadata with partial native handles; not native-writable."
                     : "Metadata-only frame attachment target.";
         } else {
             description = description.trim();
@@ -155,6 +152,40 @@ public record LucernaFrameAttachmentMetadata(
         );
     }
 
+    public static LucernaFrameAttachmentMetadata javaOpaque(
+            LucernaFramePassPhase phase,
+            int width,
+            int height,
+            String colorFormat,
+            String colorLayout,
+            String depthFormat,
+            String depthLayout,
+            long colorImageHandle,
+            long colorImageViewHandle,
+            long depthImageHandle,
+            long depthImageViewHandle,
+            LucernaJavaOpaqueRenderObjects javaOpaqueObjects,
+            String description
+    ) {
+        return new LucernaFrameAttachmentMetadata(
+                phase,
+                width,
+                height,
+                colorFormat,
+                colorLayout,
+                depthFormat,
+                depthLayout,
+                0L,
+                colorImageHandle,
+                colorImageViewHandle,
+                depthImageHandle,
+                depthImageViewHandle,
+                javaOpaqueObjects,
+                false,
+                description
+        );
+    }
+
     public static LucernaFrameAttachmentMetadata nativeWritable(
             LucernaFramePassPhase phase,
             int width,
@@ -190,7 +221,15 @@ public record LucernaFrameAttachmentMetadata(
     }
 
     public boolean metadataOnly() {
-        return !this.nativeWritable;
+        return !this.nativeWritable
+                && !this.javaOpaqueObjects.present()
+                && !hasAnyNativeHandle(
+                        this.commandBufferHandle,
+                        this.colorImageHandle,
+                        this.colorImageViewHandle,
+                        this.depthImageHandle,
+                        this.depthImageViewHandle
+                );
     }
 
     public boolean javaOpaque() {
@@ -209,12 +248,24 @@ public record LucernaFrameAttachmentMetadata(
         return this.commandBufferHandle != 0L;
     }
 
+    public boolean hasPartialNativeHandles() {
+        return !this.nativeWritable
+                && hasAnyNativeHandle(
+                        this.commandBufferHandle,
+                        this.colorImageHandle,
+                        this.colorImageViewHandle,
+                        this.depthImageHandle,
+                        this.depthImageViewHandle
+                );
+    }
+
     public String nativeWritableStatusLabel() {
         return "nativeWritable=" + this.nativeWritable
                 + ", javaOpaque=" + javaOpaque()
                 + ", hasExtent=" + hasExtent()
                 + ", hasCommandHandle=" + hasCommandHandle()
                 + ", hasColorHandles=" + hasColorHandles()
+                + ", hasPartialNativeHandles=" + hasPartialNativeHandles()
                 + ", safeForLightingComposite=" + this.phase.safeForLightingComposite();
     }
 
@@ -229,5 +280,33 @@ public record LucernaFrameAttachmentMetadata(
             return UNKNOWN_LABEL;
         }
         return label.trim();
+    }
+
+    private static boolean hasAnyNativeHandle(
+            long commandBufferHandle,
+            long colorImageHandle,
+            long colorImageViewHandle,
+            long depthImageHandle,
+            long depthImageViewHandle
+    ) {
+        return commandBufferHandle != 0L
+                || colorImageHandle != 0L
+                || colorImageViewHandle != 0L
+                || depthImageHandle != 0L
+                || depthImageViewHandle != 0L;
+    }
+
+    private static String javaOpaqueDescription(
+            long commandBufferHandle,
+            long colorImageHandle,
+            long colorImageViewHandle
+    ) {
+        if (commandBufferHandle != 0L && colorImageHandle != 0L && colorImageViewHandle != 0L) {
+            return "Java opaque frame attachment metadata with native command/color handles.";
+        }
+        if (colorImageHandle != 0L || colorImageViewHandle != 0L) {
+            return "Java opaque frame attachment metadata with native color handles but no native command handle.";
+        }
+        return "Java opaque frame attachment metadata without native handles.";
     }
 }

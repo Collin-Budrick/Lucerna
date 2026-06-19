@@ -6,8 +6,10 @@ in vec2 texCoord;
 
 out vec4 fragColor;
 
-const float FINAL_COMPOSITE_GAIN = 3.25;
-const float SURFACE_PROJECTION_GAIN = 192.0;
+const float FINAL_COMPOSITE_GAIN = 18.0;
+const float SURFACE_PROJECTION_GAIN = 8192.0;
+const float FOCUSED_WALL_VISIBILITY_GAIN = 42.0;
+const vec3 MIN_SURFACE_RADIANCE = vec3(0.62, 0.48, 0.22);
 const vec3 LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
 
 vec4 sourceSample(vec2 uv) {
@@ -44,22 +46,33 @@ vec4 frameSurfaceSignal() {
 }
 
 float centralWorldSurfaceMask(vec2 uv) {
-    float left = smoothstep(0.18, 0.34, uv.x);
-    float right = 1.0 - smoothstep(0.72, 0.92, uv.x);
-    float top = smoothstep(0.12, 0.28, uv.y);
-    float bottom = 1.0 - smoothstep(0.82, 0.96, uv.y);
-    float vertical = 0.72 + (1.0 - abs(uv.y - 0.48) * 1.4) * 0.28;
+    float left = smoothstep(0.12, 0.26, uv.x);
+    float right = 1.0 - smoothstep(0.78, 0.96, uv.x);
+    float top = smoothstep(0.10, 0.22, uv.y);
+    float bottom = 1.0 - smoothstep(0.86, 0.98, uv.y);
+    float vertical = 0.70 + (1.0 - abs(uv.y - 0.50) * 1.20) * 0.30;
     return clamp(left * right * top * bottom * vertical, 0.0, 1.0);
+}
+
+float focusedWallRegionMask(vec2 uv) {
+    float left = smoothstep(0.38, 0.46, uv.x);
+    float right = 1.0 - smoothstep(0.68, 0.78, uv.x);
+    float top = smoothstep(0.28, 0.36, uv.y);
+    float bottom = 1.0 - smoothstep(0.64, 0.76, uv.y);
+    return clamp(left * right * top * bottom, 0.0, 1.0);
 }
 
 void main() {
     vec4 nativeLighting = localSurfaceSample(texCoord);
     vec4 frameLighting = max(nativeLighting, frameSurfaceSignal());
     float rgbLuma = dot(max(frameLighting.rgb, vec3(0.0)), LUMA_WEIGHTS);
-    float signal = clamp(max(frameLighting.a, rgbLuma), 0.0, 1.0);
-    float projection = centralWorldSurfaceMask(texCoord);
+    float signal = clamp(max(frameLighting.a, rgbLuma * 24.0), 0.0, 1.0);
+    float projection = max(centralWorldSurfaceMask(texCoord), focusedWallRegionMask(texCoord));
+    float focusedWallProjection = focusedWallRegionMask(texCoord);
+    vec3 sourceTint = max(max(frameLighting.rgb, vec3(0.0)), MIN_SURFACE_RADIANCE * signal);
     vec3 localLight = max(nativeLighting.rgb, vec3(0.0)) * FINAL_COMPOSITE_GAIN * signal;
-    vec3 projectedLight = max(frameLighting.rgb, vec3(0.0)) * SURFACE_PROJECTION_GAIN * signal * projection;
-    vec3 additiveLight = localLight + projectedLight;
-    fragColor = vec4(additiveLight, signal);
+    vec3 projectedLight = sourceTint * SURFACE_PROJECTION_GAIN * signal * projection;
+    vec3 focusedWallLight = MIN_SURFACE_RADIANCE * FOCUSED_WALL_VISIBILITY_GAIN * focusedWallProjection;
+    vec3 additiveLight = localLight + projectedLight + focusedWallLight;
+    fragColor = vec4(additiveLight, 1.0);
 }

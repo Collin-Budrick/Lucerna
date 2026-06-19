@@ -33,6 +33,7 @@ public final class PublicMojangPreviewDrawScaffolds {
     private static final int FULLSCREEN_TRIANGLE_VERTEX_COUNT = 3;
     private static final int SINGLE_INSTANCE_COUNT = 1;
     private static final int FIRST_INSTANCE = 0;
+    private static final int ROUND6_PUBLIC_FALLBACK_DRAW_REPEATS = 3;
     private static final RenderPipeline DIAGNOSTIC_DIRECT_LIGHT_PREVIEW_PIPELINE = RenderPipelines.register(
             RenderPipeline.builder()
                     .withLocation(Identifier.fromNamespaceAndPath(
@@ -328,12 +329,14 @@ public final class PublicMojangPreviewDrawScaffolds {
         renderPass.setPipeline(ROUND6_DIFFUSE_GI_FINAL_COMPOSITE_ADDITIVE_PIPELINE);
         RenderSystem.bindDefaultUniforms(renderPass);
         renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, sourceView, sourceSampler);
-        renderPass.draw(
-                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
-                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
-                SINGLE_INSTANCE_COUNT,
-                FIRST_INSTANCE
-        );
+        for (int drawIndex = 0; drawIndex < ROUND6_PUBLIC_FALLBACK_DRAW_REPEATS; drawIndex++) {
+            renderPass.draw(
+                    FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                    FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                    SINGLE_INSTANCE_COUNT,
+                    FIRST_INSTANCE
+            );
+        }
         return PublicMojangPreviewDrawScaffold.issued(
                 ROUND6_DIFFUSE_GI_FINAL_COMPOSITE_ADDITIVE_PIPELINE,
                 DIRECT_LIGHT_SOURCE_BINDING,
@@ -345,6 +348,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 "public Mojang Round 6 native diffuse GI surface-mapped additive draw issued; shader="
                         + ROUND6_DIFFUSE_GI_SURFACE_SHADER
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
+                        + ",javaOpaqueFallbackDrawRepeats=" + ROUND6_PUBLIC_FALLBACK_DRAW_REPEATS
         );
     }
 
@@ -360,7 +364,7 @@ public final class PublicMojangPreviewDrawScaffolds {
         renderPass.setPipeline(DIAGNOSTIC_DIRECT_LIGHT_PREVIEW_PIPELINE);
         renderPass.draw(
                 FULLSCREEN_TRIANGLE_FIRST_VERTEX,
-                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                    FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE
         );

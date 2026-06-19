@@ -225,6 +225,227 @@ function Measure-Round6LogProof {
     }
 }
 
+function New-DeltaAccumulator {
+    return [ordered]@{
+        pixelCount = 0
+        changedPixels = 0
+        brighterPixels = 0
+        darkerPixels = 0
+        nearChangedPixels = 0
+        nearBrightPixels = 0
+        sumAbsLuma = 0.0
+        sumSignedLuma = 0.0
+        maxAbsLuma = 0.0
+        maxAbsChannel = 0
+        maxPositiveLumaBelowBrightThreshold = 0.0
+        maxChannelBelowChangedThreshold = 0
+    }
+}
+
+function Add-DeltaSample {
+    param(
+        [System.Collections.IDictionary] $Accumulator,
+        [System.Drawing.Color] $Baseline,
+        [System.Drawing.Color] $Enabled
+    )
+
+    $deltaR = [int]$Enabled.R - [int]$Baseline.R
+    $deltaG = [int]$Enabled.G - [int]$Baseline.G
+    $deltaB = [int]$Enabled.B - [int]$Baseline.B
+    $baselineLuma = (0.2126 * [int]$Baseline.R) + (0.7152 * [int]$Baseline.G) + (0.0722 * [int]$Baseline.B)
+    $enabledLuma = (0.2126 * [int]$Enabled.R) + (0.7152 * [int]$Enabled.G) + (0.0722 * [int]$Enabled.B)
+    $deltaLuma = $enabledLuma - $baselineLuma
+    $absLuma = [Math]::Abs($deltaLuma)
+    $maxChannel = [Math]::Max([Math]::Abs($deltaR), [Math]::Max([Math]::Abs($deltaG), [Math]::Abs($deltaB)))
+
+    $Accumulator.pixelCount++
+    $Accumulator.sumAbsLuma += $absLuma
+    $Accumulator.sumSignedLuma += $deltaLuma
+    $Accumulator.maxAbsLuma = [Math]::Max($Accumulator.maxAbsLuma, $absLuma)
+    $Accumulator.maxAbsChannel = [Math]::Max($Accumulator.maxAbsChannel, $maxChannel)
+
+    if ($maxChannel -ge $ChangedPixelThreshold) {
+        $Accumulator.changedPixels++
+    } elseif ($maxChannel -gt 0) {
+        $Accumulator.nearChangedPixels++
+        $Accumulator.maxChannelBelowChangedThreshold = [Math]::Max($Accumulator.maxChannelBelowChangedThreshold, $maxChannel)
+    }
+
+    if ($deltaLuma -ge $BrightPixelThreshold) {
+        $Accumulator.brighterPixels++
+    } elseif ($deltaLuma -le -$BrightPixelThreshold) {
+        $Accumulator.darkerPixels++
+    } elseif ($deltaLuma -gt 0) {
+        $Accumulator.nearBrightPixels++
+        $Accumulator.maxPositiveLumaBelowBrightThreshold = [Math]::Max($Accumulator.maxPositiveLumaBelowBrightThreshold, $deltaLuma)
+    }
+}
+
+function Complete-DeltaAccumulator {
+    param([System.Collections.IDictionary] $Accumulator)
+
+    $count = [Math]::Max(1, [int]$Accumulator.pixelCount)
+    return [ordered]@{
+        pixelCount = $Accumulator.pixelCount
+        meanAbsLuma = [Math]::Round($Accumulator.sumAbsLuma / $count, 4)
+        meanSignedLuma = [Math]::Round($Accumulator.sumSignedLuma / $count, 4)
+        maxAbsLuma = [Math]::Round($Accumulator.maxAbsLuma, 4)
+        maxAbsChannel = $Accumulator.maxAbsChannel
+        changedPixels = $Accumulator.changedPixels
+        changedPixelPercent = [Math]::Round(100.0 * $Accumulator.changedPixels / $count, 4)
+        brighterPixels = $Accumulator.brighterPixels
+        brighterPixelPercent = [Math]::Round(100.0 * $Accumulator.brighterPixels / $count, 4)
+        darkerPixels = $Accumulator.darkerPixels
+        darkerPixelPercent = [Math]::Round(100.0 * $Accumulator.darkerPixels / $count, 4)
+        nearChangedPixels = $Accumulator.nearChangedPixels
+        nearChangedPixelPercent = [Math]::Round(100.0 * $Accumulator.nearChangedPixels / $count, 4)
+        nearBrightPixels = $Accumulator.nearBrightPixels
+        nearBrightPixelPercent = [Math]::Round(100.0 * $Accumulator.nearBrightPixels / $count, 4)
+        maxChannelBelowChangedThreshold = $Accumulator.maxChannelBelowChangedThreshold
+        maxPositiveLumaBelowBrightThreshold = [Math]::Round($Accumulator.maxPositiveLumaBelowBrightThreshold, 4)
+    }
+}
+
+function Get-ThresholdGap {
+    param(
+        [double] $Actual,
+        [double] $Expected
+    )
+
+    $missing = [Math]::Max(0.0, $Expected - $Actual)
+    $ratio = if ($Expected -eq 0.0) {
+        if ($Actual -ge $Expected) { 1.0 } else { 0.0 }
+    } else {
+        $Actual / $Expected
+    }
+    return [ordered]@{
+        actual = [Math]::Round($Actual, 4)
+        expected = [Math]::Round($Expected, 4)
+        missing = [Math]::Round($missing, 4)
+        ratio = [Math]::Round($ratio, 4)
+    }
+}
+
+function Test-RectIntersects {
+    param(
+        [int] $LeftA,
+        [int] $TopA,
+        [int] $RightA,
+        [int] $BottomA,
+        [int] $LeftB,
+        [int] $TopB,
+        [int] $RightB,
+        [int] $BottomB
+    )
+
+    return ($LeftA -lt $RightB) -and ($RightA -gt $LeftB) -and ($TopA -lt $BottomB) -and ($BottomA -gt $TopB)
+}
+
+function Measure-ImageDeltaDiagnostics {
+    param(
+        [string] $BaselinePath,
+        [string] $EnabledPath,
+        [object] $FocusRegion,
+        [object] $FocusMetrics
+    )
+
+    Add-Type -AssemblyName System.Drawing
+    $baselineImage = [System.Drawing.Bitmap]::new($BaselinePath)
+    $enabledImage = [System.Drawing.Bitmap]::new($EnabledPath)
+    try {
+        if (($baselineImage.Width -ne $enabledImage.Width) -or ($baselineImage.Height -ne $enabledImage.Height)) {
+            throw "Image dimensions differ. baseline=$($baselineImage.Width)x$($baselineImage.Height) enabled=$($enabledImage.Width)x$($enabledImage.Height)"
+        }
+
+        $columns = 8
+        $rows = 6
+        $focusLeft = [int]$FocusRegion.left
+        $focusTop = [int]$FocusRegion.top
+        $focusRight = $focusLeft + [int]$FocusRegion.width
+        $focusBottom = $focusTop + [int]$FocusRegion.height
+        $cells = New-Object System.Collections.Generic.List[object]
+        $focusAccumulator = New-DeltaAccumulator
+
+        for ($row = 0; $row -lt $rows; $row++) {
+            $top = [int][Math]::Floor($row * $baselineImage.Height / $rows)
+            $bottom = [int][Math]::Floor(($row + 1) * $baselineImage.Height / $rows)
+            for ($column = 0; $column -lt $columns; $column++) {
+                $left = [int][Math]::Floor($column * $baselineImage.Width / $columns)
+                $right = [int][Math]::Floor(($column + 1) * $baselineImage.Width / $columns)
+                $accumulator = New-DeltaAccumulator
+
+                for ($y = $top; $y -lt $bottom; $y++) {
+                    for ($x = $left; $x -lt $right; $x++) {
+                        Add-DeltaSample $accumulator ($baselineImage.GetPixel($x, $y)) ($enabledImage.GetPixel($x, $y))
+                    }
+                }
+
+                $metrics = Complete-DeltaAccumulator $accumulator
+                $cells.Add([object]([ordered]@{
+                    row = $row
+                    column = $column
+                    bounds = [ordered]@{
+                        left = $left
+                        top = $top
+                        width = $right - $left
+                        height = $bottom - $top
+                    }
+                    intersectsFocus = Test-RectIntersects $left $top $right $bottom $focusLeft $focusTop $focusRight $focusBottom
+                    metrics = $metrics
+                }))
+            }
+        }
+
+        for ($y = [Math]::Max(0, $focusTop); $y -lt [Math]::Min($baselineImage.Height, $focusBottom); $y++) {
+            for ($x = [Math]::Max(0, $focusLeft); $x -lt [Math]::Min($baselineImage.Width, $focusRight); $x++) {
+                Add-DeltaSample $focusAccumulator ($baselineImage.GetPixel($x, $y)) ($enabledImage.GetPixel($x, $y))
+            }
+        }
+        $diagnosticFocusMetrics = Complete-DeltaAccumulator $focusAccumulator
+
+        $outsideFocusCells = @($cells | Where-Object { -not $_.intersectsFocus })
+        $topOutsideByAbsLuma = @(
+            $outsideFocusCells |
+                Sort-Object `
+                    @{ Expression = { [double]$_.metrics.meanAbsLuma }; Descending = $true },
+                    @{ Expression = { [double]$_.metrics.changedPixelPercent }; Descending = $true } |
+                Select-Object -First 6
+        )
+        $topOutsideByBrightPercent = @(
+            $outsideFocusCells |
+                Sort-Object `
+                    @{ Expression = { [double]$_.metrics.brighterPixelPercent }; Descending = $true },
+                    @{ Expression = { [double]$_.metrics.meanSignedLuma }; Descending = $true } |
+                Select-Object -First 6
+        )
+
+        return [ordered]@{
+            grid = [ordered]@{
+                columns = $columns
+                rows = $rows
+                cells = @($cells.ToArray())
+                topOutsideFocusByMeanAbsLuma = @($topOutsideByAbsLuma)
+                topOutsideFocusByBrighterPixelPercent = @($topOutsideByBrightPercent)
+            }
+            focusThresholdNearMiss = [ordered]@{
+                changedPixelPercent = Get-ThresholdGap ([double]$FocusMetrics.changedPixelPercent) $MinFocusChangedPixelPercent
+                brighterPixelPercent = Get-ThresholdGap ([double]$FocusMetrics.brighterPixelPercent) $MinFocusBrighterPixelPercent
+                meanSignedLuma = Get-ThresholdGap ([double]$FocusMetrics.meanSignedLuma) $MinFocusMeanSignedLuma
+                measuredFocusMetrics = $diagnosticFocusMetrics
+                nearChangedPixels = $diagnosticFocusMetrics.nearChangedPixels
+                nearChangedPixelPercent = $diagnosticFocusMetrics.nearChangedPixelPercent
+                nearBrightPixels = $diagnosticFocusMetrics.nearBrightPixels
+                nearBrightPixelPercent = $diagnosticFocusMetrics.nearBrightPixelPercent
+                maxChannelBelowChangedThreshold = $diagnosticFocusMetrics.maxChannelBelowChangedThreshold
+                maxPositiveLumaBelowBrightThreshold = $diagnosticFocusMetrics.maxPositiveLumaBelowBrightThreshold
+            }
+        }
+    } finally {
+        $enabledImage.Dispose()
+        $baselineImage.Dispose()
+    }
+}
+
 $baselineResolved = Resolve-ExistingFile $BaselineImagePath "Baseline image"
 $enabledResolved = Resolve-ExistingFile $EnabledImagePath "Enabled image"
 $debugResolved = ""
@@ -253,6 +474,7 @@ $focusDeltaPassed = (
     ([double]$focusMetrics.brighterPixelPercent -ge $MinFocusBrighterPixelPercent) -and
     ([double]$focusMetrics.meanSignedLuma -ge $MinFocusMeanSignedLuma)
 )
+$imageDiagnostics = Measure-ImageDeltaDiagnostics $baselineResolved $enabledResolved $delta.focusRegion $focusMetrics
 $proofMarkerPathPatterns = @(
     "(?i)round6-gi-proof",
     "(?i)proof-overlay",
@@ -367,6 +589,7 @@ $result = [ordered]@{
         debugScreenshotProvided = -not [string]::IsNullOrWhiteSpace($debugResolved)
     }
     imageDelta = $delta
+    imageDiagnostics = $imageDiagnostics
     logProof = $logProof
     proofClarity = [ordered]@{
         classification = $proofClassification
@@ -398,6 +621,19 @@ Write-Host "logPath=$($result.logPath)"
 Write-Host "focus.changedPixelPercent=$($focusMetrics.changedPixelPercent)"
 Write-Host "focus.brighterPixelPercent=$($focusMetrics.brighterPixelPercent)"
 Write-Host "focus.meanSignedLuma=$($focusMetrics.meanSignedLuma)"
+Write-Host "diagnostics.focus.changedPixelPercent.missing=$($imageDiagnostics.focusThresholdNearMiss.changedPixelPercent.missing)"
+Write-Host "diagnostics.focus.brighterPixelPercent.missing=$($imageDiagnostics.focusThresholdNearMiss.brighterPixelPercent.missing)"
+Write-Host "diagnostics.focus.meanSignedLuma.missing=$($imageDiagnostics.focusThresholdNearMiss.meanSignedLuma.missing)"
+Write-Host "diagnostics.focus.nearChangedPixelPercent=$($imageDiagnostics.focusThresholdNearMiss.nearChangedPixelPercent)"
+Write-Host "diagnostics.focus.nearBrightPixelPercent=$($imageDiagnostics.focusThresholdNearMiss.nearBrightPixelPercent)"
+Write-Host "diagnostics.grid.columns=$($imageDiagnostics.grid.columns)"
+Write-Host "diagnostics.grid.rows=$($imageDiagnostics.grid.rows)"
+foreach ($cell in @($imageDiagnostics.grid.topOutsideFocusByMeanAbsLuma | Select-Object -First 3)) {
+    Write-Host "diagnostics.grid.topOutsideAbsLuma[$($cell.row),$($cell.column)]=meanAbsLuma=$($cell.metrics.meanAbsLuma),changed=$($cell.metrics.changedPixelPercent),brighter=$($cell.metrics.brighterPixelPercent),bounds=$($cell.bounds.left),$($cell.bounds.top),$($cell.bounds.width),$($cell.bounds.height)"
+}
+foreach ($cell in @($imageDiagnostics.grid.topOutsideFocusByBrighterPixelPercent | Select-Object -First 3)) {
+    Write-Host "diagnostics.grid.topOutsideBright[$($cell.row),$($cell.column)]=meanSignedLuma=$($cell.metrics.meanSignedLuma),changed=$($cell.metrics.changedPixelPercent),brighter=$($cell.metrics.brighterPixelPercent),bounds=$($cell.bounds.left),$($cell.bounds.top),$($cell.bounds.width),$($cell.bounds.height)"
+}
 Write-Host "proof.classification=$($result.proofClarity.classification)"
 Write-Host "proof.focusDeltaPassed=$($result.proofClarity.focusDeltaPassed)"
 Write-Host "proof.proofMarkerContaminationPresent=$($result.proofClarity.proofMarkerContaminationPresent)"

@@ -13,21 +13,20 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(GameRenderer.class)
 public abstract class GameRendererMixin {
     @Inject(
-            method = "render(Lnet/minecraft/client/DeltaTracker;Z)V",
+            method = "renderLevel(Lnet/minecraft/client/DeltaTracker;)V",
             at = @At(
                     value = "INVOKE",
-                    target = "Lnet/minecraft/client/renderer/fog/FogRenderer;endFrame()V",
+                    target = "Lnet/minecraft/client/renderer/GameRenderer;renderItemInHand(Lnet/minecraft/client/renderer/state/level/CameraRenderState;FLorg/joml/Matrix4fc;)V",
                     shift = At.Shift.BEFORE
             ),
             require = 0
     )
     private void lucerna$attachPresentedWorldColorComposite(
             DeltaTracker deltaTracker,
-            boolean renderLevel,
             CallbackInfo callbackInfo
     ) {
         LucernaController controller = LucernaController.getInstance();
-        if (!renderLevel || !controller.isRendererActive()) {
+        if (!controller.isRendererActive()) {
             return;
         }
 

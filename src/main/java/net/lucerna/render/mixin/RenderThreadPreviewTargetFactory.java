@@ -7,6 +7,8 @@ import com.mojang.blaze3d.systems.RenderPass;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.GpuTexture;
 import com.mojang.blaze3d.textures.GpuTextureView;
+import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
+import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
 import net.lucerna.nativebridge.DirectLightingCpuOutputPayload;
 import net.lucerna.nativebridge.Round6DiffuseGiCpuOutputPayload;
 import net.lucerna.render.preview.DirectLightPreviewTextureUploadResult;
@@ -24,6 +26,8 @@ import net.minecraft.client.renderer.GameRenderer;
 import java.lang.ref.Reference;
 import java.nio.ByteBuffer;
 import java.util.Optional;
+import java.util.OptionalDouble;
+import java.util.function.Supplier;
 
 public final class RenderThreadPreviewTargetFactory {
     private static final Object METADATA_ONLY_RENDER_PASS = new Object();
@@ -89,6 +93,10 @@ public final class RenderThreadPreviewTargetFactory {
         String depthLayout = depthTexture == null
                 ? "unknown"
                 : "usage=" + depthTexture.usage() + ",label=" + label(depthTexture.getLabel());
+        long colorImageHandle = nativeTextureHandle(colorTexture);
+        long colorImageViewHandle = nativeTextureViewHandle(colorView);
+        long depthImageHandle = nativeTextureHandle(depthTexture);
+        long depthImageViewHandle = nativeTextureViewHandle(depthView);
         LucernaJavaOpaqueRenderObjects opaqueObjects = LucernaJavaOpaqueRenderObjects.of(
                 renderTarget,
                 commandEncoder,
@@ -104,6 +112,10 @@ public final class RenderThreadPreviewTargetFactory {
                 colorLayout,
                 depthFormat,
                 depthLayout,
+                colorImageHandle,
+                colorImageViewHandle,
+                depthImageHandle,
+                depthImageViewHandle,
                 opaqueObjects,
                 DIRECT_LIGHT_PREVIEW_TARGET
         );
@@ -288,11 +300,13 @@ public final class RenderThreadPreviewTargetFactory {
         }
 
         PublicMojangPreviewDrawScaffold drawScaffold;
-        try (RenderPass renderPass = commandEncoder.createRenderPass(
+        try (RenderPass renderPass = createFullTargetRenderPass(
+                commandEncoder,
                 () -> "lucerna public sampled direct-light preview draw pass",
                 colorView,
-                Optional.empty()
+                target
         )) {
+            renderPass.disableScissor();
             drawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenDirectLightPreviewDraw(
                     renderPass,
                     upload.textureView(),
@@ -383,11 +397,13 @@ public final class RenderThreadPreviewTargetFactory {
         }
 
         PublicMojangPreviewDrawScaffold drawScaffold;
-        try (RenderPass renderPass = commandEncoder.createRenderPass(
+        try (RenderPass renderPass = createFullTargetRenderPass(
+                commandEncoder,
                 () -> "lucerna public final composite direct-light draw pass",
                 colorView,
-                Optional.empty()
+                target
         )) {
+            renderPass.disableScissor();
             drawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenDirectLightFinalCompositeDraw(
                     renderPass,
                     upload.textureView(),
@@ -496,11 +512,13 @@ public final class RenderThreadPreviewTargetFactory {
         }
 
         PublicMojangPreviewDrawScaffold drawScaffold;
-        try (RenderPass renderPass = commandEncoder.createRenderPass(
+        try (RenderPass renderPass = createFullTargetRenderPass(
+                commandEncoder,
                 () -> "lucerna public Round 6 native diffuse GI final composite draw pass",
                 colorView,
-                Optional.empty()
+                target
         )) {
+            renderPass.disableScissor();
             drawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenRound6DiffuseGiFinalCompositeDraw(
                     renderPass,
                     upload.textureView(),
@@ -517,6 +535,8 @@ public final class RenderThreadPreviewTargetFactory {
                         + previewState.summary()
                         + "; target: "
                         + targetAttachmentSummary(target)
+                        + "; javaOpaquePublicFallback="
+                        + target.attachmentMetadata().javaOpaque()
                         + "; native diffuse GI output payload: "
                         + diffuseGiPayload.debugSummary()
                         + "; upload: "
@@ -547,11 +567,13 @@ public final class RenderThreadPreviewTargetFactory {
             String fallbackReason
     ) {
         PublicMojangPreviewDrawScaffold drawScaffold;
-        try (RenderPass renderPass = commandEncoder.createRenderPass(
+        try (RenderPass renderPass = createFullTargetRenderPass(
+                commandEncoder,
                 () -> "lucerna public diagnostic direct-light preview fallback draw pass",
                 colorView,
-                Optional.empty()
+                target
         )) {
+            renderPass.disableScissor();
             drawScaffold = PublicMojangPreviewDrawScaffolds.issueDiagnosticDirectLightPreviewDraw(renderPass);
         }
         commandEncoder.submit();
@@ -570,10 +592,48 @@ public final class RenderThreadPreviewTargetFactory {
         return Math.max(0, fallback);
     }
 
+    private static RenderPass createFullTargetRenderPass(
+            CommandEncoder commandEncoder,
+            Supplier<String> label,
+            GpuTextureView colorView,
+            LucernaFramePassTarget target
+    ) {
+        LucernaFrameAttachmentMetadata metadata = target == null ? null : target.attachmentMetadata();
+        Object depthTarget = target == null ? null : target.depthTarget();
+        if (depthTarget instanceof GpuTextureView depthView
+                && metadata != null
+                && metadata.width() > 0
+                && metadata.height() > 0) {
+            return commandEncoder.createRenderPass(
+                    label,
+                    colorView,
+                    Optional.empty(),
+                    depthView,
+                    OptionalDouble.empty(),
+                    new RenderPass.RenderArea(0, 0, metadata.width(), metadata.height())
+            );
+        }
+        return commandEncoder.createRenderPass(label, colorView, Optional.empty());
+    }
+
     private static String label(String value) {
         if (value == null || value.isBlank()) {
             return "unknown";
         }
         return value.trim();
+    }
+
+    private static long nativeTextureHandle(GpuTexture texture) {
+        if (texture instanceof VulkanGpuTexture vulkanTexture) {
+            return vulkanTexture.vkImage();
+        }
+        return 0L;
+    }
+
+    private static long nativeTextureViewHandle(GpuTextureView textureView) {
+        if (textureView instanceof VulkanGpuTextureView vulkanTextureView) {
+            return vulkanTextureView.vkImageView();
+        }
+        return 0L;
     }
 }

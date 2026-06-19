@@ -188,9 +188,11 @@ function Invoke-OptionalSceneSetup {
     }
 
     $commands = @(
+        "/gamerule sendCommandFeedback false",
         "/gamemode creative",
         "/time set midnight",
         "/weather clear",
+        "/kill @e[type=!player,distance=..32]",
         "/fill ~4 ~-1 ~-3 ~4 ~3 ~3 minecraft:smooth_stone",
         "/setblock ~3 ~ ~ minecraft:glowstone",
         "/tp @s ~ ~ ~ -90 0"
@@ -325,6 +327,9 @@ try {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
+    if ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker") {
+        $psi.Environment["LUCERNA_HIDE_PROOF_OVERLAYS"] = "true"
+    }
     $process = [System.Diagnostics.Process]::Start($psi)
     $process.BeginOutputReadLine()
     $process.BeginErrorReadLine()

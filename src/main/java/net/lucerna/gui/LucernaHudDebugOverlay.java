@@ -169,6 +169,9 @@ public final class LucernaHudDebugOverlay {
         if (!snapshot.rendererEnabled() || !snapshot.rendererActive()) {
             return false;
         }
+        if (proofOverlaysHiddenForValidation()) {
+            return false;
+        }
         return LucernaController.getInstance().directLightingCpuOutputPayload().readyForPreviewDraw();
     }
 
@@ -209,7 +212,14 @@ public final class LucernaHudDebugOverlay {
         if (!snapshot.rendererEnabled() || !snapshot.rendererActive()) {
             return false;
         }
+        if (proofOverlaysHiddenForValidation()) {
+            return false;
+        }
         return LucernaController.getInstance().round6DiffuseGiCpuOutputPayload().readyForPreviewDraw();
+    }
+
+    private static boolean proofOverlaysHiddenForValidation() {
+        return "true".equalsIgnoreCase(System.getenv("LUCERNA_HIDE_PROOF_OVERLAYS"));
     }
 
     private static String round6GiEvidenceLabel(Round6DiffuseGiCpuOutputPayload payload) {
