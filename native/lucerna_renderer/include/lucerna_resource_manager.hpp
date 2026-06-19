@@ -77,6 +77,8 @@ struct NativeImageHandle {
     [[nodiscard]] bool live() const;
 };
 
+struct FrameResourceRingStats;
+
 struct FrameResources {
     std::uint32_t ring_index = 0;
     std::uint64_t generation = 0;
@@ -92,7 +94,39 @@ struct FrameResources {
 
     [[nodiscard]] std::size_t live_buffer_count() const;
     [[nodiscard]] std::size_t live_image_count() const;
+    [[nodiscard]] FrameResourceRingStats stats() const;
     [[nodiscard]] std::string status() const;
+};
+
+struct FrameResourceRingStats {
+    std::uint32_t ring_index = 0;
+    std::uint64_t generation = 0;
+    std::uint64_t last_frame_index = 0;
+    std::uint64_t reset_count = 0;
+    std::size_t transient_buffer_count = 0;
+    std::size_t transient_image_count = 0;
+    std::size_t live_buffer_count = 0;
+    std::size_t live_image_count = 0;
+    ResourceLifetimeCounters buffer_lifetime;
+    ResourceLifetimeCounters image_lifetime;
+};
+
+struct ResourceManagerStats {
+    bool has_context = false;
+    bool has_active_ring = false;
+    std::uint32_t frames_in_flight = 0;
+    std::uint32_t active_ring_index = 0;
+    std::uint64_t last_frame_index = 0;
+    std::uint64_t context_adoption_generation = 0;
+    std::uint64_t context_release_generation = 0;
+    std::uint64_t resource_generation = 0;
+    std::size_t transient_buffer_count = 0;
+    std::size_t transient_image_count = 0;
+    std::size_t live_buffer_count = 0;
+    std::size_t live_image_count = 0;
+    ResourceLifetimeCounters buffer_lifetime;
+    ResourceLifetimeCounters image_lifetime;
+    std::vector<FrameResourceRingStats> rings;
 };
 
 class ResourceManager {
@@ -129,6 +163,7 @@ public:
     [[nodiscard]] std::uint64_t context_adoption_generation() const;
     [[nodiscard]] std::uint64_t context_release_generation() const;
     [[nodiscard]] std::uint64_t resource_generation() const;
+    [[nodiscard]] ResourceManagerStats stats() const;
     [[nodiscard]] std::string status() const;
 
 private:
@@ -139,6 +174,9 @@ private:
     BorrowedVulkanContext context_;
     std::vector<FrameResources> frames_;
     bool has_context_ = false;
+    bool has_active_ring_ = false;
+    std::uint32_t active_ring_index_ = 0;
+    std::uint64_t last_frame_index_ = 0;
     std::uint64_t context_adoption_generation_ = 0;
     std::uint64_t context_release_generation_ = 0;
     std::uint64_t resource_generation_ = 0;

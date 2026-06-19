@@ -6,6 +6,9 @@ import net.lucerna.render.context.BorrowedVulkanContextProbe;
 import net.lucerna.render.hooks.FrameHookResult;
 import net.lucerna.render.hooks.FrameLifecycleSnapshot;
 import net.lucerna.render.hooks.VulkanFrameLifecycleAdapter;
+import net.lucerna.render.pass.LucernaFramePassRequest;
+import net.lucerna.render.pass.LucernaFramePassResult;
+import net.lucerna.render.pass.LucernaFramePassStatus;
 import net.lucerna.telemetry.LucernaTelemetry;
 
 public final class LucernaFrameHooks {
@@ -39,6 +42,10 @@ public final class LucernaFrameHooks {
         return this.lifecycleAdapter.renderLighting();
     }
 
+    public LucernaFramePassResult attachFramePass(LucernaFramePassRequest request) {
+        return this.lifecycleAdapter.attachFramePass(request);
+    }
+
     public FrameHookResult endFrame() {
         return this.lifecycleAdapter.endFrame();
     }
@@ -49,6 +56,10 @@ public final class LucernaFrameHooks {
 
     public FrameHookResult lastResult() {
         return this.lifecycleAdapter.lastResult();
+    }
+
+    public LucernaFramePassStatus framePassStatus() {
+        return this.lifecycleAdapter.framePassStatus();
     }
 
     public FrameLifecycleSnapshot snapshot() {

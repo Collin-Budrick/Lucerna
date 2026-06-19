@@ -26,6 +26,7 @@ public record LucernaStatusSnapshot(
         DirtyRegionTelemetryStatus dirtyRegions,
         UploadGenerationTelemetryStatus uploads,
         FrameLifecycleSnapshot frameLifecycle,
+        FrameConstantsTelemetryStatus frameConstants,
         FrameTimingTelemetryStatus frameTimings,
         long capturedNanos
 ) {
@@ -53,6 +54,9 @@ public record LucernaStatusSnapshot(
         }
         if (frameLifecycle == null) {
             frameLifecycle = emptyFrameLifecycle();
+        }
+        if (frameConstants == null) {
+            frameConstants = FrameConstantsTelemetryStatus.unavailable(frameLifecycle, capturedNanos);
         }
         if (frameTimings == null) {
             frameTimings = FrameTimingTelemetryStatus.empty();
@@ -85,6 +89,7 @@ public record LucernaStatusSnapshot(
                 new DirtyRegionTelemetryStatus(worldGeneration, 0),
                 new UploadGenerationTelemetryStatus(uploadGeneration, uploadGeneration, 0L),
                 emptyFrameLifecycle(),
+                FrameConstantsTelemetryStatus.unavailable(emptyFrameLifecycle(), capturedNanos),
                 new FrameTimingTelemetryStatus(cpuScopeDurationsMillis, Map.of(), List.of(), activeCpuScopeCount),
                 capturedNanos
         );
@@ -92,6 +97,8 @@ public record LucernaStatusSnapshot(
 
     public static LucernaStatusSnapshot capture(LucernaController controller) {
         BackendStatus backendStatus = controller.backendStatus();
+        FrameLifecycleSnapshot frameLifecycle = controller.frameHooks().snapshot();
+        long capturedNanos = System.nanoTime();
         return new LucernaStatusSnapshot(
                 controller.getConfig().rendererEnabled(),
                 controller.isRendererActive(),
@@ -105,9 +112,10 @@ public record LucernaStatusSnapshot(
                         controller.worldFeed().pendingDirtyRegionCount()
                 ),
                 UploadGenerationTelemetryStatus.from(controller.uploadQueue()),
-                controller.frameHooks().snapshot(),
+                frameLifecycle,
+                FrameConstantsTelemetryStatus.unavailable(frameLifecycle, capturedNanos),
                 FrameTimingTelemetryStatus.from(controller.telemetry()),
-                System.nanoTime()
+                capturedNanos
         );
     }
 
@@ -202,8 +210,20 @@ public record LucernaStatusSnapshot(
         return this.frameLifecycle.contextAcquisition();
     }
 
+    public String frameConstantsLabel() {
+        return this.frameConstants.stateLabel();
+    }
+
+    public boolean frameConstantsRequiredAvailable() {
+        return this.frameConstants.requiredConstantsAvailable();
+    }
+
+    public boolean frameConstantsFresh() {
+        return this.frameConstants.freshForFrame();
+    }
+
     public String compactStatusLine() {
-        return "Lucerna renderer=%s backend=%s native=%s iris=%s context=%s frameStage=%s dirty=%d worldGen=%d uploadWorldGen=%d uploadMatGen=%d cpuScopes=%d gpuScopes=%d"
+        return "Lucerna renderer=%s backend=%s native=%s iris=%s context=%s frameStage=%s constants=%s dirty=%d worldGen=%d uploadWorldGen=%d uploadMatGen=%d cpuScopes=%d gpuScopes=%d"
                 .formatted(
                         this.rendererStateLabel(),
                         this.backend.kind().name(),
@@ -211,6 +231,7 @@ public record LucernaStatusSnapshot(
                         this.iris.stateLabel(),
                         this.frameLifecycle.contextStatus().name(),
                         this.frameLifecycle.stage().name(),
+                        this.frameConstants.stateLabel(),
                         this.pendingDirtyRegionCount(),
                         this.worldGeneration(),
                         this.uploadWorldGeneration(),
@@ -262,6 +283,15 @@ public record LucernaStatusSnapshot(
         fields.put("frame.context.ready", Boolean.toString(this.frameLifecycle.contextReady()));
         fields.put("frame.context.source", this.frameLifecycle.contextAcquisition().source());
         fields.put("frame.context.message", this.frameLifecycle.contextMessage());
+        fields.put("frame.constants.available", Boolean.toString(this.frameConstants.constantsAvailable()));
+        fields.put("frame.constants.requiredAvailable", Boolean.toString(this.frameConstants.requiredConstantsAvailable()));
+        fields.put("frame.constants.fresh", Boolean.toString(this.frameConstants.freshForFrame()));
+        fields.put("frame.constants.state", this.frameConstants.stateLabel());
+        fields.put("frame.constants.frameIndex", Long.toString(this.frameConstants.constantsFrameIndex()));
+        fields.put("frame.constants.lifecycleFrameIndex", Long.toString(this.frameConstants.lifecycleFrameIndex()));
+        fields.put("frame.constants.ageNanos", Long.toString(this.frameConstants.ageNanos()));
+        fields.put("frame.constants.missingRequired", this.frameConstants.missingRequiredLabel());
+        fields.put("frame.constants.message", this.frameConstants.message());
         fields.put("frame.cpuScopeCount", Integer.toString(this.cpuScopeDurationsMillis().size()));
         fields.put("frame.gpuScopeCount", Integer.toString(this.gpuScopeDurationsMillis().size()));
         fields.put("frame.activeCpuScopeCount", Integer.toString(this.activeCpuScopeCount()));

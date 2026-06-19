@@ -112,6 +112,21 @@ std::size_t FrameResources::live_image_count() const {
     return count;
 }
 
+FrameResourceRingStats FrameResources::stats() const {
+    return FrameResourceRingStats{
+        ring_index,
+        generation,
+        last_frame_index,
+        reset_count,
+        transient_buffers.size(),
+        transient_images.size(),
+        live_buffer_count(),
+        live_image_count(),
+        buffer_lifetime,
+        image_lifetime
+    };
+}
+
 std::string FrameResources::status() const {
     std::ostringstream out;
     out << "ring=" << ring_index
@@ -217,6 +232,9 @@ void ResourceManager::reset_frame(std::uint64_t frame_index) {
     resources.generation++;
     resources.last_frame_index = frame_index;
     resources.reset_count++;
+    has_active_ring_ = true;
+    active_ring_index_ = resources.ring_index;
+    last_frame_index_ = frame_index;
 }
 
 NativeBufferHandle& ResourceManager::track_transient_buffer(
@@ -333,7 +351,40 @@ std::uint64_t ResourceManager::resource_generation() const {
     return resource_generation_;
 }
 
+ResourceManagerStats ResourceManager::stats() const {
+    ResourceManagerStats result;
+    result.has_context = has_context_;
+    result.has_active_ring = has_active_ring_;
+    result.frames_in_flight = frames_in_flight();
+    result.active_ring_index = active_ring_index_;
+    result.last_frame_index = last_frame_index_;
+    result.context_adoption_generation = context_adoption_generation_;
+    result.context_release_generation = context_release_generation_;
+    result.resource_generation = resource_generation_;
+    result.rings.reserve(frames_.size());
+
+    for (const auto& frame_resources : frames_) {
+        auto ring = frame_resources.stats();
+        result.transient_buffer_count += ring.transient_buffer_count;
+        result.transient_image_count += ring.transient_image_count;
+        result.live_buffer_count += ring.live_buffer_count;
+        result.live_image_count += ring.live_image_count;
+        result.buffer_lifetime.created += ring.buffer_lifetime.created;
+        result.buffer_lifetime.reused += ring.buffer_lifetime.reused;
+        result.buffer_lifetime.released += ring.buffer_lifetime.released;
+        result.buffer_lifetime.live += ring.buffer_lifetime.live;
+        result.image_lifetime.created += ring.image_lifetime.created;
+        result.image_lifetime.reused += ring.image_lifetime.reused;
+        result.image_lifetime.released += ring.image_lifetime.released;
+        result.image_lifetime.live += ring.image_lifetime.live;
+        result.rings.push_back(ring);
+    }
+
+    return result;
+}
+
 std::string ResourceManager::status() const {
+    const auto resource_stats = stats();
     std::ostringstream out;
     out << "context_state=" << to_string(context_.state)
         << " has_context=" << has_context_
@@ -349,6 +400,20 @@ std::string ResourceManager::status() const {
     append_queue_family(out, context_.graphics_queue_family);
     out << "}"
         << " frames_in_flight=" << frames_.size()
+        << " ring_stats={active=" << resource_stats.has_active_ring
+        << ",active_ring=" << resource_stats.active_ring_index
+        << ",last_frame=" << resource_stats.last_frame_index
+        << ",transient_buffers=" << resource_stats.transient_buffer_count
+        << ",transient_images=" << resource_stats.transient_image_count
+        << ",live_buffers=" << resource_stats.live_buffer_count
+        << ",live_images=" << resource_stats.live_image_count
+        << ",buffers_created=" << resource_stats.buffer_lifetime.created
+        << ",buffers_reused=" << resource_stats.buffer_lifetime.reused
+        << ",buffers_released=" << resource_stats.buffer_lifetime.released
+        << ",images_created=" << resource_stats.image_lifetime.created
+        << ",images_reused=" << resource_stats.image_lifetime.reused
+        << ",images_released=" << resource_stats.image_lifetime.released
+        << "}"
         << " frame_rings=[";
     for (std::size_t index = 0; index < frames_.size(); index++) {
         if (index != 0) {
@@ -368,6 +433,9 @@ void ResourceManager::clear_frame_resources() {
         frame.last_frame_index = 0;
         frame.reset_count = 0;
     }
+    has_active_ring_ = false;
+    active_ring_index_ = 0;
+    last_frame_index_ = 0;
 }
 
 std::uint64_t ResourceManager::next_resource_generation() {

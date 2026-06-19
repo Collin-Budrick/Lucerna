@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -51,6 +53,40 @@ struct UploadPacket {
 struct BorrowedVulkanContext;
 class ResourceManager;
 
+enum class NativeRenderPass : std::uint8_t {
+    FutureGBuffer = 0,
+    NoopLighting = 1,
+    FlatComposite = 2
+};
+
+inline constexpr std::size_t kNativeRenderPassCount = 3;
+
+enum class NativeRenderPassState : std::uint8_t {
+    Inactive,
+    WaitingForFrame,
+    WaitingForContext,
+    Ready,
+    Submitted,
+    SkippedInvalidOrder,
+    SkippedNoContext,
+    NotWired
+};
+
+struct NativeRenderPassCounters {
+    NativeRenderPass pass = NativeRenderPass::FutureGBuffer;
+    NativeRenderPassState state = NativeRenderPassState::Inactive;
+    std::uint64_t attempts = 0;
+    std::uint64_t submitted = 0;
+    std::uint64_t skipped = 0;
+    std::uint64_t invalid_order = 0;
+    std::uint64_t missing_context = 0;
+    std::uint64_t not_wired = 0;
+    std::uint64_t placeholder_resources = 0;
+    std::uint64_t last_frame_index = 0;
+    bool expected_this_frame = false;
+    bool submitted_this_frame = false;
+};
+
 class Renderer {
 public:
     Renderer();
@@ -79,12 +115,28 @@ private:
     void set_error(std::string error);
     [[nodiscard]] std::uint64_t estimate_upload_staging_bytes(const UploadPacket& packet) const;
     void track_upload_staging_placeholder(const UploadPacket& packet);
-    void track_lighting_placeholders();
+    [[nodiscard]] std::uint64_t track_noop_lighting_placeholder();
+    [[nodiscard]] std::uint64_t track_flat_composite_placeholder();
+    void reset_pass_counters();
+    void prepare_frame_passes();
+    void mark_pass_not_wired(NativeRenderPass pass);
+    void mark_pass_submitted(NativeRenderPass pass, std::uint64_t placeholder_resources);
+    void mark_pass_skipped(NativeRenderPass pass, NativeRenderPassState state, bool missing_context);
+    [[nodiscard]] NativeRenderPassCounters& pass_counters(NativeRenderPass pass);
+    [[nodiscard]] const NativeRenderPassCounters& pass_counters(NativeRenderPass pass) const;
 
     std::unique_ptr<ResourceManager> resources_;
+    std::array<NativeRenderPassCounters, kNativeRenderPassCount> pass_counters_;
     std::string last_error_;
     bool initialized_ = false;
     bool frame_open_ = false;
+    bool current_frame_borrowed_context_adopted_ = false;
+    bool current_frame_context_released_ = false;
+    bool current_frame_render_lighting_submitted_ = false;
+    bool current_frame_order_valid_ = true;
+    bool last_frame_borrowed_context_adopted_ = false;
+    bool last_render_lighting_order_valid_ = true;
+    bool last_end_frame_order_valid_ = true;
     std::int32_t width_ = 0;
     std::int32_t height_ = 0;
     std::uint64_t frame_index_ = 0;
@@ -99,6 +151,21 @@ private:
     std::uint64_t lighting_pass_count_ = 0;
     std::uint64_t context_adopt_count_ = 0;
     std::uint64_t context_release_count_ = 0;
+    std::uint64_t context_adopted_for_frame_count_ = 0;
+    std::uint64_t context_released_during_frame_count_ = 0;
+    std::uint64_t frame_without_context_count_ = 0;
+    std::uint64_t invalid_begin_frame_order_count_ = 0;
+    std::uint64_t invalid_render_lighting_order_count_ = 0;
+    std::uint64_t invalid_end_frame_order_count_ = 0;
+    std::uint64_t render_lighting_without_frame_count_ = 0;
+    std::uint64_t render_lighting_without_context_count_ = 0;
+    std::uint64_t render_lighting_duplicate_count_ = 0;
+    std::uint64_t end_frame_without_begin_count_ = 0;
+    std::uint64_t end_frame_without_context_count_ = 0;
+    std::uint64_t end_frame_without_lighting_count_ = 0;
 };
+
+[[nodiscard]] const char* to_string(NativeRenderPass pass);
+[[nodiscard]] const char* to_string(NativeRenderPassState state);
 
 } // namespace lucerna

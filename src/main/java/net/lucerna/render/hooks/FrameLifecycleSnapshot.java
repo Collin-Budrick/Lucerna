@@ -2,6 +2,8 @@ package net.lucerna.render.hooks;
 
 import net.lucerna.render.context.BorrowedVulkanContextAcquisition;
 import net.lucerna.render.context.BorrowedVulkanContextAcquisitionStatus;
+import net.lucerna.render.pass.LucernaFramePassStatus;
+import net.lucerna.render.pass.LucernaFramePassStatusCode;
 
 public record FrameLifecycleSnapshot(
         long frameIndex,
@@ -13,6 +15,7 @@ public record FrameLifecycleSnapshot(
         boolean frameOpen,
         boolean lightingSubmitted,
         BorrowedVulkanContextAcquisition contextAcquisition,
+        LucernaFramePassStatus framePassStatus,
         String lastMessage
 ) {
     public FrameLifecycleSnapshot(
@@ -36,6 +39,34 @@ public record FrameLifecycleSnapshot(
                 frameOpen,
                 lightingSubmitted,
                 BorrowedVulkanContextAcquisition.absent("Frame context acquisition has not been reported."),
+                LucernaFramePassStatus.notRequested(),
+                lastMessage
+        );
+    }
+
+    public FrameLifecycleSnapshot(
+            long frameIndex,
+            FrameHookStage stage,
+            FramePassIntent passIntent,
+            int viewportWidth,
+            int viewportHeight,
+            boolean resizePending,
+            boolean frameOpen,
+            boolean lightingSubmitted,
+            BorrowedVulkanContextAcquisition contextAcquisition,
+            String lastMessage
+    ) {
+        this(
+                frameIndex,
+                stage,
+                passIntent,
+                viewportWidth,
+                viewportHeight,
+                resizePending,
+                frameOpen,
+                lightingSubmitted,
+                contextAcquisition,
+                LucernaFramePassStatus.notRequested(),
                 lastMessage
         );
     }
@@ -57,6 +88,9 @@ public record FrameLifecycleSnapshot(
                     "Frame context acquisition has not been reported."
             );
         }
+        if (framePassStatus == null) {
+            framePassStatus = LucernaFramePassStatus.notRequested();
+        }
     }
 
     public boolean hasViewport() {
@@ -73,5 +107,17 @@ public record FrameLifecycleSnapshot(
 
     public String contextMessage() {
         return this.contextAcquisition.message();
+    }
+
+    public LucernaFramePassStatusCode framePassStatusCode() {
+        return this.framePassStatus.code();
+    }
+
+    public boolean framePassAttachable() {
+        return this.framePassStatus.attachable();
+    }
+
+    public String framePassMessage() {
+        return this.framePassStatus.message();
     }
 }

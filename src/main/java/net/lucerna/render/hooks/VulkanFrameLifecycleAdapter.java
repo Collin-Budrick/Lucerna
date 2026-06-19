@@ -7,6 +7,10 @@ import net.lucerna.render.context.BorrowedVulkanContextHandles;
 import net.lucerna.render.context.BorrowedVulkanContextProbe;
 import net.lucerna.render.context.GuardedBorrowedVulkanContextAdapter;
 import net.lucerna.render.context.VulkanFrameContextRequest;
+import net.lucerna.render.pass.LucernaFramePassKind;
+import net.lucerna.render.pass.LucernaFramePassRequest;
+import net.lucerna.render.pass.LucernaFramePassResult;
+import net.lucerna.render.pass.LucernaFramePassStatus;
 import net.lucerna.telemetry.LucernaTelemetry;
 
 import java.util.Locale;
@@ -29,6 +33,7 @@ public final class VulkanFrameLifecycleAdapter {
     private boolean borrowedContextAdopted;
     private FrameHookStage stage = FrameHookStage.IDLE;
     private FramePassIntent passIntent = FramePassIntent.NONE;
+    private LucernaFramePassStatus framePassStatus = LucernaFramePassStatus.notRequested();
     private BorrowedVulkanContextAcquisition lastContextAcquisition = BorrowedVulkanContextAcquisition.absent(
             "Frame context acquisition has not started."
     );
@@ -104,6 +109,12 @@ public final class VulkanFrameLifecycleAdapter {
                     "frame-hook",
                     "Borrowed Vulkan context was not requested because the backend is not Sodium Vulkan."
             );
+            this.framePassStatus = LucernaFramePassStatus.waitingForContext(
+                    LucernaFramePassKind.FLAT_COMPOSITE,
+                    this.frameIndex + 1L,
+                    false,
+                    "Frame pass attachment skipped because the backend is not Sodium Vulkan."
+            );
             return this.skip("Frame skipped because the backend is not Sodium Vulkan: " + backendMessage);
         }
 
@@ -116,6 +127,11 @@ public final class VulkanFrameLifecycleAdapter {
 
     private FrameHookResult beginFrame(BackendStatus backendStatus, float tickDelta, long nextFrame) {
         if (this.frameOpen) {
+            this.framePassStatus = LucernaFramePassStatus.waitingForFrame(
+                    LucernaFramePassKind.FLAT_COMPOSITE,
+                    this.frameIndex,
+                    "Frame pass attachment is waiting for the current active frame to close."
+            );
             return this.skip("beginFrame skipped because frame " + this.frameIndex + " is still open.");
         }
 
@@ -125,6 +141,12 @@ public final class VulkanFrameLifecycleAdapter {
                 nextFrame
         );
         if (!contextAcquisition.ready()) {
+            this.framePassStatus = LucernaFramePassStatus.waitingForContext(
+                    LucernaFramePassKind.FLAT_COMPOSITE,
+                    nextFrame,
+                    false,
+                    "Frame pass attachment is waiting for a READY borrowed Vulkan context."
+            );
             return this.skipForFrame(
                     nextFrame,
                     "beginFrame skipped because borrowed Vulkan context is "
@@ -135,6 +157,11 @@ public final class VulkanFrameLifecycleAdapter {
         }
 
         if (!this.isNativeOperational()) {
+            this.framePassStatus = LucernaFramePassStatus.skipped(
+                    LucernaFramePassKind.FLAT_COMPOSITE,
+                    nextFrame,
+                    "Frame pass attachment skipped because the native bridge is not operational."
+            );
             return this.skip("beginFrame skipped because the native bridge is not operational.");
         }
 
@@ -142,12 +169,22 @@ public final class VulkanFrameLifecycleAdapter {
 
         if (!this.adoptBorrowedContext(contextAcquisition)) {
             this.telemetry.endCpuScope(FRAME_SCOPE);
+            this.framePassStatus = LucernaFramePassStatus.skipped(
+                    LucernaFramePassKind.FLAT_COMPOSITE,
+                    nextFrame,
+                    "Frame pass attachment skipped because the borrowed Vulkan context could not be adopted."
+            );
             return this.failAfterNative(nextFrame, "beginFrame skipped because the borrowed Vulkan context could not be adopted.");
         }
 
         if (!this.submitPendingResize()) {
             this.telemetry.endCpuScope(FRAME_SCOPE);
             this.releaseBorrowedContext();
+            this.framePassStatus = LucernaFramePassStatus.skipped(
+                    LucernaFramePassKind.FLAT_COMPOSITE,
+                    nextFrame,
+                    "Frame pass attachment skipped because pending resize disabled the native bridge."
+            );
             return this.failAfterNative(nextFrame, "beginFrame skipped because pending resize disabled the native bridge.");
         }
 
@@ -155,6 +192,11 @@ public final class VulkanFrameLifecycleAdapter {
         if (!this.isNativeOperational()) {
             this.telemetry.endCpuScope(FRAME_SCOPE);
             this.releaseBorrowedContext();
+            this.framePassStatus = LucernaFramePassStatus.skipped(
+                    LucernaFramePassKind.FLAT_COMPOSITE,
+                    nextFrame,
+                    "Frame pass attachment skipped because native beginFrame disabled the bridge."
+            );
             return this.failAfterNative(nextFrame, "Native beginFrame disabled the bridge: " + this.nativeBridge.lastError());
         }
 
@@ -163,6 +205,11 @@ public final class VulkanFrameLifecycleAdapter {
         this.lightingSubmitted = false;
         this.stage = FrameHookStage.FRAME_ACTIVE;
         this.passIntent = FramePassIntent.NO_OP_LIGHTING_PASS;
+        this.framePassStatus = LucernaFramePassStatus.waitingForTarget(
+                LucernaFramePassKind.FLAT_COMPOSITE,
+                this.frameIndex,
+                "Borrowed Vulkan context is READY and frame is active; no safe pass target has been supplied."
+        );
         return this.accept(
                 FrameHookEvent.BEGIN_FRAME,
                 true,
@@ -208,6 +255,80 @@ public final class VulkanFrameLifecycleAdapter {
         );
     }
 
+    public synchronized LucernaFramePassResult attachFramePass(LucernaFramePassRequest request) {
+        LucernaFramePassRequest normalizedRequest = request == null
+                ? LucernaFramePassRequest.noOp(this.frameIndex)
+                : request;
+
+        if (!this.frameOpen) {
+            this.framePassStatus = LucernaFramePassStatus.waitingForFrame(
+                    normalizedRequest.kind(),
+                    normalizedRequest.hasExplicitFrameIndex() ? normalizedRequest.frameIndex() : this.frameIndex,
+                    "Frame pass attachment skipped because no frame is active."
+            );
+            return LucernaFramePassResult.skipped(normalizedRequest, this.framePassStatus);
+        }
+
+        if (!normalizedRequest.matchesFrame(this.frameIndex)) {
+            this.framePassStatus = LucernaFramePassStatus.skipped(
+                    normalizedRequest.kind(),
+                    this.frameIndex,
+                    "Frame pass attachment skipped because request frame "
+                            + normalizedRequest.frameIndex()
+                            + " does not match active frame "
+                            + this.frameIndex
+                            + "."
+            );
+            return LucernaFramePassResult.skipped(normalizedRequest, this.framePassStatus);
+        }
+
+        if (!this.lastContextAcquisition.ready()) {
+            this.framePassStatus = LucernaFramePassStatus.waitingForContext(
+                    normalizedRequest.kind(),
+                    this.frameIndex,
+                    true,
+                    "Frame pass attachment skipped because the borrowed Vulkan context is not READY."
+            );
+            return LucernaFramePassResult.skipped(normalizedRequest, this.framePassStatus);
+        }
+
+        if (!this.isNativeOperational()) {
+            this.closeLocalFrame();
+            this.framePassStatus = LucernaFramePassStatus.skipped(
+                    normalizedRequest.kind(),
+                    this.frameIndex,
+                    "Frame pass attachment skipped because the native bridge is not operational."
+            );
+            return LucernaFramePassResult.skipped(normalizedRequest, this.framePassStatus);
+        }
+
+        if (!normalizedRequest.hasTarget()) {
+            this.framePassStatus = LucernaFramePassStatus.waitingForTarget(
+                    normalizedRequest.kind(),
+                    this.frameIndex,
+                    "Frame pass attachment skipped because no safe Mojang render-pass target was supplied."
+            );
+            return LucernaFramePassResult.skipped(normalizedRequest, this.framePassStatus);
+        }
+
+        if (!normalizedRequest.targetSafeForAttachment()) {
+            this.framePassStatus = LucernaFramePassStatus.targetUnsafe(
+                    normalizedRequest.kind(),
+                    this.frameIndex,
+                    "Frame pass attachment skipped because the target was not marked safe for Lucerna."
+            );
+            return LucernaFramePassResult.skipped(normalizedRequest, this.framePassStatus);
+        }
+
+        this.passIntent = this.intentFor(normalizedRequest.kind());
+        this.framePassStatus = LucernaFramePassStatus.attachedNoOp(
+                normalizedRequest.kind(),
+                this.frameIndex,
+                "Lucerna accepted a safe frame pass target; attachment remains a guarded no-op."
+        );
+        return LucernaFramePassResult.acceptedNoOp(normalizedRequest, this.framePassStatus);
+    }
+
     public synchronized FrameHookResult endFrame() {
         if (!this.frameOpen) {
             return this.skip("endFrame skipped because no frame is open.");
@@ -224,6 +345,11 @@ public final class VulkanFrameLifecycleAdapter {
         this.frameOpen = false;
         this.passIntent = FramePassIntent.NONE;
         this.stage = FrameHookStage.FRAME_COMPLETE;
+        this.framePassStatus = LucernaFramePassStatus.frameClosed(
+                this.framePassStatus.kind(),
+                this.frameIndex,
+                "Frame " + this.frameIndex + " ended; Lucerna frame pass attachment is closed."
+        );
 
         if (!this.isNativeOperational()) {
             return this.failAfterNative("Native endFrame disabled the bridge: " + this.nativeBridge.lastError());
@@ -245,6 +371,10 @@ public final class VulkanFrameLifecycleAdapter {
         return this.lastResult;
     }
 
+    public synchronized LucernaFramePassStatus framePassStatus() {
+        return this.framePassStatus;
+    }
+
     public synchronized FrameLifecycleSnapshot snapshot() {
         return new FrameLifecycleSnapshot(
                 this.frameIndex,
@@ -256,6 +386,7 @@ public final class VulkanFrameLifecycleAdapter {
                 this.frameOpen,
                 this.lightingSubmitted,
                 this.lastContextAcquisition,
+                this.framePassStatus,
                 this.lastResult.message()
         );
     }
@@ -342,6 +473,11 @@ public final class VulkanFrameLifecycleAdapter {
         this.lightingSubmitted = false;
         this.passIntent = FramePassIntent.NONE;
         this.stage = FrameHookStage.SKIPPED;
+        this.framePassStatus = LucernaFramePassStatus.frameClosed(
+                this.framePassStatus.kind(),
+                this.frameIndex,
+                "Frame was closed locally before Lucerna could attach a frame pass."
+        );
     }
 
     private FrameHookResult accept(FrameHookEvent event, boolean nativeCallIssued, FramePassIntent intent, String message) {
@@ -395,6 +531,13 @@ public final class VulkanFrameLifecycleAdapter {
             case RENDER_LIGHTING -> FrameHookStage.LIGHTING_SUBMITTED;
             case END_FRAME -> FrameHookStage.FRAME_COMPLETE;
             case SKIPPED -> FrameHookStage.SKIPPED;
+        };
+    }
+
+    private FramePassIntent intentFor(LucernaFramePassKind kind) {
+        return switch (kind) {
+            case FLAT_COMPOSITE -> FramePassIntent.FLAT_COMPOSITE_PASS;
+            case NO_OP -> FramePassIntent.NO_OP_FRAME_ATTACHMENT_PASS;
         };
     }
 }

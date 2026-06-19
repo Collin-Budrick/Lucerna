@@ -31,6 +31,9 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Frame: stage=" + snapshot.frameStage()
                 + " context=" + snapshot.frameLifecycle().contextStatus()
                 + " source=" + snapshot.frameContextAcquisition().source()));
+        lines.add(Component.literal("Frame constants: " + snapshot.frameConstantsLabel()
+                + " | required=" + yesNo(snapshot.frameConstantsRequiredAvailable())
+                + " | fresh=" + yesNo(snapshot.frameConstantsFresh())));
         return lines;
     }
 
@@ -72,6 +75,8 @@ public final class LucernaDebugOverlayLines {
                 + " | ready=" + yesNo(snapshot.frameLifecycle().contextReady())));
         lines.add(Component.literal("Frame context source: " + snapshot.frameContextAcquisition().source()));
         lines.add(Component.literal("Frame context message: " + snapshot.frameLifecycle().contextMessage()));
+        lines.add(Component.literal("Frame constants: " + snapshot.frameConstants().stateLabel()
+                + " | " + snapshot.frameConstants().message()));
         lines.add(Component.literal("Iris: " + snapshot.irisLabel() + " (" + snapshot.iris().shaderPackState() + ")"));
     }
 
@@ -102,6 +107,8 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Frame stage: " + snapshot.frameStage()
                 + " | pass=" + snapshot.framePassIntent()
                 + " | context=" + snapshot.frameLifecycle().contextStatus()));
+        lines.add(Component.literal("Frame constants: " + snapshot.frameConstants().stateLabel()
+                + " | age=" + formatOptionalMillis(snapshot.frameConstants().ageMillis())));
         for (Map.Entry<String, Double> timing : snapshot.cpuScopeDurationsMillis().entrySet()) {
             lines.add(Component.literal("CPU " + timing.getKey() + ": " + formatMillis(timing.getValue())));
         }
@@ -134,6 +141,13 @@ public final class LucernaDebugOverlayLines {
 
     private static String formatMillis(double millis) {
         return String.format(Locale.ROOT, "%.3f ms", millis);
+    }
+
+    private static String formatOptionalMillis(double millis) {
+        if (millis < 0.0D) {
+            return "unavailable";
+        }
+        return formatMillis(millis);
     }
 
     private static String yesNo(boolean value) {
