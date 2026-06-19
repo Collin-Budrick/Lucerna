@@ -2,7 +2,7 @@
 
 ## Progress Audit
 
-Current controller estimate: **about 99.2% complete against this file**.
+Current controller estimate: **about 99.3% complete against this file**.
 
 This percentage is conservative:
 - Rounds 0-3 are mostly implemented and controller-validated.
@@ -12,8 +12,8 @@ This percentage is conservative:
 - Latest controller work moves the final world-color composite hook from `GameRenderer.renderLevel` tail to immediately after `LevelRenderer.render(...)`, removes the older sampled public preview draw from that hook, adds final-composite frame/pass intent contracts, and validates final-composite public Mojang draw submission before hand/HUD composition. Screenshot delta still shows no focused wall-region brightening, so real surface lighting remains open.
 - Latest controller work restores the launchable native DLL path after the unvalidated native spatialization generated an Application Control-blocked DLL, then moves the Round 5 visible proof into a final-composite-only focus-window shader. Sodium + Iris + Vulkan now loads the native DLL, submits the focus-window final composite, and screenshot delta proves visible brightening in the focused wall region while preserving the HUD.
 - Current Round 6 preparation has controller-validated Java/cache scaffolding for GI source summaries, native diffuse-GI upload metadata, dirty-region listener hooks, sparse voxel radiance cache records/confidence/invalidation/debug status, Round 6 debug overlay presentation, native Round 6 dispatch telemetry, a bounded native diffuse-GI visible-signal telemetry marker, a GI-labeled final-composite preview path, and a screenshot-delta proof for a Round 6 GI-gated preview. Sodium + Iris + Vulkan launch validation proves low-res GI dispatch metadata can become enabled with nonzero rays/cache reads, a separate cache proof validates nonzero cache records/writes, and the GI preview path produces a focused screenshot difference. The native diffuse-GI output-source replacement is now controller-validated with signed local native staging and a stricter source proof that rejects the temporary direct-light RGBA payload. True native low-res GI output/tracing remains open because the proof still validates a metadata-backed native preview source, not physical GI tracing.
-- Latest controller work adds Round 7 signal-separated denoise contracts, final composite mode/status controls, native denoise scaffold telemetry, first-practical CPU denoised diffuse-GI RGBA8 output, and a controller-only Round 7 proof helper. Build/native/signing and Sodium + Iris + Vulkan world-join launches validate raw-GI metadata, CPU denoised-output generation/readback, composite placeholder metadata, and explicit `realDenoiseShaderOutput=false`; raw-vs-denoised-vs-final screenshot proof remains open.
-- The remaining work is the hardest part: turning denoise/composite metadata into visible raw/denoised/final modes, then moving into adaptive sampling and later tracing/reuse systems.
+- Latest controller work adds Round 7 signal-separated denoise contracts, final composite mode/status controls, native denoise scaffold telemetry, first-practical CPU denoised diffuse-GI RGBA8 output, controller-selectable baseline/raw-GI/denoised-GI/final modes, and a controller-only Round 7 proof helper. Build/native/signing and Sodium + Iris + Vulkan world-join launches validate raw-GI metadata, CPU denoised-output generation/readback, composite placeholder metadata, explicit `realDenoiseShaderOutput=false`, HUD-safe selected-mode screenshots, and final-mode telemetry using the denoised GI source.
+- The remaining work is the hardest part: making the selected Round 7 raw/denoised/final paths produce a meaningful focused-surface visual delta, then moving into adaptive sampling and later tracing/reuse systems.
 
 Legend:
 - ~~Struck through~~ = implemented and validated by the main controller.
@@ -491,7 +491,8 @@ Status:
 - ~~Java signal-separated denoise contracts exist for diffuse GI, direct shadows, optional specular/AO placeholders, edge-rejection inputs, history counters, and output contracts.~~ **DONE/VALIDATED by controller build**
 - ~~Native denoise execution scaffold reports whether denoise metadata was accepted and explicitly marks `signal_separated_denoise_metadata_scaffold_no_render_output` when the validated placeholder metadata is consumed.~~ **DONE/VALIDATED in `run/validation-logs/latest-round7-denoise-composite-foundation-sodium-iris-vulkan-20260619-152554.log`**
 - ~~Native first-practical CPU denoised diffuse-GI RGBA8 output is generated from the raw GI payload and read back through Java with changed-pixel/mean-delta telemetry while explicitly keeping `realDenoiseShaderOutput=false`.~~ **DONE/VALIDATED in `run/validation-logs/latest-round7-cpu-denoise-output-sodium-iris-vulkan-20260619-161055.log`; key markers include `marker=first_practical_cpu_denoised_diffuse_gi_rgba8_generated`, `denoised_cpu_output_generated=true`, `denoisedOutputChangedPixels=60964`, `denoisedOutputMeanAbsDelta=2`, `denoisedPayloadReady=true`, and `realDenoiseShaderOutput=false`**
-- Real denoise shader/output, raw-vs-denoised screenshot proof, edge-preservation proof, and flicker/noise comparison remain open.
+- ~~Controller-selected raw-GI and denoised-GI modes launch with Sodium + Iris + Vulkan, capture valid same-scene screenshots without proof-overlay contamination, and log the requested raw/denoised source paths.~~ **DONE/VALIDATED in `run/validation-logs/latest-round7-denoise-composite-rawgi-20260619-165335.log`, `run/validation-screenshots/round7-denoise-composite-rawgi-20260619-165335-RawGi.png`, `run/validation-logs/latest-round7-denoise-composite-denoisedgi-20260619-165412.log`, and `run/validation-screenshots/round7-denoise-composite-denoisedgi-20260619-165412-DenoisedGi.png`**
+- Real denoise shader/output, focused raw-vs-denoised visible-delta proof, edge-preservation proof, and flicker/noise comparison remain open. The controller assertion helper currently fails the focused-region visual thresholds in `run/validation-logs/round7-denoise-composite-assert-20260619-165450.json`.
 Agent V: Final Composite
 
 Owns:
@@ -528,7 +529,9 @@ Status:
 
 - ~~Composite mode config/status scaffolding exists for base/vanilla, direct-only, GI-only, and final Lucerna composite presentation paths.~~ **DONE/VALIDATED by controller build**
 - ~~Settings/debug UI can surface the composite mode/status foundation without claiming visual final-composite quality.~~ **DONE/VALIDATED by controller build**
-- Same-scene baseline/direct-only/GI-only/final screenshots and HUD/hand/particle/translucency visual proof remain open.
+- ~~Same-scene baseline/raw-GI/denoised-GI/final-mode screenshots are controller-captured through selectable composite modes, with HUD and hand visible and without proof-overlay contamination.~~ **DONE/VALIDATED for selected-mode capture in `run/validation-screenshots/round7-denoise-composite-baseline-20260619-165305-Baseline.png`, `run/validation-screenshots/round7-denoise-composite-rawgi-20260619-165335-RawGi.png`, `run/validation-screenshots/round7-denoise-composite-denoisedgi-20260619-165412-DenoisedGi.png`, and `run/validation-screenshots/round7-denoise-composite-finalcomposite-20260619-165450-FinalComposite.png`**
+- ~~Final-mode telemetry now logs `round7.finalCompositeMode=final-composite`, HUD-safe status, ready direct/GI/denoised sources, and a denoised-GI draw source instead of falling back to the raw-GI visual path once the denoised payload is ready.~~ **DONE/VALIDATED in `run/validation-logs/latest-round7-denoise-composite-finalcomposite-20260619-165450.log`**
+- Direct-only mode capture, particle/translucency-specific visual proof, and meaningful final-composite focused-surface improvement remain open. The latest assertion report failed the focused-region visual thresholds even though full-frame differences were measurable.
 
 Round 7 evidence split:
 
@@ -550,6 +553,8 @@ Round 7 evidence split:
 - ~~Controller build/native build/signing passes after the Round 7 denoise/composite foundation integration. Sodium + Iris + Vulkan launches, joins `New World`, accepts native lighting dispatches with enabled stages, and logs `marker=signal_separated_denoise_metadata_scaffold_no_render_output` from the native denoise metadata scaffold.~~ **DONE/VALIDATED in `run/validation-logs/latest-round7-denoise-composite-foundation-sodium-iris-vulkan-20260619-152554.log`**
 - ~~Round 7 evidence telemetry now separates raw GI metadata, denoised-output intent, composite placeholder metadata, edge/history counters, and explicit no-real-denoise-output status in the native denoise scaffold log.~~ **DONE/VALIDATED in `run/validation-logs/latest-round7-evidence-telemetry-sodium-iris-vulkan-20260619-154001.log`; key markers include `rawGi=true`, `denoisedIntent=true`, `composite=placeholder`, `realDenoiseShaderOutput=false`, and `marker=signal_separated_denoise_metadata_scaffold_no_render_output`**
 - ~~Sodium + Iris + Vulkan enabled launch validates first-practical CPU denoised diffuse-GI output after controller build/native/signing: the game joins `New World`, accepts native lighting dispatches, generates/readbacks the CPU denoised payload, logs changed-pixel/mean-delta telemetry, keeps `realDenoiseShaderOutput=false`, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-round7-cpu-denoise-output-sodium-iris-vulkan-20260619-161055.log`**
+- ~~Sodium + Iris + Vulkan selected-mode launches now capture baseline, raw-GI, denoised-GI, and final-mode screenshots from the same test scene with proof overlays hidden, HUD/hand intact, and logs proving the selected raw/denoised/final paths executed.~~ **DONE/VALIDATED for selected-mode capture in `run/validation-logs/latest-round7-denoise-composite-baseline-20260619-165305.log`, `run/validation-logs/latest-round7-denoise-composite-rawgi-20260619-165335.log`, `run/validation-logs/latest-round7-denoise-composite-denoisedgi-20260619-165412.log`, and `run/validation-logs/latest-round7-denoise-composite-finalcomposite-20260619-165450.log`**
+- The same screenshot set does **not** close Round 7 visual quality: `run/validation-logs/round7-denoise-composite-assert-20260619-165450.json` reports failed focused-region thresholds for raw GI, denoised GI, and final composite.
 
 Round 7 Acceptance Criteria
 Denoised GI is visibly better than raw GI.
@@ -558,7 +563,8 @@ HUD is preserved.
 Debug composite modes work.
 Screenshots prove raw vs denoised vs final image.
 ~~Logs prove denoise metadata dispatch scaffold and first-practical CPU denoised output readback run cleanly.~~ **DONE/VALIDATED for scaffold + CPU denoise output only**
-Composite dispatch logs, raw-vs-denoised screenshots, final composite screenshots, and real shader denoise quality remain open.
+~~Composite dispatch logs, raw-vs-denoised screenshots, and final-mode screenshots now exist for selected-mode capture.~~ **DONE/VALIDATED for selected-mode evidence only**
+Focused-region raw-vs-denoised/final visual improvement, direct-only capture, particle/translucency-specific proof, and real shader denoise quality remain open.
 Raw GI delivery, denoised GI output quality, and final composite integration must be validated independently before any of these acceptance lines are struck through.
 Required Round 7 visual-proof gates remain open until controller evidence shows: raw GI source/output markers, denoise dispatch markers, denoised GI output markers, final composite mode markers, no proof-marker contamination, no focus-window-only evidence, and explicit HUD-safe final composite markers in the same validation set as the screenshots.
 Round 8: Adaptive Sampling Controller and Debug Heatmaps

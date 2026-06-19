@@ -1,5 +1,7 @@
 package net.lucerna.render.preview;
 
+import java.util.Locale;
+
 public record PublicMojangFinalCompositeSubmissionResult(
         boolean attempted,
         boolean submitted,
@@ -68,12 +70,39 @@ public record PublicMojangFinalCompositeSubmissionResult(
         return this.attempted && !this.submitted;
     }
 
+    public String submittedSourceIdentity() {
+        String normalizedReason = this.reason.toLowerCase(Locale.ROOT);
+        if (!this.submitted) {
+            return "not-submitted";
+        }
+        if (normalizedReason.contains("denoised diffuse-gi")) {
+            return "native-denoised-diffuse-gi-rgba8";
+        }
+        if (normalizedReason.contains("raw_gi") || normalizedReason.contains("native diffuse-gi")) {
+            return "native-diffuse-gi-rgba8";
+        }
+        if (normalizedReason.contains("direct-light")) {
+            return "native-direct-light-rgba8";
+        }
+        return "unknown-submitted-source";
+    }
+
+    public boolean submittedFocusWindowOnly() {
+        return this.submitted && this.reason.toLowerCase(Locale.ROOT).contains("focus-window");
+    }
+
+    public boolean submittedDirectLightSource() {
+        return "native-direct-light-rgba8".equals(this.submittedSourceIdentity());
+    }
+
     public String summary() {
         return "attempted=" + this.attempted
                 + ",submitted=" + this.submitted
                 + ",drawCallsIssued=" + this.drawCallsIssued
                 + ",javaOpaqueRenderObjectsPresent=" + this.javaOpaqueRenderObjectsPresent
                 + ",targetStatus=" + this.targetStatus
+                + ",sourceIdentity=" + this.submittedSourceIdentity()
+                + ",focusWindowOnly=" + this.submittedFocusWindowOnly()
                 + ",reason=" + this.reason;
     }
 

@@ -22,6 +22,8 @@ public final class PublicMojangPreviewDrawScaffolds {
     private static final String FINAL_COMPOSITE_FULLSCREEN_MODE = "final-composite-direct-light-focus-window-additive";
     private static final String ROUND7_RAW_GI_FULLSCREEN_MODE =
             "round7-raw-gi-native-diffuse-source-additive";
+    private static final String ROUND7_DENOISED_GI_FULLSCREEN_MODE =
+            "round7-denoised-gi-first-practical-cpu-output-additive";
     private static final String DIRECT_LIGHT_FINAL_COMPOSITE_SHADER =
             "lucerna:core/direct_light_final_composite_focus";
     private static final String ROUND6_DIFFUSE_GI_SURFACE_SHADER =
@@ -94,6 +96,26 @@ public final class PublicMojangPreviewDrawScaffolds {
                     .withLocation(Identifier.fromNamespaceAndPath(
                             "lucerna",
                             "pipeline/round7_raw_gi_visual_additive"
+                    ))
+                    .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
+                    .withFragmentShader(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "core/round6_native_diffuse_gi_surface"
+                    ))
+                    .withBindGroupLayout(BindGroupLayouts.IN_SAMPLER)
+                    .withColorTargetState(new ColorTargetState(
+                            Optional.of(BlendFunction.ADDITIVE),
+                            GpuFormat.RGBA8_UNORM,
+                            ColorTargetState.WRITE_COLOR
+                    ))
+                    .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+                    .build()
+    );
+    private static final RenderPipeline ROUND7_DENOISED_GI_ADDITIVE_PIPELINE = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.POST_PROCESSING_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "pipeline/round7_denoised_gi_visual_additive"
                     ))
                     .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
                     .withFragmentShader(Identifier.fromNamespaceAndPath(
@@ -346,6 +368,89 @@ public final class PublicMojangPreviewDrawScaffolds {
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
                 "public Mojang Round 7 RAW_GI native diffuse-GI source additive draw issued; shader="
+                        + ROUND6_DIFFUSE_GI_SURFACE_SHADER
+                        + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
+                        + ",javaOpaqueFallbackDrawRepeats=" + ROUND6_PUBLIC_FALLBACK_DRAW_REPEATS
+        );
+    }
+
+    public static PublicMojangPreviewDrawScaffold describeFullscreenRound7DenoisedGiVisualDraw(
+            RenderPass renderPass,
+            GpuTextureView sourceView
+    ) {
+        if (renderPass == null) {
+            return PublicMojangPreviewDrawScaffold.unavailable(
+                    "public Mojang Round 7 DENOISED_GI visual draw scaffold is unavailable because no render pass is open"
+            );
+        }
+        if (sourceView == null) {
+            return PublicMojangPreviewDrawScaffold.prepared(
+                    ROUND7_DENOISED_GI_ADDITIVE_PIPELINE,
+                    DIRECT_LIGHT_SOURCE_BINDING,
+                    ROUND7_DENOISED_GI_FULLSCREEN_MODE,
+                    FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                    FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                    SINGLE_INSTANCE_COUNT,
+                    FIRST_INSTANCE,
+                    "public Mojang Round 7 DENOISED_GI visual APIs are present, but no denoised diffuse-GI source texture view is available"
+            );
+        }
+
+        return PublicMojangPreviewDrawScaffold.prepared(
+                ROUND7_DENOISED_GI_ADDITIVE_PIPELINE,
+                DIRECT_LIGHT_SOURCE_BINDING,
+                ROUND7_DENOISED_GI_FULLSCREEN_MODE,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FIRST_INSTANCE,
+                "public Mojang Round 7 DENOISED_GI visual mode can bind the denoised diffuse-GI RGBA8 CPU source texture and issue one bounded additive draw; shader="
+                        + ROUND6_DIFFUSE_GI_SURFACE_SHADER
+                        + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
+        );
+    }
+
+    public static PublicMojangPreviewDrawScaffold issueFullscreenRound7DenoisedGiVisualDraw(
+            RenderPass renderPass,
+            GpuTextureView sourceView,
+            GpuSampler sourceSampler
+    ) {
+        PublicMojangPreviewDrawScaffold scaffold = describeFullscreenRound7DenoisedGiVisualDraw(
+                renderPass,
+                sourceView
+        );
+        if (!scaffold.drawPrepared()) {
+            return scaffold;
+        }
+        if (sourceView == null) {
+            return scaffold;
+        }
+        if (sourceSampler == null) {
+            return PublicMojangPreviewDrawScaffold.unavailable(
+                    "public Mojang Round 7 DENOISED_GI visual draw skipped because no denoised diffuse-GI source sampler is available"
+            );
+        }
+
+        renderPass.setPipeline(ROUND7_DENOISED_GI_ADDITIVE_PIPELINE);
+        RenderSystem.bindDefaultUniforms(renderPass);
+        renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, sourceView, sourceSampler);
+        for (int drawIndex = 0; drawIndex < ROUND6_PUBLIC_FALLBACK_DRAW_REPEATS; drawIndex++) {
+            renderPass.draw(
+                    FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                    FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                    SINGLE_INSTANCE_COUNT,
+                    FIRST_INSTANCE
+            );
+        }
+        return PublicMojangPreviewDrawScaffold.issued(
+                ROUND7_DENOISED_GI_ADDITIVE_PIPELINE,
+                DIRECT_LIGHT_SOURCE_BINDING,
+                ROUND7_DENOISED_GI_FULLSCREEN_MODE,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FIRST_INSTANCE,
+                "public Mojang Round 7 DENOISED_GI denoised diffuse-GI CPU output additive draw issued; shader="
                         + ROUND6_DIFFUSE_GI_SURFACE_SHADER
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
                         + ",javaOpaqueFallbackDrawRepeats=" + ROUND6_PUBLIC_FALLBACK_DRAW_REPEATS

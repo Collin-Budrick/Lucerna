@@ -105,13 +105,21 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
         int outputPixels = denoise.denoisedOutputPixels() > 0
                 ? denoise.denoisedOutputPixels()
                 : saturatedPixelCount(denoise.width(), denoise.height());
+        int outputWidth = denoise.width();
+        int outputHeight = denoise.height();
+        int halfWidth = Math.max(1, denoise.width() / 2);
+        int halfHeight = Math.max(1, denoise.height() / 2);
+        if (outputPixels > 0 && saturatedPixelCount(halfWidth, halfHeight) == outputPixels) {
+            outputWidth = halfWidth;
+            outputHeight = halfHeight;
+        }
         return new DenoisedDiffuseGiCpuOutputSnapshot(
                 denoise.nativeStatusAvailable(),
                 denoise.denoiseExecutionAvailable(),
                 denoise.dispatchGeneration(),
                 denoise.packetGeneration(),
-                denoise.width(),
-                denoise.height(),
+                outputWidth,
+                outputHeight,
                 outputPixels,
                 denoise.inputCount(),
                 denoise.outputCount(),

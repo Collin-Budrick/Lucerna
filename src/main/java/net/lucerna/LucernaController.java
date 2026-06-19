@@ -48,6 +48,7 @@ import net.lucerna.render.pass.LucernaFramePassRequest;
 import net.lucerna.render.pass.LucernaFramePassResult;
 import net.lucerna.render.pass.LucernaFramePassStatus;
 import net.lucerna.render.pass.LucernaFramePassTarget;
+import net.lucerna.render.preview.FinalCompositeModeStatus;
 import net.lucerna.render.preview.PublicMojangFinalCompositeSubmissionResult;
 import net.lucerna.render.preview.Round6DiffuseGiPreviewCompositeState;
 import net.lucerna.render.voxel.VoxelRay;
@@ -304,27 +305,77 @@ public final class LucernaController {
             this.logRound6DiffuseGiPreviewStatusIfChanged(giPreviewState, diffuseGiPayload);
             DenoisedDiffuseGiCpuOutputPayload denoisedGiPayload = this.nativeBridge.denoisedDiffuseGiCpuOutputPayload();
             this.logRound7DenoisedGiCpuOutputStatusIfChanged(denoisedGiPayload);
+            FinalCompositeModeStatus modeStatus = FinalCompositeModeStatus.fromConfigMode(this.getConfig().compositeMode());
             LucernaFramePassRequest finalCompositeRequest = LucernaFramePassRequest.finalWorldColorComposite(
                     this.frameHooks.frameIndex(),
                     target,
                     0.35F,
                     0.35F
             );
-            PublicMojangFinalCompositeSubmissionResult finalCompositeSubmission = giPreviewState.readyForFinalComposite(
-                    diffuseGiPayload
-            )
-                    ? RenderThreadPreviewTargetFactory.submitRound6DiffuseGiFinalCompositePublicDraw(
-                            target,
-                            diffuseGiPayload,
-                            giPreviewState
-                    )
-                    : RenderThreadPreviewTargetFactory.submitFinalCompositePublicDraw(target, directOutputPayload);
-            this.logPublicMojangFinalCompositeStatusIfChanged(finalCompositeSubmission);
+            PublicMojangFinalCompositeSubmissionResult finalCompositeSubmission = this.submitRound7SelectedVisualMode(
+                    modeStatus,
+                    target,
+                    directOutputPayload,
+                    diffuseGiPayload,
+                    denoisedGiPayload,
+                    giPreviewState
+            );
+            this.logPublicMojangFinalCompositeStatusIfChanged(
+                    finalCompositeSubmission,
+                    modeStatus,
+                    target,
+                    directOutputPayload != null && directOutputPayload.readyForPreviewDraw(),
+                    diffuseGiPayload != null && diffuseGiPayload.readyForPreviewDraw(),
+                    denoisedGiPayload != null && denoisedGiPayload.readyForPreviewDraw()
+            );
             return this.frameHooks.attachFramePass(finalCompositeRequest);
         } finally {
             this.frameHooks.endFrame();
             this.logFrameContextStatusIfChanged();
         }
+    }
+
+    private PublicMojangFinalCompositeSubmissionResult submitRound7SelectedVisualMode(
+            FinalCompositeModeStatus modeStatus,
+            LucernaFramePassTarget target,
+            DirectLightingCpuOutputPayload directOutputPayload,
+            Round6DiffuseGiCpuOutputPayload diffuseGiPayload,
+            DenoisedDiffuseGiCpuOutputPayload denoisedGiPayload,
+            Round6DiffuseGiPreviewCompositeState giPreviewState
+    ) {
+        if (modeStatus.baselineVisualMode()) {
+            return PublicMojangFinalCompositeSubmissionResult.notAttempted(
+                    "Round 7 visual mode baseline requested; Lucerna final composite draw is bypassed for same-scene control screenshots. "
+                            + modeStatus.validationSummary()
+            );
+        }
+        if (modeStatus.rawGiVisualMode()) {
+            return RenderThreadPreviewTargetFactory.submitRound6DiffuseGiFinalCompositePublicDraw(
+                    target,
+                    diffuseGiPayload,
+                    giPreviewState
+            );
+        }
+        if (modeStatus.denoisedGiVisualMode()) {
+            return RenderThreadPreviewTargetFactory.submitRound7DenoisedGiFinalCompositePublicDraw(
+                    target,
+                    denoisedGiPayload
+            );
+        }
+        if (modeStatus.finalCompositeVisualMode() && denoisedGiPayload != null && denoisedGiPayload.readyForPreviewDraw()) {
+            return RenderThreadPreviewTargetFactory.submitRound7DenoisedGiFinalCompositePublicDraw(
+                    target,
+                    denoisedGiPayload
+            );
+        }
+        if (giPreviewState.readyForFinalComposite(diffuseGiPayload)) {
+            return RenderThreadPreviewTargetFactory.submitRound6DiffuseGiFinalCompositePublicDraw(
+                    target,
+                    diffuseGiPayload,
+                    giPreviewState
+            );
+        }
+        return RenderThreadPreviewTargetFactory.submitFinalCompositePublicDraw(target, directOutputPayload);
     }
 
     public FrameConstantsCapture frameConstantsCapture() {
@@ -1214,11 +1265,35 @@ public final class LucernaController {
         );
     }
 
-    private void logPublicMojangFinalCompositeStatusIfChanged(PublicMojangFinalCompositeSubmissionResult result) {
+    private void logPublicMojangFinalCompositeStatusIfChanged(
+            PublicMojangFinalCompositeSubmissionResult result,
+            FinalCompositeModeStatus modeStatus,
+            LucernaFramePassTarget target,
+            boolean directSourceReady,
+            boolean giSourceReady,
+            boolean denoisedSourceReady
+    ) {
         if (result == null) {
             return;
         }
 
+        FinalCompositeModeStatus resolvedModeStatus = modeStatus == null
+                ? FinalCompositeModeStatus.fromConfigMode(this.getConfig().compositeMode())
+                : modeStatus;
+        boolean hudSafe = target != null
+                && target.available()
+                && target.worldColorTarget()
+                && target.preservesHud()
+                && target.safeForAttachment();
+        String sourceMix = resolvedModeStatus.sourceMixSummary(
+                directSourceReady,
+                giSourceReady,
+                denoisedSourceReady
+        );
+        String substitutionBoundary = resolvedModeStatus.substitutionBoundarySummary(
+                result.submittedFocusWindowOnly(),
+                result.submittedDirectLightSource()
+        );
         String logKey = result.attempted()
                 + "|"
                 + result.submitted()
@@ -1229,6 +1304,16 @@ public final class LucernaController {
                 + "|"
                 + result.targetStatus()
                 + "|"
+                + resolvedModeStatus.visualModeId()
+                + "|"
+                + hudSafe
+                + "|"
+                + sourceMix
+                + "|"
+                + result.submittedSourceIdentity()
+                + "|"
+                + substitutionBoundary
+                + "|"
                 + result.reason();
         if (logKey.equals(this.lastLoggedPublicMojangFinalCompositeKey)) {
             return;
@@ -1236,12 +1321,20 @@ public final class LucernaController {
 
         this.lastLoggedPublicMojangFinalCompositeKey = logKey;
         Lucerna.LOGGER.info(
-                "Lucerna public Mojang final composite: attempted={} submitted={} drawCalls={} javaOpaque={} targetStatus={} reason={}.",
+                "Lucerna public Mojang final composite: attempted={} submitted={} drawCalls={} javaOpaque={} targetStatus={} "
+                        + "{} round7.finalCompositeHudSafe={} round7.finalCompositeSourceMix={} "
+                        + "round7.finalCompositeSourceIdentity={} {} round7.finalCompositeSubmission={} reason={}.",
                 result.attempted(),
                 result.submitted(),
                 result.drawCallsIssued(),
                 result.javaOpaqueRenderObjectsPresent(),
                 result.targetStatus(),
+                resolvedModeStatus.round7FinalCompositeModeMarker(),
+                hudSafe,
+                sourceMix,
+                result.submittedSourceIdentity(),
+                substitutionBoundary,
+                result.summary(),
                 result.reason()
         );
     }

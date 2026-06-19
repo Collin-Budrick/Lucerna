@@ -56,13 +56,19 @@ param(
         "raw_gi_input_available=true",
         "raw_input_marker=",
         "Lucerna Round 7 raw GI",
+        "public Mojang Round 7 RAW_GI visual render pass submitted",
+        "mode=ROUND7_RAW_GI",
+        "round7\.rawGi\.nativeDiffuseGiPayload",
+        "round7-raw-gi-native-diffuse-source-additive",
         "mode=round7-raw-gi",
         "raw(?:_| )?gi.*(?:source|output).*native"
     ),
 
     [string[]] $DenoiseDispatchPatterns = @(
         "Lucerna Round 7 denoise",
+        "Lucerna Round 7 denoised GI CPU output",
         "denoise dispatch",
+        "denoise_execution=\{",
         "first_practical_cpu_denoised_diffuse_gi_rgba8_generated",
         "denoisedCpuOutputGenerated=true",
         "denoised_cpu_output_generated=true",
@@ -77,6 +83,10 @@ param(
         "denoisedPayloadEvidence=denoised_diffuse_gi_rgba8_first_practical_cpu_output",
         "denoised_diffuse_gi_cpu_rgba8_output_generated_from_raw_gi",
         "denoised_output_marker=",
+        "denoisedOutputMarker=",
+        "denoisedPayloadReady=true",
+        "readyForPreviewDraw=true",
+        "denoisedOutputDiffersFromRaw=true",
         "denoised(?:_| )?(?:gi|diffuse).*output.*(?:lucerna\.denoise\.diffuse|native|texture)",
         "mode=round7-denoised-gi"
     ),
@@ -89,6 +99,7 @@ param(
         "mode=FINAL_LUCERNA_COMPOSITE",
         "Lucerna Round 7 final composite",
         "mode=round7-final-composite",
+        "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true",
         "final composite.*(?:submitted=true|dispatch)",
         "composite mode.*(?:final|lucerna)",
         "mode=final-lucerna-composite"
@@ -223,6 +234,8 @@ function Measure-Round7LogProof {
     $temporaryDirectLightSourcePresent = Test-Regex $log "temporarySourceReady=true|temporary direct-light|current direct-light RGBA payload"
     $metadataOnlyPreviewPresent = Test-Regex $log "metadata-only|metadata scaffold|signal_separated_denoise_metadata_scaffold_no_render_output|no_render_output"
     $firstPracticalCpuOutputPresent = Test-Regex $log "first_practical_cpu_denoised_diffuse_gi_rgba8_generated|denoisedCpuOutputGenerated=true|denoised_cpu_output_generated=true"
+    $realDenoiseShaderOutputPresent = Test-Regex $log "realDenoiseShaderOutput=true|real_denoise_shader_output=true"
+    $realDenoiseShaderOutputFalsePresent = Test-Regex $log "realDenoiseShaderOutput=false|real_denoise_shader_output=false"
     $proofMarkerPresent = Test-Regex $log "proof marker|R6 GI proof|R7 proof|CPU output proof"
     $focusWindowOnlyPresent = Test-Regex $log "focus-window"
     $nativeErrorPresent = Test-Regex $log "invalid descriptor|VK_ERROR|Lucerna native error|native error"
@@ -237,6 +250,8 @@ function Measure-Round7LogProof {
             temporaryDirectLightSourcePresent = $temporaryDirectLightSourcePresent
             metadataOnlyPreviewPresent = $metadataOnlyPreviewPresent
             firstPracticalCpuOutputPresent = $firstPracticalCpuOutputPresent
+            realDenoiseShaderOutputPresent = $realDenoiseShaderOutputPresent
+            realDenoiseShaderOutputFalsePresent = $realDenoiseShaderOutputFalsePresent
             proofMarkerPresent = $proofMarkerPresent
             focusWindowOnlyPresent = $focusWindowOnlyPresent
             nativeErrorPresent = $nativeErrorPresent
@@ -406,6 +421,8 @@ $result = [ordered]@{
                 temporaryDirectLightSourcePresent = if ($logProof) { [bool]$logProof.markers.temporaryDirectLightSourcePresent } else { $null }
                 metadataOnlyPreviewPresent = if ($logProof) { [bool]$logProof.markers.metadataOnlyPreviewPresent } else { $null }
                 firstPracticalCpuOutputPresent = if ($logProof) { [bool]$logProof.markers.firstPracticalCpuOutputPresent } else { $null }
+                realDenoiseShaderOutputPresent = if ($logProof) { [bool]$logProof.markers.realDenoiseShaderOutputPresent } else { $null }
+                realDenoiseShaderOutputFalsePresent = if ($logProof) { [bool]$logProof.markers.realDenoiseShaderOutputFalsePresent } else { $null }
                 proofMarkerPresent = if ($logProof) { [bool]$logProof.markers.proofMarkerPresent } else { $null }
                 focusWindowOnlyPresent = if ($logProof) { [bool]$logProof.markers.focusWindowOnlyPresent } else { $null }
                 nativeErrorPresent = if ($logProof) { [bool]$logProof.markers.nativeErrorPresent } else { $null }
@@ -445,6 +462,8 @@ if ($logProof) {
     Write-Host "temporaryDirectLightSourcePresent=$($logProof.markers.temporaryDirectLightSourcePresent)"
     Write-Host "metadataOnlyPreviewPresent=$($logProof.markers.metadataOnlyPreviewPresent)"
     Write-Host "firstPracticalCpuOutputPresent=$($logProof.markers.firstPracticalCpuOutputPresent)"
+    Write-Host "realDenoiseShaderOutputPresent=$($logProof.markers.realDenoiseShaderOutputPresent)"
+    Write-Host "realDenoiseShaderOutputFalsePresent=$($logProof.markers.realDenoiseShaderOutputFalsePresent)"
     Write-Host "proofMarkerPresent=$($logProof.markers.proofMarkerPresent)"
     Write-Host "focusWindowOnlyPresent=$($logProof.markers.focusWindowOnlyPresent)"
     Write-Host "nativeErrorPresent=$($logProof.markers.nativeErrorPresent)"

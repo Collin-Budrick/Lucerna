@@ -1,8 +1,8 @@
 param(
-    [ValidateSet("Baseline", "Enabled", "Debug")]
+    [ValidateSet("Baseline", "Enabled", "Debug", "RawGi", "DenoisedGi", "FinalComposite")]
     [string] $Mode,
 
-    [ValidateSet("Round5Direct", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker")]
+    [ValidateSet("Round5Direct", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round7DenoiseComposite")]
     [string] $ValidationProfile = "Round5Direct",
 
     [string] $WorldName = "New World",
@@ -61,20 +61,106 @@ function Write-LucernaConfig {
     param(
         [string] $Root,
         [bool] $RendererEnabled,
-        [string] $DebugOverlay
+        [string] $DebugOverlay,
+        [string] $CompositeMode = "FINAL_LUCERNA_COMPOSITE"
     )
 
     $configDir = Join-Path $Root "run\config"
     New-Item -ItemType Directory -Force -Path $configDir | Out-Null
     $configPath = Join-Path $configDir "lucerna.json"
     $config = [ordered]@{
-        schemaVersion = 1
+        schemaVersion = 2
         rendererEnabled = $RendererEnabled
         qualityPreset = "BALANCED"
         debugOverlay = $DebugOverlay
+        compositeMode = $CompositeMode
         showIrisNotice = $true
     }
     $config | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding UTF8
+}
+
+function Get-Round7CaptureIntent {
+    param([string] $CaptureMode)
+
+    switch ($CaptureMode) {
+        "Baseline" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "BASE_VANILLA_ONLY"
+                artifactRole = "baseline"
+                requiredPatterns = @()
+            }
+        }
+        "RawGi" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "RAW_GI"
+                artifactRole = "raw-gi"
+                requiredPatterns = @(
+                    "Lucerna Round 6 lighting dispatch prepared: .*diffuse_gi=\{\{enabled=true,.*rays=[1-9][0-9]*,cache_reads=[1-9][0-9]*",
+                    "public Mojang Round 7 RAW_GI visual render pass submitted; .*mode=ROUND7_RAW_GI.*evidence=round7\.rawGi\.nativeDiffuseGiPayload",
+                    "public Mojang Round 7 RAW_GI native diffuse-GI source additive draw issued"
+                )
+            }
+        }
+        "DenoisedGi" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "DENOISED_GI"
+                artifactRole = "denoised-gi"
+                requiredPatterns = @(
+                    "Lucerna Round 7 denoised GI CPU output: .*denoisedPayloadReady=true.*readyForPreviewDraw=true",
+                    "Lucerna Round 7 denoised GI CPU output: .*denoisedCpuOutputGenerated=true.*denoised_cpu_output_generated=true",
+                    "Lucerna Round 7 denoised GI CPU output: .*realDenoiseShaderOutput=false",
+                    "public Mojang Round 7 DENOISED_GI visual render pass submitted; .*mode=ROUND7_DENOISED_GI.*denoisedPayloadEvidence=round7\.denoisedGi\.cpuDenoisedDiffuseGiPayload"
+                )
+            }
+        }
+        "FinalComposite" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "final-composite"
+                requiredPatterns = @(
+                    "Lucerna Round 7 denoised GI CPU output: .*denoisedCpuOutputGenerated=true",
+                    "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true",
+                    "round7\.finalCompositeMode=final-composite.*round7\.finalCompositeSourceMix=base=true,direct=enabled-ready,gi=enabled-ready,denoised=enabled-ready",
+                    "public Mojang Round 7 DENOISED_GI visual render pass submitted; .*mode=ROUND7_DENOISED_GI.*denoisedPayloadEvidence=round7\.denoisedGi\.cpuDenoisedDiffuseGiPayload"
+                )
+            }
+        }
+        "Debug" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "DIRECT_LIGHTING"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "debug"
+                requiredPatterns = @(
+                    "Lucerna Round 7 denoised GI CPU output: .*denoisedCpuOutputGenerated=true",
+                    "(?:round7\.compositeMode|debug\.overlay=DIRECT_LIGHTING|Overlay state: DIRECT_LIGHTING|Direct Lighting)"
+                )
+            }
+        }
+        "Enabled" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "final-composite"
+                requiredPatterns = @(
+                    "Lucerna Round 7 denoised GI CPU output: .*denoisedCpuOutputGenerated=true",
+                    "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true"
+                )
+            }
+        }
+        default {
+            throw "Unsupported Round 7 capture mode: $CaptureMode"
+        }
+    }
 }
 
 function Wait-LatestLogPattern {
@@ -144,11 +230,8 @@ function Wait-LatestLogPattern {
 
 function Get-MinecraftWindowProcess {
     Get-Process | Where-Object {
-        $_.MainWindowHandle -ne 0 -and (
-            $_.MainWindowTitle -like "*Minecraft*" -or
-            $_.ProcessName -like "java*"
-        )
-    } | Sort-Object ProcessName | Select-Object -First 1
+        $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -like "*Minecraft*"
+    } | Sort-Object StartTime -Descending | Select-Object -First 1
 }
 
 function Focus-MinecraftWindow {
@@ -224,6 +307,58 @@ function Wait-NewScreenshot {
     throw "Timed out waiting for a new Minecraft screenshot."
 }
 
+function Save-MinecraftWindowScreenshot {
+    param(
+        [string] $DestinationPath
+    )
+
+    $windowProcess = Get-MinecraftWindowProcess
+    if ($null -eq $windowProcess) {
+        throw "Could not find a Minecraft/java window for fallback screenshot capture."
+    }
+
+    if (-not ("LucernaVisualProof.NativeWindow" -as [type])) {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+namespace LucernaVisualProof {
+    public static class NativeWindow {
+        [StructLayout(LayoutKind.Sequential)]
+        public struct RECT {
+            public int Left;
+            public int Top;
+            public int Right;
+            public int Bottom;
+        }
+
+        [DllImport("user32.dll")]
+        public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+    }
+}
+"@
+    }
+    Add-Type -AssemblyName System.Drawing
+
+    $rect = New-Object LucernaVisualProof.NativeWindow+RECT
+    if (-not [LucernaVisualProof.NativeWindow]::GetWindowRect($windowProcess.MainWindowHandle, [ref]$rect)) {
+        throw "Could not get Minecraft/java window bounds for fallback screenshot capture."
+    }
+
+    $width = [Math]::Max(1, $rect.Right - $rect.Left)
+    $height = [Math]::Max(1, $rect.Bottom - $rect.Top)
+    $bitmap = New-Object System.Drawing.Bitmap $width, $height
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    try {
+        $graphics.CopyFromScreen($rect.Left, $rect.Top, 0, 0, $bitmap.Size)
+        $bitmap.Save($DestinationPath, [System.Drawing.Imaging.ImageFormat]::Png)
+    } finally {
+        $graphics.Dispose()
+        $bitmap.Dispose()
+    }
+    return Get-Item -LiteralPath $DestinationPath
+}
+
 function Copy-FreshLatestLog {
     param(
         [string] $Root,
@@ -262,7 +397,11 @@ if (-not (Test-Path -LiteralPath $gradlew)) {
 }
 
 $scenario = if ([string]::IsNullOrWhiteSpace($ScenarioName)) {
-    "round5-visual-proof-$($Mode.ToLowerInvariant())"
+    if ($ValidationProfile -eq "Round7DenoiseComposite") {
+        "round7-denoise-composite-$($Mode.ToLowerInvariant())"
+    } else {
+        "round5-visual-proof-$($Mode.ToLowerInvariant())"
+    }
 } else {
     $ScenarioName
 }
@@ -285,10 +424,21 @@ $aliasPath = $null
 $createdAlias = $false
 $process = $null
 try {
-    switch ($Mode) {
-        "Baseline" { Write-LucernaConfig $root $false "OFF" }
-        "Enabled" { Write-LucernaConfig $root $true "OFF" }
-        "Debug" { Write-LucernaConfig $root $true "DIRECT_LIGHTING" }
+    $round7CaptureIntent = $null
+    if ($ValidationProfile -eq "Round7DenoiseComposite") {
+        $round7CaptureIntent = Get-Round7CaptureIntent $Mode
+        Write-LucernaConfig `
+            $root `
+            ([bool]$round7CaptureIntent.rendererEnabled) `
+            ([string]$round7CaptureIntent.debugOverlay) `
+            ([string]$round7CaptureIntent.compositeMode)
+    } else {
+        switch ($Mode) {
+            "Baseline" { Write-LucernaConfig $root $false "OFF" }
+            "Enabled" { Write-LucernaConfig $root $true "OFF" }
+            "Debug" { Write-LucernaConfig $root $true "DIRECT_LIGHTING" }
+            default { throw "Mode '$Mode' is only supported with -ValidationProfile Round7DenoiseComposite." }
+        }
     }
 
     $latestLog = Join-Path $root "run\logs\latest.log"
@@ -327,8 +477,11 @@ try {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
-    if ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker") {
+    if ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round7DenoiseComposite") {
         $psi.Environment["LUCERNA_HIDE_PROOF_OVERLAYS"] = "true"
+    }
+    if ($ValidationProfile -eq "Round7DenoiseComposite") {
+        $psi.Environment["LUCERNA_ROUND7_CAPTURE_MODE"] = [string]$round7CaptureIntent.artifactRole
     }
     $process = [System.Diagnostics.Process]::Start($psi)
     $process.BeginOutputReadLine()
@@ -346,7 +499,9 @@ try {
         "Lucerna backend status: SODIUM_VULKAN",
         "joined the game"
     )
-    $enabledPatterns = if ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker") {
+    $enabledPatterns = if ($ValidationProfile -eq "Round7DenoiseComposite") {
+        @($round7CaptureIntent.requiredPatterns)
+    } elseif ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker") {
         @(
             "Lucerna Round 6 lighting dispatch prepared: .*diffuse_gi=\{\{enabled=true,.*rays=[1-9][0-9]*,cache_reads=[1-9][0-9]*",
             "Lucerna Round 6 diffuse GI preview composite: .*ready=true .*(?:nativeGiOutputReady|nativeDiffuseGiOutputReady|sourceNativeGiReady)=true",
@@ -373,7 +528,17 @@ try {
         "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*mode=final-composite-direct-light-focus-window-additive"
         )
     }
-    $forbiddenPatterns = if ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker") {
+    $forbiddenPatterns = if ($ValidationProfile -eq "Round7DenoiseComposite") {
+        @(
+            "temporarySourceReady=true",
+            "using the current direct-light RGBA payload as the temporary visible source",
+            "round6-diffuse-gi-focus-window-additive",
+            "round6-gi-proof",
+            "R6 GI proof",
+            "proof marker",
+            "CPU output proof"
+        )
+    } elseif ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker") {
         @(
             "temporarySourceReady=true",
             "using the current direct-light RGBA payload as the temporary visible source",
@@ -394,23 +559,37 @@ try {
         Start-Sleep -Seconds 8
     }
 
-    if ($Mode -ne "Baseline") {
+    if ($enabledPatterns.Count -gt 0) {
         Wait-LatestLogPattern $latestLog $enabledPatterns $deadline $earlyFailureLogPaths $forbiddenPatterns
     }
+    if ($ValidationProfile -eq "Round7DenoiseComposite" -and -not $SetupScene) {
+        Start-Sleep -Seconds 8
+    }
 
+    $archiveName = "$scenario-$stamp-$Mode.png"
+    $archivePath = Join-Path $screenshotArchiveDir $archiveName
     $existingScreenshotNames = @(Get-ChildItem -LiteralPath $screenshotDir -Filter "*.png" -ErrorAction SilentlyContinue |
             Select-Object -ExpandProperty Name)
     $beforeScreenshot = Get-Date
     Focus-MinecraftWindow | Out-Null
     Send-MinecraftKeys "{F2}"
     $screenshotDeadline = (Get-Date).AddSeconds(45)
-    $screenshot = Wait-NewScreenshot $screenshotDir $existingScreenshotNames $beforeScreenshot $screenshotDeadline
-    $archiveName = "$scenario-$stamp-$Mode.png"
-    $archivePath = Join-Path $screenshotArchiveDir $archiveName
-    Copy-Item -LiteralPath $screenshot.FullName -Destination $archivePath -Force
+    try {
+        $screenshot = Wait-NewScreenshot $screenshotDir $existingScreenshotNames $beforeScreenshot $screenshotDeadline
+        Copy-Item -LiteralPath $screenshot.FullName -Destination $archivePath -Force
+        $screenshotSource = "minecraft-f2"
+    } catch {
+        $screenshot = Save-MinecraftWindowScreenshot $archivePath
+        $screenshotSource = "window-fallback"
+    }
 
     $logPath = Copy-FreshLatestLog $root $validationDir $scenario $stamp
     Write-Host "screenshot=$archivePath"
+    Write-Host "screenshotSource=$screenshotSource"
+    if ($round7CaptureIntent) {
+        Write-Host "round7ArtifactRole=$($round7CaptureIntent.artifactRole)"
+        Write-Host "round7CompositeMode=$($round7CaptureIntent.compositeMode)"
+    }
     Write-Host "latestLog=$logPath"
     Write-Host "gradleOut=$gradleOut"
     Write-Host "gradleErr=$gradleErr"

@@ -3,8 +3,8 @@ package net.lucerna.config;
 public enum CompositeMode {
     BASE_VANILLA_ONLY(
             "Base / vanilla only",
-            "base-vanilla-only",
-            "round7.composite.baseline.base_world_color_only",
+            "baseline",
+            Round7VisualMode.BASELINE,
             true,
             false,
             false,
@@ -15,7 +15,7 @@ public enum CompositeMode {
     DIRECT_ONLY(
             "Direct only",
             "direct-only",
-            "round7.composite.isolated.direct_only",
+            Round7VisualMode.FINAL_COMPOSITE,
             false,
             true,
             false,
@@ -26,7 +26,7 @@ public enum CompositeMode {
     GI_ONLY(
             "GI only",
             "gi-only",
-            "round7.composite.isolated.diffuse_gi_only",
+            Round7VisualMode.RAW_GI,
             false,
             false,
             true,
@@ -34,10 +34,32 @@ public enum CompositeMode {
             "GI-only screenshot/debug frame showing diffuse GI without direct light",
             "Use this mode to isolate diffuse GI output for raw-vs-denoised comparison."
     ),
+    RAW_GI(
+            "Raw GI",
+            "raw-gi",
+            Round7VisualMode.RAW_GI,
+            false,
+            false,
+            true,
+            "raw native diffuse-GI contribution only; denoise and final blend are excluded",
+            "same-scene raw GI screenshot/debug frame showing the native diffuse-GI RGBA8 source",
+            "Use this mode to capture Round 7 raw GI evidence before denoise."
+    ),
+    DENOISED_GI(
+            "Denoised GI",
+            "denoised-gi",
+            Round7VisualMode.DENOISED_GI,
+            false,
+            false,
+            true,
+            "CPU denoised diffuse-GI contribution only; final visual quality is not claimed",
+            "same-scene denoised GI screenshot/debug frame showing the CPU denoised diffuse-GI output",
+            "Use this mode to compare denoised GI against the raw GI source without claiming shader/final quality."
+    ),
     FINAL_LUCERNA_COMPOSITE(
             "Final Lucerna composite",
-            "final-lucerna-composite",
-            "round7.composite.final.base_direct_gi",
+            "final-composite",
+            Round7VisualMode.FINAL_COMPOSITE,
             true,
             true,
             true,
@@ -48,7 +70,7 @@ public enum CompositeMode {
 
     private final String displayName;
     private final String statusKey;
-    private final String evidenceKey;
+    private final Round7VisualMode visualMode;
     private final boolean baseWorldColorEnabled;
     private final boolean directLightingEnabled;
     private final boolean diffuseGiEnabled;
@@ -59,7 +81,7 @@ public enum CompositeMode {
     CompositeMode(
             String displayName,
             String statusKey,
-            String evidenceKey,
+            Round7VisualMode visualMode,
             boolean baseWorldColorEnabled,
             boolean directLightingEnabled,
             boolean diffuseGiEnabled,
@@ -69,7 +91,7 @@ public enum CompositeMode {
     ) {
         this.displayName = displayName;
         this.statusKey = statusKey;
-        this.evidenceKey = evidenceKey;
+        this.visualMode = visualMode == null ? Round7VisualMode.FINAL_COMPOSITE : visualMode;
         this.baseWorldColorEnabled = baseWorldColorEnabled;
         this.directLightingEnabled = directLightingEnabled;
         this.diffuseGiEnabled = diffuseGiEnabled;
@@ -87,7 +109,15 @@ public enum CompositeMode {
     }
 
     public String evidenceKey() {
-        return this.evidenceKey;
+        return this.visualMode.evidenceKey();
+    }
+
+    public Round7VisualMode visualMode() {
+        return this.visualMode;
+    }
+
+    public String visualModeId() {
+        return this.visualMode.stableId();
     }
 
     public boolean baseWorldColorEnabled() {
@@ -128,7 +158,8 @@ public enum CompositeMode {
 
     public String summary() {
         return "mode=" + this.statusKey
-                + ",evidenceKey=" + this.evidenceKey
+                + ",visualMode=" + this.visualMode.stableId()
+                + ",evidenceKey=" + this.evidenceKey()
                 + ",baseWorldColor=" + this.baseWorldColorEnabled
                 + ",directLighting=" + this.directLightingEnabled
                 + ",diffuseGi=" + this.diffuseGiEnabled
@@ -136,8 +167,22 @@ public enum CompositeMode {
     }
 
     public CompositeMode next() {
-        CompositeMode[] values = values();
-        return values[(this.ordinal() + 1) % values.length];
+        CompositeMode[] modes = controllerSelectableModes();
+        for (int index = 0; index < modes.length; index++) {
+            if (modes[index] == this) {
+                return modes[(index + 1) % modes.length];
+            }
+        }
+        return modes[0];
+    }
+
+    public static CompositeMode[] controllerSelectableModes() {
+        return new CompositeMode[]{
+                BASE_VANILLA_ONLY,
+                RAW_GI,
+                DENOISED_GI,
+                FINAL_LUCERNA_COMPOSITE
+        };
     }
 
     public static CompositeMode fromSerializedName(String name, CompositeMode fallback) {
@@ -145,10 +190,24 @@ public enum CompositeMode {
             return fallback;
         }
         for (CompositeMode mode : values()) {
-            if (mode.name().equalsIgnoreCase(name) || mode.statusKey.equalsIgnoreCase(name)) {
+            if (mode.matchesSerializedName(name)) {
                 return mode;
             }
         }
         return fallback;
+    }
+
+    private boolean matchesSerializedName(String name) {
+        if (this.name().equalsIgnoreCase(name) || this.statusKey.equalsIgnoreCase(name)) {
+            return true;
+        }
+        return switch (this) {
+            case BASE_VANILLA_ONLY -> "base-vanilla-only".equalsIgnoreCase(name);
+            case RAW_GI -> "round7-raw-gi".equalsIgnoreCase(name);
+            case DENOISED_GI -> "round7-denoised-gi".equalsIgnoreCase(name);
+            case FINAL_LUCERNA_COMPOSITE -> "final-lucerna-composite".equalsIgnoreCase(name)
+                    || "round7-final-composite".equalsIgnoreCase(name);
+            case DIRECT_ONLY, GI_ONLY -> false;
+        };
     }
 }

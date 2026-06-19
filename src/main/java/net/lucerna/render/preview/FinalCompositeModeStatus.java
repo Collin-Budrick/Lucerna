@@ -1,9 +1,12 @@
 package net.lucerna.render.preview;
 
 import net.lucerna.config.CompositeMode;
+import net.lucerna.config.Round7VisualMode;
 
 public record FinalCompositeModeStatus(
         CompositeMode mode,
+        Round7VisualMode visualMode,
+        String visualModeId,
         String statusKey,
         String displayName,
         String evidenceKey,
@@ -21,6 +24,14 @@ public record FinalCompositeModeStatus(
     public FinalCompositeModeStatus {
         if (mode == null) {
             mode = CompositeMode.FINAL_LUCERNA_COMPOSITE;
+        }
+        if (visualMode == null) {
+            visualMode = mode.visualMode();
+        }
+        if (visualModeId == null || visualModeId.isBlank()) {
+            visualModeId = visualMode.stableId();
+        } else {
+            visualModeId = visualModeId.trim();
         }
         if (statusKey == null || statusKey.isBlank()) {
             statusKey = mode.statusKey();
@@ -72,6 +83,8 @@ public record FinalCompositeModeStatus(
         CompositeMode resolvedMode = mode == null ? CompositeMode.FINAL_LUCERNA_COMPOSITE : mode;
         return new FinalCompositeModeStatus(
                 resolvedMode,
+                resolvedMode.visualMode(),
+                resolvedMode.visualModeId(),
                 resolvedMode.statusKey(),
                 resolvedMode.displayName(),
                 resolvedMode.evidenceKey(),
@@ -95,11 +108,48 @@ public record FinalCompositeModeStatus(
     public String summary() {
         return "mode=" + this.statusKey
                 + ",evidenceKey=" + this.evidenceKey
+                + ",visualMode=" + this.visualModeId
+                + ",round7.finalCompositeMode=" + this.visualModeId
                 + ",baseWorldColor=" + this.baseWorldColorEnabled
                 + ",directLighting=" + this.directLightingEnabled
                 + ",diffuseGi=" + this.diffuseGiEnabled
                 + ",finalLucernaComposite=" + this.finalLucernaComposite
                 + ",dispatch=" + this.dispatchLabel;
+    }
+
+    public String round7FinalCompositeModeMarker() {
+        return "round7.finalCompositeMode=" + this.visualModeId;
+    }
+
+    public String sourceMixSummary(
+            boolean directSourceReady,
+            boolean giSourceReady,
+            boolean denoisedSourceReady
+    ) {
+        return "base=" + this.baseWorldColorEnabled
+                + ",direct=" + sourceState(this.directLightingEnabled, directSourceReady)
+                + ",gi=" + sourceState(this.diffuseGiEnabled || this.rawGiVisualMode(), giSourceReady)
+                + ",denoised=" + sourceState(this.denoisedGiVisualMode() || this.finalCompositeVisualMode(), denoisedSourceReady);
+    }
+
+    public boolean rejectsFocusWindowOnlyComposite() {
+        return this.rawGiVisualMode() || this.denoisedGiVisualMode() || this.finalCompositeVisualMode();
+    }
+
+    public boolean rejectsDirectLightSubstitution() {
+        return this.rawGiVisualMode() || this.denoisedGiVisualMode() || this.finalCompositeVisualMode();
+    }
+
+    public String substitutionBoundarySummary(
+            boolean submittedFocusWindowOnly,
+            boolean submittedDirectLightSource
+    ) {
+        boolean focusWindowRejected = this.rejectsFocusWindowOnlyComposite() && !submittedFocusWindowOnly;
+        boolean directSubstitutionRejected = this.rejectsDirectLightSubstitution() && !submittedDirectLightSource;
+        return "round7.finalCompositeRejectFocusWindowOnly=" + focusWindowRejected
+                + ",round7.finalCompositeRejectDirectLightSubstitution=" + directSubstitutionRejected
+                + ",focusWindowOnlySubmitted=" + submittedFocusWindowOnly
+                + ",directLightSourceSubmitted=" + submittedDirectLightSource;
     }
 
     public String debugLine() {
@@ -108,6 +158,22 @@ public record FinalCompositeModeStatus(
 
     public String controllerEvidenceLine() {
         return this.evidenceKey + " | " + this.expectedEvidence;
+    }
+
+    public boolean baselineVisualMode() {
+        return this.visualMode.baseline();
+    }
+
+    public boolean rawGiVisualMode() {
+        return this.visualMode.rawGi();
+    }
+
+    public boolean denoisedGiVisualMode() {
+        return this.visualMode.denoisedGi();
+    }
+
+    public boolean finalCompositeVisualMode() {
+        return this.visualMode.finalComposite();
     }
 
     public String signalIsolationLabel() {
@@ -126,6 +192,7 @@ public record FinalCompositeModeStatus(
     public String validationSummary() {
         return "displayName=\"" + this.displayName
                 + "\",evidenceKey=\"" + this.evidenceKey
+                + "\",visualMode=\"" + this.visualModeId
                 + "\",isolation=\"" + this.signalIsolationLabel()
                 + "\",reason=\"" + this.modeReason
                 + "\",expectedEvidence=\"" + this.expectedEvidence + "\"";
@@ -137,10 +204,18 @@ public record FinalCompositeModeStatus(
 
     private static String defaultDispatchLabel(CompositeMode mode) {
         return switch (mode) {
-            case BASE_VANILLA_ONLY -> "composite-mode/base-vanilla-only-no-lucerna-lighting";
+            case BASE_VANILLA_ONLY -> "round7-visual-mode/baseline-no-lucerna-composite";
             case DIRECT_ONLY -> "composite-mode/direct-only";
-            case GI_ONLY -> "composite-mode/gi-only";
-            case FINAL_LUCERNA_COMPOSITE -> "composite-mode/final-lucerna-composite";
+            case GI_ONLY, RAW_GI -> "round7-visual-mode/raw-gi";
+            case DENOISED_GI -> "round7-visual-mode/denoised-gi";
+            case FINAL_LUCERNA_COMPOSITE -> "round7-visual-mode/final-composite";
         };
+    }
+
+    private static String sourceState(boolean enabledByMode, boolean sourceReady) {
+        if (!enabledByMode) {
+            return "excluded";
+        }
+        return sourceReady ? "enabled-ready" : "enabled-missing";
     }
 }

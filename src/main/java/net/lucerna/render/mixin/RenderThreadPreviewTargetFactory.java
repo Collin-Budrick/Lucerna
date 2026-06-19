@@ -9,6 +9,7 @@ import com.mojang.blaze3d.textures.GpuTexture;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import com.mojang.blaze3d.vulkan.VulkanGpuTexture;
 import com.mojang.blaze3d.vulkan.VulkanGpuTextureView;
+import net.lucerna.nativebridge.DenoisedDiffuseGiCpuOutputPayload;
 import net.lucerna.nativebridge.DirectLightingCpuOutputPayload;
 import net.lucerna.nativebridge.Round6DiffuseGiCpuOutputPayload;
 import net.lucerna.render.preview.DirectLightPreviewTextureUploadResult;
@@ -16,6 +17,7 @@ import net.lucerna.render.preview.DirectLightPreviewTextureUploader;
 import net.lucerna.render.preview.PublicMojangFinalCompositeSubmissionResult;
 import net.lucerna.render.preview.PublicMojangPreviewDrawScaffold;
 import net.lucerna.render.preview.PublicMojangPreviewDrawScaffolds;
+import net.lucerna.render.preview.Round7DenoisedGiVisualSource;
 import net.lucerna.render.preview.Round7RawGiVisualSource;
 import net.lucerna.render.preview.Round6DiffuseGiPreviewCompositeState;
 import net.lucerna.render.pass.LucernaFrameAttachmentMetadata;
@@ -45,6 +47,11 @@ public final class RenderThreadPreviewTargetFactory {
             new DirectLightPreviewTextureUploader(
                     "lucerna_round7_raw_gi_native_diffuse_source_rgba",
                     "Round 7 RAW_GI native diffuse-GI source"
+            );
+    private static final DirectLightPreviewTextureUploader ROUND7_DENOISED_GI_TEXTURE_UPLOADER =
+            new DirectLightPreviewTextureUploader(
+                    "lucerna_round7_denoised_gi_cpu_output_rgba",
+                    "Round 7 DENOISED_GI denoised diffuse-GI CPU output"
             );
 
     private RenderThreadPreviewTargetFactory() {
@@ -558,6 +565,125 @@ public final class RenderThreadPreviewTargetFactory {
                         + target.attachmentMetadata().javaOpaque()
                         + "; native diffuse-GI RAW_GI source payload: "
                         + diffuseGiPayload.debugSummary()
+                        + "; upload: "
+                        + upload.summary()
+                        + "; draw scaffold: "
+                        + drawScaffold.summary()
+        );
+    }
+
+    public static PublicMojangFinalCompositeSubmissionResult submitRound7DenoisedGiFinalCompositePublicDraw(
+            LucernaFramePassTarget target,
+            DenoisedDiffuseGiCpuOutputPayload denoisedGiPayload
+    ) {
+        Round7DenoisedGiVisualSource denoisedGiSource = Round7DenoisedGiVisualSource.from(denoisedGiPayload);
+        if (target == null || !target.available()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    false,
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.TARGET_MISSING,
+                    "public Mojang Round 7 DENOISED_GI visual mode skipped because no frame target is available; source: "
+                            + denoisedGiSource.summary()
+            );
+        }
+        if (!target.safeForAttachment()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang Round 7 DENOISED_GI visual mode skipped because the target is not HUD-safe; source: "
+                            + denoisedGiSource.summary()
+            );
+        }
+        if (!(target.commandEncoder() instanceof CommandEncoder commandEncoder)
+                || !(target.colorTarget() instanceof GpuTextureView colorView)) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    target.attachmentMetadata().javaOpaque()
+                            ? PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT
+                            : PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang Round 7 DENOISED_GI visual mode skipped because command encoder or color view is unavailable; source: "
+                            + denoisedGiSource.summary()
+            );
+        }
+        if (denoisedGiPayload == null) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang Round 7 DENOISED_GI visual mode skipped because denoised diffuse-GI RGBA8 CPU payload is unavailable; source: "
+                            + denoisedGiSource.summary()
+            );
+        }
+        if (!denoisedGiPayload.readyForPreviewDraw()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang Round 7 DENOISED_GI visual mode skipped because denoised diffuse-GI RGBA8 CPU payload is not displayable: "
+                            + denoisedGiPayload.debugSummary()
+                            + "; source: "
+                            + denoisedGiSource.summary()
+            );
+        }
+
+        ByteBuffer sourceBuffer = denoisedGiPayload.copyToByteBuffer();
+        DirectLightPreviewTextureUploadResult upload = ROUND7_DENOISED_GI_TEXTURE_UPLOADER.upload(
+                RenderSystem.getDevice(),
+                commandEncoder,
+                sourceBuffer,
+                denoisedGiPayload.width(),
+                denoisedGiPayload.height()
+        );
+        if (!upload.availableForDraw()) {
+            Reference.reachabilityFence(sourceBuffer);
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang Round 7 DENOISED_GI visual mode skipped because denoised diffuse-GI source texture upload was unavailable: "
+                            + upload.summary()
+                            + "; source: "
+                            + denoisedGiSource.summary()
+            );
+        }
+
+        PublicMojangPreviewDrawScaffold drawScaffold;
+        try (RenderPass renderPass = createFullTargetRenderPass(
+                commandEncoder,
+                () -> "lucerna public Round 7 DENOISED_GI denoised diffuse-GI visual draw pass",
+                colorView,
+                target
+        )) {
+            renderPass.disableScissor();
+            drawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenRound7DenoisedGiVisualDraw(
+                    renderPass,
+                    upload.textureView(),
+                    upload.sampler()
+            );
+        }
+        commandEncoder.submit();
+        Reference.reachabilityFence(sourceBuffer);
+        return PublicMojangFinalCompositeSubmissionResult.submitted(
+                drawScaffold.drawCallsIssued(),
+                target.attachmentMetadata().javaOpaque(),
+                PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
+                "public Mojang Round 7 DENOISED_GI visual render pass submitted; "
+                        + "mode="
+                        + denoisedGiSource.modeKey()
+                        + ",denoisedPayloadEvidence="
+                        + denoisedGiSource.denoisedPayloadEvidence()
+                        + ",readiness=\""
+                        + denoisedGiPayload.previewReadinessReason()
+                        + "\",source: "
+                        + denoisedGiSource.summary()
+                        + "; target: "
+                        + targetAttachmentSummary(target)
+                        + "; javaOpaquePublicFallback="
+                        + target.attachmentMetadata().javaOpaque()
+                        + "; denoised diffuse-GI CPU source payload: "
+                        + denoisedGiPayload.debugSummary()
                         + "; upload: "
                         + upload.summary()
                         + "; draw scaffold: "
