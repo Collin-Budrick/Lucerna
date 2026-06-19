@@ -2,11 +2,11 @@
 
 ## Progress Audit
 
-Current controller estimate: **about 89% complete against this file**.
+Current controller estimate: **about 90% complete against this file**.
 
 This percentage is conservative:
 - Rounds 0-3 are mostly implemented and controller-validated.
-- Round 4 has Java/native/shader scaffolding, dirty-region GI inputs, direct shadow candidate planning, native direct/GI/post handoff DTOs, payload-category telemetry, native dispatch validation, Round 5 direct payload handoff, direct execution/output-marker telemetry, a native CPU direct-light output buffer with energy/checksum telemetry, Java direct-output snapshot/status contracts, HUD-preserving world-color frame target contracts, metadata-only versus Java-opaque versus native-writable attachment contracts, direct-light preview submission result plumbing, a validated render-thread `GameRenderer.renderLevel` target hook, validated public Mojang Java-opaque target capture, validated public Mojang no-draw preview render-pass submission, validated public Mojang diagnostic draw submission, and validated public Mojang sampled direct-light preview texture upload/draw submission, but the first real visible lighting milestone is not complete yet.
+- Round 4 has Java/native/shader scaffolding, dirty-region GI inputs, direct shadow candidate planning, native direct/GI/post handoff DTOs, payload-category telemetry, native dispatch validation, Round 5 direct payload handoff, direct execution/output-marker telemetry, a native CPU direct-light output buffer with energy/checksum telemetry, Java direct-output snapshot/status contracts, HUD-preserving world-color frame target contracts, metadata-only versus Java-opaque versus native-writable attachment contracts, direct-light preview submission result plumbing, a validated render-thread `GameRenderer.renderLevel` target hook, validated public Mojang Java-opaque target capture, validated public Mojang no-draw preview render-pass submission, validated public Mojang diagnostic draw submission, validated public Mojang sampled direct-light preview texture upload/draw submission, and validated native surface-sample masked direct-light preview generation, but the first real visible lighting milestone is not complete yet.
 - The remaining work is the hardest part: turning Phase 5 metadata/planning into visible direct light, low-res GI, denoise, composite behavior, and richer debug telemetry.
 
 Legend:
@@ -112,8 +112,8 @@ Legend:
 
 - **Agent M: Direct Lighting** **PARTIAL**
   - Owns sun/moon lighting, emissive block list sampling, voxel shadow ray scaffolding.
-  - ~~Status: Java planning contracts, emissive sampling, bounded direct shadow candidate generation, native direct-light handoff DTOs, direct payload JNI/native storage, resource-category stage counts, native dispatch metadata, native direct execution output/resolve markers, a native CPU direct-light output buffer with nonzero energy/checksum telemetry, JNI/Java RGBA8 readback, public Mojang texture upload, and sampled additive preview draw exist and have been validated.~~ **DONE/VALIDATED**
-  - Status: surface-aware visible direct-light execution and screenshot proof are still open.
+  - ~~Status: Java planning contracts, emissive sampling, bounded direct shadow candidate generation, native direct-light handoff DTOs, direct payload JNI/native storage, resource-category stage counts, native dispatch metadata, native direct execution output/resolve markers, a native CPU direct-light output buffer with nonzero energy/checksum telemetry, JNI/Java RGBA8 readback, public Mojang texture upload, sampled additive preview draw, and native surface-sample masked preview generation exist and have been validated.~~ **DONE/VALIDATED**
+  - Status: true world-surface sample origins and screenshot proof are still open.
 
 - **Agent N: First GI** **PARTIAL**
   - Owns low-res single-bounce diffuse GI, temporal accumulation inputs, and cache confidence output.
@@ -747,6 +747,7 @@ Logs prove candidate reuse and reservoir invalidation behavior.
 - ~~No sub-agent is allowed to "verify" fixes by running tests or build-like checks. They patch, explain, and wait for controller feedback.~~ **DONE/ONGOING**
 
 Latest strong validation evidence:
+- ~~Sodium + Iris + Vulkan launches, joins `New World`, generates native surface-sample masked CPU direct-light output from emissive payload and shadow-candidate origins, uploads the bounded RGBA8 payload to a public Mojang `GpuTexture`, submits `mode=surface-sample-masked-direct-light-additive`, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-surface-sample-masked-direct-preview-sodium-iris-vulkan-20260619-055425.log`**
 - ~~Sodium + Iris + Vulkan launches, joins `New World`, generates native CPU direct-light output, copies the bounded RGBA8 payload through JNI/Java, uploads it to a public Mojang `GpuTexture`, submits the sampled additive direct-light preview draw with `pipeline=lucerna:pipeline/direct_light_preview_additive`, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-sampled-direct-preview-texture-sodium-iris-vulkan-hardened-20260619-054155.log`**
 - ~~Sodium + Iris + Vulkan launches, joins `New World`, the render-thread `GameRenderer` hook captures public Mojang Java-opaque render target objects, submits a public Mojang diagnostic direct-light preview draw with `drawCalls=true`, keeps native CPU direct-light output valid, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-public-mojang-diagnostic-draw-sodium-iris-vulkan-20260619-051631.log`**
 - ~~Sodium + Iris + Vulkan launches, joins `New World`, the render-thread `GameRenderer` hook captures public Mojang Java-opaque render target objects, submits a public no-draw Mojang preview render pass, keeps native CPU direct-light output valid, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-public-mojang-preview-pass-sodium-iris-vulkan-20260619-050258.log`**
@@ -783,6 +784,7 @@ Latest strong validation evidence:
   - ~~Public Mojang no-draw preview render-pass submission is compile/build/launch validated before HUD composition.~~ **DONE/VALIDATED**
   - ~~Public Mojang diagnostic fullscreen draw submission is compile/build/launch validated before HUD composition.~~ **DONE/VALIDATED**
   - ~~Public Mojang sampled direct-light preview texture upload/draw is compile/build/launch validated before HUD composition.~~ **DONE/VALIDATED**
+  - ~~Native surface-sample masked direct-light preview generation is compile/build/launch validated before HUD composition.~~ **DONE/VALIDATED**
   - Visible emissive/direct lighting on surfaces, low-res GI, denoise, final composite, and screenshot proof are still open.
 
 ## Assumptions
@@ -880,9 +882,13 @@ The previous immediate implementation step is now complete:
 
 ~~Replace the diagnostic public Mojang fullscreen draw with a real direct-light preview source texture or native-writable bridge so the draw samples Lucerna direct-light output instead of emitting a constant diagnostic tint.~~ **DONE/VALIDATED**
 
+The previous immediate implementation step is now partially complete:
+
+~~Move from fullscreen sampled preview output to controlled surface-aware direct-light proof.~~ **PARTIAL/VALIDATED** Native surface-sample masked preview generation and draw submission are validated, but real nearby surface sample origins and baseline/enabled screenshot proof are still open.
+
 The next immediate implementation step is:
 
-Move from fullscreen sampled preview output to controlled surface-aware direct-light proof: one emissive source must visibly brighten a nearby surface in-world with baseline/enabled screenshots and matching dispatch/upload logs.
+Feed emissive direct-light candidates with nearby occupied/opaque surface sample origins instead of section-center shadow origins, then capture baseline/enabled screenshots proving one emissive block brightens one nearby surface.
 
 The next immediate visual milestone remains:
 

@@ -70,10 +70,24 @@ constexpr std::size_t kDirectShadowCandidateMetadataStride = 3;
 constexpr std::size_t kDirectShadowCandidateRayStride = 9;
 constexpr std::size_t kDirectSectionSnapshotMetadataStride = 15;
 constexpr std::size_t kDirectSectionSnapshotGenerationStride = 7;
+constexpr std::size_t kDirectEmissiveBlockXOffset = 0;
+constexpr std::size_t kDirectEmissiveBlockYOffset = 1;
+constexpr std::size_t kDirectEmissiveBlockZOffset = 2;
+constexpr std::size_t kDirectEmissiveColorRedOffset = 0;
+constexpr std::size_t kDirectEmissiveColorGreenOffset = 1;
+constexpr std::size_t kDirectEmissiveColorBlueOffset = 2;
+constexpr std::size_t kDirectEmissiveIntensityOffset = 3;
+constexpr std::size_t kDirectEmissiveInfluenceRadiusOffset = 4;
+constexpr std::size_t kDirectShadowRayOriginXOffset = 0;
+constexpr std::size_t kDirectShadowRayOriginYOffset = 1;
+constexpr std::size_t kDirectShadowRayOriginZOffset = 2;
+constexpr std::size_t kDirectShadowRayContributionWeightOffset = 8;
 constexpr std::int32_t kMaxDirectCpuOutputWidth = 64;
 constexpr std::int32_t kMaxDirectCpuOutputHeight = 36;
 constexpr float kDirectCpuCelestialScale = 0.02F;
 constexpr float kDirectCpuEmissiveScale = 0.0005F;
+constexpr float kDirectCpuMinimumSurfaceRadius = 3.0F;
+constexpr float kDirectCpuSurfacePreviewScale = 2.75F;
 constexpr std::size_t kLightingPayloadCategoryDirect = 0;
 constexpr std::size_t kLightingPayloadCategoryGi = 1;
 constexpr std::size_t kLightingPayloadCategoryPost = 2;
@@ -112,6 +126,51 @@ float sum_strided_float_field(
         total += finite_non_negative(values[value_index]);
     }
     return total;
+}
+
+float strided_float_or_zero(
+        const std::vector<float>& values,
+        std::size_t index,
+        std::size_t stride,
+        std::size_t offset) {
+    if (stride == 0 || offset >= stride) {
+        return 0.0F;
+    }
+    const auto value_index = index * stride + offset;
+    if (value_index >= values.size()) {
+        return 0.0F;
+    }
+    return finite_non_negative(values[value_index]);
+}
+
+float strided_float_raw_or_zero(
+        const std::vector<float>& values,
+        std::size_t index,
+        std::size_t stride,
+        std::size_t offset) {
+    if (stride == 0 || offset >= stride) {
+        return 0.0F;
+    }
+    const auto value_index = index * stride + offset;
+    if (value_index >= values.size() || !std::isfinite(values[value_index])) {
+        return 0.0F;
+    }
+    return values[value_index];
+}
+
+std::int32_t strided_int_or_zero(
+        const std::vector<std::int32_t>& values,
+        std::size_t index,
+        std::size_t stride,
+        std::size_t offset) {
+    if (stride == 0 || offset >= stride) {
+        return 0;
+    }
+    const auto value_index = index * stride + offset;
+    if (value_index >= values.size()) {
+        return 0;
+    }
+    return values[value_index];
 }
 
 void mix_checksum(std::uint64_t& checksum, std::uint64_t value) {
@@ -2564,11 +2623,6 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
                 celestial_count,
                 kDirectCelestialLightDataStride,
                 8);
-        const float emissive_energy = sum_strided_float_field(
-                last_direct_lighting_payload_packet_.emissive_light_data,
-                emissive_count,
-                kDirectEmissiveLightDataStride,
-                5);
         const float shadow_weight = sum_strided_float_field(
                 last_direct_lighting_payload_packet_.shadow_candidate_rays,
                 shadow_count,
@@ -2577,33 +2631,126 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
         const float normalized_shadow_weight = shadow_count == 0
                 ? 1.0F
                 : std::max(0.05F, shadow_weight / static_cast<float>(shadow_count));
-        const float base_direct_energy = (celestial_energy * kDirectCpuCelestialScale
-                + emissive_energy * kDirectCpuEmissiveScale)
-                * normalized_shadow_weight;
-        const float red = std::min(64.0F, base_direct_energy);
-        const float green = std::min(64.0F, base_direct_energy * 0.86F);
-        const float blue = std::min(64.0F, base_direct_energy * 0.64F);
+        const float celestial_base = celestial_energy * kDirectCpuCelestialScale * normalized_shadow_weight;
 
         direct_lighting_cpu_output_.assign(static_cast<std::size_t>(pixel_count) * 4, 0.0F);
         float total_energy = 0.0F;
-        float min_sample = red + green + blue;
+        float min_sample = 0.0F;
         float max_sample = 0.0F;
+        bool has_sample = false;
         std::uint64_t checksum = 1469598103934665603ULL;
         for (std::uint64_t pixel = 0; pixel < pixel_count; pixel++) {
             const auto offset = static_cast<std::size_t>(pixel * 4);
-            const float tile_factor = 1.0F + static_cast<float>((pixel + frame_index_) % 17) * 0.001F;
-            direct_lighting_cpu_output_[offset] = red * tile_factor;
-            direct_lighting_cpu_output_[offset + 1] = green * tile_factor;
-            direct_lighting_cpu_output_[offset + 2] = blue * tile_factor;
-            direct_lighting_cpu_output_[offset + 3] = normalized_shadow_weight;
+            const auto pixel_x = static_cast<std::uint64_t>(pixel % output_width);
+            const auto pixel_y = static_cast<std::uint64_t>(pixel / output_width);
+            const std::size_t surface_index = shadow_count == 0
+                    ? 0
+                    : static_cast<std::size_t>((pixel + frame_index_) % shadow_count);
+
+            float surface_x = static_cast<float>(pixel_x);
+            float surface_y = static_cast<float>(pixel_y);
+            float surface_z = 0.0F;
+            float surface_weight = normalized_shadow_weight;
+            if (shadow_count > 0) {
+                surface_x = strided_float_raw_or_zero(
+                        last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                        surface_index,
+                        kDirectShadowCandidateRayStride,
+                        kDirectShadowRayOriginXOffset);
+                surface_y = strided_float_raw_or_zero(
+                        last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                        surface_index,
+                        kDirectShadowCandidateRayStride,
+                        kDirectShadowRayOriginYOffset);
+                surface_z = strided_float_raw_or_zero(
+                        last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                        surface_index,
+                        kDirectShadowCandidateRayStride,
+                        kDirectShadowRayOriginZOffset);
+                surface_weight = std::max(0.05F, strided_float_or_zero(
+                        last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                        surface_index,
+                        kDirectShadowCandidateRayStride,
+                        kDirectShadowRayContributionWeightOffset));
+            }
+
+            float red = celestial_base * 0.18F;
+            float green = celestial_base * 0.2F;
+            float blue = celestial_base * 0.24F;
+            float surface_mask = 0.0F;
+            for (std::size_t light_index = 0; light_index < emissive_count; light_index++) {
+                const float light_x = static_cast<float>(strided_int_or_zero(
+                        last_direct_lighting_payload_packet_.emissive_light_metadata,
+                        light_index,
+                        kDirectEmissiveLightMetadataStride,
+                        kDirectEmissiveBlockXOffset)) + 0.5F;
+                const float light_y = static_cast<float>(strided_int_or_zero(
+                        last_direct_lighting_payload_packet_.emissive_light_metadata,
+                        light_index,
+                        kDirectEmissiveLightMetadataStride,
+                        kDirectEmissiveBlockYOffset)) + 0.5F;
+                const float light_z = static_cast<float>(strided_int_or_zero(
+                        last_direct_lighting_payload_packet_.emissive_light_metadata,
+                        light_index,
+                        kDirectEmissiveLightMetadataStride,
+                        kDirectEmissiveBlockZOffset)) + 0.5F;
+                const float delta_x = surface_x - light_x;
+                const float delta_y = surface_y - light_y;
+                const float delta_z = surface_z - light_z;
+                const float distance = std::sqrt(delta_x * delta_x + delta_y * delta_y + delta_z * delta_z);
+                const float radius = std::max(kDirectCpuMinimumSurfaceRadius, strided_float_or_zero(
+                        last_direct_lighting_payload_packet_.emissive_light_data,
+                        light_index,
+                        kDirectEmissiveLightDataStride,
+                        kDirectEmissiveInfluenceRadiusOffset));
+                const float falloff = std::max(0.0F, 1.0F - (distance / radius));
+                const float shaped_falloff = falloff * falloff;
+                if (shaped_falloff <= 0.0F) {
+                    continue;
+                }
+                surface_mask = std::max(surface_mask, shaped_falloff);
+
+                const float intensity = strided_float_or_zero(
+                        last_direct_lighting_payload_packet_.emissive_light_data,
+                        light_index,
+                        kDirectEmissiveLightDataStride,
+                        kDirectEmissiveIntensityOffset);
+                const float strength = intensity * shaped_falloff * surface_weight * kDirectCpuSurfacePreviewScale;
+                red += strided_float_or_zero(
+                        last_direct_lighting_payload_packet_.emissive_light_data,
+                        light_index,
+                        kDirectEmissiveLightDataStride,
+                        kDirectEmissiveColorRedOffset) * strength;
+                green += strided_float_or_zero(
+                        last_direct_lighting_payload_packet_.emissive_light_data,
+                        light_index,
+                        kDirectEmissiveLightDataStride,
+                        kDirectEmissiveColorGreenOffset) * strength;
+                blue += strided_float_or_zero(
+                        last_direct_lighting_payload_packet_.emissive_light_data,
+                        light_index,
+                        kDirectEmissiveLightDataStride,
+                        kDirectEmissiveColorBlueOffset) * strength;
+            }
+
+            const float tile_factor = 1.0F + static_cast<float>((pixel + frame_index_) % 7) * 0.0005F;
+            direct_lighting_cpu_output_[offset] = std::min(64.0F, red * tile_factor);
+            direct_lighting_cpu_output_[offset + 1] = std::min(64.0F, green * tile_factor);
+            direct_lighting_cpu_output_[offset + 2] = std::min(64.0F, blue * tile_factor);
+            direct_lighting_cpu_output_[offset + 3] = std::clamp(
+                    surface_mask * surface_weight,
+                    0.0F,
+                    1.0F);
             const float sample_energy = direct_lighting_cpu_output_[offset]
                     + direct_lighting_cpu_output_[offset + 1]
                     + direct_lighting_cpu_output_[offset + 2];
             total_energy += sample_energy;
-            min_sample = std::min(min_sample, sample_energy);
+            min_sample = has_sample ? std::min(min_sample, sample_energy) : sample_energy;
             max_sample = std::max(max_sample, sample_energy);
+            has_sample = true;
             mix_checksum(checksum, static_cast<std::uint64_t>(sample_energy * 1000.0F));
             mix_checksum(checksum, pixel);
+            mix_checksum(checksum, surface_index);
         }
 
         execution.last_output_width = output_width;
@@ -2650,7 +2797,7 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
         ? "direct_light_output_write_resolve_recorded"
         : "direct_light_resolve_recorded_without_output";
     if (execution.last_cpu_output_generated) {
-        execution.last_readiness_reason = "direct_lighting_cpu_output_generated";
+        execution.last_readiness_reason = "direct_lighting_surface_sample_cpu_output_generated";
     } else {
         execution.last_readiness_reason = direct_stage.last_placeholder
             ? "direct_lighting_validated_placeholder_scaffold_executed_metadata_only"

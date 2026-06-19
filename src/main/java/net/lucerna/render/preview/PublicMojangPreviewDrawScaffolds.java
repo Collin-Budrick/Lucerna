@@ -18,7 +18,7 @@ import java.util.Optional;
 public final class PublicMojangPreviewDrawScaffolds {
     private static final String DIRECT_LIGHT_SOURCE_BINDING = "InSampler";
     private static final String NO_TEXTURE_BINDING = "none";
-    private static final String TEXTURED_FULLSCREEN_MODE = "sampled-fullscreen-direct-light-additive";
+    private static final String TEXTURED_FULLSCREEN_MODE = "surface-sample-masked-direct-light-additive";
     private static final String DIAGNOSTIC_FULLSCREEN_MODE = "diagnostic-fullscreen-warm-additive";
     private static final int FULLSCREEN_TRIANGLE_FIRST_VERTEX = 0;
     private static final int FULLSCREEN_TRIANGLE_VERTEX_COUNT = 3;
@@ -93,7 +93,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang fullscreen direct-light preview draw can bind a source texture and issue one bounded draw"
+                "public Mojang surface-sample direct-light preview draw can bind a masked source texture and issue one bounded draw"
         );
     }
 
@@ -135,7 +135,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang fullscreen direct-light preview draw issued"
+                "public Mojang surface-sample masked direct-light preview draw issued"
         );
     }
 
