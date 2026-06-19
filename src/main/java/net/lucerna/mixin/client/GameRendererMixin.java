@@ -1,6 +1,7 @@
 package net.lucerna.mixin.client;
 
 import net.lucerna.LucernaController;
+import net.lucerna.render.mixin.RenderThreadPreviewTargetFactory;
 import net.lucerna.render.pass.LucernaFramePassTarget;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.renderer.GameRenderer;
@@ -11,10 +12,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(GameRenderer.class)
 public abstract class GameRendererMixin {
-    private static final Object LUCERNA_METADATA_ONLY_RENDER_PASS = new Object();
-    private static final String LUCERNA_DIRECT_LIGHT_PREVIEW_TARGET =
-            "GameRenderer.renderLevel world color target after level render and before hand/HUD composition.";
-
     @Inject(
             method = "renderLevel(Lnet/minecraft/client/DeltaTracker;)V",
             at = @At(
@@ -30,13 +27,7 @@ public abstract class GameRendererMixin {
             return;
         }
 
-        LucernaFramePassTarget target = LucernaFramePassTarget.safeWorldColorBeforeHud(
-                LUCERNA_METADATA_ONLY_RENDER_PASS,
-                null,
-                null,
-                null,
-                LUCERNA_DIRECT_LIGHT_PREVIEW_TARGET
-        );
+        LucernaFramePassTarget target = RenderThreadPreviewTargetFactory.worldColorTarget((GameRenderer) (Object) this);
         controller.attachDirectLightPreviewTarget(target, 0.0F);
     }
 }

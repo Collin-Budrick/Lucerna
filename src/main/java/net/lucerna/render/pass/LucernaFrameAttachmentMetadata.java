@@ -13,6 +13,7 @@ public record LucernaFrameAttachmentMetadata(
         long colorImageViewHandle,
         long depthImageHandle,
         long depthImageViewHandle,
+        LucernaJavaOpaqueRenderObjects javaOpaqueObjects,
         boolean nativeWritable,
         String description
 ) {
@@ -33,6 +34,9 @@ public record LucernaFrameAttachmentMetadata(
         colorImageViewHandle = Math.max(0L, colorImageViewHandle);
         depthImageHandle = Math.max(0L, depthImageHandle);
         depthImageViewHandle = Math.max(0L, depthImageViewHandle);
+        if (javaOpaqueObjects == null) {
+            javaOpaqueObjects = LucernaJavaOpaqueRenderObjects.none();
+        }
         nativeWritable = nativeWritable
                 && phase.safeForLightingComposite()
                 && width > 0
@@ -43,6 +47,8 @@ public record LucernaFrameAttachmentMetadata(
         if (description == null || description.isBlank()) {
             description = nativeWritable
                     ? "Native-writable frame attachment metadata."
+                    : javaOpaqueObjects.present()
+                    ? "Java opaque frame attachment metadata without native handles."
                     : "Metadata-only frame attachment target.";
         } else {
             description = description.trim();
@@ -66,6 +72,7 @@ public record LucernaFrameAttachmentMetadata(
                 0L,
                 0L,
                 0L,
+                LucernaJavaOpaqueRenderObjects.none(),
                 false,
                 description
         );
@@ -94,6 +101,55 @@ public record LucernaFrameAttachmentMetadata(
                 0L,
                 0L,
                 0L,
+                LucernaJavaOpaqueRenderObjects.none(),
+                false,
+                description
+        );
+    }
+
+    public static LucernaFrameAttachmentMetadata javaOpaque(
+            LucernaFramePassPhase phase,
+            LucernaJavaOpaqueRenderObjects javaOpaqueObjects,
+            String description
+    ) {
+        return javaOpaque(
+                phase,
+                0,
+                0,
+                UNKNOWN_LABEL,
+                UNKNOWN_LABEL,
+                UNKNOWN_LABEL,
+                UNKNOWN_LABEL,
+                javaOpaqueObjects,
+                description
+        );
+    }
+
+    public static LucernaFrameAttachmentMetadata javaOpaque(
+            LucernaFramePassPhase phase,
+            int width,
+            int height,
+            String colorFormat,
+            String colorLayout,
+            String depthFormat,
+            String depthLayout,
+            LucernaJavaOpaqueRenderObjects javaOpaqueObjects,
+            String description
+    ) {
+        return new LucernaFrameAttachmentMetadata(
+                phase,
+                width,
+                height,
+                colorFormat,
+                colorLayout,
+                depthFormat,
+                depthLayout,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                javaOpaqueObjects,
                 false,
                 description
         );
@@ -127,6 +183,7 @@ public record LucernaFrameAttachmentMetadata(
                 colorImageViewHandle,
                 depthImageHandle,
                 depthImageViewHandle,
+                LucernaJavaOpaqueRenderObjects.none(),
                 true,
                 description
         );
@@ -134,6 +191,10 @@ public record LucernaFrameAttachmentMetadata(
 
     public boolean metadataOnly() {
         return !this.nativeWritable;
+    }
+
+    public boolean javaOpaque() {
+        return this.javaOpaqueObjects.present();
     }
 
     public boolean hasExtent() {
@@ -146,6 +207,21 @@ public record LucernaFrameAttachmentMetadata(
 
     public boolean hasCommandHandle() {
         return this.commandBufferHandle != 0L;
+    }
+
+    public String nativeWritableStatusLabel() {
+        return "nativeWritable=" + this.nativeWritable
+                + ", javaOpaque=" + javaOpaque()
+                + ", hasExtent=" + hasExtent()
+                + ", hasCommandHandle=" + hasCommandHandle()
+                + ", hasColorHandles=" + hasColorHandles()
+                + ", safeForLightingComposite=" + this.phase.safeForLightingComposite();
+    }
+
+    public String attachmentStatusLabel() {
+        return nativeWritableStatusLabel()
+                + ", metadataOnly=" + metadataOnly()
+                + ", " + this.javaOpaqueObjects.statusLabel();
     }
 
     private static String normalizeLabel(String label) {

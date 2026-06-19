@@ -4,6 +4,7 @@ import net.lucerna.Lucerna;
 import net.lucerna.render.gbuffer.GBufferTargetContract;
 import net.lucerna.render.pass.LucernaFramePassKind;
 import net.lucerna.render.pass.LucernaFramePassRequest;
+import net.lucerna.render.pass.LucernaFramePassTarget;
 import net.lucerna.upload.NativeDirectLightingUploadPacket;
 import net.lucerna.upload.NativeGBufferStagingUploadPacket;
 import net.lucerna.upload.NativeLightingDispatchUploadPacket;
@@ -91,13 +92,24 @@ public final class LucernaNativeBridge {
                 && directOutput.hasCpuOutputTelemetry()
                 && directOutput.hasNonzeroEnergy();
         boolean directPreviewRequest = previewRequest.kind() == LucernaFramePassKind.DIRECT_LIGHT_PREVIEW_COMPOSITE;
+        var target = previewRequest.target();
+        boolean targetPresent = directPreviewRequest && target != null && target.available();
+        boolean targetMissing = directPreviewRequest && !targetPresent;
         boolean targetReady = directPreviewRequest && previewRequest.targetSafeForAttachment();
         boolean targetHudPreserving = directPreviewRequest
-                && previewRequest.target() != null
-                && previewRequest.target().preservesHud();
+                && target != null
+                && target.preservesHud();
+        boolean targetMetadataOnly = directPreviewRequest
+                && target != null
+                && target.metadataOnlyAttachment();
+        boolean targetJavaOpaqueRenderObjectsPresent = directPreviewRequest
+                && target != null
+                && targetJavaOpaqueRenderObjectsPresent(target);
         boolean targetNativeWritable = directPreviewRequest
-                && previewRequest.target() != null
-                && previewRequest.target().nativeWritableAttachment();
+                && target != null
+                && target.nativeWritableAttachment();
+        boolean targetNativeWritableHandlesPresent = targetNativeWritable;
+        boolean nativeJniSubmissionWired = false;
         float strength = previewRequest.red();
         float alpha = previewRequest.alpha();
 
@@ -107,8 +119,13 @@ public final class LucernaNativeBridge {
                     false,
                     snapshotReady,
                     targetReady,
+                    targetMissing,
                     targetHudPreserving,
+                    targetMetadataOnly,
+                    targetJavaOpaqueRenderObjectsPresent,
                     targetNativeWritable,
+                    targetNativeWritableHandlesPresent,
+                    nativeJniSubmissionWired,
                     strength,
                     alpha,
                     "native bridge is not initialized for direct-light preview composite submission"
@@ -120,8 +137,13 @@ public final class LucernaNativeBridge {
                     true,
                     snapshotReady,
                     false,
+                    false,
                     targetHudPreserving,
+                    false,
+                    false,
                     targetNativeWritable,
+                    targetNativeWritableHandlesPresent,
+                    nativeJniSubmissionWired,
                     strength,
                     alpha,
                     "frame pass request is not a direct-light preview composite request"
@@ -133,12 +155,35 @@ public final class LucernaNativeBridge {
                     true,
                     false,
                     targetReady,
+                    targetMissing,
                     targetHudPreserving,
+                    targetMetadataOnly,
+                    targetJavaOpaqueRenderObjectsPresent,
                     targetNativeWritable,
+                    targetNativeWritableHandlesPresent,
+                    nativeJniSubmissionWired,
                     strength,
                     alpha,
                     "direct-light CPU output snapshot is not ready for preview composite submission: "
                             + directOutput.debugSummary()
+            );
+        }
+        if (targetMissing) {
+            return DirectLightingPreviewCompositeSubmissionResult.notSubmitted(
+                    previewRequest.frameIndex(),
+                    true,
+                    true,
+                    false,
+                    true,
+                    targetHudPreserving,
+                    false,
+                    false,
+                    false,
+                    false,
+                    nativeJniSubmissionWired,
+                    strength,
+                    alpha,
+                    "direct-light preview composite target is missing"
             );
         }
         if (!targetReady) {
@@ -147,8 +192,13 @@ public final class LucernaNativeBridge {
                     true,
                     true,
                     false,
+                    false,
                     targetHudPreserving,
+                    targetMetadataOnly,
+                    targetJavaOpaqueRenderObjectsPresent,
                     targetNativeWritable,
+                    targetNativeWritableHandlesPresent,
+                    nativeJniSubmissionWired,
                     strength,
                     alpha,
                     "frame target is not ready or safe for HUD-preserving direct-light preview composite submission"
@@ -160,11 +210,19 @@ public final class LucernaNativeBridge {
                     true,
                     true,
                     true,
-                    targetHudPreserving,
                     false,
+                    targetHudPreserving,
+                    targetMetadataOnly,
+                    targetJavaOpaqueRenderObjectsPresent,
+                    false,
+                    false,
+                    nativeJniSubmissionWired,
                     strength,
                     alpha,
-                    "frame target is HUD-safe but metadata-only; native-writable command/color handles are not available"
+                    directLightingPreviewTargetNotWritableReason(
+                            targetMetadataOnly,
+                            targetJavaOpaqueRenderObjectsPresent
+                    )
             );
         }
 
@@ -173,11 +231,16 @@ public final class LucernaNativeBridge {
                 true,
                 true,
                 true,
+                false,
                 targetHudPreserving,
+                targetMetadataOnly,
+                targetJavaOpaqueRenderObjectsPresent,
                 true,
+                true,
+                nativeJniSubmissionWired,
                 strength,
                 alpha,
-                "native direct-light preview composite target and JNI submission function are not wired yet"
+                "native-writable direct-light preview target handles are present, but JNI submission is not wired yet"
         );
     }
 
@@ -547,6 +610,26 @@ public final class LucernaNativeBridge {
 
     private boolean isOperational() {
         return this.loaded && this.available && this.initialized;
+    }
+
+    private static String directLightingPreviewTargetNotWritableReason(
+            boolean targetMetadataOnly,
+            boolean targetJavaOpaqueRenderObjectsPresent
+    ) {
+        if (targetJavaOpaqueRenderObjectsPresent) {
+            return "frame target exposes Java-opaque render objects, but native-writable command/color handles are not available";
+        }
+        if (targetMetadataOnly) {
+            return "frame target is HUD-safe but metadata-only; native-writable command/color handles are not available";
+        }
+        return "frame target is HUD-safe, but native-writable command/color handles are not present";
+    }
+
+    private static boolean targetJavaOpaqueRenderObjectsPresent(LucernaFramePassTarget target) {
+        if (target == null || target.attachmentMetadata() == null) {
+            return false;
+        }
+        return target.attachmentMetadata().javaOpaque();
     }
 
     private static int[] nativeAttachmentFormatTags(NativeGBufferStagingUploadPacket packet) {
