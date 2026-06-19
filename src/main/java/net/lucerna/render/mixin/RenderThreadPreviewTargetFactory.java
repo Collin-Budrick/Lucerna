@@ -515,6 +515,8 @@ public final class RenderThreadPreviewTargetFactory {
                 PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
                 "public Mojang Round 6 native diffuse GI output final composite render pass submitted; readiness: "
                         + previewState.summary()
+                        + "; target: "
+                        + targetAttachmentSummary(target)
                         + "; native diffuse GI output payload: "
                         + diffuseGiPayload.debugSummary()
                         + "; upload: "
@@ -522,6 +524,20 @@ public final class RenderThreadPreviewTargetFactory {
                         + "; draw scaffold: "
                         + drawScaffold.summary()
         );
+    }
+
+    private static String targetAttachmentSummary(LucernaFramePassTarget target) {
+        if (target == null || target.attachmentMetadata() == null) {
+            return "missing";
+        }
+        LucernaFrameAttachmentMetadata metadata = target.attachmentMetadata();
+        return "phase=" + metadata.phase()
+                + ",extent=" + metadata.width() + "x" + metadata.height()
+                + ",colorFormat=" + metadata.colorFormat()
+                + ",colorLayout=" + metadata.colorLayout()
+                + ",depthFormat=" + metadata.depthFormat()
+                + ",depthLayout=" + metadata.depthLayout()
+                + "," + metadata.attachmentStatusLabel();
     }
 
     private static PublicMojangPreviewPassSubmissionResult submitDiagnosticFallback(

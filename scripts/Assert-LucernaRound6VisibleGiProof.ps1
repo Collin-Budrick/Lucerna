@@ -43,7 +43,9 @@ param(
 
     [switch] $RequireLogProof,
 
-    [switch] $RequireNativeGiOutputSource
+    [switch] $RequireNativeGiOutputSource,
+
+    [switch] $AllowProofMarkerEvidence
 )
 
 $ErrorActionPreference = "Stop"
@@ -155,6 +157,25 @@ function Test-AnyRegex {
     return $false
 }
 
+function Test-AnyRegexInTexts {
+    param(
+        [string[]] $Texts,
+        [string[]] $Patterns
+    )
+
+    foreach ($text in $Texts) {
+        if ([string]::IsNullOrWhiteSpace($text)) {
+            continue
+        }
+        foreach ($pattern in $Patterns) {
+            if (Test-Regex $text $pattern) {
+                return $true
+            }
+        }
+    }
+    return $false
+}
+
 function Measure-Round6LogProof {
     param([string] $ResolvedLogPath)
 
@@ -167,6 +188,10 @@ function Measure-Round6LogProof {
     $debugOverlayPresent = Test-Regex $log "(Round 6|GI|cache).*debug|debug.*(Round 6|GI|cache)"
     $nativeGiOutputSourcePresent = Test-AnyRegex $log $NativeGiOutputSourcePatterns
     $temporaryDirectLightSourcePresent = Test-Regex $log "Lucerna Round 6 diffuse GI preview composite: .*temporarySourceReady=true|using the current direct-light RGBA payload as the temporary visible source until native GI output is exposed"
+    $roundSixDrawSubmittedPresent = Test-Regex $log "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*mode=(?:round6-diffuse-gi-|round6-native-diffuse-gi-)"
+    $roundSixNoMarkerSurfaceDrawPresent = Test-Regex $log "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*mode=round6-native-diffuse-gi-surface-additive"
+    $focusWindowPreviewDrawPresent = Test-Regex $log "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*mode=round6-diffuse-gi-focus-window-additive"
+    $proofMarkerLogPresent = Test-Regex $log "(?i)(round6-gi-proof|R6 GI proof|proof marker|CPU output proof)"
     $nativeErrorPresent = Test-Regex $log "(?i)(invalid descriptor|VK_ERROR|Lucerna native error|native error)"
 
     $maxGiRays = Get-MaxRegexNumber $log "(?:diffuse_gi=\{\{?enabled=true,[^`r`n]*?rays=|rays=)(\d+)"
@@ -186,6 +211,10 @@ function Measure-Round6LogProof {
             debugOverlayPresent = $debugOverlayPresent
             nativeGiOutputSourcePresent = $nativeGiOutputSourcePresent
             temporaryDirectLightSourcePresent = $temporaryDirectLightSourcePresent
+            roundSixDrawSubmittedPresent = $roundSixDrawSubmittedPresent
+            roundSixNoMarkerSurfaceDrawPresent = $roundSixNoMarkerSurfaceDrawPresent
+            focusWindowPreviewDrawPresent = $focusWindowPreviewDrawPresent
+            proofMarkerLogPresent = $proofMarkerLogPresent
             nativeErrorPresent = $nativeErrorPresent
         }
         maxima = [ordered]@{
@@ -219,6 +248,47 @@ if (-not [string]::IsNullOrWhiteSpace($LogPath)) {
 }
 
 $focusMetrics = $delta.focusRegionMetrics
+$focusDeltaPassed = (
+    ([double]$focusMetrics.changedPixelPercent -ge $MinFocusChangedPixelPercent) -and
+    ([double]$focusMetrics.brighterPixelPercent -ge $MinFocusBrighterPixelPercent) -and
+    ([double]$focusMetrics.meanSignedLuma -ge $MinFocusMeanSignedLuma)
+)
+$proofMarkerPathPatterns = @(
+    "(?i)round6-gi-proof",
+    "(?i)proof-overlay",
+    "(?i)proof-marker",
+    "(?i)visual-proof-marker"
+)
+$proofMarkerPathPresent = Test-AnyRegexInTexts `
+    @($baselineResolved, $enabledResolved, $debugResolved, $logResolved, $OutputJsonPath) `
+    $proofMarkerPathPatterns
+$proofMarkerLogPresent = $false
+if ($logProof) {
+    $proofMarkerLogPresent = [bool]$logProof.markers.proofMarkerLogPresent
+}
+$proofMarkerContaminationPresent = $proofMarkerPathPresent -or $proofMarkerLogPresent
+$roundSixDrawSubmittedPresent = $false
+$roundSixNoMarkerSurfaceDrawPresent = $false
+if ($logProof) {
+    $roundSixDrawSubmittedPresent = [bool]$logProof.markers.roundSixDrawSubmittedPresent
+    $roundSixNoMarkerSurfaceDrawPresent = [bool]$logProof.markers.roundSixNoMarkerSurfaceDrawPresent
+}
+$drawPresentButNoMarkerScreenshotDeltaFailed = (
+    $roundSixNoMarkerSurfaceDrawPresent -and
+    (-not $proofMarkerContaminationPresent) -and
+    (-not $focusDeltaPassed)
+)
+$proofClassification = if ($proofMarkerContaminationPresent -and -not $AllowProofMarkerEvidence) {
+    "proof_marker_contaminated"
+} elseif ($drawPresentButNoMarkerScreenshotDeltaFailed) {
+    "round6_draw_present_but_no_marker_screenshot_delta_failed"
+} elseif ($focusDeltaPassed -and $roundSixNoMarkerSurfaceDrawPresent -and -not $proofMarkerContaminationPresent) {
+    "no_marker_visible_gi_delta_passed"
+} elseif ($focusDeltaPassed) {
+    "screenshot_delta_passed"
+} else {
+    "screenshot_delta_failed"
+}
 $failures = New-Object System.Collections.Generic.List[string]
 if ([double]$focusMetrics.changedPixelPercent -lt $MinFocusChangedPixelPercent) {
     $failures.Add("Focused region changed-pixel percentage below threshold. actual=$($focusMetrics.changedPixelPercent) expected>=$MinFocusChangedPixelPercent")
@@ -237,6 +307,9 @@ if ($debugDimensions -and (($debugDimensions.width -ne $baselineDimensions.width
 }
 if ($RequireLogProof -and [string]::IsNullOrWhiteSpace($logResolved)) {
     $failures.Add("Log proof was required but no -LogPath was provided.")
+}
+if ($proofMarkerContaminationPresent -and -not $AllowProofMarkerEvidence) {
+    $failures.Add("Proof-marker contamination detected. pathMarker=$proofMarkerPathPresent logMarker=$proofMarkerLogPresent; rerun with no-marker capture artifacts for real Round 6 visible-GI proof.")
 }
 if ($logProof) {
     if (-not $logProof.markers.roundSixDispatchPresent) {
@@ -263,6 +336,9 @@ if ($logProof) {
     if ($RequireNativeGiOutputSource -and $logProof.markers.temporaryDirectLightSourcePresent) {
         $failures.Add("Log still contains the temporary direct-light payload source marker.")
     }
+    if ($drawPresentButNoMarkerScreenshotDeltaFailed) {
+        $failures.Add("Round 6 no-marker surface draw logs are present, but focused screenshot delta failed. drawPresent=$roundSixNoMarkerSurfaceDrawPresent changed=$($focusMetrics.changedPixelPercent) brighter=$($focusMetrics.brighterPixelPercent) meanSignedLuma=$($focusMetrics.meanSignedLuma)")
+    }
 }
 
 $result = [ordered]@{
@@ -282,6 +358,7 @@ $result = [ordered]@{
         nativeGiOutputSourcePatterns = @($NativeGiOutputSourcePatterns)
         requireDebugScreenshot = [bool]$RequireDebugScreenshot
         requireLogProof = [bool]$RequireLogProof
+        allowProofMarkerEvidence = [bool]$AllowProofMarkerEvidence
     }
     screenshots = [ordered]@{
         baselineDimensions = $baselineDimensions
@@ -291,6 +368,16 @@ $result = [ordered]@{
     }
     imageDelta = $delta
     logProof = $logProof
+    proofClarity = [ordered]@{
+        classification = $proofClassification
+        focusDeltaPassed = $focusDeltaPassed
+        roundSixDrawSubmittedPresent = $roundSixDrawSubmittedPresent
+        roundSixNoMarkerSurfaceDrawPresent = $roundSixNoMarkerSurfaceDrawPresent
+        proofMarkerContaminationPresent = $proofMarkerContaminationPresent
+        proofMarkerPathPresent = $proofMarkerPathPresent
+        proofMarkerLogPresent = $proofMarkerLogPresent
+        drawPresentButNoMarkerScreenshotDeltaFailed = $drawPresentButNoMarkerScreenshotDeltaFailed
+    }
     passed = $failures.Count -eq 0
     failures = @($failures)
 }
@@ -311,12 +398,20 @@ Write-Host "logPath=$($result.logPath)"
 Write-Host "focus.changedPixelPercent=$($focusMetrics.changedPixelPercent)"
 Write-Host "focus.brighterPixelPercent=$($focusMetrics.brighterPixelPercent)"
 Write-Host "focus.meanSignedLuma=$($focusMetrics.meanSignedLuma)"
+Write-Host "proof.classification=$($result.proofClarity.classification)"
+Write-Host "proof.focusDeltaPassed=$($result.proofClarity.focusDeltaPassed)"
+Write-Host "proof.proofMarkerContaminationPresent=$($result.proofClarity.proofMarkerContaminationPresent)"
+Write-Host "proof.drawPresentButNoMarkerScreenshotDeltaFailed=$($result.proofClarity.drawPresentButNoMarkerScreenshotDeltaFailed)"
 if ($logProof) {
     Write-Host "roundSixDispatchPresent=$($logProof.markers.roundSixDispatchPresent)"
     Write-Host "diffuseGiEnabled=$($logProof.markers.diffuseGiEnabled)"
     Write-Host "giSizePresent=$($logProof.markers.giSizePresent)"
     Write-Host "nativeGiOutputSourcePresent=$($logProof.markers.nativeGiOutputSourcePresent)"
     Write-Host "temporaryDirectLightSourcePresent=$($logProof.markers.temporaryDirectLightSourcePresent)"
+    Write-Host "roundSixDrawSubmittedPresent=$($logProof.markers.roundSixDrawSubmittedPresent)"
+    Write-Host "roundSixNoMarkerSurfaceDrawPresent=$($logProof.markers.roundSixNoMarkerSurfaceDrawPresent)"
+    Write-Host "focusWindowPreviewDrawPresent=$($logProof.markers.focusWindowPreviewDrawPresent)"
+    Write-Host "proofMarkerLogPresent=$($logProof.markers.proofMarkerLogPresent)"
     Write-Host "max.giRays=$($logProof.maxima.giRays)"
     Write-Host "max.giCacheReads=$($logProof.maxima.giCacheReads)"
     Write-Host "nativeErrorPresent=$($logProof.markers.nativeErrorPresent)"

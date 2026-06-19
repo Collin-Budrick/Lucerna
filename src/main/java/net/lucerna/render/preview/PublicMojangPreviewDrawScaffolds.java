@@ -22,6 +22,12 @@ public final class PublicMojangPreviewDrawScaffolds {
     private static final String FINAL_COMPOSITE_FULLSCREEN_MODE = "final-composite-direct-light-focus-window-additive";
     private static final String ROUND6_DIFFUSE_GI_FINAL_COMPOSITE_FULLSCREEN_MODE =
             "round6-native-diffuse-gi-surface-additive";
+    private static final String DIRECT_LIGHT_FINAL_COMPOSITE_SHADER =
+            "lucerna:core/direct_light_final_composite_focus";
+    private static final String ROUND6_DIFFUSE_GI_SURFACE_SHADER =
+            "lucerna:core/round6_native_diffuse_gi_surface";
+    private static final String ADDITIVE_RGBA8_COLOR_TARGET_STATE =
+            "blend=ADDITIVE,colorTargetFormat=RGBA8_UNORM,colorWriteMask=WRITE_COLOR";
     private static final String DIAGNOSTIC_FULLSCREEN_MODE = "diagnostic-fullscreen-warm-additive";
     private static final int FULLSCREEN_TRIANGLE_FIRST_VERTEX = 0;
     private static final int FULLSCREEN_TRIANGLE_VERTEX_COUNT = 3;
@@ -71,7 +77,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                     .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
                     .withFragmentShader(Identifier.fromNamespaceAndPath(
                             "lucerna",
-                            "core/round6_native_diffuse_gi_surface"
+                            "core/direct_light_final_composite_focus"
                     ))
                     .withBindGroupLayout(BindGroupLayouts.IN_SAMPLER)
                     .withColorTargetState(new ColorTargetState(
@@ -91,7 +97,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                     .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
                     .withFragmentShader(Identifier.fromNamespaceAndPath(
                             "lucerna",
-                            "core/direct_light_final_composite_focus"
+                            "core/round6_native_diffuse_gi_surface"
                     ))
                     .withBindGroupLayout(BindGroupLayouts.IN_SAMPLER)
                     .withColorTargetState(new ColorTargetState(
@@ -212,7 +218,9 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang final composite can bind the native direct-light CPU payload texture and issue one bounded focus-window additive draw"
+                "public Mojang final composite can bind the native direct-light CPU payload texture and issue one bounded focus-window additive draw; shader="
+                        + DIRECT_LIGHT_FINAL_COMPOSITE_SHADER
+                        + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
         );
     }
 
@@ -254,7 +262,9 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang final composite direct-light focus-window additive draw issued"
+                "public Mojang final composite direct-light focus-window additive draw issued; shader="
+                        + DIRECT_LIGHT_FINAL_COMPOSITE_SHADER
+                        + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
         );
     }
 
@@ -288,7 +298,9 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang Round 6 diffuse GI final composite can bind the native diffuse GI output texture and issue one bounded surface-mapped additive draw"
+                "public Mojang Round 6 diffuse GI final composite can bind the native diffuse GI output texture and issue one bounded surface-mapped additive draw; shader="
+                        + ROUND6_DIFFUSE_GI_SURFACE_SHADER
+                        + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
         );
     }
 
@@ -330,7 +342,9 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang Round 6 native diffuse GI surface-mapped additive draw issued"
+                "public Mojang Round 6 native diffuse GI surface-mapped additive draw issued; shader="
+                        + ROUND6_DIFFUSE_GI_SURFACE_SHADER
+                        + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
         );
     }
 

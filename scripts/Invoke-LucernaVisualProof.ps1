@@ -2,7 +2,7 @@ param(
     [ValidateSet("Baseline", "Enabled", "Debug")]
     [string] $Mode,
 
-    [ValidateSet("Round5Direct", "Round6DiffuseGi", "Round6NativeDiffuseGi")]
+    [ValidateSet("Round5Direct", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker")]
     [string] $ValidationProfile = "Round5Direct",
 
     [string] $WorldName = "New World",
@@ -82,7 +82,8 @@ function Wait-LatestLogPattern {
         [string] $LogPath,
         [string[]] $RequiredPatterns,
         [datetime] $Deadline,
-        [string[]] $EarlyFailureLogPaths = @()
+        [string[]] $EarlyFailureLogPaths = @(),
+        [string[]] $ForbiddenPatterns = @()
     )
 
     $earlyFailurePatterns = @(
@@ -106,6 +107,11 @@ function Wait-LatestLogPattern {
                     throw "Lucerna visual proof is blocked before required markers were observed. Matched native-load failure marker '$pattern' in $path. For Round6NativeDiffuseGi, this means Windows Application Control/native DLL loading must be resolved before the controller can validate native diffuse-GI output-source replacement; do not count the temporary direct-light RGBA preview path as this proof."
                 }
             }
+            foreach ($pattern in $ForbiddenPatterns) {
+                if ($candidateLog -match $pattern) {
+                    throw "Lucerna visual proof is contaminated before required markers were observed. Matched forbidden marker '$pattern' in $path. For no-marker Round 6 validation, capture a surface-composite run without proof-marker overlays, temporary direct-light payload sources, or focus-window-only preview modes."
+                }
+            }
         }
 
         if (Test-Path -LiteralPath $LogPath) {
@@ -120,6 +126,11 @@ function Wait-LatestLogPattern {
                 if ($log -notmatch $pattern) {
                     $allPresent = $false
                     break
+                }
+            }
+            foreach ($pattern in $ForbiddenPatterns) {
+                if ($log -match $pattern) {
+                    throw "Lucerna visual proof is contaminated. Matched forbidden marker '$pattern' in $LogPath. For no-marker Round 6 validation, capture a surface-composite run without proof-marker overlays, temporary direct-light payload sources, or focus-window-only preview modes."
                 }
             }
             if ($allPresent) {
@@ -330,7 +341,14 @@ try {
         "Lucerna backend status: SODIUM_VULKAN",
         "joined the game"
     )
-    $enabledPatterns = if ($ValidationProfile -eq "Round6NativeDiffuseGi") {
+    $enabledPatterns = if ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker") {
+        @(
+            "Lucerna Round 6 lighting dispatch prepared: .*diffuse_gi=\{\{enabled=true,.*rays=[1-9][0-9]*,cache_reads=[1-9][0-9]*",
+            "Lucerna Round 6 diffuse GI preview composite: .*ready=true .*(?:nativeGiOutputReady|nativeDiffuseGiOutputReady|sourceNativeGiReady)=true",
+            "Lucerna Round 6 diffuse GI preview composite: .*ready=true .*(?:temporarySourceReady=false|(?:visibleSource|outputSource|source|sourceType)=`"?native[-_ ]?diffuse[-_ ]?gi)",
+            "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*mode=round6-native-diffuse-gi-surface-additive"
+        )
+    } elseif ($ValidationProfile -eq "Round6NativeDiffuseGi") {
         @(
             "Lucerna Round 6 lighting dispatch prepared: .*diffuse_gi=\{\{enabled=true,.*rays=[1-9][0-9]*,cache_reads=[1-9][0-9]*",
             "Lucerna Round 6 diffuse GI preview composite: .*ready=true .*(?:nativeGiOutputReady|nativeDiffuseGiOutputReady|sourceNativeGiReady)=true",
@@ -350,8 +368,21 @@ try {
         "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*mode=final-composite-direct-light-focus-window-additive"
         )
     }
+    $forbiddenPatterns = if ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker") {
+        @(
+            "temporarySourceReady=true",
+            "using the current direct-light RGBA payload as the temporary visible source",
+            "round6-diffuse-gi-focus-window-additive",
+            "round6-gi-proof",
+            "R6 GI proof",
+            "proof marker",
+            "CPU output proof"
+        )
+    } else {
+        @()
+    }
     $earlyFailureLogPaths = @($gradleOut, $gradleErr)
-    Wait-LatestLogPattern $latestLog $commonPatterns $deadline $earlyFailureLogPaths
+    Wait-LatestLogPattern $latestLog $commonPatterns $deadline $earlyFailureLogPaths $forbiddenPatterns
 
     Invoke-OptionalSceneSetup
     if ($SetupScene) {
@@ -359,7 +390,7 @@ try {
     }
 
     if ($Mode -ne "Baseline") {
-        Wait-LatestLogPattern $latestLog $enabledPatterns $deadline $earlyFailureLogPaths
+        Wait-LatestLogPattern $latestLog $enabledPatterns $deadline $earlyFailureLogPaths $forbiddenPatterns
     }
 
     $existingScreenshotNames = @(Get-ChildItem -LiteralPath $screenshotDir -Filter "*.png" -ErrorAction SilentlyContinue |

@@ -7,7 +7,7 @@ in vec2 texCoord;
 out vec4 fragColor;
 
 const float FINAL_COMPOSITE_GAIN = 3.25;
-const float SURFACE_PROJECTION_GAIN = 32.0;
+const float SURFACE_PROJECTION_GAIN = 192.0;
 const vec3 LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
 
 vec4 sourceSample(vec2 uv) {
