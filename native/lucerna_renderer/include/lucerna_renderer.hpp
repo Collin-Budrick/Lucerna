@@ -405,6 +405,18 @@ struct NativeAdaptiveBudgetTelemetry {
     std::uint64_t last_requested_rays = 0;
     std::uint64_t last_capped_rays = 0;
     std::uint64_t last_budget_delta_rays = 0;
+    std::uint64_t last_dispatch_workgroups = 0;
+    std::uint64_t last_previous_dispatch_workgroups = 0;
+    std::uint64_t last_dispatch_delta_workgroups = 0;
+    std::uint64_t last_scene_state_checksum = 0;
+    std::uint64_t last_previous_scene_state_checksum = 0;
+    std::uint64_t last_cache_confidence_contribution = 0;
+    std::uint64_t last_variance_contribution = 0;
+    std::uint64_t last_history_accepted_count = 0;
+    std::uint64_t last_history_rejected_count = 0;
+    std::uint64_t total_history_accepted_count = 0;
+    std::uint64_t total_history_rejected_count = 0;
+    std::uint64_t last_heatmap_artifact_pixels = 0;
     std::uint64_t total_budget_changes = 0;
     std::uint64_t last_reuse_bucket_count = 0;
     std::uint64_t last_low_bucket_count = 0;
@@ -421,6 +433,8 @@ struct NativeAdaptiveBudgetTelemetry {
     bool last_enabled = false;
     bool last_budget_changed = false;
     bool last_budget_capped = false;
+    bool last_dispatch_count_changed = false;
+    bool last_scene_state_changed = false;
     bool last_reuse_only = false;
     bool last_temporal_history = false;
     bool last_variance_marker_available = false;
@@ -430,6 +444,8 @@ struct NativeAdaptiveBudgetTelemetry {
     std::string last_budget_marker;
     std::string last_variance_marker;
     std::string last_history_confidence_marker;
+    std::string last_heatmap_artifact_role;
+    std::string last_heatmap_boundary_marker;
     std::string last_invalid_budget_reason;
 };
 

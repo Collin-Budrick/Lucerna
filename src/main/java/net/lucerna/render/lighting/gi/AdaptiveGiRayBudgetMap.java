@@ -95,6 +95,56 @@ public record AdaptiveGiRayBudgetMap(
                 .orElse(0);
     }
 
+    public int cellCountForTier(GiRayBudgetTier tier) {
+        if (tier == null) {
+            return 0;
+        }
+        return this.classes.stream()
+                .filter(allocation -> allocation.tier() == tier)
+                .mapToInt(AdaptiveGiRayBudgetClassAllocation::cellCount)
+                .sum();
+    }
+
+    public int cappedRaysForTier(GiRayBudgetTier tier) {
+        if (tier == null) {
+            return 0;
+        }
+        return this.classes.stream()
+                .filter(allocation -> allocation.tier() == tier)
+                .mapToInt(AdaptiveGiRayBudgetClassAllocation::cappedRays)
+                .sum();
+    }
+
+    public String bucketCountsLabel() {
+        return "bucketCounts={reuseOnly=" + this.cellCountForTier(GiRayBudgetTier.REUSE_ONLY)
+                + ",low=" + this.cellCountForTier(GiRayBudgetTier.LOW)
+                + ",medium=" + this.cellCountForTier(GiRayBudgetTier.MEDIUM)
+                + ",high=" + this.cellCountForTier(GiRayBudgetTier.HIGH)
+                + "}";
+    }
+
+    public String bucketRaysLabel() {
+        return "bucketRays={reuseOnly=" + this.cappedRaysForTier(GiRayBudgetTier.REUSE_ONLY)
+                + ",low=" + this.cappedRaysForTier(GiRayBudgetTier.LOW)
+                + ",medium=" + this.cappedRaysForTier(GiRayBudgetTier.MEDIUM)
+                + ",high=" + this.cappedRaysForTier(GiRayBudgetTier.HIGH)
+                + "}";
+    }
+
+    public String regionCountsLabel() {
+        return "highRayRegions=" + this.cellCountForTier(GiRayBudgetTier.HIGH)
+                + " mediumRayRegions=" + this.cellCountForTier(GiRayBudgetTier.MEDIUM)
+                + " lowRayRegions=" + this.cellCountForTier(GiRayBudgetTier.LOW)
+                + " reuseOnlyRegions=" + this.cellCountForTier(GiRayBudgetTier.REUSE_ONLY);
+    }
+
+    public String dispatchBudgetLabel() {
+        return "dispatchCount=" + this.cappedRays
+                + " requestedDispatchCount=" + this.requestedRays
+                + " dispatchBudget=" + this.cappedRays + "/" + this.requestedRays
+                + " capped=" + this.capped;
+    }
+
     public String compactLabel() {
         if (this.classes.isEmpty()) {
             return "empty";

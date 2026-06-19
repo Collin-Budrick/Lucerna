@@ -110,6 +110,15 @@ public final class LucernaSettingsScreen extends Screen {
                 y,
                 0xFFB8C7D9
         );
+        y += 12;
+        graphics.centeredText(
+                this.font,
+                this.fitLine(Component.literal("Round 8 capture: debug=" + snapshot.debugOverlay().displayName()
+                        + " | heatmap proof is controller-owned")),
+                this.width / 2,
+                y,
+                0xFFB8C7D9
+        );
 
         if (this.height >= 318) {
             y = 240;

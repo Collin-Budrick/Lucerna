@@ -335,15 +335,34 @@ const char* adaptive_budget_bucket_name(
     return "high";
 }
 
+std::uint64_t adaptive_scene_state_checksum(
+        const LightingDispatchPacket& packet,
+        const LightingDispatchStageUpload& dispatch) {
+    std::uint64_t checksum = 1469598103934665603ULL;
+    mix_checksum(checksum, packet.world_generation);
+    mix_checksum(checksum, packet.material_generation);
+    mix_checksum(checksum, packet.section_generation);
+    mix_checksum(checksum, packet.gbuffer_generation);
+    return checksum;
+}
+
+std::uint64_t adaptive_dispatch_workgroups(const LightingDispatchStageUpload& dispatch) {
+    return saturated_multiply(
+            saturated_multiply(
+                    non_negative_u64(dispatch.dispatch_x),
+                    non_negative_u64(dispatch.dispatch_y)),
+            non_negative_u64(dispatch.dispatch_z));
+}
+
 void record_adaptive_budget_rejection(
         NativeAdaptiveBudgetTelemetry& telemetry,
         std::uint64_t frame_index,
-        std::uint64_t packet_generation,
+        const LightingDispatchPacket& packet,
         const LightingDispatchStageUpload& dispatch,
         std::string reason) {
     telemetry.invalid_budget_rejections++;
     telemetry.last_frame_index = frame_index;
-    telemetry.last_packet_generation = packet_generation;
+    telemetry.last_packet_generation = packet.generation;
     telemetry.last_dispatch_generation = dispatch.generation;
     telemetry.last_invalid_budget_generation = dispatch.generation;
     telemetry.last_ingested = true;
@@ -357,19 +376,37 @@ void record_adaptive_budget_rejection(
             telemetry.last_cell_count,
             telemetry.last_rays_per_cell);
     telemetry.last_capped_rays = non_negative_u64(dispatch.ray_count);
+    telemetry.last_previous_dispatch_workgroups = telemetry.last_dispatch_workgroups;
+    telemetry.last_dispatch_workgroups = adaptive_dispatch_workgroups(dispatch);
+    telemetry.last_dispatch_delta_workgroups = absolute_delta(
+            telemetry.last_dispatch_workgroups,
+            telemetry.last_previous_dispatch_workgroups);
+    telemetry.last_dispatch_count_changed = telemetry.last_dispatch_delta_workgroups != 0;
+    telemetry.last_previous_scene_state_checksum = telemetry.last_scene_state_checksum;
+    telemetry.last_scene_state_checksum = adaptive_scene_state_checksum(packet, dispatch);
+    telemetry.last_scene_state_changed =
+            telemetry.last_previous_scene_state_checksum != 0
+            && telemetry.last_previous_scene_state_checksum != telemetry.last_scene_state_checksum;
+    telemetry.last_cache_confidence_contribution = 0;
+    telemetry.last_variance_contribution = 0;
+    telemetry.last_history_accepted_count = 0;
+    telemetry.last_history_rejected_count = 0;
+    telemetry.last_heatmap_artifact_pixels = 0;
     telemetry.last_reuse_only = has_lighting_flag(dispatch.flags, kLightingDispatchFlagReuseOnly);
     telemetry.last_temporal_history = has_lighting_flag(dispatch.flags, kLightingDispatchFlagTemporalHistory);
     telemetry.last_bucket = "invalid";
     telemetry.last_budget_marker = "round8_adaptive_budget_rejected";
     telemetry.last_variance_marker = "round8_variance_confidence_unavailable_invalid_budget";
     telemetry.last_history_confidence_marker = "round8_history_confidence_unavailable_invalid_budget";
+    telemetry.last_heatmap_artifact_role = "round8_cpu_metadata_only_invalid_budget_no_heatmap";
+    telemetry.last_heatmap_boundary_marker = "native_cpu_telemetry_only_no_gpu_heatmap_render_output";
     telemetry.last_invalid_budget_reason = std::move(reason);
 }
 
 void record_adaptive_budget_ingestion(
         NativeAdaptiveBudgetTelemetry& telemetry,
         std::uint64_t frame_index,
-        std::uint64_t packet_generation,
+        const LightingDispatchPacket& packet,
         const LightingDispatchStageUpload& dispatch) {
     const auto cell_count = saturated_multiply(
             non_negative_u64(dispatch.width),
@@ -386,18 +423,49 @@ void record_adaptive_budget_ingestion(
             ? "none"
             : telemetry.last_bucket;
     const auto previous_rays = telemetry.last_capped_rays;
+    const auto previous_workgroups = telemetry.last_dispatch_workgroups;
+    const auto previous_scene_state = telemetry.last_scene_state_checksum;
+    const auto workgroups = adaptive_dispatch_workgroups(dispatch);
+    const auto scene_state = adaptive_scene_state_checksum(packet, dispatch);
     const bool had_previous = telemetry.packets != 0 && telemetry.last_valid;
-    const bool changed = had_previous && (previous_bucket != bucket || previous_rays != capped_rays);
+    const bool dispatch_count_changed = had_previous && previous_workgroups != workgroups;
+    const bool scene_state_changed = had_previous && previous_scene_state != scene_state;
+    const bool changed = had_previous
+            && (previous_bucket != bucket
+                    || previous_rays != capped_rays
+                    || dispatch_count_changed
+                    || scene_state_changed);
+    const auto cache_confidence_cells = dispatch.enabled
+            ? std::min(
+                    cell_count,
+                    saturated_add(
+                            non_negative_u64(dispatch.cache_read_count),
+                            saturated_multiply(non_negative_u64(dispatch.cache_write_count), 2)))
+            : 0;
+    const auto variance_cells = dispatch.enabled && !has_lighting_flag(dispatch.flags, kLightingDispatchFlagReuseOnly)
+            ? std::min(
+                    cell_count,
+                    saturated_add(
+                            saturated_multiply(rays_per_cell, std::max<std::uint64_t>(workgroups, 1)),
+                            scene_state_changed ? (cell_count / 8) : 0))
+            : 0;
 
     telemetry.packets++;
     telemetry.last_frame_index = frame_index;
-    telemetry.last_packet_generation = packet_generation;
+    telemetry.last_packet_generation = packet.generation;
     telemetry.last_dispatch_generation = dispatch.generation;
     telemetry.last_cell_count = cell_count;
     telemetry.last_rays_per_cell = rays_per_cell;
     telemetry.last_requested_rays = requested_rays;
     telemetry.last_capped_rays = capped_rays;
     telemetry.last_budget_delta_rays = had_previous ? absolute_delta(capped_rays, previous_rays) : 0;
+    telemetry.last_previous_dispatch_workgroups = previous_workgroups;
+    telemetry.last_dispatch_workgroups = workgroups;
+    telemetry.last_dispatch_delta_workgroups = had_previous ? absolute_delta(workgroups, previous_workgroups) : 0;
+    telemetry.last_previous_scene_state_checksum = previous_scene_state;
+    telemetry.last_scene_state_checksum = scene_state;
+    telemetry.last_cache_confidence_contribution = cache_confidence_cells;
+    telemetry.last_variance_contribution = variance_cells;
     telemetry.last_reuse_bucket_count = 0;
     telemetry.last_low_bucket_count = 0;
     telemetry.last_medium_bucket_count = 0;
@@ -407,6 +475,8 @@ void record_adaptive_budget_ingestion(
     telemetry.last_enabled = dispatch.enabled;
     telemetry.last_budget_changed = changed;
     telemetry.last_budget_capped = sample_rays_per_cell != 0 && capped_rays < requested_rays;
+    telemetry.last_dispatch_count_changed = dispatch_count_changed;
+    telemetry.last_scene_state_changed = scene_state_changed;
     telemetry.last_reuse_only = has_lighting_flag(dispatch.flags, kLightingDispatchFlagReuseOnly);
     telemetry.last_temporal_history = has_lighting_flag(dispatch.flags, kLightingDispatchFlagTemporalHistory);
     telemetry.last_variance_marker_available = dispatch.enabled && !telemetry.last_reuse_only && rays_per_cell > 0;
@@ -421,16 +491,72 @@ void record_adaptive_budget_ingestion(
     if (telemetry.last_reuse_only) {
         telemetry.last_reuse_bucket_count = cell_count;
         telemetry.total_reuse_bucket_count = saturated_add(telemetry.total_reuse_bucket_count, cell_count);
-    } else if (telemetry.last_bucket == "low") {
-        telemetry.last_low_bucket_count = cell_count;
-        telemetry.total_low_bucket_count = saturated_add(telemetry.total_low_bucket_count, cell_count);
-    } else if (telemetry.last_bucket == "medium") {
-        telemetry.last_medium_bucket_count = cell_count;
-        telemetry.total_medium_bucket_count = saturated_add(telemetry.total_medium_bucket_count, cell_count);
-    } else if (telemetry.last_bucket == "high") {
-        telemetry.last_high_bucket_count = cell_count;
-        telemetry.total_high_bucket_count = saturated_add(telemetry.total_high_bucket_count, cell_count);
+    } else if (dispatch.enabled && cell_count != 0) {
+        const auto reuse_candidates = telemetry.last_history_confidence_available
+                ? std::min(cell_count / 3, cache_confidence_cells / 2)
+                : 0;
+        telemetry.last_reuse_bucket_count = reuse_candidates;
+        auto remaining_cells = cell_count - reuse_candidates;
+        std::uint64_t high_candidates = 0;
+        if (rays_per_cell >= 3) {
+            high_candidates = std::max(remaining_cells / 4, variance_cells / 2);
+        } else if (scene_state_changed) {
+            high_candidates = remaining_cells / 8;
+        }
+        high_candidates = std::min(remaining_cells, high_candidates);
+        telemetry.last_high_bucket_count = high_candidates;
+        remaining_cells -= high_candidates;
+
+        std::uint64_t medium_candidates = 0;
+        if (rays_per_cell >= 2) {
+            medium_candidates = std::max(remaining_cells / 3, variance_cells / 4);
+        } else if (telemetry.last_variance_marker_available) {
+            medium_candidates = remaining_cells / 6;
+        }
+        medium_candidates = std::min(remaining_cells, medium_candidates);
+        telemetry.last_medium_bucket_count = medium_candidates;
+        remaining_cells -= medium_candidates;
+        telemetry.last_low_bucket_count = remaining_cells;
+
+        telemetry.total_reuse_bucket_count = saturated_add(
+                telemetry.total_reuse_bucket_count,
+                telemetry.last_reuse_bucket_count);
+        telemetry.total_low_bucket_count = saturated_add(
+                telemetry.total_low_bucket_count,
+                telemetry.last_low_bucket_count);
+        telemetry.total_medium_bucket_count = saturated_add(
+                telemetry.total_medium_bucket_count,
+                telemetry.last_medium_bucket_count);
+        telemetry.total_high_bucket_count = saturated_add(
+                telemetry.total_high_bucket_count,
+                telemetry.last_high_bucket_count);
     }
+
+    if (telemetry.last_reuse_only) {
+        telemetry.last_history_accepted_count = cell_count;
+        telemetry.last_history_rejected_count = 0;
+    } else if (telemetry.last_temporal_history && cell_count != 0) {
+        telemetry.last_history_accepted_count = std::min(
+                cell_count,
+                saturated_add(
+                        telemetry.last_reuse_bucket_count,
+                        saturated_add(
+                                telemetry.last_low_bucket_count,
+                                telemetry.last_medium_bucket_count / 2)));
+        telemetry.last_history_rejected_count = cell_count - telemetry.last_history_accepted_count;
+    } else {
+        telemetry.last_history_accepted_count = 0;
+        telemetry.last_history_rejected_count = 0;
+    }
+    telemetry.total_history_accepted_count = saturated_add(
+            telemetry.total_history_accepted_count,
+            telemetry.last_history_accepted_count);
+    telemetry.total_history_rejected_count = saturated_add(
+            telemetry.total_history_rejected_count,
+            telemetry.last_history_rejected_count);
+    telemetry.last_heatmap_artifact_pixels = dispatch.enabled && dispatch.width > 0 && dispatch.height > 0
+            ? cell_count
+            : 0;
 
     telemetry.last_budget_marker = changed
             ? "round8_adaptive_budget_changed"
@@ -443,6 +569,12 @@ void record_adaptive_budget_ingestion(
                     ? "round8_history_confidence_reuse_bucket"
                     : "round8_history_confidence_temporal_history")
             : "round8_history_confidence_unavailable";
+    telemetry.last_heatmap_artifact_role = dispatch.enabled
+            ? (has_lighting_flag(dispatch.flags, kLightingDispatchFlagDebugOverlay)
+                    ? "round8_cpu_metadata_ray_budget_variance_cache_history_heatmap_inputs"
+                    : "round8_cpu_metadata_heatmap_inputs_debug_overlay_not_requested")
+            : "round8_cpu_metadata_heatmap_inputs_disabled";
+    telemetry.last_heatmap_boundary_marker = "native_cpu_telemetry_only_no_gpu_heatmap_render_output";
 }
 
 bool is_power_of_two(std::int32_t value) {
@@ -799,6 +931,19 @@ void append_adaptive_budget_status(
         << ",budget_capped=" << budget.last_budget_capped
         << ",budget_changed=" << budget.last_budget_changed
         << ",budget_delta_rays=" << budget.last_budget_delta_rays
+        << ",dispatch_workgroups=" << budget.last_dispatch_workgroups
+        << ",previous_dispatch_workgroups=" << budget.last_previous_dispatch_workgroups
+        << ",dispatch_delta_workgroups=" << budget.last_dispatch_delta_workgroups
+        << ",dispatch_count_changed=" << budget.last_dispatch_count_changed
+        << ",scene_state_checksum=" << budget.last_scene_state_checksum
+        << ",previous_scene_state_checksum=" << budget.last_previous_scene_state_checksum
+        << ",scene_state_changed=" << budget.last_scene_state_changed
+        << ",cache_confidence_contribution=" << budget.last_cache_confidence_contribution
+        << ",variance_contribution=" << budget.last_variance_contribution
+        << ",history_accepted=" << budget.last_history_accepted_count
+        << ",history_rejected=" << budget.last_history_rejected_count
+        << ",total_history_accepted=" << budget.total_history_accepted_count
+        << ",total_history_rejected=" << budget.total_history_rejected_count
         << ",total_budget_changes=" << budget.total_budget_changes
         << ",bucket_counts={reuse=" << budget.last_reuse_bucket_count
         << ",low=" << budget.last_low_bucket_count
@@ -822,6 +967,11 @@ void append_adaptive_budget_status(
         << "\""
         << ",history_confidence_marker=\"" << budget.last_history_confidence_marker
         << "\""
+        << ",heatmap_artifact={pixels=" << budget.last_heatmap_artifact_pixels
+        << ",role=\"" << budget.last_heatmap_artifact_role
+        << "\""
+        << ",boundary=\"" << budget.last_heatmap_boundary_marker
+        << "\"}"
         << ",invalid_budget_reason=\"" << budget.last_invalid_budget_reason
         << "\"}";
 }
@@ -1658,7 +1808,7 @@ void Renderer::upload_lighting_dispatch(LightingDispatchPacket packet) {
                 record_adaptive_budget_rejection(
                         staging_.lighting.adaptive_budget,
                         frame_index_,
-                        packet.generation,
+                        packet,
                         dispatch,
                         "reuse-only diffuse GI budget must not request rays");
                 fail("reuse-only diffuse GI budget must not request rays");
@@ -1667,7 +1817,7 @@ void Renderer::upload_lighting_dispatch(LightingDispatchPacket packet) {
                 record_adaptive_budget_rejection(
                         staging_.lighting.adaptive_budget,
                         frame_index_,
-                        packet.generation,
+                        packet,
                         dispatch,
                         "diffuse GI budget cannot request rays with zero rays per cell");
                 fail("diffuse GI budget cannot request rays with zero rays per cell");
@@ -3112,7 +3262,7 @@ void Renderer::track_lighting_dispatch_upload(const LightingDispatchPacket& pack
             record_adaptive_budget_ingestion(
                     staging_.lighting.adaptive_budget,
                     frame_index_,
-                    packet.generation,
+                    packet,
                     dispatch);
         }
 

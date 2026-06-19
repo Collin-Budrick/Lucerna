@@ -54,7 +54,9 @@ public final class LucernaDebugOverlayLines {
         FinalCompositeModeStatus compositeStatus = currentCompositeModeStatus();
         lines.add(Component.literal("Round 7 mix: " + compositeStatus.compactSourceMixPolicy()));
         lines.add(Component.literal("Round 7 denoise: " + compositeStatus.denoiseSourcePolicy()));
-        lines.add(Component.literal("Round 8 adaptive debug: " + Round8AdaptiveDebugStatus.fromSnapshot(snapshot).summary()));
+        Round8AdaptiveDebugStatus round8 = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
+        lines.add(Component.literal("Round 8 adaptive debug: " + round8.summary()));
+        lines.add(Component.literal("Round 8 heatmaps: " + round8.heatmapRolesLine()));
         return lines;
     }
 
@@ -133,11 +135,17 @@ public final class LucernaDebugOverlayLines {
         Round8AdaptiveDebugStatus round8 = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("round8.adaptiveDebugSummary=" + round8.summary()));
         lines.add(Component.literal("round8.adaptiveSampling=" + round8.adaptiveSamplingLine()));
+        lines.add(Component.literal("round8.sceneState=" + round8.sceneStateLine()));
         lines.add(Component.literal("round8.rayBudget=" + round8.rayBudgetLine()));
+        lines.add(Component.literal("round8.rayBudgetBuckets=" + round8.rayBudgetBucketLine()));
         lines.add(Component.literal("round8.rayBudgetHeatmap=" + round8.rayBudgetHeatmapLine()));
         lines.add(Component.literal("round8.varianceMap=" + round8.varianceMapLine()));
         lines.add(Component.literal("round8.historyConfidence=" + round8.historyConfidenceLine()));
+        lines.add(Component.literal("round8.historyConfidenceHeatmap=" + round8.historyConfidenceHeatmapLine()));
+        lines.add(Component.literal("round8.historyCounts=" + round8.historyCountsLine()));
         lines.add(Component.literal("round8.disocclusionMask=" + round8.disocclusionMaskLine()));
+        lines.add(Component.literal("round8.cacheConfidenceContribution=" + round8.cacheConfidenceContributionLine()));
+        lines.add(Component.literal("round8.heatmapRoles=" + round8.heatmapRolesLine()));
         lines.add(Component.literal("round8.readiness=" + round8.readinessLine()));
         lines.add(Component.literal("round8.evidenceBoundary=" + round8.evidenceBoundaryLine()));
         snapshot.validationFields().entrySet().stream()
@@ -221,20 +229,28 @@ public final class LucernaDebugOverlayLines {
     private static void addAdaptiveSamplingLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
         Round8AdaptiveDebugStatus status = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("Overlay scope: Round 8 adaptive sampling status."));
+        lines.add(Component.literal(status.sceneStateLine()));
         lines.add(Component.literal(status.adaptiveSamplingLine()));
         lines.add(Component.literal(status.rayBudgetLine()));
+        lines.add(Component.literal(status.rayBudgetBucketLine()));
         lines.add(Component.literal(status.varianceMapLine()));
         lines.add(Component.literal(status.historyConfidenceLine()));
+        lines.add(Component.literal(status.historyCountsLine()));
+        lines.add(Component.literal(status.cacheConfidenceContributionLine()));
         lines.add(Component.literal(status.disocclusionMaskLine()));
+        lines.add(Component.literal(status.heatmapRolesLine()));
         lines.add(Component.literal(status.readinessLine()));
         lines.add(Component.literal(status.evidenceBoundaryLine()));
     }
 
     private static void addRayBudgetHeatmapLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
         Round8AdaptiveDebugStatus status = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
-        lines.add(Component.literal("Overlay scope: Round 8 ray-budget heatmap readiness."));
+        lines.add(Component.literal("Overlay scope: Round 8 ray-budget heatmap role."));
+        lines.add(Component.literal(status.sceneStateLine()));
         lines.add(Component.literal(status.rayBudgetHeatmapLine()));
         lines.add(Component.literal(status.rayBudgetLine()));
+        lines.add(Component.literal(status.rayBudgetBucketLine()));
+        lines.add(Component.literal(status.cacheConfidenceContributionLine()));
         lines.add(Component.literal("Heatmap legend: reuse=blue low=green medium=yellow high=red missing=gray"));
         lines.add(Component.literal(status.readinessLine()));
         lines.add(Component.literal(status.evidenceBoundaryLine()));
@@ -243,8 +259,10 @@ public final class LucernaDebugOverlayLines {
     private static void addVarianceMapLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
         Round8AdaptiveDebugStatus status = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("Overlay scope: Round 8 variance map readiness."));
+        lines.add(Component.literal(status.sceneStateLine()));
         lines.add(Component.literal(status.varianceMapLine()));
         lines.add(Component.literal(status.rayBudgetLine()));
+        lines.add(Component.literal(status.cacheConfidenceContributionLine()));
         lines.add(Component.literal("Variance legend: stable=blue refresh=yellow high=red missing=gray"));
         lines.add(Component.literal(status.readinessLine()));
         lines.add(Component.literal(status.evidenceBoundaryLine()));
@@ -252,8 +270,11 @@ public final class LucernaDebugOverlayLines {
 
     private static void addHistoryConfidenceLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
         Round8AdaptiveDebugStatus status = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
-        lines.add(Component.literal("Overlay scope: Round 8 history confidence readiness."));
+        lines.add(Component.literal("Overlay scope: Round 8 history-confidence heatmap role."));
+        lines.add(Component.literal(status.sceneStateLine()));
+        lines.add(Component.literal(status.historyConfidenceHeatmapLine()));
         lines.add(Component.literal(status.historyConfidenceLine()));
+        lines.add(Component.literal(status.historyCountsLine()));
         lines.add(Component.literal(status.varianceMapLine()));
         lines.add(Component.literal("History legend: reset=red low=yellow reusable=green missing=gray"));
         lines.add(Component.literal(status.readinessLine()));
@@ -263,8 +284,10 @@ public final class LucernaDebugOverlayLines {
     private static void addDisocclusionMaskLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
         Round8AdaptiveDebugStatus status = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("Overlay scope: Round 8 disocclusion mask readiness."));
+        lines.add(Component.literal(status.sceneStateLine()));
         lines.add(Component.literal(status.disocclusionMaskLine()));
         lines.add(Component.literal(status.historyConfidenceLine()));
+        lines.add(Component.literal(status.historyCountsLine()));
         lines.add(Component.literal("Disocclusion legend: stable=transparent moving=yellow reset=red missing=gray"));
         lines.add(Component.literal(status.readinessLine()));
         lines.add(Component.literal(status.evidenceBoundaryLine()));

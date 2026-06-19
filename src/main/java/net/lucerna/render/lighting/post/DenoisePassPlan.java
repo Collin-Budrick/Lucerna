@@ -1,7 +1,6 @@
 package net.lucerna.render.lighting.post;
 
 import net.lucerna.lighting.DenoiseEdgeRejectionInputs;
-import net.lucerna.lighting.DenoiseHistoryCounters;
 import net.lucerna.lighting.DenoiseOutputContract;
 import net.lucerna.lighting.DenoiseSignalInputContract;
 import net.lucerna.lighting.SignalSeparatedDenoiseContract;
@@ -30,7 +29,8 @@ public record DenoisePassPlan(
                     inputs,
                     outputGeneration,
                     settings.enabled(),
-                    historyRejection.writesRejectionMask()
+                    historyRejection.writesRejectionMask(),
+                    historyRejection
             );
         }
         if (historyRejection.frameIndex() != inputs.frameIndex()) {
@@ -65,7 +65,8 @@ public record DenoisePassPlan(
                 resolvedInputs,
                 outputGeneration,
                 resolvedSettings.enabled(),
-                historyRejection.writesRejectionMask()
+                historyRejection.writesRejectionMask(),
+                historyRejection
         );
         return new DenoisePassPlan(
                 resolvedSettings,
@@ -124,6 +125,14 @@ public record DenoisePassPlan(
         return this.historyRejection.temporalReuseAllowed();
     }
 
+    public HistoryConfidenceSummary historyConfidenceSummary() {
+        return this.historyRejection.confidenceSummary(this.inputs);
+    }
+
+    public String round8HistoryTelemetrySummary() {
+        return this.historyConfidenceSummary().compactSummary();
+    }
+
     public List<String> readResources() {
         return PostProcessingResourceContract.DENOISE_READS;
     }
@@ -137,9 +146,14 @@ public record DenoisePassPlan(
             DenoiseInputContract inputs,
             long outputGeneration,
             boolean writesDiffuseOutput,
-            boolean writesRejectionMask
+            boolean writesRejectionMask,
+            HistoryRejectionPlan historyRejection
     ) {
         DenoiseInputContract resolvedInputs = inputs == null ? DenoiseInputContract.empty() : inputs;
+        HistoryRejectionPlan resolvedHistoryRejection = historyRejection == null
+                ? HistoryRejectionPlan.from(HistoryRejectionSettings.disabled(), resolvedInputs)
+                : historyRejection;
+        HistoryConfidenceSummary historySummary = resolvedHistoryRejection.confidenceSummary(resolvedInputs);
         GBufferDescriptor gBuffer = resolvedInputs.gBuffer();
         int width = gBuffer.width();
         int height = gBuffer.height();
@@ -201,9 +215,11 @@ public record DenoisePassPlan(
                 null,
                 null,
                 edgeInputs,
-                DenoiseHistoryCounters.none(),
+                historySummary.historyCounters(),
                 output,
-                null
+                "Round 8 variance/history confidence contract; "
+                        + historySummary.compactSummary()
+                        + "; realDenoiseShaderOutput=false"
         );
     }
 }

@@ -2,7 +2,7 @@
 
 ## Progress Audit
 
-Current controller estimate: **about 99.6% complete against this file**.
+Current controller estimate: **about 99.65% complete against this file**.
 
 This percentage is conservative:
 - Rounds 0-3 are mostly implemented and controller-validated.
@@ -13,7 +13,7 @@ This percentage is conservative:
 - Latest controller work restores the launchable native DLL path after the unvalidated native spatialization generated an Application Control-blocked DLL, then moves the Round 5 visible proof into a final-composite-only focus-window shader. Sodium + Iris + Vulkan now loads the native DLL, submits the focus-window final composite, and screenshot delta proves visible brightening in the focused wall region while preserving the HUD.
 - Current Round 6 preparation has controller-validated Java/cache scaffolding for GI source summaries, native diffuse-GI upload metadata, dirty-region listener hooks, sparse voxel radiance cache records/confidence/invalidation/debug status, Round 6 debug overlay presentation, native Round 6 dispatch telemetry, a bounded native diffuse-GI visible-signal telemetry marker, a GI-labeled final-composite preview path, and a screenshot-delta proof for a Round 6 GI-gated preview. Sodium + Iris + Vulkan launch validation proves low-res GI dispatch metadata can become enabled with nonzero rays/cache reads, a separate cache proof validates nonzero cache records/writes, and the GI preview path produces a focused screenshot difference. The native diffuse-GI output-source replacement is now controller-validated with signed local native staging and a stricter source proof that rejects the temporary direct-light RGBA payload. True native low-res GI output/tracing remains open because the proof still validates a metadata-backed native preview source, not physical GI tracing.
 - Latest controller work adds Round 7 signal-separated denoise contracts, final composite mode/status controls, native denoise scaffold telemetry, first-practical CPU denoised diffuse-GI RGBA8 output, controller-selectable baseline/direct/raw-GI/denoised-GI/final/debug modes, a controller-only Round 7 proof helper, native surface-response strengthening, a distinct final direct-plus-raw-plus-denoised composite draw path, auto-selected affected-surface proof crops, and clearer final-mode source telemetry. Build/native/signing and Sodium + Iris + Vulkan world-join launches validate raw-GI metadata, CPU denoised-output generation/readback, composite placeholder metadata, explicit `realDenoiseShaderOutput=false`, HUD-safe selected-mode screenshots, and a passing focused-region direct/raw/denoised/final visual proof.
-- The remaining work is the hardest part of making the image production-quality: real shader denoise, temporal/flicker proof, direct-only capture, particle/translucency-specific proof, adaptive sampling, and later tracing/reuse systems.
+- The remaining work is the hardest part of making the image production-quality: real shader denoise, temporal/flicker proof, particle/translucency-specific proof, physically stronger GI/tracing, virtualized chunk geometry, and later tracing/reuse systems.
 
 Legend:
 - ~~Struck through~~ = implemented and validated by the main controller.
@@ -582,24 +582,19 @@ Use existing cache/ray-budget scaffolding to make ray allocation visible and use
 
 The renderer should begin spending more work where the image is unstable and less work where cache/history is strong.
 
-Agent W: Adaptive Sampling Controller
+~~Agent W: Adaptive Sampling Controller~~ **DONE/VALIDATED for CPU/native telemetry and visible debug heatmap evidence**
 
 Owns:
 
-Ray budget classification.
-Per-tile or per-pixel budget map.
-Inputs from:
-variance,
-disocclusion,
-cache confidence,
-emissive proximity,
-material type,
-motion.
-Output ray budget used by direct/GI passes.
+~~Ray budget classification.~~
+~~Per-tile or per-pixel budget map.~~
+~~Inputs from variance, disocclusion/history state, cache confidence, emissive proximity, and motion/capture scene state.~~
+Material-type weighting remains open because no material-type signal is available in the current budget inputs.
+~~Output ray budget used by direct/GI pass telemetry and controller heatmap modes.~~
 
 Deliverable:
 
-Adaptive sampling affects actual dispatch counts and visible debug heatmap.
+~~Adaptive sampling affects dispatch-count telemetry and visible debug heatmap captures.~~ **DONE/VALIDATED in `run/validation-logs/round8-adaptive-heatmap-proof-20260619-193009.json`; boundary: this validates CPU/native work distribution telemetry and debug overlays, not a final GPU adaptive sampler**
 
 Validation by controller:
 
@@ -609,26 +604,26 @@ Screenshot ray budget heatmap.
 Move quickly into a dark/emissive cave or newly visible region.
 Screenshot ray budget heatmap again.
 Validate:
-stable terrain receives lower ray budget,
-new/dark/emissive areas receive higher ray budget,
-dispatch counts change in logs.
+~~stable terrain receives lower/reuse ray budget markers,~~
+~~new/noisy/emissive areas receive higher ray budget markers,~~
+~~dispatch counts change in logs.~~
 Validate logs contain:
-budget bucket counts,
-high/medium/low ray region counts,
-cache confidence contribution,
-no invalid budget values.
-Agent X: Variance and History Confidence
+~~budget bucket counts,~~
+~~high/medium/low ray region counts,~~
+~~cache confidence contribution,~~
+~~no invalid budget values.~~
+~~Agent X: Variance and History Confidence~~ **DONE/VALIDATED for telemetry/debug heatmap evidence**
 
 Owns:
 
-Variance map.
-History confidence map.
-Disocclusion mask.
-Debug views for variance/confidence.
+~~Variance map telemetry/status.~~
+~~History confidence map telemetry/status.~~
+~~Disocclusion mask telemetry/status.~~
+~~Debug views for variance/confidence.~~
 
 Deliverable:
 
-Debug views show where history is trusted or rejected.
+~~Debug views show where history is trusted or rejected.~~ **DONE/VALIDATED in stable-vs-moved history-confidence screenshots and logs**
 
 Validation by controller:
 
@@ -637,17 +632,19 @@ Take screenshot of history confidence overlay.
 Move camera rapidly.
 Take screenshot after disocclusion.
 Validate:
-stationary surfaces gain confidence,
-newly visible surfaces lose confidence,
-variance map highlights unstable lighting regions.
-Validate logs contain history accept/reject counts.
+~~stationary surfaces gain confidence,~~
+~~newly visible surfaces lose confidence,~~
+~~variance/history views highlight unstable lighting regions.~~
+~~Validate logs contain history accept/reject counts.~~
 Round 8 Acceptance Criteria
-Adaptive ray budgets are visible.
-Dispatch counts change based on scene conditions.
-Stable areas get cheaper.
-New/noisy/emissive areas get more sampling.
-Debug heatmaps are screenshot-validated.
-Logs include ray budget and history confidence telemetry.
+~~Adaptive ray budgets are visible.~~ **DONE/VALIDATED**
+~~Dispatch counts change based on scene conditions.~~ **DONE/VALIDATED through `dispatchCountsChanged=true` and distinct stable/moved/emissive log markers**
+~~Stable areas get cheaper.~~ **DONE/VALIDATED through stable low/reuse markers**
+~~New/noisy/emissive areas get more sampling.~~ **DONE/VALIDATED through moved/emissive high-budget markers**
+~~Debug heatmaps are screenshot-validated.~~ **DONE/VALIDATED**
+~~Logs include ray budget and history confidence telemetry.~~ **DONE/VALIDATED**
+Round 8 evidence:
+- ~~Sodium + Iris + Vulkan launches captured stable ray-budget, moved/noisy ray-budget, emissive ray-budget, stable history-confidence, and moved/disoccluded history-confidence screenshots; the controller assertion passed with required log proof.~~ **DONE/VALIDATED in `run/validation-logs/round8-adaptive-heatmap-proof-20260619-193009.json`; screenshots are `run/validation-screenshots/round8-adaptive-heatmap-stableheatmap-20260619-192639-StableHeatmap.png`, `run/validation-screenshots/round8-adaptive-heatmap-movedheatmap-20260619-192732-MovedHeatmap.png`, `run/validation-screenshots/round8-adaptive-heatmap-emissiveheatmap-20260619-192827-EmissiveHeatmap.png`, `run/validation-screenshots/round8-adaptive-heatmap-historystable-20260619-192915-HistoryStable.png`, `run/validation-screenshots/round8-adaptive-heatmap-historymoved-20260619-193009-HistoryMoved.png`, and comparison artifact `run/validation-screenshots/round8-adaptive-heatmap-comparison-20260619-193009.png`. Key metrics: `movedRayBudget.focus.changedPixelPercent=76.8338`, `emissiveRayBudget.focus.changedPixelPercent=59.4184`, `historyConfidence.focus.changedPixelPercent=73.1608`, `historyConfidence.focus.meanAbsLuma=19.3994`, `stableLowBudgetPresent=True`, `movedHighBudgetPresent=True`, `emissiveHighBudgetPresent=True`, `dispatchCountsChanged=True`, `historyAcceptedPresent=True`, `historyRejectedPresent=True`, `invalidBudgetValuesPresent=False`, `proofMarkerPresent=False`, `temporaryDirectLightSourcePresent=False`, and `nativeErrorPresent=False`. Boundary: this is Round 8 debug/telemetry heatmap evidence, not final GPU heatmap rendering quality.**
 Round 9: Virtualized Chunk Geometry
 Goal
 
@@ -902,6 +899,7 @@ Logs prove candidate reuse and reservoir invalidation behavior.
 - ~~No sub-agent is allowed to "verify" fixes by running tests or build-like checks. They patch, explain, and wait for controller feedback.~~ **DONE/ONGOING**
 
 Latest strong validation evidence:
+- ~~Sodium + Iris + Vulkan Round 8 adaptive heatmap validation now captures stable ray-budget, moved/noisy ray-budget, emissive ray-budget, stable history-confidence, and moved/disoccluded history-confidence screenshots; the combined assertion passes with required log proof for bucket counts, scene states, cache-confidence contribution, dispatch-count changes, ray-budget heatmap artifacts, history accepted/rejected counts, and history-confidence heatmap artifacts.~~ **DONE/VALIDATED in `run/validation-logs/round8-adaptive-heatmap-proof-20260619-193009.json`, `run/validation-logs/latest-round8-adaptive-heatmap-stableheatmap-20260619-192639.log`, `run/validation-logs/latest-round8-adaptive-heatmap-movedheatmap-20260619-192732.log`, `run/validation-logs/latest-round8-adaptive-heatmap-emissiveheatmap-20260619-192827.log`, `run/validation-logs/latest-round8-adaptive-heatmap-historystable-20260619-192915.log`, `run/validation-logs/latest-round8-adaptive-heatmap-historymoved-20260619-193009.log`, and comparison artifact `run/validation-screenshots/round8-adaptive-heatmap-comparison-20260619-193009.png`; key metrics include `movedRayBudget.focus.changedPixelPercent=76.8338`, `emissiveRayBudget.focus.changedPixelPercent=59.4184`, `historyConfidence.focus.changedPixelPercent=73.1608`, `stableLowBudgetPresent=True`, `movedHighBudgetPresent=True`, `emissiveHighBudgetPresent=True`, `dispatchCountsChanged=True`, `historyAcceptedPresent=True`, `historyRejectedPresent=True`, `invalidBudgetValuesPresent=False`, `proofMarkerPresent=False`, and `nativeErrorPresent=False`. Boundary: this validates Round 8 debug/telemetry heatmaps and CPU/native work-distribution metadata, not finished GPU adaptive sampling quality.**
 - ~~Sodium + Iris + Vulkan Round 7 recapture now includes baseline/off, direct-only, raw GI, CPU-denoised GI, final composite, and debug-overlay screenshots from the same test scene, plus a comparison artifact and expanded assertion proof. The accepted final state blends `native-direct-light-rgba8+native-diffuse-gi-rgba8+cpu-denoised-diffuse-gi-rgba8`, rejects accepted-state metadata-only/focus-window/proof-marker contamination, and preserves the HUD-safe final-composite path.~~ **DONE/VALIDATED in `run/validation-logs/round7-direct-raw-denoised-final-proof-20260619-184256.json`, `run/validation-logs/latest-round7-denoise-composite-finalcomposite-20260619-184206.log`, `run/validation-screenshots/round7-denoise-composite-baseline-20260619-182351-Baseline.png`, `run/validation-screenshots/round7-denoise-composite-direct-20260619-183213-Direct.png`, `run/validation-screenshots/round7-denoise-composite-rawgi-20260619-183302-RawGi.png`, `run/validation-screenshots/round7-denoise-composite-denoisedgi-20260619-183351-DenoisedGi.png`, `run/validation-screenshots/round7-denoise-composite-finalcomposite-20260619-184206-FinalComposite.png`, `run/validation-screenshots/round7-denoise-composite-debug-20260619-184256-Debug.png`, and `run/validation-screenshots/round7-direct-raw-denoised-final-comparison-20260619-184256.png`; key proof metrics include `direct.focus.changedPixelPercent=14.6647`, `raw.focus.changedPixelPercent=56.3856`, `denoise.focus.changedPixelPercent=43.1424`, `denoise.roughness.meanAbsNeighborLumaReductionPercent=4.4313`, `final.focus.changedPixelPercent=57.0475`, `metadataOnlyPreviewPresent=False`, `focusWindowOnlyPresent=False`, `temporaryDirectLightSourcePresent=False`, and `nativeErrorPresent=False`. Boundary: `realDenoiseShaderOutput=false`, so real shader denoise quality remains open.**
 - ~~Sodium + Iris + Vulkan direct-surface proof now captures disabled baseline, enabled, and debug screenshots from the glowstone wall scene, rejects focus-window/proof-marker/temporary-source contamination, and validates a real native direct/emissive final-composite surface delta.~~ **DONE/VALIDATED in `run/validation-logs/round5-direct-surface-proof-20260619-181014.json`, `run/validation-logs/latest-round5-direct-surface-enabled-20260619-180925.log`, `run/validation-screenshots/round5-direct-surface-baseline-20260619-180836-Baseline.png`, `run/validation-screenshots/round5-direct-surface-enabled-20260619-180925-Enabled.png`, `run/validation-screenshots/round5-direct-surface-debug-20260619-181014-Debug.png`, and `run/validation-screenshots/round5-direct-surface-focused-comparison-20260619-181014.png`; key proof metrics include `max.emissiveCandidates=128`, `max.shadowCandidates=4096`, `max.surfaceSamples=325742`, `max.directOutputEnergy=275232`, `focus.changedPixelPercent=57.411`, `focus.brighterPixelPercent=55.8431`, `focusWindowOnlyPresent=False`, `temporaryDirectLightSourcePresent=False`, and `proofMarkerPresent=False`.**
 - ~~Sodium + Iris + Vulkan selected-mode launches were recaptured after Round 8 scaffolding edits and still pass the Round 7 focused raw/denoised/final assertion with required log proof and no proof-marker/focus-window/native-error contamination.~~ **DONE/VALIDATED in `run/validation-logs/round7-denoise-composite-assert-20260619-175013.json`; full screenshots are in `run/validation-screenshots/round7-denoise-composite-baseline-20260619-174736-Baseline.png`, `run/validation-screenshots/round7-denoise-composite-rawgi-20260619-174925-RawGi.png`, `run/validation-screenshots/round7-denoise-composite-denoisedgi-20260619-175013-DenoisedGi.png`, and `run/validation-screenshots/round7-denoise-composite-finalcomposite-20260619-174826-FinalComposite.png`; focused comparison is `run/validation-screenshots/round7-denoise-composite-focused-comparison-20260619-175013.png`. Note: the final composite remains subtle in full-screen view, so this evidence proves a real selected-path delta, not the finished obvious emissive-lighting milestone.**

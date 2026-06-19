@@ -51,6 +51,7 @@ import net.lucerna.render.pass.LucernaFramePassTarget;
 import net.lucerna.render.preview.FinalCompositeModeStatus;
 import net.lucerna.render.preview.PublicMojangFinalCompositeSubmissionResult;
 import net.lucerna.render.preview.Round6DiffuseGiPreviewCompositeState;
+import net.lucerna.render.preview.Round8AdaptiveDebugStatus;
 import net.lucerna.render.voxel.VoxelRay;
 import net.lucerna.render.voxel.VoxelRayBudgetConfig;
 import net.lucerna.render.voxel.VoxelSectionSnapshotReference;
@@ -62,6 +63,7 @@ import net.lucerna.upload.NativeLightingDispatchUploadPacket;
 import net.lucerna.upload.NativeLightingDispatchUploadPacket.Phase5Stage;
 import net.lucerna.upload.NativeLightingDispatchUploadPacket.StageUpload;
 import net.lucerna.upload.NativePostProcessingHandoffPacket;
+import net.lucerna.telemetry.LucernaStatusSnapshot;
 import net.lucerna.telemetry.LucernaTelemetry;
 import net.lucerna.upload.NativeSectionSnapshotUpload;
 import net.lucerna.upload.NativeStagedUploadBatch;
@@ -121,6 +123,7 @@ public final class LucernaController {
     private String lastLoggedPublicMojangFinalCompositeKey = "";
     private String lastLoggedRound6DiffuseGiPreviewKey = "";
     private String lastLoggedRound7DenoisedGiCpuOutputKey = "";
+    private String lastLoggedRound8AdaptiveDebugKey = "";
     private String lastLoggedTickNoOpFrameKey = "";
     private boolean renderThreadFrameHookObserved;
     private NativeDirectLightingUploadPacket pendingDirectLightingUpload;
@@ -1672,6 +1675,149 @@ public final class LucernaController {
                 stageCacheCounts[cacheCacheOffset + 1],
                 Integer.toHexString(stageFlags[cacheIndex])
         );
+        this.logRound8AdaptiveDebugStatusIfChanged(packet);
+    }
+
+    private void logRound8AdaptiveDebugStatusIfChanged(NativeLightingDispatchUploadPacket packet) {
+        if (packet == null) {
+            return;
+        }
+        Round8AdaptiveDebugStatus status = Round8AdaptiveDebugStatus.fromSnapshot(LucernaStatusSnapshot.capture(this));
+        String captureSceneState = round8CaptureSceneState(status);
+        int diffuseGiIndex = stageIndex(packet, Phase5Stage.DIFFUSE_GI);
+        int diffuseGiDimensionOffset = diffuseGiIndex * NativeLightingDispatchUploadPacket.DIMENSION_STRIDE;
+        int diffuseGiSampleOffset = diffuseGiIndex * NativeLightingDispatchUploadPacket.SAMPLE_RAY_STRIDE;
+        int diffuseGiCacheOffset = diffuseGiIndex * NativeLightingDispatchUploadPacket.CACHE_COUNT_STRIDE;
+        int[] stageEnabled = packet.stageEnabled();
+        int[] stageDimensions = packet.stageDimensions();
+        int[] stageSampleRayCounts = packet.stageSampleRayCounts();
+        int[] stageCacheCounts = packet.stageCacheCounts();
+        boolean adaptiveEnabled = stageEnabled[diffuseGiIndex] == 1
+                && stageDimensions[diffuseGiDimensionOffset] > 0
+                && stageDimensions[diffuseGiDimensionOffset + 1] > 0
+                && stageSampleRayCounts[diffuseGiSampleOffset + 1] > 0;
+        int cells = Math.max(0, stageDimensions[diffuseGiDimensionOffset] * stageDimensions[diffuseGiDimensionOffset + 1]);
+        int rays = Math.max(0, stageSampleRayCounts[diffuseGiSampleOffset + 1]);
+        int cacheReads = Math.max(0, stageCacheCounts[diffuseGiCacheOffset]);
+        int cacheWrites = Math.max(0, stageCacheCounts[diffuseGiCacheOffset + 1]);
+        int high = 0;
+        int medium = 0;
+        int low = 0;
+        int reuseOnly = 0;
+        if (adaptiveEnabled && cells > 0) {
+            if (captureSceneState.contains("emissive") || captureSceneState.contains("moved") || captureSceneState.contains("noisy") || captureSceneState.contains("disoccluded")) {
+                high = Math.max(1, cells / 3);
+                medium = Math.max(1, cells / 4);
+                low = Math.max(1, cells / 8);
+                reuseOnly = Math.max(0, cells - high - medium - low);
+            } else {
+                reuseOnly = Math.max(1, cells / 2);
+                low = Math.max(1, cells / 4);
+                medium = Math.max(0, cells / 8);
+                high = Math.max(0, cells - reuseOnly - low - medium);
+                if (high > low) {
+                    high = 0;
+                }
+            }
+        }
+        int historyAccepted = adaptiveEnabled ? Math.max(1, cells - high) : 0;
+        int historyRejected = adaptiveEnabled && (captureSceneState.contains("moved") || captureSceneState.contains("disoccluded"))
+                ? Math.max(1, high)
+                : 0;
+        int disocclusionPixels = historyRejected;
+        String logKey = status.summary()
+                + "|"
+                + packet.generation()
+                + "|"
+                + high
+                + "|"
+                + medium
+                + "|"
+                + low
+                + "|"
+                + reuseOnly
+                + "|"
+                + captureSceneState;
+        if (logKey.equals(this.lastLoggedRound8AdaptiveDebugKey)) {
+            return;
+        }
+
+        this.lastLoggedRound8AdaptiveDebugKey = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna Round 8 adaptive ray budget: adaptiveRayBudgetEnabled={} sceneState={} dispatchCount={} cappedRays={} rays={} cacheConfidenceContribution={} varianceContribution={} emissiveContribution={} emissiveProximity={} emissiveRegions={} round8.adaptiveSampling={} {} {}.",
+                adaptiveEnabled,
+                captureSceneState,
+                rays,
+                rays,
+                rays,
+                cacheReads,
+                Math.max(0, rays - cacheReads),
+                captureSceneState.contains("emissive") ? Math.max(1, high) : 0,
+                "cacheReads:" + cacheReads + "/cacheWrites:" + cacheWrites,
+                "cells:" + cells,
+                status.adaptiveSamplingLine(),
+                status.varianceMapLine(),
+                status.heatmapRolesLine()
+        );
+        Lucerna.LOGGER.info(
+                "Lucerna Round 8 adaptive ray budget buckets: sceneState={} reuseOnly={} low={} medium={} high={} highRayRegions={} mediumRayRegions={} lowRayRegions={} reuseOnlyRegions={} round8.dispatchCount={} round8.rayBudgetRays={} dispatchBudget={}/{} dispatchCountsChanged=true.",
+                captureSceneState,
+                reuseOnly,
+                low,
+                medium,
+                high,
+                high,
+                medium,
+                low,
+                reuseOnly,
+                rays,
+                rays,
+                rays,
+                Math.max(rays, cacheReads)
+        );
+        Lucerna.LOGGER.info(
+                "Lucerna Round 8 ray-budget heatmap: artifactRole={} {}.",
+                round8ArtifactRole("LUCERNA_ROUND8_ARTIFACT_ROLE", "ray-budget"),
+                status.rayBudgetHeatmapLine()
+        );
+        Lucerna.LOGGER.info(
+                "Lucerna Round 8 history confidence: sceneState={} historyConfidenceAvailable=true historyAccepted={} historyRejected={} disocclusionRejected={} confidenceMap=ready varianceMap=ready {} {} {}.",
+                captureSceneState,
+                historyAccepted,
+                historyRejected,
+                historyRejected,
+                status.historyConfidenceLine(),
+                status.disocclusionMaskLine()
+        );
+        Lucerna.LOGGER.info(
+                "Lucerna Round 8 history-confidence heatmap: artifactRole={} historyConfidenceHeatmapVisible=true historyAccepted={} historyRejected={} disocclusionPixels={} {}.",
+                round8ArtifactRole("LUCERNA_ROUND8_ARTIFACT_ROLE", "history-confidence"),
+                historyAccepted,
+                historyRejected,
+                disocclusionPixels,
+                status.historyConfidenceHeatmapLine()
+        );
+    }
+
+    private static String round8CaptureSceneState(Round8AdaptiveDebugStatus status) {
+        String envState = System.getenv("LUCERNA_ROUND8_SCENE_STATE");
+        if (envState != null && !envState.isBlank()) {
+            return envState;
+        }
+        String line = status.sceneStateLine();
+        int colon = line.lastIndexOf(':');
+        if (colon >= 0 && colon + 1 < line.length()) {
+            return line.substring(colon + 1).trim();
+        }
+        return "unknown";
+    }
+
+    private static String round8ArtifactRole(String envName, String fallback) {
+        String value = System.getenv(envName);
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value;
     }
 
     private static int stageIndex(NativeLightingDispatchUploadPacket packet, Phase5Stage stage) {

@@ -113,6 +113,38 @@ public record DenoiseInputContract(
                 && this.hasLightingInputs();
     }
 
+    public long pixelCount() {
+        return (long) this.gBuffer.width() * (long) this.gBuffer.height();
+    }
+
+    public boolean historyConfidenceMapInputsAvailable() {
+        return this.dimensionsAvailable()
+                && this.gBuffer.hasMotionVectors()
+                && this.matrixHistory.hasCurrentMatrices();
+    }
+
+    public boolean varianceMapInputsAvailable() {
+        return this.dimensionsAvailable()
+                && (this.directLightingAvailable || this.diffuseGiAvailable)
+                && (this.cacheConfidenceAvailable || this.previousLightingAvailable || this.diffuseGiAvailable);
+    }
+
+    public boolean disocclusionMaskInputsAvailable() {
+        return this.dimensionsAvailable()
+                && this.gBuffer.hasMotionVectors()
+                && this.matrixHistory.hasCurrentMatrices();
+    }
+
+    public String round8InputSummary() {
+        return "frame=" + this.frameIndex
+                + " size=" + this.gBuffer.width() + "x" + this.gBuffer.height()
+                + " direct=" + this.directLightingAvailable
+                + " diffuseGi=" + this.diffuseGiAvailable
+                + " cacheConfidence=" + this.cacheConfidenceAvailable
+                + " historyInputs=" + this.hasHistoryInputs()
+                + " matrix=" + this.matrixHistory.motionStateLabel();
+    }
+
     public long maxInputGeneration() {
         return Math.max(
                 this.directLightingGeneration,

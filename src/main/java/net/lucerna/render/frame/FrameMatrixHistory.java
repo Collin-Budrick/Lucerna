@@ -8,6 +8,9 @@ public record FrameMatrixHistory(
         boolean historyReset,
         String resetReason
 ) {
+    private static final float DEFAULT_STABLE_DELTA = 0.00075F;
+    private static final float DEFAULT_MOVED_DELTA = 0.006F;
+
     public FrameMatrixHistory {
         frameIndex = Math.max(0L, frameIndex);
         if (currentMatrices == null) {
@@ -63,6 +66,55 @@ public record FrameMatrixHistory(
             return "reusable";
         }
         return "current-only";
+    }
+
+    public float matrixDeltaMagnitude() {
+        if (!this.hasCurrentMatrices() || !this.hasPreviousMatrices()) {
+            return 1.0F;
+        }
+        return Math.max(
+                averageAbsDelta(this.currentMatrices.view(), this.previousMatrices.view()),
+                averageAbsDelta(this.currentMatrices.viewProjection(), this.previousMatrices.viewProjection())
+        );
+    }
+
+    public boolean stableForHistory() {
+        return this.temporalReuseAllowed() && this.matrixDeltaMagnitude() <= DEFAULT_STABLE_DELTA;
+    }
+
+    public boolean movedForHistory() {
+        return this.hasCurrentMatrices()
+                && this.hasPreviousMatrices()
+                && this.matrixDeltaMagnitude() >= DEFAULT_MOVED_DELTA;
+    }
+
+    public String motionStateLabel() {
+        if (!this.hasCurrentMatrices()) {
+            return "unavailable";
+        }
+        if (this.historyReset) {
+            return "reset";
+        }
+        if (!this.hasPreviousMatrices()) {
+            return "current-only";
+        }
+        if (this.stableForHistory()) {
+            return "stable";
+        }
+        if (this.movedForHistory()) {
+            return "moved";
+        }
+        return "minor-motion";
+    }
+
+    private static float averageAbsDelta(FrameMatrix4f current, FrameMatrix4f previous) {
+        float[] currentValues = current.toRowMajorArray();
+        float[] previousValues = previous.toRowMajorArray();
+        float sum = 0.0F;
+        for (int index = 0; index < currentValues.length; index++) {
+            sum += Math.abs(currentValues[index] - previousValues[index]);
+        }
+        return sum / currentValues.length;
     }
 
     private static String clean(String value, String fallback) {

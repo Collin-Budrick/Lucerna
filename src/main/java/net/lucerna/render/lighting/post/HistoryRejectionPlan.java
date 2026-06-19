@@ -60,6 +60,22 @@ public record HistoryRejectionPlan(
         return this.enabled() && this.frameIndex > 0L;
     }
 
+    public HistoryConfidenceSummary confidenceSummary(DenoiseInputContract inputs) {
+        return HistoryConfidenceSummary.from(this, inputs);
+    }
+
+    public boolean confidenceMapReady(DenoiseInputContract inputs) {
+        return this.confidenceSummary(inputs).confidenceMapReady();
+    }
+
+    public boolean varianceMapReady(DenoiseInputContract inputs) {
+        return this.confidenceSummary(inputs).varianceMapReady();
+    }
+
+    public boolean disocclusionMaskReady(DenoiseInputContract inputs) {
+        return this.confidenceSummary(inputs).disocclusionMaskReady();
+    }
+
     public String fallbackReason() {
         if (!this.enabled()) {
             return "history rejection disabled";

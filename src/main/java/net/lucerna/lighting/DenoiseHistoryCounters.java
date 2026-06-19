@@ -21,6 +21,21 @@ public record DenoiseHistoryCounters(
         return new DenoiseHistoryCounters(0L, 0L, 0L, 0L, 0L, 0L);
     }
 
+    public static DenoiseHistoryCounters estimated(
+            long acceptedPixels,
+            long rejectedPixels,
+            long disocclusionPixels
+    ) {
+        return new DenoiseHistoryCounters(
+                acceptedPixels,
+                rejectedPixels,
+                0L,
+                0L,
+                disocclusionPixels,
+                0L
+        );
+    }
+
     public long evaluatedPixels() {
         return this.acceptedPixels
                 + this.rejectedPixels
@@ -44,5 +59,27 @@ public record DenoiseHistoryCounters(
             return 0.0F;
         }
         return (float) this.rejectedPixels / (float) evaluated;
+    }
+
+    public float acceptanceRatio() {
+        long evaluated = this.acceptedOrRejectedPixels();
+        if (evaluated <= 0L) {
+            return 0.0F;
+        }
+        return (float) this.acceptedPixels / (float) evaluated;
+    }
+
+    public boolean hasDisocclusion() {
+        return this.disocclusionPixels > 0L;
+    }
+
+    public String compactSummary() {
+        return "historyAccepted=" + this.acceptedPixels
+                + " historyRejected=" + this.rejectedPixels
+                + " historyReset=" + this.resetPixels
+                + " historyMissing=" + this.missingHistoryPixels
+                + " disocclusionPixels=" + this.disocclusionPixels
+                + " materialMismatch=" + this.materialMismatchPixels
+                + " rejectionRatio=" + this.rejectionRatio();
     }
 }

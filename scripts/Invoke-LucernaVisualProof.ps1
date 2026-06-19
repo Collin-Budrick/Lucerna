@@ -208,90 +208,90 @@ function Get-Round8CaptureIntent {
     param([string] $CaptureMode)
 
     $rayBudgetCommonPatterns = @(
-        "Lucerna Round 8 adaptive ray budget: .*adaptiveRayBudget(?:Enabled)?=true",
-        "Lucerna Round 8 adaptive ray budget buckets: .*reuse(?:Only)?=[0-9]+.*low=[0-9]+.*medium=[0-9]+.*high=[0-9]+",
-        "Lucerna Round 8 adaptive ray budget: .*cacheConfidenceContribution=.*",
-        "Lucerna Round 8 ray-budget heatmap: .*artifactRole="
+        "(?:Lucerna Round 8 adaptive ray budget: .*adaptiveRayBudget(?:Enabled)?=true|round8\.adaptiveSampling=.*enabled=true)",
+        "(?:Lucerna Round 8 adaptive ray budget buckets: .*reuse(?:Only)?=[0-9]+.*low=[0-9]+.*medium=[0-9]+.*high=[0-9]+|round8\.rayBudgetBuckets=.*reuseOnly=.*low=.*medium=.*high=)",
+        "(?:Lucerna Round 8 adaptive ray budget: .*cacheConfidenceContribution=.*|round8\.cacheConfidenceContribution=.*(?:value|cacheConfidence)=)",
+        "(?:Lucerna Round 8 ray-budget heatmap: .*artifactRole=|round8\.rayBudgetHeatmap=.*role=(?:ray-budget|ray-budget-[a-z-]+))"
     )
     $historyCommonPatterns = @(
-        "Lucerna Round 8 history confidence: .*historyAccepted=[0-9]+.*historyRejected=[0-9]+",
-        "Lucerna Round 8 history confidence: .*confidence(?:Map)?=.*",
-        "Lucerna Round 8 history-confidence heatmap: .*artifactRole="
+        "(?:Lucerna Round 8 history confidence: .*historyAccepted=[0-9]+.*historyRejected=[0-9]+|round8\.historyCounts=.*historyAccepted=.*historyRejected=)",
+        "(?:Lucerna Round 8 history confidence: .*confidence(?:Map)?=.*|round8\.historyConfidence=.*value=)",
+        "(?:Lucerna Round 8 history-confidence heatmap: .*artifactRole=|round8\.historyConfidenceHeatmap=.*role=(?:history-confidence|history-confidence-[a-z-]+))"
     )
 
     switch ($CaptureMode) {
         "StableHeatmap" {
             return [ordered]@{
                 rendererEnabled = $true
-                debugOverlay = "DIRECT_LIGHTING"
+                debugOverlay = "RAY_BUDGET_HEATMAP"
                 compositeMode = "FINAL_LUCERNA_COMPOSITE"
                 artifactRole = "ray-budget-stable"
                 heatmapKind = "ray-budget"
                 sceneState = "stable"
                 sceneAction = "stationary"
                 requiredPatterns = @($rayBudgetCommonPatterns) + @(
-                    "Lucerna Round 8 adaptive ray budget buckets: .*(?:reuse(?:Only)?|low)=[1-9][0-9]*",
-                    "Lucerna Round 8 adaptive ray budget: .*sceneState=stable"
+                    "(?:Lucerna Round 8 adaptive ray budget buckets: .*(?:reuse(?:Only)?|low)=[1-9][0-9]*|round8\.rayBudgetBuckets=.*(?:reuseOnly|low)=[1-9][0-9]*)",
+                    "(?:Lucerna Round 8 adaptive ray budget: .*sceneState=stable|round8\.sceneState=.*sceneState: stable)"
                 )
             }
         }
         "MovedHeatmap" {
             return [ordered]@{
                 rendererEnabled = $true
-                debugOverlay = "DIRECT_LIGHTING"
+                debugOverlay = "RAY_BUDGET_HEATMAP"
                 compositeMode = "FINAL_LUCERNA_COMPOSITE"
                 artifactRole = "ray-budget-moved"
                 heatmapKind = "ray-budget"
                 sceneState = "moved-noisy"
                 sceneAction = "moved"
                 requiredPatterns = @($rayBudgetCommonPatterns) + @(
-                    "Lucerna Round 8 adaptive ray budget buckets: .*high=[1-9][0-9]*",
-                    "Lucerna Round 8 adaptive ray budget: .*sceneState=(?:moved|noisy|moved-noisy)"
+                    "(?:Lucerna Round 8 adaptive ray budget buckets: .*high=[1-9][0-9]*|round8\.rayBudgetBuckets=.*high=[1-9][0-9]*)",
+                    "(?:Lucerna Round 8 adaptive ray budget: .*sceneState=(?:moved|noisy|moved-noisy)|round8\.sceneState=.*sceneState: (?:moved|noisy|moved-noisy))"
                 )
             }
         }
         "EmissiveHeatmap" {
             return [ordered]@{
                 rendererEnabled = $true
-                debugOverlay = "DIRECT_LIGHTING"
+                debugOverlay = "RAY_BUDGET_HEATMAP"
                 compositeMode = "FINAL_LUCERNA_COMPOSITE"
                 artifactRole = "ray-budget-emissive"
                 heatmapKind = "ray-budget"
                 sceneState = "emissive"
                 sceneAction = "emissive"
                 requiredPatterns = @($rayBudgetCommonPatterns) + @(
-                    "Lucerna Round 8 adaptive ray budget buckets: .*high=[1-9][0-9]*",
-                    "Lucerna Round 8 adaptive ray budget: .*emissive(?:Contribution|Proximity|Regions)=[1-9][0-9]*"
+                    "(?:Lucerna Round 8 adaptive ray budget buckets: .*high=[1-9][0-9]*|round8\.rayBudgetBuckets=.*high=[1-9][0-9]*)",
+                    "(?:Lucerna Round 8 adaptive ray budget: .*emissive(?:Contribution|Proximity|Regions)=[1-9][0-9]*|round8\.sceneState=.*sceneState: emissive)"
                 )
             }
         }
         "HistoryStable" {
             return [ordered]@{
                 rendererEnabled = $true
-                debugOverlay = "DIRECT_LIGHTING"
+                debugOverlay = "HISTORY_CONFIDENCE"
                 compositeMode = "FINAL_LUCERNA_COMPOSITE"
                 artifactRole = "history-confidence-stable"
                 heatmapKind = "history-confidence"
                 sceneState = "stable"
                 sceneAction = "stationary"
                 requiredPatterns = @($historyCommonPatterns) + @(
-                    "Lucerna Round 8 history confidence: .*historyAccepted=[1-9][0-9]*",
-                    "Lucerna Round 8 history confidence: .*sceneState=stable"
+                    "(?:Lucerna Round 8 history confidence: .*historyAccepted=[1-9][0-9]*|round8\.historyCounts=.*historyAccepted=[1-9][0-9]*)",
+                    "(?:Lucerna Round 8 history confidence: .*sceneState=stable|round8\.sceneState=.*sceneState: stable)"
                 )
             }
         }
         "HistoryMoved" {
             return [ordered]@{
                 rendererEnabled = $true
-                debugOverlay = "DIRECT_LIGHTING"
+                debugOverlay = "HISTORY_CONFIDENCE"
                 compositeMode = "FINAL_LUCERNA_COMPOSITE"
                 artifactRole = "history-confidence-moved"
                 heatmapKind = "history-confidence"
                 sceneState = "moved-disoccluded"
                 sceneAction = "moved"
                 requiredPatterns = @($historyCommonPatterns) + @(
-                    "Lucerna Round 8 history confidence: .*historyRejected=[1-9][0-9]*",
-                    "Lucerna Round 8 history confidence: .*sceneState=(?:moved|disoccluded|moved-disoccluded)"
+                    "(?:Lucerna Round 8 history confidence: .*historyRejected=[1-9][0-9]*|round8\.historyCounts=.*historyRejected=[1-9][0-9]*)",
+                    "(?:Lucerna Round 8 history confidence: .*sceneState=(?:moved|disoccluded|moved-disoccluded)|round8\.sceneState=.*sceneState: (?:moved|disoccluded|moved-disoccluded))"
                 )
             }
         }
@@ -407,6 +407,31 @@ function Send-MinecraftChatCommand {
     Send-MinecraftKeys "^v"
     Send-MinecraftKeys "{ENTER}"
     Start-Sleep -Milliseconds 750
+}
+
+function Clear-MinecraftChat {
+    Focus-MinecraftWindow | Out-Null
+    if (-not ("LucernaValidationKeyboard" -as [type])) {
+        Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class LucernaValidationKeyboard {
+    [DllImport("user32.dll")]
+    public static extern void keybd_event(byte bVk, byte bScan, int dwFlags, UIntPtr dwExtraInfo);
+}
+"@
+    }
+
+    $keyUp = 0x0002
+    [LucernaValidationKeyboard]::keybd_event(0x72, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 80
+    [LucernaValidationKeyboard]::keybd_event(0x44, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 80
+    [LucernaValidationKeyboard]::keybd_event(0x44, 0, $keyUp, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 80
+    [LucernaValidationKeyboard]::keybd_event(0x72, 0, $keyUp, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 500
 }
 
 function Invoke-OptionalSceneSetup {
@@ -653,8 +678,10 @@ try {
     }
     if ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
         $psi.Environment["LUCERNA_ROUND8_CAPTURE_MODE"] = [string]$round8CaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_ROUND8_ARTIFACT_ROLE"] = [string]$round8CaptureIntent.artifactRole
         $psi.Environment["LUCERNA_ROUND8_HEATMAP"] = [string]$round8CaptureIntent.heatmapKind
         $psi.Environment["LUCERNA_ROUND8_SCENE_STATE"] = [string]$round8CaptureIntent.sceneState
+        $psi.Environment["LUCERNA_ROUND8_VISUAL_PROOF_OWNER"] = "controller"
     }
     $process = [System.Diagnostics.Process]::Start($psi)
     $process.BeginOutputReadLine()
@@ -797,7 +824,7 @@ try {
     $existingScreenshotNames = @(Get-ChildItem -LiteralPath $screenshotDir -Filter "*.png" -ErrorAction SilentlyContinue |
             Select-Object -ExpandProperty Name)
     $beforeScreenshot = Get-Date
-    Focus-MinecraftWindow | Out-Null
+    Clear-MinecraftChat
     Send-MinecraftKeys "{F2}"
     $screenshotDeadline = (Get-Date).AddSeconds(45)
     try {

@@ -8,11 +8,11 @@ public enum DebugOverlay {
     FRAME_TIMINGS("Frame timings"),
     DIRECT_LIGHTING("Direct lighting"),
     NATIVE_QUEUE("Native queue"),
-    ADAPTIVE_SAMPLING("Adaptive sampling"),
-    RAY_BUDGET_HEATMAP("Ray budget heatmap"),
-    VARIANCE_MAP("Variance map"),
-    HISTORY_CONFIDENCE("History confidence"),
-    DISOCCLUSION_MASK("Disocclusion mask");
+    ADAPTIVE_SAMPLING("Round 8 adaptive sampling"),
+    RAY_BUDGET_HEATMAP("Round 8 ray budget heatmap"),
+    VARIANCE_MAP("Round 8 variance map"),
+    HISTORY_CONFIDENCE("Round 8 history confidence heatmap"),
+    DISOCCLUSION_MASK("Round 8 disocclusion mask");
 
     private final String displayName;
 

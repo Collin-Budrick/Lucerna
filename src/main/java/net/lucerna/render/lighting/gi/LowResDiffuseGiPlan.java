@@ -11,6 +11,8 @@ public record LowResDiffuseGiPlan(
         DiffuseGiSourceSummary sourceSummary,
         DiffuseGiValidationReport validationReport
 ) {
+    private static final float ROUND8_HIGH_VARIANCE_THRESHOLD = 0.50F;
+
     public LowResDiffuseGiPlan {
         Objects.requireNonNull(frameInput, "frameInput");
         Objects.requireNonNull(temporalInput, "temporalInput");
@@ -83,6 +85,12 @@ public record LowResDiffuseGiPlan(
                 + " temporal=" + this.temporalInput.stateLabel()
                 + " budget=" + this.rayBudget.tier().name().toLowerCase()
                 + " confidence=" + this.cacheConfidence.confidence()
+                + " sceneState=" + this.sceneState()
+                + " " + this.rayBudget.adaptiveMap().bucketCountsLabel()
+                + " " + this.rayBudget.adaptiveMap().dispatchBudgetLabel()
+                + " " + this.cacheContributionLabel()
+                + " " + this.varianceContributionLabel()
+                + " " + this.emissiveContributionLabel()
                 + " sources={" + this.sourceSummary.compactLabel() + "}";
     }
 
@@ -95,18 +103,72 @@ public record LowResDiffuseGiPlan(
                 + " rays=" + this.rayBudget.cappedRays() + "/" + this.rayBudget.requestedRays()
                 + " cells=" + this.rayBudget.lowResolutionCellCount()
                 + " classes=" + this.rayBudget.adaptiveMap().compactLabel()
+                + " " + this.rayBudget.adaptiveMap().bucketCountsLabel()
+                + " " + this.rayBudget.adaptiveMap().bucketRaysLabel()
+                + " " + this.rayBudget.adaptiveMap().regionCountsLabel()
+                + " " + this.rayBudget.adaptiveMap().dispatchBudgetLabel()
+                + " sceneState=" + this.sceneState()
+                + " " + this.cacheContributionLabel()
+                + " " + this.varianceContributionLabel()
+                + " " + this.emissiveContributionLabel()
                 + " reason=" + this.rayBudget.reason();
     }
 
     public String cacheConfidenceDebugLabel() {
-        return "confidence=" + this.cacheConfidence.confidence()
+        return this.cacheContributionLabel()
+                + " confidence=" + this.cacheConfidence.confidence()
                 + " variance=" + this.cacheConfidence.variance()
                 + " samples=" + this.cacheConfidence.sampleCount()
                 + " dirty=" + this.cacheConfidence.dirty()
+                + " " + this.varianceContributionLabel()
                 + " reason=" + this.cacheConfidence.reason();
     }
 
     public String sourceDebugLabel() {
-        return this.sourceSummary.debugLabel();
+        return this.sourceSummary.debugLabel()
+                + " sceneState=" + this.sceneState()
+                + " " + this.emissiveContributionLabel();
+    }
+
+    private String sceneState() {
+        if (this.cacheConfidence.dirty() || this.cacheSnapshot.hasDirtyRegions() || this.sourceSummary.dirtyRegionCount() > 0) {
+            return "dirty";
+        }
+        if (!this.temporalInput.reuseAllowed()) {
+            return "temporal-reset";
+        }
+        if (this.cacheConfidence.variance() >= ROUND8_HIGH_VARIANCE_THRESHOLD) {
+            return "high-variance";
+        }
+        if (this.sourceSummary.directLightingReady() && this.sourceSummary.emissiveLightCount() > 0) {
+            return "emissive-active";
+        }
+        if (this.cacheUsable()) {
+            return "stable-reuse";
+        }
+        return "stable-refresh";
+    }
+
+    private String cacheContributionLabel() {
+        return "cacheConfidenceContribution=confidence:" + this.cacheConfidence.confidence()
+                + "/floor:" + this.frameInput.settings().historyConfidenceFloor()
+                + "/usable:" + this.cacheUsable()
+                + "/samples:" + this.cacheConfidence.sampleCount()
+                + "/dirty:" + this.cacheConfidence.dirty();
+    }
+
+    private String varianceContributionLabel() {
+        return "varianceContribution=variance:" + this.cacheConfidence.variance()
+                + "/high:" + ROUND8_HIGH_VARIANCE_THRESHOLD
+                + "/samples:" + this.cacheConfidence.sampleCount();
+    }
+
+    private String emissiveContributionLabel() {
+        return "emissiveContribution=count:" + this.sourceSummary.emissiveLightCount()
+                + "/directReady:" + this.sourceSummary.directLightingReady()
+                + " emissiveProximity=shadowCandidates:" + this.sourceSummary.shadowCandidateCount()
+                + "/budgeted:" + this.sourceSummary.budgetedShadowCandidateCount()
+                + " emissiveRegions=sections:" + this.sourceSummary.sectionSnapshotCount()
+                + "/dirty:" + this.sourceSummary.dirtyRegionCount();
     }
 }

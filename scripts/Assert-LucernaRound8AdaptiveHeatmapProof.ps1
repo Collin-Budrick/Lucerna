@@ -67,6 +67,7 @@ param(
     [string[]] $RayBudgetMarkerPatterns = @(
         "Lucerna Round 8 adaptive ray budget",
         "round8\.adaptive\.rayBudget",
+        "round8\.adaptiveSampling=.*Adaptive sampling:",
         "adaptiveRayBudget(?:Enabled)?=true",
         "adaptive_ray_budget(?:_enabled)?=true"
     ),
@@ -74,31 +75,42 @@ param(
     [string[]] $RayBudgetBucketPatterns = @(
         "Lucerna Round 8 adaptive ray budget buckets: .*reuse(?:Only)?=[0-9]+.*low=[0-9]+.*medium=[0-9]+.*high=[0-9]+",
         "rayBudgetBuckets=.*reuse(?:Only)?=[0-9]+.*low=[0-9]+.*medium=[0-9]+.*high=[0-9]+",
+        "round8\.rayBudgetBuckets=.*reuseOnly=.*low=.*medium=.*high=",
         "ray_budget_buckets=.*reuse(?:Only)?=[0-9]+.*low=[0-9]+.*medium=[0-9]+.*high=[0-9]+",
         "budget bucket counts"
+    ),
+
+    [string[]] $SceneStatePatterns = @(
+        "sceneState=(?:stable|moved|noisy|moved-noisy|emissive|disoccluded|moved-disoccluded)",
+        "round8\.sceneState=.*sceneState: (?:stable|moved|noisy|moved-noisy|emissive|disoccluded|moved-disoccluded)",
+        "Round 8 sceneState: (?:stable|moved|noisy|moved-noisy|emissive|disoccluded|moved-disoccluded)"
     ),
 
     [string[]] $StableLowBudgetPatterns = @(
         "sceneState=stable.*(?:reuse(?:Only)?|low)=[1-9][0-9]*",
         "stable.*(?:reuse(?:Only)?|low)(?:Regions|Tiles|Cells|Count|Buckets)?=[1-9][0-9]*",
-        "(?:reuse(?:Only)?|low)(?:Regions|Tiles|Cells|Count|Buckets)?=[1-9][0-9]*.*sceneState=stable"
+        "(?:reuse(?:Only)?|low)(?:Regions|Tiles|Cells|Count|Buckets)?=[1-9][0-9]*.*sceneState=stable",
+        "round8\.rayBudgetBuckets=.*(?:reuseOnly|low)=[1-9][0-9]*"
     ),
 
     [string[]] $MovedHighBudgetPatterns = @(
         "sceneState=(?:moved|noisy|moved-noisy|disoccluded).*high(?:Regions|Tiles|Cells|Count|Buckets)?=[1-9][0-9]*",
         "(?:moved|noisy|disoccluded).*high(?:Regions|Tiles|Cells|Count|Buckets)?=[1-9][0-9]*",
-        "high(?:Regions|Tiles|Cells|Count|Buckets)?=[1-9][0-9]*.*sceneState=(?:moved|noisy|moved-noisy|disoccluded)"
+        "high(?:Regions|Tiles|Cells|Count|Buckets)?=[1-9][0-9]*.*sceneState=(?:moved|noisy|moved-noisy|disoccluded)",
+        "round8\.rayBudgetBuckets=.*high=[1-9][0-9]*"
     ),
 
     [string[]] $EmissiveHighBudgetPatterns = @(
         "sceneState=emissive.*high(?:Regions|Tiles|Cells|Count|Buckets)?=[1-9][0-9]*",
         "emissive(?:Contribution|Proximity|Regions|Cells|Tiles)?=[1-9][0-9]*",
-        "high(?:Regions|Tiles|Cells|Count|Buckets)?=[1-9][0-9]*.*emissive"
+        "high(?:Regions|Tiles|Cells|Count|Buckets)?=[1-9][0-9]*.*emissive",
+        "round8\.sceneState=.*sceneState: emissive"
     ),
 
     [string[]] $CacheConfidenceContributionPatterns = @(
         "cacheConfidenceContribution=",
         "cache_confidence_contribution=",
+        "round8\.cacheConfidenceContribution=.*(?:value|cacheConfidence)=",
         "cache confidence contribution",
         "confidence=.*variance=.*rayBudget"
     ),
@@ -118,6 +130,8 @@ param(
 
     [string[]] $RayBudgetHeatmapPatterns = @(
         "Lucerna Round 8 ray-budget heatmap: .*artifactRole=",
+        "round8\.rayBudgetHeatmap=.*role=(?:ray-budget|ray-budget-[a-z-]+)",
+        "round8\.heatmapRoles=.*rayBudget=(?:ray-budget|ray-budget-[a-z-]+)",
         "rayBudgetHeatmap(?:Submitted|Visible|Artifact)=true",
         "debug heatmap.*ray budget",
         "heatmapArtifact=.*ray-budget"
@@ -126,6 +140,7 @@ param(
     [string[]] $HistoryConfidenceMarkerPatterns = @(
         "Lucerna Round 8 history confidence",
         "round8\.historyConfidence",
+        "round8\.historyConfidenceHeatmap=.*History-confidence heatmap:",
         "historyConfidence(?:Available|Enabled)?=true",
         "history_confidence(?:_available|_enabled)?=true"
     ),
@@ -133,12 +148,14 @@ param(
     [string[]] $HistoryAcceptedPatterns = @(
         "historyAccepted=[1-9][0-9]*",
         "history_accepted=[1-9][0-9]*",
+        "round8\.historyCounts=.*historyAccepted=[1-9][0-9]*",
         "acceptedHistory(?:Pixels|Count)?=[1-9][0-9]*"
     ),
 
     [string[]] $HistoryRejectedPatterns = @(
         "historyRejected=[1-9][0-9]*",
         "history_rejected=[1-9][0-9]*",
+        "round8\.historyCounts=.*historyRejected=[1-9][0-9]*",
         "rejectedHistory(?:Pixels|Count)?=[1-9][0-9]*",
         "disocclusion(?:Rejected|Rejects)=[1-9][0-9]*"
     ),
@@ -157,6 +174,8 @@ param(
 
     [string[]] $HistoryConfidenceHeatmapPatterns = @(
         "Lucerna Round 8 history-confidence heatmap: .*artifactRole=",
+        "round8\.historyConfidenceHeatmap=.*role=(?:history-confidence|history-confidence-[a-z-]+)",
+        "round8\.heatmapRoles=.*historyConfidence=(?:history-confidence|history-confidence-[a-z-]+)",
         "historyConfidenceHeatmap(?:Submitted|Visible|Artifact)=true",
         "debug heatmap.*history confidence",
         "heatmapArtifact=.*history-confidence"
@@ -355,6 +374,7 @@ function Measure-Round8LogProof {
         markers = [ordered]@{
             rayBudgetMarkerPresent = Test-AnyRegex $log $RayBudgetMarkerPatterns
             rayBudgetBucketCountsPresent = Test-AnyRegex $log $RayBudgetBucketPatterns
+            sceneStatePresent = Test-AnyRegex $log $SceneStatePatterns
             stableLowBudgetPresent = Test-AnyRegex $log $StableLowBudgetPatterns
             movedHighBudgetPresent = Test-AnyRegex $log $MovedHighBudgetPatterns
             emissiveHighBudgetPresent = Test-AnyRegex $log $EmissiveHighBudgetPatterns
@@ -383,6 +403,7 @@ function Measure-Round8LogProof {
         patterns = [ordered]@{
             rayBudgetMarkerPatterns = @($RayBudgetMarkerPatterns)
             rayBudgetBucketPatterns = @($RayBudgetBucketPatterns)
+            sceneStatePatterns = @($SceneStatePatterns)
             stableLowBudgetPatterns = @($StableLowBudgetPatterns)
             movedHighBudgetPatterns = @($MovedHighBudgetPatterns)
             emissiveHighBudgetPatterns = @($EmissiveHighBudgetPatterns)
@@ -450,6 +471,9 @@ if ($logProof) {
     }
     if (-not $logProof.markers.rayBudgetBucketCountsPresent) {
         $failures.Add("Missing Round 8 ray-budget bucket count marker.")
+    }
+    if (-not $logProof.markers.sceneStatePresent) {
+        $failures.Add("Missing Round 8 sceneState marker.")
     }
     if (-not $logProof.markers.stableLowBudgetPresent) {
         $failures.Add("Missing Round 8 stable-view low/reuse budget marker.")
@@ -567,6 +591,7 @@ $result = [ordered]@{
             rayBudgetStableVsMoved = [ordered]@{
                 imageDeltaPresent = ([double]$movedRayBudgetDelta.focusRegionMetrics.changedPixelPercent -ge $MinMovedRayBudgetChangedPixelPercent)
                 bucketMarkerPresent = if ($logProof) { [bool]$logProof.markers.rayBudgetBucketCountsPresent } else { $null }
+                sceneStatePresent = if ($logProof) { [bool]$logProof.markers.sceneStatePresent } else { $null }
                 stableLowBudgetMarkerPresent = if ($logProof) { [bool]$logProof.markers.stableLowBudgetPresent } else { $null }
                 movedHighBudgetMarkerPresent = if ($logProof) { [bool]$logProof.markers.movedHighBudgetPresent } else { $null }
             }
@@ -625,6 +650,7 @@ Write-Host "historyConfidence.focus.meanAbsLuma=$($historyConfidenceDelta.focusR
 if ($logProof) {
     Write-Host "rayBudgetMarkerPresent=$($logProof.markers.rayBudgetMarkerPresent)"
     Write-Host "rayBudgetBucketCountsPresent=$($logProof.markers.rayBudgetBucketCountsPresent)"
+    Write-Host "sceneStatePresent=$($logProof.markers.sceneStatePresent)"
     Write-Host "stableLowBudgetPresent=$($logProof.markers.stableLowBudgetPresent)"
     Write-Host "movedHighBudgetPresent=$($logProof.markers.movedHighBudgetPresent)"
     Write-Host "emissiveHighBudgetPresent=$($logProof.markers.emissiveHighBudgetPresent)"
