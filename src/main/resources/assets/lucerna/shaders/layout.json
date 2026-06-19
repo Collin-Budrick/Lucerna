@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "layoutVersion": "0.3.2",
+  "layoutVersion": "0.3.3",
   "namespace": "lucerna",
   "intent": "Stable shader/resource metadata for Lucerna-owned Vulkan passes. This file is descriptive until the native renderer consumes it.",
   "subAgentRule": "Do not run shader compilation, Gradle checks, Minecraft launches, render smoke tests, or builds used as verification.",
@@ -166,7 +166,283 @@
         "sourcePass": "lucerna.composite.final"
       }
     ],
+    "stageReadiness": [
+      {
+        "key": "readiness.lucerna.lighting.direct",
+        "passId": "lucerna.lighting.direct",
+        "status": "payload_contract_ready_algorithm_open",
+        "firstLightingMilestoneRole": "required_producer",
+        "readyWhen": [
+          "G-buffer attachment names and formats are bound",
+          "Frame constants provide sun, moon, time, weather, and viewport data",
+          "EmissiveBlockList generation matches the uploaded world/material generation",
+          "Shadow candidate budget and direct-light validation flags are supplied through push constants"
+        ],
+        "openUntil": "A non-placeholder direct-light shader writes visible sun, moon, emissive, and shadow-ray results into lucerna.lighting.direct."
+      },
+      {
+        "key": "readiness.lucerna.lighting.gi",
+        "passId": "lucerna.lighting.gi",
+        "status": "payload_contract_ready_algorithm_open",
+        "firstLightingMilestoneRole": "required_producer",
+        "readyWhen": [
+          "lucerna.lighting.direct is available for bounce input",
+          "VoxelOccupancy and DirtyRegionQueue generations are coherent",
+          "RadianceHistory and VarianceConfidence are valid or explicitly reset",
+          "Cache confidence, variance, and ray-budget attachments are allocated at half resolution"
+        ],
+        "openUntil": "A non-placeholder GI shader writes low-resolution diffuse radiance, confidence, variance, ray-budget classification, and temporal history updates."
+      },
+      {
+        "key": "readiness.lucerna.denoise.diffuse",
+        "passId": "lucerna.denoise.diffuse",
+        "status": "payload_contract_ready_algorithm_open",
+        "firstLightingMilestoneRole": "required_filter",
+        "readyWhen": [
+          "Direct lighting and diffuse GI outputs are readable",
+          "PreviousDepth, PreviousNormalRoughness, PreviousLighting, MotionHistory, and VarianceConfidence are valid or reset",
+          "Cache confidence and variance ranges are documented for clamp/rejection decisions"
+        ],
+        "openUntil": "A non-placeholder denoise shader writes full-resolution lucerna.denoise.diffuse and lucerna.denoise.rejectionMask."
+      },
+      {
+        "key": "readiness.lucerna.composite.final",
+        "passId": "lucerna.composite.final",
+        "status": "handoff_contract_ready_algorithm_open",
+        "firstLightingMilestoneRole": "required_consumer",
+        "readyWhen": [
+          "Denoised diffuse lighting is available at full resolution",
+          "Optional debug overlay target is readable when overlay mode is active",
+          "Borrowed Minecraft/Sodium world color target remains owned by the frame hook"
+        ],
+        "openUntil": "A non-placeholder composite path combines lighting with albedo and writes only lucerna.composite.worldColor before HUD and late translucency."
+      }
+    ],
+    "firstLightingMilestone": {
+      "id": "round4.first_lighting_milestone",
+      "goal": "Visible basic emissive/direct light plus low-resolution diffuse GI through denoise and final composite, under controller-run testing.",
+      "entryBoundary": [
+        "Lucerna is active only on Sodium Vulkan",
+        "World/material upload generations have reached native queues",
+        "G-buffer targets are allocated and contain current-frame world data",
+        "No-op or flat composite path remains validated as non-corrupting"
+      ],
+      "inScope": [
+        "Direct sun and moon radiance",
+        "Bounded emissive block sampling",
+        "Voxel shadow-ray visibility for direct lighting",
+        "Half-resolution single-bounce diffuse GI",
+        "Cache confidence, variance, and ray-budget metadata",
+        "Edge-aware denoise and history rejection",
+        "Composite into the borrowed world color target before HUD and late translucency",
+        "Debug labels that expose stage readiness and milestone boundary state"
+      ],
+      "outOfScope": [
+        "Iris shader-pack rendering",
+        "Swapchain ownership or a separate render loop",
+        "Hardware ray tracing for entities or complex models",
+        "Volumetrics, water/transparency handling, temporal upscaling, and ReSTIR reservoirs"
+      ],
+      "exitBoundary": [
+        "Controller observes non-placeholder direct lighting in lucerna.lighting.direct",
+        "Controller observes low-resolution diffuse GI and confidence/variance/ray-budget outputs",
+        "Controller observes denoise/composite behavior without HUD or late-translucency corruption",
+        "Stage readiness debug labels distinguish contract-ready stages from algorithm-complete stages"
+      ]
+    },
     "placeholderPolicy": "All noop.glsl files must remain side-effect free and document future reads/writes without declaring storage images, atomics, barriers, discard, color output, or depth output."
+  },
+  "phase5Payloads": {
+    "intent": "Descriptive payload contracts for the first lighting milestone. These entries do not add descriptor bindings or require shader algorithm implementation.",
+    "directLightPayload": {
+      "producerPass": "lucerna.lighting.direct",
+      "stableNumericId": 200,
+      "outputAttachment": "lucerna.lighting.direct",
+      "resolution": "full",
+      "descriptorInputs": [
+        {
+          "set": 0,
+          "binding": 0,
+          "name": "LucernaFrameConstants",
+          "payload": "camera, viewport, time, weather, dimension hash, active pass mask, and debug validation flags"
+        },
+        {
+          "set": 0,
+          "binding": 5,
+          "name": "BlueNoiseTexture",
+          "payload": "frame-indexed sampling offset for direct shadow rays and emissive sampling"
+        },
+        {
+          "set": 1,
+          "binding": 0,
+          "name": "MaterialTable",
+          "payload": "material opacity, emissive strength, and surface flags used by direct shadow rays"
+        },
+        {
+          "set": 1,
+          "binding": 2,
+          "name": "VoxelOccupancy",
+          "payload": "voxel visibility data for direct shadow-ray traversal"
+        },
+        {
+          "set": 1,
+          "binding": 4,
+          "name": "EmissiveBlockList",
+          "payload": "bounded world-space emissive candidates with generation tracking from native upload"
+        }
+      ],
+      "candidatePayloads": [
+        {
+          "name": "DirectionalLightCandidate",
+          "fields": [
+            "direction.xyz",
+            "radiance.rgb",
+            "sourceKind sun=0 moon=1",
+            "shadowRayBudget",
+            "visibilityFlags"
+          ]
+        },
+        {
+          "name": "EmissiveLightCandidate",
+          "fields": [
+            "worldPosition.xyz",
+            "emissiveColor.rgb",
+            "emissiveStrength",
+            "materialId",
+            "generation",
+            "candidateWeight"
+          ]
+        }
+      ],
+      "attachmentPayload": {
+        "format": "R16G16B16A16_SFLOAT",
+        "channels": "rgb direct radiance in linear scene space; alpha reserved for direct visibility or confidence",
+        "clearBeforeWrite": true,
+        "historySensitive": false
+      },
+      "handoffRules": [
+        "Do not blend into lucerna.composite.worldColor.",
+        "Do not write GI, denoise, or debug targets.",
+        "Downstream GI may sample this as first-bounce input after compute_write_to_shader_read transition."
+      ]
+    },
+    "giCachePayload": {
+      "producerPass": "lucerna.lighting.gi",
+      "stableNumericId": 210,
+      "resolution": "half",
+      "descriptorInputs": [
+        {
+          "set": 1,
+          "binding": 2,
+          "name": "VoxelOccupancy",
+          "payload": "visibility and occupancy for low-resolution diffuse bounce tracing"
+        },
+        {
+          "set": 1,
+          "binding": 3,
+          "name": "DirtyRegionQueue",
+          "payload": "dirty-region generation used to invalidate cache records near changed blocks, fluids, chunks, and materials"
+        },
+        {
+          "set": 2,
+          "binding": 3,
+          "name": "RadianceHistory",
+          "payload": "temporal diffuse GI radiance cache, invalidated on resize, dimension switch, resource reload, or history reset"
+        },
+        {
+          "set": 2,
+          "binding": 4,
+          "name": "VarianceConfidence",
+          "payload": "temporal variance and confidence cache, paired with current-frame confidence and variance outputs"
+        }
+      ],
+      "outputs": [
+        {
+          "attachmentName": "lucerna.lighting.diffuseGi",
+          "format": "R16G16B16A16_SFLOAT",
+          "channels": "rgb single-bounce diffuse radiance; alpha reserved for history weight or validity"
+        },
+        {
+          "attachmentName": "lucerna.lighting.cacheConfidence",
+          "format": "R16G16_SFLOAT",
+          "channels": "x current confidence; y cache age or invalidation reason"
+        },
+        {
+          "attachmentName": "lucerna.lighting.variance",
+          "format": "R16_SFLOAT",
+          "channels": "x current diffuse GI variance"
+        },
+        {
+          "attachmentName": "lucerna.lighting.rayBudget",
+          "format": "R8_UINT",
+          "channels": "0 reuse-only, 1 low, 2 medium, 3 high"
+        }
+      ],
+      "cacheRecordRules": [
+        "A dirty-region generation mismatch forces confidence toward zero before denoise consumes the payload.",
+        "History reset on dimension switch, world leave, resource reload, or resize must reset RadianceHistory and VarianceConfidence.",
+        "The first lighting milestone needs current-frame confidence and variance even if richer adaptive sampling remains future work."
+      ]
+    },
+    "denoiseCompositeHandoff": {
+      "denoiseProducerPass": "lucerna.denoise.diffuse",
+      "compositeConsumerPass": "lucerna.composite.final",
+      "denoiseInputs": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.diffuseGi",
+        "lucerna.lighting.cacheConfidence",
+        "lucerna.lighting.variance",
+        "lucerna.lighting.rayBudget",
+        "PreviousDepth",
+        "PreviousNormalRoughness",
+        "PreviousLighting",
+        "MotionHistory",
+        "VarianceConfidence"
+      ],
+      "denoiseOutputs": [
+        {
+          "attachmentName": "lucerna.denoise.diffuse",
+          "format": "R16G16B16A16_SFLOAT",
+          "channels": "rgb full-resolution diffuse lighting; alpha reserved for resolved confidence"
+        },
+        {
+          "attachmentName": "lucerna.denoise.rejectionMask",
+          "format": "R8_UNORM",
+          "channels": "x temporal rejection, reactive, or history repair mask"
+        }
+      ],
+      "compositeInputs": [
+        "lucerna.gbuffer.albedoOpacity",
+        "lucerna.lighting.direct",
+        "lucerna.lighting.diffuseGi",
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ],
+      "compositeOutput": "lucerna.composite.worldColor",
+      "handoffBoundary": [
+        "Denoise owns upsampling and history rejection before composite.",
+        "Composite owns final world color staging only and must preserve Minecraft/Sodium swapchain ownership.",
+        "Composite runs before vanilla HUD and late translucency; it must not consume Iris shader-pack outputs."
+      ]
+    },
+    "debugReadinessPayload": {
+      "descriptorSource": "DebugLabelTable",
+      "stageReadinessKeys": [
+        "readiness.lucerna.lighting.direct",
+        "readiness.lucerna.lighting.gi",
+        "readiness.lucerna.denoise.diffuse",
+        "readiness.lucerna.composite.final"
+      ],
+      "milestoneBoundaryKeys": [
+        "milestone.round4.first_lighting.entry",
+        "milestone.round4.first_lighting.exit"
+      ],
+      "displayRules": [
+        "Readiness labels report contract-ready versus algorithm-complete state.",
+        "Milestone boundary labels must remain visible through debug overlay metadata even before real lighting shaders land.",
+        "Labels are descriptive until the debug telemetry worker backs DebugLabelTable with runtime data."
+      ]
+    }
   },
   "frameConstants": {
     "name": "LucernaFrameConstants",
@@ -1001,7 +1277,8 @@
         "lucerna.gbuffer.materialId",
         "lucerna.gbuffer.emissive",
         "EmissiveBlockList",
-        "BlueNoiseTexture"
+        "BlueNoiseTexture",
+        "VoxelOccupancy"
       ],
       "writes": [
         "lucerna.lighting.direct"
@@ -1046,7 +1323,8 @@
         "BlueNoiseTexture",
         "RadianceHistory",
         "VarianceConfidence",
-        "VoxelOccupancy"
+        "VoxelOccupancy",
+        "DirtyRegionQueue"
       ],
       "writes": [
         "lucerna.lighting.diffuseGi",
@@ -1274,6 +1552,17 @@
       "requiredTransition": "storage_write_to_shader_read"
     },
     {
+      "from": "lucerna.voxel.first_pass",
+      "to": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.gi"
+      ],
+      "resources": [
+        "VoxelOccupancy"
+      ],
+      "requiredTransition": "storage_write_to_shader_read"
+    },
+    {
       "from": "lucerna.gbuffer.main",
       "to": [
         "lucerna.lighting.direct",
@@ -1468,6 +1757,73 @@
         "lucerna.lighting.rayBudget"
       ],
       "notes": "Compatibility alias for the ray-budget overlay using 0 reuse-only, 1 low, 2 medium, 3 high."
+    },
+    {
+      "key": "readiness.lucerna.lighting.direct",
+      "label": "Direct Stage Readiness",
+      "resources": [
+        "lucerna.lighting.direct",
+        "EmissiveBlockList",
+        "BlueNoiseTexture"
+      ],
+      "notes": "Reports whether direct-light payloads are contract-ready and whether real direct lighting output has replaced the side-effect-free placeholder."
+    },
+    {
+      "key": "readiness.lucerna.lighting.gi",
+      "label": "GI Stage Readiness",
+      "resources": [
+        "lucerna.lighting.diffuseGi",
+        "lucerna.lighting.cacheConfidence",
+        "lucerna.lighting.variance",
+        "lucerna.lighting.rayBudget",
+        "RadianceHistory",
+        "VarianceConfidence"
+      ],
+      "notes": "Reports whether GI/cache payloads are contract-ready and whether low-resolution diffuse GI, confidence, variance, and ray-budget output are algorithm-complete."
+    },
+    {
+      "key": "readiness.lucerna.denoise.diffuse",
+      "label": "Denoise Stage Readiness",
+      "resources": [
+        "lucerna.denoise.diffuse",
+        "lucerna.denoise.rejectionMask",
+        "PreviousLighting",
+        "MotionHistory"
+      ],
+      "notes": "Reports whether denoise inputs and history-rejection payloads are contract-ready and whether a real denoise output has replaced the placeholder."
+    },
+    {
+      "key": "readiness.lucerna.composite.final",
+      "label": "Composite Stage Readiness",
+      "resources": [
+        "lucerna.composite.worldColor",
+        "lucerna.debug.overlay"
+      ],
+      "notes": "Reports whether the final composite handoff into the borrowed Minecraft/Sodium world color target is ready and whether visible lighting is being composed."
+    },
+    {
+      "key": "milestone.round4.first_lighting.entry",
+      "label": "First Lighting Entry Boundary",
+      "resources": [
+        "lucerna.gbuffer.depth",
+        "lucerna.gbuffer.normalRoughness",
+        "lucerna.gbuffer.albedoOpacity",
+        "lucerna.gbuffer.materialId",
+        "lucerna.gbuffer.emissive",
+        "lucerna.gbuffer.motionHistory"
+      ],
+      "notes": "Boundary label for the precondition that active Sodium Vulkan rendering, native uploads, and G-buffer payloads are ready before real lighting executes."
+    },
+    {
+      "key": "milestone.round4.first_lighting.exit",
+      "label": "First Lighting Exit Boundary",
+      "resources": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.diffuseGi",
+        "lucerna.denoise.diffuse",
+        "lucerna.composite.worldColor"
+      ],
+      "notes": "Boundary label for controller-observable visible direct light, low-resolution GI, denoise, and composite behavior without HUD or late-translucency corruption."
     }
   ],
   "validationScenarios": [
@@ -1497,6 +1853,16 @@
       "description": "Confirm phase5Telemetry.debugTargetNames mirrors declared attachments and debugLabels for direct lighting, diffuse GI, denoise, composite, cache confidence, variance, and ray budget."
     },
     {
+      "id": "metadata.phase5_payload_contracts",
+      "owner": "controller",
+      "description": "Confirm phase5Payloads references only declared pass ids, descriptor set/binding pairs, attachments, and history resources while preserving existing numeric ids."
+    },
+    {
+      "id": "metadata.first_lighting_milestone_boundaries",
+      "owner": "controller",
+      "description": "Confirm the first lighting milestone entry and exit boundaries cover direct lighting, GI/cache, denoise, composite, and debug-readiness handoff states."
+    },
+    {
       "id": "metadata.gbuffer_contract_names",
       "owner": "controller",
       "description": "Confirm lucerna.gbuffer.main attachment names match GBufferTargetContract depth, normalRoughness, albedoOpacity, materialId, emissive, and motionHistory."
@@ -1520,6 +1886,11 @@
       "id": "debug.label_table_contract",
       "owner": "controller",
       "description": "Confirm DebugLabelTable contains stable labels for pass ids, attachment names, direct lighting, diffuse GI, denoise, composite, cache confidence, variance, and ray-budget overlay modes."
+    },
+    {
+      "id": "debug.stage_readiness_labels",
+      "owner": "controller",
+      "description": "Confirm DebugLabelTable can expose readiness.lucerna.* stage labels and milestone.round4.first_lighting.* boundary labels before real lighting shaders replace placeholders."
     },
     {
       "id": "lighting.adaptive_sampling_metadata",

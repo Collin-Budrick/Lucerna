@@ -15,6 +15,17 @@ These shader files are placeholders for the Sodium Vulkan integration milestones
 
 The canonical Phase 5 dependency order is `lucerna.lighting.direct`, `lucerna.lighting.gi`, `lucerna.denoise.diffuse`, `lucerna.debug.overlay`, then `lucerna.composite.final`. Debug overlay is scheduled before composite because composite may consume `lucerna.debug.overlay` when overlay mode is active.
 
+## Round 4 Payload Handoffs
+
+`layout.json` now separates the first-lighting payload contract from real shader implementation:
+
+- Direct lighting: full-resolution direct radiance in `lucerna.lighting.direct`, sourced from frame sky data, emissive candidates, blue noise, material flags, voxel occupancy, and G-buffer attachments.
+- GI/cache: half-resolution diffuse GI, cache confidence, variance, ray-budget classification, `RadianceHistory`, and `VarianceConfidence`, with dirty-region generations defining cache invalidation.
+- Denoise/composite: full-resolution denoised diffuse and rejection mask feed the final composite, which writes only the borrowed Minecraft/Sodium world color target before HUD and late translucency.
+- Debug readiness: `DebugLabelTable` reserves labels for contract-ready versus algorithm-complete state and for first-lighting entry/exit boundaries.
+
+The first lighting milestone is reached only when the controller can observe visible direct light, low-resolution GI, denoise, and composite behavior without corrupting vanilla HUD or late translucency. Placeholder shaders remain side-effect free until that work lands.
+
 ## Naming
 
 Stable pass ids use `lucerna.<stage>.<name>` and must remain stable once a native or Java caller references them. Use lowercase shader file names with the stage suffix when real shaders land:
@@ -30,6 +41,8 @@ Keep placeholder files side-effect free. Sub-agents may add or refine shader ass
 Phase 5 lighting metadata adds these public handoff targets: `lucerna.lighting.direct`, `lucerna.lighting.diffuseGi`, `lucerna.lighting.cacheConfidence`, `lucerna.lighting.variance`, `lucerna.lighting.rayBudget`, `lucerna.denoise.diffuse`, `lucerna.denoise.rejectionMask`, `lucerna.debug.overlay`, and `lucerna.composite.worldColor`. Keep their write semantics aligned with `layout.json`.
 
 Phase 5 debug target keys are `overlay.direct_lighting`, `overlay.diffuse_gi`, `overlay.cache_confidence`, `overlay.variance`, `overlay.ray_budget`, `overlay.denoised_diffuse`, `overlay.denoise_rejection`, `overlay.debug_overlay`, and `overlay.final_composite`. `overlay.adaptive_sampling` is retained only as an alias for `overlay.ray_budget`.
+
+Stage readiness and first-lighting milestone keys are `readiness.lucerna.lighting.direct`, `readiness.lucerna.lighting.gi`, `readiness.lucerna.denoise.diffuse`, `readiness.lucerna.composite.final`, `milestone.round4.first_lighting.entry`, and `milestone.round4.first_lighting.exit`.
 
 ## Descriptor Contract
 

@@ -1,0 +1,497 @@
+package net.lucerna.upload;
+
+import net.lucerna.render.frame.FrameJitter;
+import net.lucerna.render.lighting.gi.CacheConfidence;
+import net.lucerna.render.lighting.gi.DiffuseGiLowResolutionGrid;
+import net.lucerna.render.lighting.gi.DiffuseGiSettings;
+import net.lucerna.render.lighting.gi.DiffuseGiValidationReport;
+import net.lucerna.render.lighting.gi.GiCacheSnapshot;
+import net.lucerna.render.lighting.gi.GiRayBudgetAllocation;
+import net.lucerna.render.lighting.gi.GiRayBudgetTier;
+import net.lucerna.render.lighting.gi.LowResDiffuseGiPlan;
+import net.lucerna.render.lighting.gi.TemporalAccumulationInput;
+
+import java.util.Objects;
+
+public record NativeDiffuseGiPlanUpload(
+        long generation,
+        boolean readyForScheduling,
+        boolean requiresTracing,
+        boolean reusesTemporalHistory,
+        boolean cacheUsable,
+        int sourceWidth,
+        int sourceHeight,
+        int scaleDivisor,
+        int gridWidth,
+        int gridHeight,
+        int gridCellCount,
+        int settingsScaleDivisor,
+        int samplesPerCell,
+        int maxTemporalFrames,
+        float settingsTemporalBlendFactor,
+        float settingsHistoryConfidenceFloor,
+        boolean surfaceCacheEnabled,
+        boolean radianceCacheEnabled,
+        boolean adaptiveRayBudgetEnabled,
+        int rayBudgetTierId,
+        String rayBudgetTierName,
+        boolean rayBudgetTierActive,
+        boolean rayBudgetTierRequiresTracing,
+        boolean rayBudgetReuseOnly,
+        int raysPerCell,
+        int lowResolutionCellCount,
+        int requestedRays,
+        int cappedRays,
+        boolean rayBudgetCapped,
+        String rayBudgetReason,
+        long frameIndex,
+        long previousFrameIndex,
+        long temporalCacheGeneration,
+        boolean temporalReuseAllowed,
+        boolean temporalHistoryReset,
+        boolean temporalAccumulates,
+        String temporalResetReason,
+        float jitterX,
+        float jitterY,
+        int jitterSequenceIndex,
+        int jitterSequenceLength,
+        boolean jitterEnabled,
+        float temporalBlendFactor,
+        float temporalConfidenceFloor,
+        int temporalMaxHistoryFrames,
+        float cacheConfidence,
+        float cacheVariance,
+        int cacheSampleCount,
+        long cacheConfidenceSourceGeneration,
+        long cacheConfidenceLastTouchedFrame,
+        boolean cacheDirty,
+        String cacheConfidenceReason,
+        long cacheGeneration,
+        int dirtyRegionCount,
+        long firstDirtyRegionGeneration,
+        long lastDirtyRegionGeneration,
+        int surfaceRecordCount,
+        int radianceRecordCount,
+        int validationFindingCount,
+        int validationErrorCount,
+        int validationWarningCount,
+        String compactLabel
+) {
+    public static final int GRID_DIMENSION_STRIDE = 5;
+    public static final int GRID_SOURCE_WIDTH_OFFSET = 0;
+    public static final int GRID_SOURCE_HEIGHT_OFFSET = 1;
+    public static final int GRID_SCALE_DIVISOR_OFFSET = 2;
+    public static final int GRID_WIDTH_OFFSET = 3;
+    public static final int GRID_HEIGHT_OFFSET = 4;
+
+    public static final int SETTINGS_INTEGER_STRIDE = 6;
+    public static final int SETTINGS_SCALE_DIVISOR_OFFSET = 0;
+    public static final int SETTINGS_SAMPLES_PER_CELL_OFFSET = 1;
+    public static final int SETTINGS_MAX_TEMPORAL_FRAMES_OFFSET = 2;
+    public static final int SETTINGS_SURFACE_CACHE_ENABLED_OFFSET = 3;
+    public static final int SETTINGS_RADIANCE_CACHE_ENABLED_OFFSET = 4;
+    public static final int SETTINGS_ADAPTIVE_RAY_BUDGET_ENABLED_OFFSET = 5;
+    public static final int SETTINGS_FLOAT_STRIDE = 2;
+    public static final int SETTINGS_TEMPORAL_BLEND_FACTOR_OFFSET = 0;
+    public static final int SETTINGS_HISTORY_CONFIDENCE_FLOOR_OFFSET = 1;
+
+    public static final int RAY_BUDGET_STRIDE = 9;
+    public static final int RAY_BUDGET_TIER_ID_OFFSET = 0;
+    public static final int RAY_BUDGET_TIER_ACTIVE_OFFSET = 1;
+    public static final int RAY_BUDGET_TIER_REQUIRES_TRACING_OFFSET = 2;
+    public static final int RAY_BUDGET_REUSE_ONLY_OFFSET = 3;
+    public static final int RAY_BUDGET_RAYS_PER_CELL_OFFSET = 4;
+    public static final int RAY_BUDGET_LOW_RES_CELL_COUNT_OFFSET = 5;
+    public static final int RAY_BUDGET_REQUESTED_RAYS_OFFSET = 6;
+    public static final int RAY_BUDGET_CAPPED_RAYS_OFFSET = 7;
+    public static final int RAY_BUDGET_CAPPED_OFFSET = 8;
+
+    public static final int TEMPORAL_FRAME_STRIDE = 3;
+    public static final int TEMPORAL_FRAME_INDEX_OFFSET = 0;
+    public static final int TEMPORAL_PREVIOUS_FRAME_INDEX_OFFSET = 1;
+    public static final int TEMPORAL_CACHE_GENERATION_OFFSET = 2;
+    public static final int TEMPORAL_STATE_STRIDE = 5;
+    public static final int TEMPORAL_REUSE_ALLOWED_OFFSET = 0;
+    public static final int TEMPORAL_HISTORY_RESET_OFFSET = 1;
+    public static final int TEMPORAL_ACCUMULATES_OFFSET = 2;
+    public static final int TEMPORAL_JITTER_ENABLED_OFFSET = 3;
+    public static final int TEMPORAL_MAX_HISTORY_FRAMES_OFFSET = 4;
+    public static final int TEMPORAL_FLOAT_STRIDE = 4;
+    public static final int TEMPORAL_JITTER_X_OFFSET = 0;
+    public static final int TEMPORAL_JITTER_Y_OFFSET = 1;
+    public static final int TEMPORAL_BLEND_FACTOR_OFFSET = 2;
+    public static final int TEMPORAL_CONFIDENCE_FLOOR_OFFSET = 3;
+
+    public static final int CACHE_CONFIDENCE_FLOAT_STRIDE = 2;
+    public static final int CACHE_CONFIDENCE_VALUE_OFFSET = 0;
+    public static final int CACHE_CONFIDENCE_VARIANCE_OFFSET = 1;
+    public static final int CACHE_CONFIDENCE_INTEGER_STRIDE = 2;
+    public static final int CACHE_CONFIDENCE_SAMPLE_COUNT_OFFSET = 0;
+    public static final int CACHE_CONFIDENCE_DIRTY_OFFSET = 1;
+    public static final int CACHE_CONFIDENCE_GENERATION_STRIDE = 2;
+    public static final int CACHE_CONFIDENCE_SOURCE_GENERATION_OFFSET = 0;
+    public static final int CACHE_CONFIDENCE_LAST_TOUCHED_FRAME_OFFSET = 1;
+
+    public static final int CACHE_COUNT_STRIDE = 3;
+    public static final int CACHE_DIRTY_REGION_COUNT_OFFSET = 0;
+    public static final int CACHE_SURFACE_RECORD_COUNT_OFFSET = 1;
+    public static final int CACHE_RADIANCE_RECORD_COUNT_OFFSET = 2;
+    public static final int CACHE_GENERATION_STRIDE = 3;
+    public static final int CACHE_GENERATION_OFFSET = 0;
+    public static final int CACHE_FIRST_DIRTY_GENERATION_OFFSET = 1;
+    public static final int CACHE_LAST_DIRTY_GENERATION_OFFSET = 2;
+
+    public NativeDiffuseGiPlanUpload {
+        requireNonNegative(generation, "generation");
+        requireNonNegative(sourceWidth, "sourceWidth");
+        requireNonNegative(sourceHeight, "sourceHeight");
+        requirePositive(scaleDivisor, "scaleDivisor");
+        requireNonNegative(gridWidth, "gridWidth");
+        requireNonNegative(gridHeight, "gridHeight");
+        requireNonNegative(gridCellCount, "gridCellCount");
+        if ((sourceWidth == 0 || sourceHeight == 0) && (gridWidth != 0 || gridHeight != 0 || gridCellCount != 0)) {
+            throw new IllegalArgumentException("unavailable source dimensions require an unavailable GI grid");
+        }
+        if (sourceWidth > 0 && sourceHeight > 0 && (gridWidth == 0 || gridHeight == 0)) {
+            throw new IllegalArgumentException("available source dimensions require a positive GI grid");
+        }
+
+        requirePositive(settingsScaleDivisor, "settingsScaleDivisor");
+        requireNonNegative(samplesPerCell, "samplesPerCell");
+        requireNonNegative(maxTemporalFrames, "maxTemporalFrames");
+        requireUnit(settingsTemporalBlendFactor, "settingsTemporalBlendFactor");
+        requireUnit(settingsHistoryConfidenceFloor, "settingsHistoryConfidenceFloor");
+
+        requireNonNegative(rayBudgetTierId, "rayBudgetTierId");
+        rayBudgetTierName = requireText(rayBudgetTierName, "rayBudgetTierName");
+        requireNonNegative(raysPerCell, "raysPerCell");
+        requireNonNegative(lowResolutionCellCount, "lowResolutionCellCount");
+        requireNonNegative(requestedRays, "requestedRays");
+        requireNonNegative(cappedRays, "cappedRays");
+        if (cappedRays > requestedRays) {
+            throw new IllegalArgumentException("cappedRays cannot exceed requestedRays");
+        }
+        if (rayBudgetCapped && cappedRays >= requestedRays) {
+            throw new IllegalArgumentException("rayBudgetCapped requires cappedRays to be below requestedRays");
+        }
+        rayBudgetReason = clean(rayBudgetReason, "GI ray budget");
+
+        requireNonNegative(frameIndex, "frameIndex");
+        requireNonNegative(previousFrameIndex, "previousFrameIndex");
+        requireNonNegative(temporalCacheGeneration, "temporalCacheGeneration");
+        if (temporalReuseAllowed && (frameIndex == 0L || previousFrameIndex == 0L || previousFrameIndex >= frameIndex)) {
+            throw new IllegalArgumentException("temporal reuse requires ordered frame indices");
+        }
+        if (temporalHistoryReset && temporalReuseAllowed) {
+            throw new IllegalArgumentException("temporal history reset cannot also allow reuse");
+        }
+        if (temporalAccumulates && !temporalReuseAllowed) {
+            throw new IllegalArgumentException("temporal accumulation requires temporal reuse");
+        }
+        temporalResetReason = clean(temporalResetReason, "");
+        requireFinite(jitterX, "jitterX");
+        requireFinite(jitterY, "jitterY");
+        requireNonNegative(jitterSequenceIndex, "jitterSequenceIndex");
+        requireNonNegative(jitterSequenceLength, "jitterSequenceLength");
+        if (jitterSequenceIndex > 0 && jitterSequenceLength == 0) {
+            throw new IllegalArgumentException("jitterSequenceIndex requires a non-zero jitterSequenceLength");
+        }
+        requireUnit(temporalBlendFactor, "temporalBlendFactor");
+        requireUnit(temporalConfidenceFloor, "temporalConfidenceFloor");
+        requireNonNegative(temporalMaxHistoryFrames, "temporalMaxHistoryFrames");
+
+        requireUnit(cacheConfidence, "cacheConfidence");
+        requireFiniteNonNegative(cacheVariance, "cacheVariance");
+        requireNonNegative(cacheSampleCount, "cacheSampleCount");
+        requireNonNegative(cacheConfidenceSourceGeneration, "cacheConfidenceSourceGeneration");
+        requireNonNegative(cacheConfidenceLastTouchedFrame, "cacheConfidenceLastTouchedFrame");
+        cacheConfidenceReason = clean(cacheConfidenceReason, cacheDirty ? "dirty" : "available");
+
+        requireNonNegative(cacheGeneration, "cacheGeneration");
+        requireNonNegative(dirtyRegionCount, "dirtyRegionCount");
+        requireNonNegative(firstDirtyRegionGeneration, "firstDirtyRegionGeneration");
+        requireNonNegative(lastDirtyRegionGeneration, "lastDirtyRegionGeneration");
+        if (dirtyRegionCount == 0 && (firstDirtyRegionGeneration != 0L || lastDirtyRegionGeneration != 0L)) {
+            throw new IllegalArgumentException("empty dirty region handoff must use zero generation bounds");
+        }
+        if (dirtyRegionCount > 0) {
+            if (firstDirtyRegionGeneration == 0L || lastDirtyRegionGeneration == 0L) {
+                throw new IllegalArgumentException("dirty region handoff requires positive generation bounds");
+            }
+            if (firstDirtyRegionGeneration > lastDirtyRegionGeneration) {
+                throw new IllegalArgumentException("firstDirtyRegionGeneration must be <= lastDirtyRegionGeneration");
+            }
+        }
+        requireNonNegative(surfaceRecordCount, "surfaceRecordCount");
+        requireNonNegative(radianceRecordCount, "radianceRecordCount");
+        requireNonNegative(validationFindingCount, "validationFindingCount");
+        requireNonNegative(validationErrorCount, "validationErrorCount");
+        requireNonNegative(validationWarningCount, "validationWarningCount");
+        if (validationErrorCount > validationFindingCount || validationWarningCount > validationFindingCount) {
+            throw new IllegalArgumentException("validation counts cannot exceed validationFindingCount");
+        }
+        compactLabel = requireText(compactLabel, "compactLabel");
+    }
+
+    public static NativeDiffuseGiPlanUpload from(LowResDiffuseGiPlan plan) {
+        Objects.requireNonNull(plan, "plan");
+
+        DiffuseGiLowResolutionGrid grid = plan.frameInput().lowResolutionGrid();
+        DiffuseGiSettings settings = plan.frameInput().settings();
+        GiRayBudgetAllocation rayBudget = plan.rayBudget();
+        GiRayBudgetTier tier = rayBudget.tier();
+        TemporalAccumulationInput temporalInput = plan.temporalInput();
+        FrameJitter jitter = temporalInput.jitter();
+        CacheConfidence confidence = plan.cacheConfidence();
+        GiCacheSnapshot cacheSnapshot = plan.cacheSnapshot();
+        DiffuseGiValidationReport validationReport = plan.validationReport();
+
+        long generation = max(
+                cacheSnapshot.cacheGeneration(),
+                cacheSnapshot.latestDirtyGeneration(),
+                confidence.sourceGeneration(),
+                confidence.lastTouchedFrame(),
+                temporalInput.frameIndex()
+        );
+
+        return new NativeDiffuseGiPlanUpload(
+                generation,
+                plan.readyForScheduling(),
+                plan.requiresTracing(),
+                plan.reusesTemporalHistory(),
+                plan.cacheUsable(),
+                grid.sourceWidth(),
+                grid.sourceHeight(),
+                grid.scaleDivisor(),
+                grid.width(),
+                grid.height(),
+                grid.cellCount(),
+                settings.internalScaleDivisor(),
+                settings.samplesPerCell(),
+                settings.maxTemporalFrames(),
+                settings.temporalBlendFactor(),
+                settings.historyConfidenceFloor(),
+                settings.surfaceCacheEnabled(),
+                settings.radianceCacheEnabled(),
+                settings.adaptiveRayBudgetEnabled(),
+                tierId(tier),
+                tier.name(),
+                tier.active(),
+                tier.requiresTracing(),
+                rayBudget.reuseOnly(),
+                rayBudget.raysPerCell(),
+                rayBudget.lowResolutionCellCount(),
+                rayBudget.requestedRays(),
+                rayBudget.cappedRays(),
+                rayBudget.capped(),
+                rayBudget.reason(),
+                temporalInput.frameIndex(),
+                temporalInput.previousFrameIndex(),
+                temporalInput.cacheGeneration(),
+                temporalInput.reuseAllowed(),
+                temporalInput.historyReset(),
+                temporalInput.accumulates(),
+                temporalInput.resetReason(),
+                jitter.x(),
+                jitter.y(),
+                jitter.sequenceIndex(),
+                jitter.sequenceLength(),
+                jitter.enabled(),
+                temporalInput.blendFactor(),
+                temporalInput.confidenceFloor(),
+                temporalInput.maxHistoryFrames(),
+                confidence.confidence(),
+                confidence.variance(),
+                confidence.sampleCount(),
+                confidence.sourceGeneration(),
+                confidence.lastTouchedFrame(),
+                confidence.dirty(),
+                confidence.reason(),
+                cacheSnapshot.cacheGeneration(),
+                cacheSnapshot.dirtyRegionCount(),
+                cacheSnapshot.dirtyRegions().firstGeneration(),
+                cacheSnapshot.dirtyRegions().lastGeneration(),
+                cacheSnapshot.surfaceRecordCount(),
+                cacheSnapshot.radianceRecordCount(),
+                validationReport.findings().size(),
+                validationReport.errorCount(),
+                validationReport.warningCount(),
+                plan.compactLabel()
+        );
+    }
+
+    public int[] gridDimensions() {
+        return new int[]{
+                this.sourceWidth,
+                this.sourceHeight,
+                this.scaleDivisor,
+                this.gridWidth,
+                this.gridHeight
+        };
+    }
+
+    public int[] settingsIntegers() {
+        return new int[]{
+                this.settingsScaleDivisor,
+                this.samplesPerCell,
+                this.maxTemporalFrames,
+                this.surfaceCacheEnabled ? 1 : 0,
+                this.radianceCacheEnabled ? 1 : 0,
+                this.adaptiveRayBudgetEnabled ? 1 : 0
+        };
+    }
+
+    public float[] settingsFloats() {
+        return new float[]{
+                this.settingsTemporalBlendFactor,
+                this.settingsHistoryConfidenceFloor
+        };
+    }
+
+    public int[] rayBudgetData() {
+        return new int[]{
+                this.rayBudgetTierId,
+                this.rayBudgetTierActive ? 1 : 0,
+                this.rayBudgetTierRequiresTracing ? 1 : 0,
+                this.rayBudgetReuseOnly ? 1 : 0,
+                this.raysPerCell,
+                this.lowResolutionCellCount,
+                this.requestedRays,
+                this.cappedRays,
+                this.rayBudgetCapped ? 1 : 0
+        };
+    }
+
+    public long[] temporalFrames() {
+        return new long[]{
+                this.frameIndex,
+                this.previousFrameIndex,
+                this.temporalCacheGeneration
+        };
+    }
+
+    public int[] temporalState() {
+        return new int[]{
+                this.temporalReuseAllowed ? 1 : 0,
+                this.temporalHistoryReset ? 1 : 0,
+                this.temporalAccumulates ? 1 : 0,
+                this.jitterEnabled ? 1 : 0,
+                this.temporalMaxHistoryFrames
+        };
+    }
+
+    public float[] temporalFloats() {
+        return new float[]{
+                this.jitterX,
+                this.jitterY,
+                this.temporalBlendFactor,
+                this.temporalConfidenceFloor
+        };
+    }
+
+    public float[] cacheConfidenceFloats() {
+        return new float[]{
+                this.cacheConfidence,
+                this.cacheVariance
+        };
+    }
+
+    public int[] cacheConfidenceIntegers() {
+        return new int[]{
+                this.cacheSampleCount,
+                this.cacheDirty ? 1 : 0
+        };
+    }
+
+    public long[] cacheConfidenceGenerations() {
+        return new long[]{
+                this.cacheConfidenceSourceGeneration,
+                this.cacheConfidenceLastTouchedFrame
+        };
+    }
+
+    public int[] cacheCounts() {
+        return new int[]{
+                this.dirtyRegionCount,
+                this.surfaceRecordCount,
+                this.radianceRecordCount
+        };
+    }
+
+    public long[] cacheGenerations() {
+        return new long[]{
+                this.cacheGeneration,
+                this.firstDirtyRegionGeneration,
+                this.lastDirtyRegionGeneration
+        };
+    }
+
+    private static int tierId(GiRayBudgetTier tier) {
+        return switch (Objects.requireNonNull(tier, "tier")) {
+            case DISABLED -> 0;
+            case REUSE_ONLY -> 1;
+            case LOW -> 2;
+            case MEDIUM -> 3;
+            case HIGH -> 4;
+        };
+    }
+
+    private static long max(long first, long second, long third, long fourth, long fifth) {
+        return Math.max(Math.max(first, second), Math.max(Math.max(third, fourth), fifth));
+    }
+
+    private static String requireText(String value, String name) {
+        Objects.requireNonNull(value, name);
+        value = value.trim();
+        if (value.isBlank()) {
+            throw new IllegalArgumentException(name + " must not be blank");
+        }
+        return value;
+    }
+
+    private static String clean(String value, String fallback) {
+        String resolvedFallback = Objects.requireNonNullElse(fallback, "");
+        if (value == null || value.isBlank()) {
+            return resolvedFallback;
+        }
+        return value.trim();
+    }
+
+    private static void requirePositive(int value, String name) {
+        if (value <= 0) {
+            throw new IllegalArgumentException(name + " must be positive");
+        }
+    }
+
+    private static void requireNonNegative(int value, String name) {
+        if (value < 0) {
+            throw new IllegalArgumentException(name + " must be non-negative");
+        }
+    }
+
+    private static void requireNonNegative(long value, String name) {
+        if (value < 0L) {
+            throw new IllegalArgumentException(name + " must be non-negative");
+        }
+    }
+
+    private static void requireUnit(float value, String name) {
+        requireFinite(value, name);
+        if (value < 0.0F || value > 1.0F) {
+            throw new IllegalArgumentException(name + " must be between 0 and 1");
+        }
+    }
+
+    private static void requireFiniteNonNegative(float value, String name) {
+        requireFinite(value, name);
+        if (value < 0.0F) {
+            throw new IllegalArgumentException(name + " must be non-negative");
+        }
+    }
+
+    private static void requireFinite(float value, String name) {
+        if (!Float.isFinite(value)) {
+            throw new IllegalArgumentException(name + " must be finite");
+        }
+    }
+}

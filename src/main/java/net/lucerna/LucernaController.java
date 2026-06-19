@@ -35,9 +35,12 @@ import net.lucerna.render.voxel.VoxelRayBudgetConfig;
 import net.lucerna.render.voxel.VoxelSectionSnapshotReference;
 import net.lucerna.render.voxel.VoxelTraversalRequest;
 import net.lucerna.upload.NativeGBufferStagingUpload;
+import net.lucerna.upload.NativeDiffuseGiUploadPacket;
+import net.lucerna.upload.NativeDirectLightingUploadPacket;
 import net.lucerna.upload.NativeLightingDispatchUploadPacket;
 import net.lucerna.upload.NativeLightingDispatchUploadPacket.Phase5Stage;
 import net.lucerna.upload.NativeLightingDispatchUploadPacket.StageUpload;
+import net.lucerna.upload.NativePostProcessingHandoffPacket;
 import net.lucerna.telemetry.LucernaTelemetry;
 import net.lucerna.upload.NativeSectionSnapshotUpload;
 import net.lucerna.upload.NativeStagedUploadBatch;
@@ -414,9 +417,11 @@ public final class LucernaController {
                 giCacheInputs.snapshot(),
                 DiffuseGiSettings.fromQuality(this.getConfig().qualityPreset(), 2)
         );
+        NativeDirectLightingUploadPacket directLightingUpload = NativeDirectLightingUploadPacket.from(directLightingPlan);
+        NativeDiffuseGiUploadPacket diffuseGiUpload = NativeDiffuseGiUploadPacket.from(diffuseGiPlan);
 
-        boolean directEnabled = directLightingPlan.hasDirectLightingWork() && writeIntent.dimensionsAvailable();
-        boolean diffuseGiEnabled = diffuseGiPlan.readyForScheduling();
+        boolean directEnabled = directLightingUpload.hasDirectLightingWork() && writeIntent.dimensionsAvailable();
+        boolean diffuseGiEnabled = diffuseGiUpload.readyForScheduling();
         PostProcessingPipelinePlan postPlan = this.buildPostProcessingPlan(
                 frameConstants,
                 width,
@@ -425,12 +430,13 @@ public final class LucernaController {
                 directEnabled,
                 diffuseGiEnabled
         );
-        boolean denoiseEnabled = postPlan.denoiseScheduled();
-        boolean compositeEnabled = postPlan.readyForNativeHandoff();
-        boolean cacheEnabled = diffuseGiPlan.cacheSnapshot().hasSurfaceRecords()
-                || diffuseGiPlan.cacheSnapshot().hasRadianceRecords();
-        int cacheRecordCount = diffuseGiPlan.cacheSnapshot().surfaceRecordCount()
-                + diffuseGiPlan.cacheSnapshot().radianceRecordCount();
+        NativePostProcessingHandoffPacket postProcessingUpload = NativePostProcessingHandoffPacket.from(postPlan);
+        boolean denoiseEnabled = postProcessingUpload.denoise().readyForScheduling();
+        boolean compositeEnabled = postProcessingUpload.readyForNativeHandoff();
+        int cacheRecordCount = diffuseGiUpload.dirtyRegionCount()
+                + diffuseGiUpload.surfaceRecordCount()
+                + diffuseGiUpload.radianceRecordCount();
+        boolean cacheEnabled = diffuseGiUpload.cacheUsable() && cacheRecordCount > 0;
 
         String dispatchKey = width
                 + "x"
@@ -452,7 +458,13 @@ public final class LucernaController {
                 + "|"
                 + directLightingPlan.emissiveBlockList().selectedLightCount()
                 + "|"
-                + directLightingPlan.shadowRayPlan().budgetedCandidateCount()
+                + directLightingUpload.generation()
+                + "|"
+                + directLightingUpload.celestialLightCount()
+                + "|"
+                + directLightingUpload.selectedEmissiveCount()
+                + "|"
+                + directLightingUpload.budgetedShadowCandidateCount()
                 + "|"
                 + giCacheInputs.sourceDirtyRegionCount()
                 + "|"
@@ -462,7 +474,15 @@ public final class LucernaController {
                 + "|"
                 + giCacheInputs.snapshot().latestDirtyGeneration()
                 + "|"
-                + cacheRecordCount;
+                + diffuseGiUpload.generation()
+                + "|"
+                + diffuseGiUpload.dirtyRegionCount()
+                + "|"
+                + cacheRecordCount
+                + "|"
+                + postProcessingUpload.generation()
+                + "|"
+                + postProcessingUpload.flags();
         if (dispatchKey.equals(this.lastPreparedLightingDispatchKey)) {
             return null;
         }
@@ -471,37 +491,30 @@ public final class LucernaController {
         this.lightingDispatchGeneration = Math.max(this.lightingDispatchGeneration + 1L, Math.max(1L, sourceGeneration));
         long dispatchGeneration = this.lightingDispatchGeneration;
 
-        StageUpload directStage = this.fullResolutionStage(
-                Phase5Stage.DIRECT_LIGHTING,
+        StageUpload directStage = this.directLightingStage(
                 directEnabled,
                 dispatchGeneration,
                 width,
                 height,
-                3,
-                1,
-                directLightingPlan.celestialLighting().activeLightCount()
-                        + directLightingPlan.emissiveBlockList().selectedLightCount(),
-                directLightingPlan.shadowRayPlan().budgetedCandidateCount(),
-                NativeLightingDispatchUploadPacket.FLAG_PLACEHOLDER
-                        | (directLightingPlan.valid() ? NativeLightingDispatchUploadPacket.FLAG_VALIDATED : 0)
+                directLightingUpload
         );
-        StageUpload diffuseGiStage = this.diffuseGiStage(diffuseGiEnabled, dispatchGeneration, diffuseGiPlan);
+        StageUpload diffuseGiStage = this.diffuseGiStage(diffuseGiEnabled, dispatchGeneration, diffuseGiUpload);
         StageUpload denoiseStage = this.fullResolutionStage(
                 Phase5Stage.DENOISE,
                 denoiseEnabled,
                 dispatchGeneration,
                 width,
                 height,
-                postPlan.denoisePlan().readResources().size(),
-                postPlan.denoisePlan().writeResources().size(),
-                postPlan.denoisePlan().settings().sampleDiameterPixels()
-                        * Math.max(1, postPlan.denoisePlan().settings().iterationCount()),
+                postProcessingUpload.denoise().readResourceCount(),
+                postProcessingUpload.denoise().writeResourceCount(),
+                postProcessingUpload.denoise().sampleDiameterPixels()
+                        * Math.max(1, postProcessingUpload.denoise().iterationCount()),
                 0,
                 NativeLightingDispatchUploadPacket.FLAG_PLACEHOLDER
-                        | (postPlan.denoisePlan().validationReport().valid()
+                        | (postProcessingUpload.denoise().validated()
                         ? NativeLightingDispatchUploadPacket.FLAG_VALIDATED
                         : 0)
-                        | (postPlan.denoisePlan().temporalReuseAllowed()
+                        | (postProcessingUpload.denoise().rejection().temporalReuseAllowed()
                         ? NativeLightingDispatchUploadPacket.FLAG_TEMPORAL_HISTORY
                         : 0)
         );
@@ -511,17 +524,17 @@ public final class LucernaController {
                 dispatchGeneration,
                 width,
                 height,
-                postPlan.compositeHandoff().readResources().size(),
-                postPlan.compositeHandoff().writeResources().size(),
+                postProcessingUpload.composite().readResourceCount(),
+                postProcessingUpload.composite().writeResourceCount(),
                 1,
                 0,
                 NativeLightingDispatchUploadPacket.FLAG_PLACEHOLDER
-                        | (postPlan.valid() ? NativeLightingDispatchUploadPacket.FLAG_VALIDATED : 0)
-                        | (this.getConfig().debugOverlay() != DebugOverlay.OFF
+                        | (postProcessingUpload.validation().valid() ? NativeLightingDispatchUploadPacket.FLAG_VALIDATED : 0)
+                        | (postProcessingUpload.composite().debugOverlayAvailable()
                         ? NativeLightingDispatchUploadPacket.FLAG_DEBUG_OVERLAY
                         : 0)
         );
-        StageUpload cacheStage = this.cacheStage(cacheEnabled, dispatchGeneration, cacheRecordCount);
+        StageUpload cacheStage = this.cacheStage(cacheEnabled, dispatchGeneration, diffuseGiUpload);
 
         return NativeLightingDispatchUploadPacket.of(
                 dispatchGeneration,
@@ -614,14 +627,48 @@ public final class LucernaController {
         );
     }
 
-    private StageUpload diffuseGiStage(boolean enabled, long generation, LowResDiffuseGiPlan plan) {
-        var grid = plan.frameInput().lowResolutionGrid();
-        int width = grid.available() ? grid.width() : 0;
-        int height = grid.available() ? grid.height() : 0;
+    private StageUpload directLightingStage(
+            boolean enabled,
+            long generation,
+            int width,
+            int height,
+            NativeDirectLightingUploadPacket upload
+    ) {
+        int inputCount = presentResourceCount(
+                upload.celestialLightCount(),
+                upload.selectedEmissiveCount(),
+                upload.shadowCandidateCount(),
+                upload.sectionSnapshotCount()
+        );
+        int sampleCount = upload.shadowCandidateCount();
         int flags = NativeLightingDispatchUploadPacket.FLAG_PLACEHOLDER
-                | (plan.validationReport().valid() ? NativeLightingDispatchUploadPacket.FLAG_VALIDATED : 0)
-                | (plan.reusesTemporalHistory() ? NativeLightingDispatchUploadPacket.FLAG_TEMPORAL_HISTORY : 0)
-                | (plan.rayBudget().reuseOnly() ? NativeLightingDispatchUploadPacket.FLAG_REUSE_ONLY : 0);
+                | (upload.valid() ? NativeLightingDispatchUploadPacket.FLAG_VALIDATED : 0);
+        return this.fullResolutionStage(
+                Phase5Stage.DIRECT_LIGHTING,
+                enabled,
+                generation,
+                width,
+                height,
+                inputCount,
+                1,
+                sampleCount,
+                upload.budgetedShadowCandidateCount(),
+                flags
+        );
+    }
+
+    private StageUpload diffuseGiStage(boolean enabled, long generation, NativeDiffuseGiUploadPacket upload) {
+        var plan = upload.planUpload();
+        int width = plan.gridWidth();
+        int height = plan.gridHeight();
+        int cacheReadCount = upload.dirtyRegionCount()
+                + upload.surfaceRecordCount()
+                + upload.radianceRecordCount();
+        int cacheWriteCount = upload.surfaceRecordCount() + upload.radianceRecordCount();
+        int flags = NativeLightingDispatchUploadPacket.FLAG_PLACEHOLDER
+                | (plan.validationErrorCount() == 0 ? NativeLightingDispatchUploadPacket.FLAG_VALIDATED : 0)
+                | (upload.reusesTemporalHistory() ? NativeLightingDispatchUploadPacket.FLAG_TEMPORAL_HISTORY : 0)
+                | (plan.rayBudgetReuseOnly() ? NativeLightingDispatchUploadPacket.FLAG_REUSE_ONLY : 0);
         return this.stageUpload(
                 Phase5Stage.DIFFUSE_GI,
                 enabled,
@@ -630,17 +677,30 @@ public final class LucernaController {
                 height,
                 8,
                 8,
-                plan.frameInput().requiredGBufferAttachments().size(),
+                plan.cacheUsable() ? 4 : 3,
                 2,
-                plan.frameInput().settings().samplesPerCell(),
-                plan.rayBudget().cappedRays(),
-                plan.cacheSnapshot().surfaceRecordCount() + plan.cacheSnapshot().radianceRecordCount(),
-                plan.cacheSnapshot().radianceRecordCount(),
+                plan.samplesPerCell(),
+                plan.cappedRays(),
+                cacheReadCount,
+                cacheWriteCount,
                 flags
         );
     }
 
-    private StageUpload cacheStage(boolean enabled, long generation, int cacheRecordCount) {
+    private StageUpload cacheStage(boolean enabled, long generation, NativeDiffuseGiUploadPacket upload) {
+        int cacheReadCount = upload.dirtyRegionCount()
+                + upload.surfaceRecordCount()
+                + upload.radianceRecordCount();
+        int cacheWriteCount = upload.surfaceRecordCount() + upload.radianceRecordCount();
+        int inputCount = presentResourceCount(
+                upload.dirtyRegionCount(),
+                upload.surfaceRecordCount(),
+                upload.radianceRecordCount()
+        );
+        int outputCount = presentResourceCount(
+                upload.surfaceRecordCount(),
+                upload.radianceRecordCount()
+        );
         return this.stageUpload(
                 Phase5Stage.CACHE,
                 enabled,
@@ -649,14 +709,25 @@ public final class LucernaController {
                 enabled ? 1 : 0,
                 1,
                 1,
-                enabled ? 1 : 0,
-                enabled ? 1 : 0,
+                enabled ? inputCount : 0,
+                enabled ? outputCount : 0,
                 0,
                 0,
-                cacheRecordCount,
-                cacheRecordCount,
+                enabled ? cacheReadCount : 0,
+                enabled ? cacheWriteCount : 0,
                 NativeLightingDispatchUploadPacket.FLAG_PLACEHOLDER
+                        | (upload.cacheUsable() ? NativeLightingDispatchUploadPacket.FLAG_VALIDATED : 0)
         );
+    }
+
+    private static int presentResourceCount(int... counts) {
+        int present = 0;
+        for (int count : counts) {
+            if (count > 0) {
+                present++;
+            }
+        }
+        return present;
     }
 
     private StageUpload stageUpload(

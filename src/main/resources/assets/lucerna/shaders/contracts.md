@@ -35,6 +35,25 @@ Debug overlay runs before final composite so `lucerna.composite.final` can blend
 - Debug writes `lucerna.debug.overlay` only when overlay mode needs it. It is optional, clear-before-write, and consumes `DebugLabelTable` for stable display names.
 - Composite writes only `lucerna.composite.worldColor`, the borrowed Minecraft/Sodium world color target. It must not own presentation or the swapchain.
 
+## Round 4 Payload Contracts
+
+`phase5Payloads` documents the richer first-lighting handoffs without adding descriptor bindings or implementing shader algorithms.
+
+- Direct lighting reads `LucernaFrameConstants`, `BlueNoiseTexture`, `MaterialTable`, `VoxelOccupancy`, `EmissiveBlockList`, and current G-buffer attachments. Its payload is a full-resolution `R16G16B16A16_SFLOAT` target where RGB is linear direct radiance and alpha is reserved for visibility or confidence.
+- Direct candidates are directional sun/moon candidates plus bounded emissive candidates. The contract records direction or world position, radiance/color, source kind, material id, generation, candidate weight, and shadow-ray budget fields.
+- GI/cache reads direct lighting, voxel occupancy, dirty-region generation, blue noise, `RadianceHistory`, and `VarianceConfidence`. It writes half-resolution diffuse radiance, cache confidence, current-frame variance, and ray-budget classification before updating history resources.
+- `lucerna.lighting.cacheConfidence` uses x for current confidence and reserves y for cache age or invalidation reason. `VarianceConfidence` is the temporal aggregate paired with current-frame confidence and variance attachments.
+- Denoise owns upsampling, variance-aware clamps, temporal rejection, and history repair inputs. Its composite handoff is `lucerna.denoise.diffuse` plus `lucerna.denoise.rejectionMask`.
+- Composite consumes albedo/opacity, direct lighting, diffuse GI, denoised diffuse, and optional debug overlay. It writes only `lucerna.composite.worldColor` before vanilla HUD and late translucency, and never consumes Iris shader-pack outputs.
+
+## First Lighting Milestone
+
+`phase5Telemetry.firstLightingMilestone` defines the boundary for the next visible milestone.
+
+Entry requires active Sodium Vulkan, native world/material upload generations, allocated current-frame G-buffer targets, and the already validated no-op or flat-composite path. Exit requires controller-observable visible direct lighting, low-resolution diffuse GI plus confidence/variance/ray-budget output, denoise/composite behavior, and no HUD or late-translucency corruption.
+
+The milestone is limited to basic sun/moon, bounded emissive sampling, voxel shadow-ray visibility, low-resolution single-bounce diffuse GI, cache confidence/variance/ray-budget metadata, edge-aware denoise, and final composite. Iris shader-pack rendering, swapchain ownership, hardware RT, volumetrics, water/transparency handling, temporal upscaling, and ReSTIR reservoirs stay out of scope.
+
 ## Phase 5 Telemetry Names
 
 `phase5Telemetry.debugTargetNames` in `layout.json` is the canonical list for overlay labels and controller validation. The stable keys are:
@@ -50,6 +69,19 @@ Debug overlay runs before final composite so `lucerna.composite.final` can blend
 - `overlay.final_composite`: `lucerna.composite.worldColor`
 
 `overlay.adaptive_sampling` remains a debug-label alias for `lucerna.lighting.rayBudget`; new code should prefer `overlay.ray_budget`.
+
+## Stage Readiness Labels
+
+`DebugLabelTable` also reserves readiness and milestone boundary keys:
+
+- `readiness.lucerna.lighting.direct`
+- `readiness.lucerna.lighting.gi`
+- `readiness.lucerna.denoise.diffuse`
+- `readiness.lucerna.composite.final`
+- `milestone.round4.first_lighting.entry`
+- `milestone.round4.first_lighting.exit`
+
+Readiness labels report contract-ready versus algorithm-complete state. The direct, GI, denoise, and composite stages are contract-ready once their inputs and outputs match `phase5Payloads`; they are not algorithm-complete until non-placeholder shaders produce visible lighting and post-processing output under controller-run validation.
 
 ## Descriptor Ownership
 

@@ -146,6 +146,7 @@ enum class NativeLightingDispatchStage : std::uint8_t {
 };
 
 inline constexpr std::size_t kNativeLightingDispatchStageCount = 5;
+inline constexpr std::size_t kNativeLightingDispatchPayloadCategoryCount = 4;
 
 struct LightingDispatchStageUpload {
     NativeLightingDispatchStage stage = NativeLightingDispatchStage::DirectLighting;
@@ -324,8 +325,39 @@ struct NativeLightingDispatchStageTelemetry {
     std::int32_t last_cache_read_count = 0;
     std::int32_t last_cache_write_count = 0;
     std::uint32_t last_flags = 0;
+    bool last_placeholder = false;
+    bool last_validated = false;
+    bool last_temporal_history = false;
+    bool last_reuse_only = false;
+    bool last_debug_overlay = false;
     bool enabled_this_packet = false;
     bool recorded_this_frame = false;
+    bool ready_for_native_execution_this_packet = false;
+    std::string last_readiness_reason;
+};
+
+struct NativeLightingDispatchPayloadCategoryTelemetry {
+    std::uint64_t last_stage_count = 0;
+    std::uint64_t last_enabled_stage_count = 0;
+    std::uint64_t last_input_count = 0;
+    std::uint64_t last_output_count = 0;
+    std::uint64_t last_sample_count = 0;
+    std::uint64_t last_ray_count = 0;
+    std::uint64_t last_cache_read_count = 0;
+    std::uint64_t last_cache_write_count = 0;
+    std::uint64_t last_enabled_sample_count = 0;
+    std::uint64_t last_enabled_ray_count = 0;
+    std::uint64_t last_enabled_cache_read_count = 0;
+    std::uint64_t last_enabled_cache_write_count = 0;
+    std::uint64_t total_sample_count = 0;
+    std::uint64_t total_ray_count = 0;
+    std::uint64_t total_cache_read_count = 0;
+    std::uint64_t total_cache_write_count = 0;
+    std::uint64_t last_placeholder_stage_count = 0;
+    std::uint64_t last_validated_stage_count = 0;
+    std::uint64_t last_temporal_history_stage_count = 0;
+    std::uint64_t last_reuse_only_stage_count = 0;
+    std::uint64_t last_debug_overlay_stage_count = 0;
 };
 
 struct NativeLightingDispatchTelemetry {
@@ -345,8 +377,43 @@ struct NativeLightingDispatchTelemetry {
     std::uint64_t last_gbuffer_generation = 0;
     std::uint64_t last_estimated_bytes = 0;
     std::uint64_t total_estimated_bytes = 0;
+    std::uint64_t last_enabled_stage_count = 0;
+    std::uint64_t last_disabled_stage_count = 0;
+    std::uint64_t last_input_count = 0;
+    std::uint64_t last_output_count = 0;
+    std::uint64_t last_sample_count = 0;
+    std::uint64_t last_ray_count = 0;
+    std::uint64_t last_cache_read_count = 0;
+    std::uint64_t last_cache_write_count = 0;
+    std::uint64_t last_enabled_sample_count = 0;
+    std::uint64_t last_enabled_ray_count = 0;
+    std::uint64_t last_enabled_cache_read_count = 0;
+    std::uint64_t last_enabled_cache_write_count = 0;
+    std::uint64_t total_sample_count = 0;
+    std::uint64_t total_ray_count = 0;
+    std::uint64_t total_cache_read_count = 0;
+    std::uint64_t total_cache_write_count = 0;
+    std::uint64_t last_placeholder_stage_count = 0;
+    std::uint64_t last_validated_stage_count = 0;
+    std::uint64_t last_temporal_history_stage_count = 0;
+    std::uint64_t last_reuse_only_stage_count = 0;
+    std::uint64_t last_debug_overlay_stage_count = 0;
+    std::uint64_t total_placeholder_stage_count = 0;
+    std::uint64_t total_validated_stage_count = 0;
+    std::uint64_t total_temporal_history_stage_count = 0;
+    std::uint64_t total_reuse_only_stage_count = 0;
+    std::uint64_t total_debug_overlay_stage_count = 0;
+    bool last_has_placeholder_stage = false;
+    bool last_has_validated_stage = false;
+    bool last_has_temporal_history_stage = false;
+    bool last_has_reuse_only_stage = false;
+    bool last_has_debug_overlay_stage = false;
+    bool last_ready_for_native_execution = false;
     bool last_payload_recorded_this_frame = false;
+    std::string last_enabled_stage_names;
+    std::string last_readiness_reason;
     std::array<NativeLightingDispatchStageTelemetry, kNativeLightingDispatchStageCount> stages;
+    std::array<NativeLightingDispatchPayloadCategoryTelemetry, kNativeLightingDispatchPayloadCategoryCount> payload_categories;
 };
 
 struct NativeStagingTelemetry {

@@ -41,6 +41,23 @@ constexpr std::int32_t kMaxLightingSamples = 4096;
 constexpr std::int32_t kMaxLightingRays = 16777216;
 constexpr std::int32_t kMaxLightingCacheRecords = 16777216;
 constexpr std::uint64_t kEstimatedLightingDispatchGroupBytes = 64;
+constexpr std::uint32_t kLightingDispatchFlagValidated = 1U;
+constexpr std::uint32_t kLightingDispatchFlagPlaceholder = 1U << 1U;
+constexpr std::uint32_t kLightingDispatchFlagTemporalHistory = 1U << 2U;
+constexpr std::uint32_t kLightingDispatchFlagDebugOverlay = 1U << 3U;
+constexpr std::uint32_t kLightingDispatchFlagReuseOnly = 1U << 4U;
+constexpr std::size_t kLightingPayloadCategoryDirect = 0;
+constexpr std::size_t kLightingPayloadCategoryGi = 1;
+constexpr std::size_t kLightingPayloadCategoryPost = 2;
+constexpr std::size_t kLightingPayloadCategoryCache = 3;
+
+std::uint64_t saturated_add(std::uint64_t left, std::uint64_t right) {
+    constexpr std::uint64_t maximum = ~std::uint64_t{0};
+    if (right > maximum - left) {
+        return maximum;
+    }
+    return left + right;
+}
 
 std::size_t pass_index(NativeRenderPass pass) {
     return static_cast<std::size_t>(pass);
@@ -73,6 +90,71 @@ NativeResourceIntentStage resource_stage_for_lighting_stage(NativeLightingDispat
     }
 
     return NativeResourceIntentStage::DirectLighting;
+}
+
+std::size_t lighting_payload_category_index(NativeLightingDispatchStage stage) {
+    switch (stage) {
+        case NativeLightingDispatchStage::DirectLighting:
+            return kLightingPayloadCategoryDirect;
+        case NativeLightingDispatchStage::DiffuseGi:
+            return kLightingPayloadCategoryGi;
+        case NativeLightingDispatchStage::Denoise:
+        case NativeLightingDispatchStage::Composite:
+            return kLightingPayloadCategoryPost;
+        case NativeLightingDispatchStage::Cache:
+            return kLightingPayloadCategoryCache;
+    }
+
+    return kLightingPayloadCategoryDirect;
+}
+
+const char* lighting_payload_category_name(std::size_t category_index) {
+    switch (category_index) {
+        case kLightingPayloadCategoryDirect:
+            return "direct";
+        case kLightingPayloadCategoryGi:
+            return "gi";
+        case kLightingPayloadCategoryPost:
+            return "post";
+        case kLightingPayloadCategoryCache:
+            return "cache";
+        default:
+            return "unknown";
+    }
+}
+
+bool has_lighting_flag(std::uint32_t flags, std::uint32_t flag) {
+    return (flags & flag) != 0;
+}
+
+bool lighting_dispatch_ready_for_native_execution(const LightingDispatchStageUpload& dispatch) {
+    return dispatch.enabled
+        && has_lighting_flag(dispatch.flags, kLightingDispatchFlagValidated)
+        && !has_lighting_flag(dispatch.flags, kLightingDispatchFlagPlaceholder);
+}
+
+const char* lighting_dispatch_readiness_reason(const LightingDispatchStageUpload& dispatch) {
+    if (!dispatch.enabled) {
+        return "stage_disabled";
+    }
+    if (has_lighting_flag(dispatch.flags, kLightingDispatchFlagPlaceholder)
+            && has_lighting_flag(dispatch.flags, kLightingDispatchFlagValidated)) {
+        return "validated_placeholder_metadata_only";
+    }
+    if (has_lighting_flag(dispatch.flags, kLightingDispatchFlagPlaceholder)) {
+        return "placeholder_metadata_only";
+    }
+    if (!has_lighting_flag(dispatch.flags, kLightingDispatchFlagValidated)) {
+        return "validation_missing";
+    }
+    return "ready_for_native_execution";
+}
+
+void append_stage_name(std::string& names, const LightingDispatchStageUpload& dispatch) {
+    if (!names.empty()) {
+        names += "|";
+    }
+    names += dispatch.stage_name.empty() ? to_string(dispatch.stage) : dispatch.stage_name;
 }
 
 bool is_power_of_two(std::int32_t value) {
@@ -195,12 +277,46 @@ const char* to_string(NativeLightingDispatchStage stage) {
 
 namespace {
 
+void append_phase5_payload_categories(
+        std::ostringstream& out,
+        const NativeLightingDispatchTelemetry& lighting) {
+    out << ",payload_categories={";
+    for (std::size_t index = 0; index < lighting.payload_categories.size(); index++) {
+        if (index != 0) {
+            out << ",";
+        }
+        const auto& category = lighting.payload_categories[index];
+        out << lighting_payload_category_name(index)
+            << "={stages=" << category.last_stage_count
+            << ",enabled=" << category.last_enabled_stage_count
+            << ",inputs=" << category.last_input_count
+            << ",outputs=" << category.last_output_count
+            << ",samples=" << category.last_sample_count
+            << ",rays=" << category.last_ray_count
+            << ",cache_reads=" << category.last_cache_read_count
+            << ",cache_writes=" << category.last_cache_write_count
+            << ",enabled_samples=" << category.last_enabled_sample_count
+            << ",enabled_rays=" << category.last_enabled_ray_count
+            << ",enabled_cache_reads=" << category.last_enabled_cache_read_count
+            << ",enabled_cache_writes=" << category.last_enabled_cache_write_count
+            << ",total_samples=" << category.total_sample_count
+            << ",total_rays=" << category.total_ray_count
+            << ",total_cache_reads=" << category.total_cache_read_count
+            << ",total_cache_writes=" << category.total_cache_write_count
+            << ",placeholder=" << category.last_placeholder_stage_count
+            << ",validated=" << category.last_validated_stage_count
+            << ",temporal_history=" << category.last_temporal_history_stage_count
+            << ",reuse_only=" << category.last_reuse_only_stage_count
+            << ",debug_overlay=" << category.last_debug_overlay_stage_count
+            << "}";
+    }
+    out << "}";
+}
+
 void append_phase5_lighting_status(
         std::ostringstream& out,
         const NativeLightingDispatchTelemetry& lighting,
         const LightingDispatchPacket& last_packet) {
-    std::uint64_t enabled_stage_count = 0;
-    std::uint64_t disabled_stage_count = 0;
     std::array<const LightingDispatchStageUpload*, kNativeLightingDispatchStageCount> stages{};
     for (const auto& dispatch : last_packet.dispatches) {
         const auto index = lighting_stage_index(dispatch.stage);
@@ -208,13 +324,11 @@ void append_phase5_lighting_status(
             continue;
         }
         stages[index] = &dispatch;
-        if (dispatch.enabled) {
-            enabled_stage_count++;
-        } else {
-            disabled_stage_count++;
-        }
     }
 
+    const auto readiness_reason = lighting.last_readiness_reason.empty()
+        ? "no_phase5_dispatch_payload"
+        : lighting.last_readiness_reason;
     out << " phase5_lighting={packet_count=" << lighting.packets
         << ",packet_generation=" << lighting.last_packet_generation
         << ",dispatch_generation=" << lighting.last_first_generation << "-" << lighting.last_generation
@@ -222,10 +336,52 @@ void append_phase5_lighting_status(
         << ",material_generation=" << lighting.last_material_generation
         << ",section_generation=" << lighting.last_section_generation
         << ",gbuffer_generation=" << lighting.last_gbuffer_generation
-        << ",enabled_stage_count=" << enabled_stage_count
-        << ",disabled_stage_count=" << disabled_stage_count
+        << ",enabled_stage_count=" << lighting.last_enabled_stage_count
+        << ",disabled_stage_count=" << lighting.last_disabled_stage_count
         << ",enabled_stage_total=" << lighting.enabled_dispatches
         << ",disabled_stage_total=" << lighting.disabled_dispatches
+        << ",enabled_stage_names=\"" << lighting.last_enabled_stage_names
+        << "\""
+        << ",payload_totals={inputs=" << lighting.last_input_count
+        << ",outputs=" << lighting.last_output_count
+        << ",samples=" << lighting.last_sample_count
+        << ",rays=" << lighting.last_ray_count
+        << ",cache_reads=" << lighting.last_cache_read_count
+        << ",cache_writes=" << lighting.last_cache_write_count
+        << "}"
+        << ",enabled_payload_totals={samples=" << lighting.last_enabled_sample_count
+        << ",rays=" << lighting.last_enabled_ray_count
+        << ",cache_reads=" << lighting.last_enabled_cache_read_count
+        << ",cache_writes=" << lighting.last_enabled_cache_write_count
+        << "}"
+        << ",cumulative_payload_totals={samples=" << lighting.total_sample_count
+        << ",rays=" << lighting.total_ray_count
+        << ",cache_reads=" << lighting.total_cache_read_count
+        << ",cache_writes=" << lighting.total_cache_write_count
+        << "}"
+        << ",flag_counts={placeholder=" << lighting.last_placeholder_stage_count
+        << ",validated=" << lighting.last_validated_stage_count
+        << ",temporal_history=" << lighting.last_temporal_history_stage_count
+        << ",reuse_only=" << lighting.last_reuse_only_stage_count
+        << ",debug_overlay=" << lighting.last_debug_overlay_stage_count
+        << "}"
+        << ",flag_totals={placeholder=" << lighting.total_placeholder_stage_count
+        << ",validated=" << lighting.total_validated_stage_count
+        << ",temporal_history=" << lighting.total_temporal_history_stage_count
+        << ",reuse_only=" << lighting.total_reuse_only_stage_count
+        << ",debug_overlay=" << lighting.total_debug_overlay_stage_count
+        << "}"
+        << ",feature_flags={placeholder=" << lighting.last_has_placeholder_stage
+        << ",validated=" << lighting.last_has_validated_stage
+        << ",temporal_history=" << lighting.last_has_temporal_history_stage
+        << ",reuse_only=" << lighting.last_has_reuse_only_stage
+        << ",debug_overlay=" << lighting.last_has_debug_overlay_stage
+        << "}"
+        << ",readiness={ready_for_native_execution=" << lighting.last_ready_for_native_execution
+        << ",reason=\"" << readiness_reason
+        << "\"}";
+    append_phase5_payload_categories(out, lighting);
+    out
         << ",total_estimated_bytes=" << lighting.total_estimated_bytes
         << "} phase5_lighting_stages=[";
     bool wrote_stage = false;
@@ -252,6 +408,14 @@ void append_phase5_lighting_status(
             << ",cache_read=" << dispatch->cache_read_count
             << ",cache_write=" << dispatch->cache_write_count
             << ",flags=" << dispatch->flags
+            << ",placeholder=" << stage.last_placeholder
+            << ",validated=" << stage.last_validated
+            << ",temporal_history=" << stage.last_temporal_history
+            << ",reuse_only=" << stage.last_reuse_only
+            << ",debug_overlay=" << stage.last_debug_overlay
+            << ",ready_for_native_execution=" << stage.ready_for_native_execution_this_packet
+            << ",readiness_reason=\"" << stage.last_readiness_reason
+            << "\""
             << ",recorded_this_frame=" << stage.recorded_this_frame
             << "}";
         wrote_stage = true;
@@ -1226,6 +1390,52 @@ std::string Renderer::status() const {
         << ",last_estimated_bytes=" << staging_.lighting.last_estimated_bytes
         << ",total_estimated_bytes=" << staging_.lighting.total_estimated_bytes
         << ",last_payload_recorded_this_frame=" << staging_.lighting.last_payload_recorded_this_frame
+        << ",last_enabled_stage_count=" << staging_.lighting.last_enabled_stage_count
+        << ",last_disabled_stage_count=" << staging_.lighting.last_disabled_stage_count
+        << ",last_enabled_stage_names=\"" << staging_.lighting.last_enabled_stage_names
+        << "\""
+        << ",last_payload_totals={inputs=" << staging_.lighting.last_input_count
+        << ",outputs=" << staging_.lighting.last_output_count
+        << ",samples=" << staging_.lighting.last_sample_count
+        << ",rays=" << staging_.lighting.last_ray_count
+        << ",cache_reads=" << staging_.lighting.last_cache_read_count
+        << ",cache_writes=" << staging_.lighting.last_cache_write_count
+        << "}"
+        << ",last_enabled_payload_totals={samples=" << staging_.lighting.last_enabled_sample_count
+        << ",rays=" << staging_.lighting.last_enabled_ray_count
+        << ",cache_reads=" << staging_.lighting.last_enabled_cache_read_count
+        << ",cache_writes=" << staging_.lighting.last_enabled_cache_write_count
+        << "}"
+        << ",cumulative_payload_totals={samples=" << staging_.lighting.total_sample_count
+        << ",rays=" << staging_.lighting.total_ray_count
+        << ",cache_reads=" << staging_.lighting.total_cache_read_count
+        << ",cache_writes=" << staging_.lighting.total_cache_write_count
+        << "}"
+        << ",last_flag_counts={placeholder=" << staging_.lighting.last_placeholder_stage_count
+        << ",validated=" << staging_.lighting.last_validated_stage_count
+        << ",temporal_history=" << staging_.lighting.last_temporal_history_stage_count
+        << ",reuse_only=" << staging_.lighting.last_reuse_only_stage_count
+        << ",debug_overlay=" << staging_.lighting.last_debug_overlay_stage_count
+        << "}"
+        << ",flag_totals={placeholder=" << staging_.lighting.total_placeholder_stage_count
+        << ",validated=" << staging_.lighting.total_validated_stage_count
+        << ",temporal_history=" << staging_.lighting.total_temporal_history_stage_count
+        << ",reuse_only=" << staging_.lighting.total_reuse_only_stage_count
+        << ",debug_overlay=" << staging_.lighting.total_debug_overlay_stage_count
+        << "}"
+        << ",last_feature_flags={placeholder=" << staging_.lighting.last_has_placeholder_stage
+        << ",validated=" << staging_.lighting.last_has_validated_stage
+        << ",temporal_history=" << staging_.lighting.last_has_temporal_history_stage
+        << ",reuse_only=" << staging_.lighting.last_has_reuse_only_stage
+        << ",debug_overlay=" << staging_.lighting.last_has_debug_overlay_stage
+        << "}"
+        << ",last_readiness={ready_for_native_execution=" << staging_.lighting.last_ready_for_native_execution
+        << ",reason=\"" << (staging_.lighting.last_readiness_reason.empty()
+            ? "no_phase5_dispatch_payload"
+            : staging_.lighting.last_readiness_reason)
+        << "\"}";
+    append_phase5_payload_categories(out, staging_.lighting);
+    out
         << ",stages=[";
     for (std::size_t index = 0; index < staging_.lighting.stages.size(); index++) {
         if (index != 0) {
@@ -1247,6 +1457,14 @@ std::string Renderer::status() const {
             << ",last_rays=" << stage.last_ray_count
             << ",last_cache=" << stage.last_cache_read_count << "/" << stage.last_cache_write_count
             << ",last_flags=" << stage.last_flags
+            << ",placeholder=" << stage.last_placeholder
+            << ",validated=" << stage.last_validated
+            << ",temporal_history=" << stage.last_temporal_history
+            << ",reuse_only=" << stage.last_reuse_only
+            << ",debug_overlay=" << stage.last_debug_overlay
+            << ",ready_for_native_execution=" << stage.ready_for_native_execution_this_packet
+            << ",readiness_reason=\"" << stage.last_readiness_reason
+            << "\""
             << ",last_estimated_bytes=" << stage.last_estimated_bytes
             << ",total_estimated_bytes=" << stage.total_estimated_bytes
             << ",enabled_this_packet=" << stage.enabled_this_packet
@@ -1603,28 +1821,88 @@ void Renderer::track_gbuffer_staging_upload(const GBufferStagingPacket& packet) 
 
 void Renderer::track_lighting_dispatch_upload(const LightingDispatchPacket& packet) {
     const bool can_record_resource_intents = resources_ != nullptr && frame_open_;
-    auto saturated_add = [](std::uint64_t left, std::uint64_t right) {
-        constexpr std::uint64_t maximum = ~std::uint64_t{0};
-        if (right > maximum - left) {
-            return maximum;
-        }
-        return left + right;
-    };
     std::uint64_t enabled_dispatches = 0;
     std::uint64_t disabled_dispatches = 0;
     std::uint64_t estimated_bytes = 0;
+    std::uint64_t ready_enabled_dispatches = 0;
+    bool enabled_stage_placeholder = false;
+    bool enabled_stage_missing_validation = false;
     bool recorded_this_frame = false;
+
+    staging_.lighting.last_enabled_stage_count = 0;
+    staging_.lighting.last_disabled_stage_count = 0;
+    staging_.lighting.last_input_count = 0;
+    staging_.lighting.last_output_count = 0;
+    staging_.lighting.last_sample_count = 0;
+    staging_.lighting.last_ray_count = 0;
+    staging_.lighting.last_cache_read_count = 0;
+    staging_.lighting.last_cache_write_count = 0;
+    staging_.lighting.last_enabled_sample_count = 0;
+    staging_.lighting.last_enabled_ray_count = 0;
+    staging_.lighting.last_enabled_cache_read_count = 0;
+    staging_.lighting.last_enabled_cache_write_count = 0;
+    staging_.lighting.last_placeholder_stage_count = 0;
+    staging_.lighting.last_validated_stage_count = 0;
+    staging_.lighting.last_temporal_history_stage_count = 0;
+    staging_.lighting.last_reuse_only_stage_count = 0;
+    staging_.lighting.last_debug_overlay_stage_count = 0;
+    staging_.lighting.last_has_placeholder_stage = false;
+    staging_.lighting.last_has_validated_stage = false;
+    staging_.lighting.last_has_temporal_history_stage = false;
+    staging_.lighting.last_has_reuse_only_stage = false;
+    staging_.lighting.last_has_debug_overlay_stage = false;
+    staging_.lighting.last_ready_for_native_execution = false;
+    staging_.lighting.last_enabled_stage_names.clear();
+    staging_.lighting.last_readiness_reason.clear();
+    for (auto& category : staging_.lighting.payload_categories) {
+        category.last_stage_count = 0;
+        category.last_enabled_stage_count = 0;
+        category.last_input_count = 0;
+        category.last_output_count = 0;
+        category.last_sample_count = 0;
+        category.last_ray_count = 0;
+        category.last_cache_read_count = 0;
+        category.last_cache_write_count = 0;
+        category.last_enabled_sample_count = 0;
+        category.last_enabled_ray_count = 0;
+        category.last_enabled_cache_read_count = 0;
+        category.last_enabled_cache_write_count = 0;
+        category.last_placeholder_stage_count = 0;
+        category.last_validated_stage_count = 0;
+        category.last_temporal_history_stage_count = 0;
+        category.last_reuse_only_stage_count = 0;
+        category.last_debug_overlay_stage_count = 0;
+    }
 
     if (packet.dispatches.empty()) {
         for (auto& stage : staging_.lighting.stages) {
             stage.enabled_this_packet = false;
             stage.recorded_this_frame = false;
+            stage.last_placeholder = false;
+            stage.last_validated = false;
+            stage.last_temporal_history = false;
+            stage.last_reuse_only = false;
+            stage.last_debug_overlay = false;
+            stage.ready_for_native_execution_this_packet = false;
+            stage.last_readiness_reason = "no_phase5_dispatch_payload";
         }
     }
 
     for (const auto& dispatch : packet.dispatches) {
         auto& stage = lighting_stage_telemetry(dispatch.stage);
+        auto& category = staging_.lighting.payload_categories.at(lighting_payload_category_index(dispatch.stage));
         const auto dispatch_bytes = estimate_lighting_dispatch_bytes(dispatch);
+        const auto input_count = static_cast<std::uint64_t>(dispatch.input_count);
+        const auto output_count = static_cast<std::uint64_t>(dispatch.output_count);
+        const auto sample_count = static_cast<std::uint64_t>(dispatch.sample_count);
+        const auto ray_count = static_cast<std::uint64_t>(dispatch.ray_count);
+        const auto cache_read_count = static_cast<std::uint64_t>(dispatch.cache_read_count);
+        const auto cache_write_count = static_cast<std::uint64_t>(dispatch.cache_write_count);
+        const bool placeholder = has_lighting_flag(dispatch.flags, kLightingDispatchFlagPlaceholder);
+        const bool validated = has_lighting_flag(dispatch.flags, kLightingDispatchFlagValidated);
+        const bool temporal_history = has_lighting_flag(dispatch.flags, kLightingDispatchFlagTemporalHistory);
+        const bool reuse_only = has_lighting_flag(dispatch.flags, kLightingDispatchFlagReuseOnly);
+        const bool debug_overlay = has_lighting_flag(dispatch.flags, kLightingDispatchFlagDebugOverlay);
 
         stage.packets++;
         stage.enabled_this_packet = dispatch.enabled;
@@ -1647,10 +1925,93 @@ void Renderer::track_lighting_dispatch_upload(const LightingDispatchPacket& pack
         stage.last_cache_read_count = dispatch.cache_read_count;
         stage.last_cache_write_count = dispatch.cache_write_count;
         stage.last_flags = dispatch.flags;
+        stage.last_placeholder = placeholder;
+        stage.last_validated = validated;
+        stage.last_temporal_history = temporal_history;
+        stage.last_reuse_only = reuse_only;
+        stage.last_debug_overlay = debug_overlay;
+        stage.ready_for_native_execution_this_packet = lighting_dispatch_ready_for_native_execution(dispatch);
+        stage.last_readiness_reason = lighting_dispatch_readiness_reason(dispatch);
+
+        staging_.lighting.last_input_count = saturated_add(staging_.lighting.last_input_count, input_count);
+        staging_.lighting.last_output_count = saturated_add(staging_.lighting.last_output_count, output_count);
+        staging_.lighting.last_sample_count = saturated_add(staging_.lighting.last_sample_count, sample_count);
+        staging_.lighting.last_ray_count = saturated_add(staging_.lighting.last_ray_count, ray_count);
+        staging_.lighting.last_cache_read_count = saturated_add(staging_.lighting.last_cache_read_count, cache_read_count);
+        staging_.lighting.last_cache_write_count = saturated_add(staging_.lighting.last_cache_write_count, cache_write_count);
+        staging_.lighting.total_sample_count = saturated_add(staging_.lighting.total_sample_count, sample_count);
+        staging_.lighting.total_ray_count = saturated_add(staging_.lighting.total_ray_count, ray_count);
+        staging_.lighting.total_cache_read_count = saturated_add(staging_.lighting.total_cache_read_count, cache_read_count);
+        staging_.lighting.total_cache_write_count = saturated_add(staging_.lighting.total_cache_write_count, cache_write_count);
+
+        category.last_stage_count++;
+        category.last_input_count = saturated_add(category.last_input_count, input_count);
+        category.last_output_count = saturated_add(category.last_output_count, output_count);
+        category.last_sample_count = saturated_add(category.last_sample_count, sample_count);
+        category.last_ray_count = saturated_add(category.last_ray_count, ray_count);
+        category.last_cache_read_count = saturated_add(category.last_cache_read_count, cache_read_count);
+        category.last_cache_write_count = saturated_add(category.last_cache_write_count, cache_write_count);
+        category.total_sample_count = saturated_add(category.total_sample_count, sample_count);
+        category.total_ray_count = saturated_add(category.total_ray_count, ray_count);
+        category.total_cache_read_count = saturated_add(category.total_cache_read_count, cache_read_count);
+        category.total_cache_write_count = saturated_add(category.total_cache_write_count, cache_write_count);
+
+        if (placeholder) {
+            staging_.lighting.last_placeholder_stage_count++;
+            staging_.lighting.total_placeholder_stage_count++;
+            category.last_placeholder_stage_count++;
+        }
+        if (validated) {
+            staging_.lighting.last_validated_stage_count++;
+            staging_.lighting.total_validated_stage_count++;
+            category.last_validated_stage_count++;
+        }
+        if (temporal_history) {
+            staging_.lighting.last_temporal_history_stage_count++;
+            staging_.lighting.total_temporal_history_stage_count++;
+            category.last_temporal_history_stage_count++;
+        }
+        if (reuse_only) {
+            staging_.lighting.last_reuse_only_stage_count++;
+            staging_.lighting.total_reuse_only_stage_count++;
+            category.last_reuse_only_stage_count++;
+        }
+        if (debug_overlay) {
+            staging_.lighting.last_debug_overlay_stage_count++;
+            staging_.lighting.total_debug_overlay_stage_count++;
+            category.last_debug_overlay_stage_count++;
+        }
 
         if (dispatch.enabled) {
             enabled_dispatches++;
             stage.enabled_count++;
+            append_stage_name(staging_.lighting.last_enabled_stage_names, dispatch);
+            staging_.lighting.last_enabled_sample_count = saturated_add(
+                    staging_.lighting.last_enabled_sample_count,
+                    sample_count);
+            staging_.lighting.last_enabled_ray_count = saturated_add(
+                    staging_.lighting.last_enabled_ray_count,
+                    ray_count);
+            staging_.lighting.last_enabled_cache_read_count = saturated_add(
+                    staging_.lighting.last_enabled_cache_read_count,
+                    cache_read_count);
+            staging_.lighting.last_enabled_cache_write_count = saturated_add(
+                    staging_.lighting.last_enabled_cache_write_count,
+                    cache_write_count);
+            category.last_enabled_stage_count++;
+            category.last_enabled_sample_count = saturated_add(category.last_enabled_sample_count, sample_count);
+            category.last_enabled_ray_count = saturated_add(category.last_enabled_ray_count, ray_count);
+            category.last_enabled_cache_read_count = saturated_add(category.last_enabled_cache_read_count, cache_read_count);
+            category.last_enabled_cache_write_count = saturated_add(category.last_enabled_cache_write_count, cache_write_count);
+            if (placeholder) {
+                enabled_stage_placeholder = true;
+            }
+            if (!validated) {
+                enabled_stage_missing_validation = true;
+            }
+            if (stage.ready_for_native_execution_this_packet) {
+                ready_enabled_dispatches++;
+            }
         } else {
             disabled_dispatches++;
             stage.disabled_count++;
@@ -1675,6 +2036,28 @@ void Renderer::track_lighting_dispatch_upload(const LightingDispatchPacket& pack
             staging_.lighting.placeholder_buffers++;
             recorded_this_frame = true;
         }
+    }
+
+    staging_.lighting.last_enabled_stage_count = enabled_dispatches;
+    staging_.lighting.last_disabled_stage_count = disabled_dispatches;
+    staging_.lighting.last_has_placeholder_stage = staging_.lighting.last_placeholder_stage_count != 0;
+    staging_.lighting.last_has_validated_stage = staging_.lighting.last_validated_stage_count != 0;
+    staging_.lighting.last_has_temporal_history_stage = staging_.lighting.last_temporal_history_stage_count != 0;
+    staging_.lighting.last_has_reuse_only_stage = staging_.lighting.last_reuse_only_stage_count != 0;
+    staging_.lighting.last_has_debug_overlay_stage = staging_.lighting.last_debug_overlay_stage_count != 0;
+    if (packet.dispatches.empty()) {
+        staging_.lighting.last_readiness_reason = "no_phase5_dispatch_payload";
+    } else if (enabled_dispatches == 0) {
+        staging_.lighting.last_readiness_reason = "no_enabled_phase5_stages";
+    } else if (enabled_stage_placeholder) {
+        staging_.lighting.last_readiness_reason = "native_phase5_placeholder_metadata_only";
+    } else if (enabled_stage_missing_validation) {
+        staging_.lighting.last_readiness_reason = "enabled_stage_validation_missing";
+    } else if (ready_enabled_dispatches == enabled_dispatches) {
+        staging_.lighting.last_ready_for_native_execution = true;
+        staging_.lighting.last_readiness_reason = "native_phase5_handoff_ready";
+    } else {
+        staging_.lighting.last_readiness_reason = "enabled_stage_not_ready";
     }
 
     staging_.lighting.packets++;

@@ -6,3 +6,8 @@ out/
 *.iml
 *.log
 native/lucerna_renderer/build/
+
+.cocoindex_code/
+.codex/
+.agents/
+.serena
