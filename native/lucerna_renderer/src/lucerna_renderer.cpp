@@ -193,6 +193,74 @@ const char* to_string(NativeLightingDispatchStage stage) {
     return "unknown";
 }
 
+namespace {
+
+void append_phase5_lighting_status(
+        std::ostringstream& out,
+        const NativeLightingDispatchTelemetry& lighting,
+        const LightingDispatchPacket& last_packet) {
+    std::uint64_t enabled_stage_count = 0;
+    std::uint64_t disabled_stage_count = 0;
+    std::array<const LightingDispatchStageUpload*, kNativeLightingDispatchStageCount> stages{};
+    for (const auto& dispatch : last_packet.dispatches) {
+        const auto index = lighting_stage_index(dispatch.stage);
+        if (index >= stages.size()) {
+            continue;
+        }
+        stages[index] = &dispatch;
+        if (dispatch.enabled) {
+            enabled_stage_count++;
+        } else {
+            disabled_stage_count++;
+        }
+    }
+
+    out << " phase5_lighting={packet_count=" << lighting.packets
+        << ",packet_generation=" << lighting.last_packet_generation
+        << ",dispatch_generation=" << lighting.last_first_generation << "-" << lighting.last_generation
+        << ",world_generation=" << lighting.last_world_generation
+        << ",material_generation=" << lighting.last_material_generation
+        << ",section_generation=" << lighting.last_section_generation
+        << ",gbuffer_generation=" << lighting.last_gbuffer_generation
+        << ",enabled_stage_count=" << enabled_stage_count
+        << ",disabled_stage_count=" << disabled_stage_count
+        << ",enabled_stage_total=" << lighting.enabled_dispatches
+        << ",disabled_stage_total=" << lighting.disabled_dispatches
+        << ",total_estimated_bytes=" << lighting.total_estimated_bytes
+        << "} phase5_lighting_stages=[";
+    bool wrote_stage = false;
+    for (std::size_t index = 0; index < stages.size(); index++) {
+        const auto* dispatch = stages[index];
+        if (dispatch == nullptr) {
+            continue;
+        }
+        if (wrote_stage) {
+            out << "; ";
+        }
+        const auto& stage = lighting.stages[index];
+        out << "{id=" << to_string(dispatch->stage)
+            << ",enabled=" << dispatch->enabled
+            << ",generation=" << dispatch->generation
+            << ",size=" << dispatch->width << "x" << dispatch->height
+            << ",groups=" << dispatch->dispatch_x << "x" << dispatch->dispatch_y << "x" << dispatch->dispatch_z
+            << ",workgroup=" << dispatch->workgroup_size_x << "x" << dispatch->workgroup_size_y
+            << "x" << dispatch->workgroup_size_z
+            << ",inputs=" << dispatch->input_count
+            << ",outputs=" << dispatch->output_count
+            << ",samples=" << dispatch->sample_count
+            << ",rays=" << dispatch->ray_count
+            << ",cache_read=" << dispatch->cache_read_count
+            << ",cache_write=" << dispatch->cache_write_count
+            << ",flags=" << dispatch->flags
+            << ",recorded_this_frame=" << stage.recorded_this_frame
+            << "}";
+        wrote_stage = true;
+    }
+    out << "]";
+}
+
+} // namespace
+
 Renderer::Renderer() {
     reset_pass_counters();
     reset_staging_telemetry();
@@ -1070,7 +1138,9 @@ std::string Renderer::status() const {
         << ",material=" << last_lighting_dispatch_packet_.material_generation
         << ",section=" << last_lighting_dispatch_packet_.section_generation
         << ",gbuffer=" << last_lighting_dispatch_packet_.gbuffer_generation
-        << "}"
+        << "}";
+    append_phase5_lighting_status(out, staging_.lighting, last_lighting_dispatch_packet_);
+    out
         << " staging={section={packets=" << staging_.section.packets
         << ",advertised_dirty_regions=" << staging_.section.advertised_dirty_regions
         << ",payload_dirty_regions=" << staging_.section.payload_dirty_regions

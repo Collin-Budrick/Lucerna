@@ -20,10 +20,12 @@ import net.lucerna.render.frame.FrameConstantsCapture;
 import net.lucerna.render.frame.FrameRenderFlags;
 import net.lucerna.render.frame.LucernaFrameConstantsCollector;
 import net.lucerna.render.frame.LucernaFrameConstants;
+import net.lucerna.render.lighting.direct.DirectCelestialLightingPlan;
+import net.lucerna.render.lighting.direct.DirectEmissiveBlockListPlan;
 import net.lucerna.render.lighting.direct.DirectLightingPlan;
-import net.lucerna.render.lighting.direct.DirectShadowRayPlan;
+import net.lucerna.render.lighting.direct.DirectShadowRayPlanner;
 import net.lucerna.render.lighting.gi.DiffuseGiSettings;
-import net.lucerna.render.lighting.gi.GiCacheSnapshot;
+import net.lucerna.render.lighting.gi.GiCachePlannerInputs;
 import net.lucerna.render.lighting.gi.LowResDiffuseGiPlan;
 import net.lucerna.render.lighting.gi.LowResDiffuseGiPlanner;
 import net.lucerna.render.lighting.post.PostProcessingPipelinePlan;
@@ -44,6 +46,7 @@ import net.lucerna.world.LucernaWorldFeed;
 import net.lucerna.world.extract.ChunkSectionSnapshotExtractionResult;
 import net.lucerna.world.extract.LucernaSectionSnapshotExtractionCoordinator;
 import net.lucerna.world.extract.MinecraftChunkSectionSnapshotExtractor;
+import net.lucerna.world.section.ChunkSectionVoxelSnapshot;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.model.ModelManager;
 
@@ -356,7 +359,7 @@ public final class LucernaController {
         }
 
         NativeGBufferStagingUpload upload = stagedBatch.gBufferStaging().get(stagedBatch.gBufferStaging().size() - 1);
-        var sectionReferences = this.uniqueSectionReferences(stagedBatch.sectionSnapshots());
+        var sectionReferences = this.currentSectionReferences(stagedBatch.sectionSnapshots());
         var writeIntent = GBufferWriteIntent.lucernaMain(upload.width(), upload.height(), upload.generation());
         var traversalRequest = VoxelTraversalRequest.primaryGBuffer(
                 this.frameHooks.frameIndex(),
@@ -390,10 +393,17 @@ public final class LucernaController {
                 ? GBufferWriteIntent.lucernaMain(gBufferUpload.width(), gBufferUpload.height(), gBufferUpload.generation())
                 : firstPassPlan.writeIntent();
         List<VoxelSectionSnapshotReference> sectionReferences = firstPassPlan == null
-                ? this.uniqueSectionReferences(stagedBatch.sectionSnapshots())
+                ? this.currentSectionReferences(stagedBatch.sectionSnapshots())
                 : firstPassPlan.sectionSnapshots();
+        long sourceGeneration = Math.max(
+                metadata.generation(),
+                Math.max(gBufferUpload.generation(), Math.max(this.frameHooks.frameIndex(), frameConstants.frameIndex()))
+        );
+        GiCachePlannerInputs giCacheInputs = sectionExtraction == null
+                ? GiCachePlannerInputs.empty()
+                : GiCachePlannerInputs.from(sectionExtraction.dirtyRegionSnapshot(), sourceGeneration);
         DirectLightingPlan directLightingPlan = this.buildDirectLightingPlan(
-                sectionExtraction,
+                this.currentSectionSnapshots(sectionExtraction),
                 sectionReferences,
                 frameConstants
         );
@@ -401,14 +411,10 @@ public final class LucernaController {
                 frameConstants,
                 writeIntent,
                 this.frameConstantsCapture.matrixHistory(),
-                GiCacheSnapshot.empty(),
+                giCacheInputs.snapshot(),
                 DiffuseGiSettings.fromQuality(this.getConfig().qualityPreset(), 2)
         );
 
-        long sourceGeneration = Math.max(
-                metadata.generation(),
-                Math.max(gBufferUpload.generation(), Math.max(this.frameHooks.frameIndex(), frameConstants.frameIndex()))
-        );
         boolean directEnabled = directLightingPlan.hasDirectLightingWork() && writeIntent.dimensionsAvailable();
         boolean diffuseGiEnabled = diffuseGiPlan.readyForScheduling();
         PostProcessingPipelinePlan postPlan = this.buildPostProcessingPlan(
@@ -443,6 +449,18 @@ public final class LucernaController {
                 + denoiseEnabled
                 + "|"
                 + compositeEnabled
+                + "|"
+                + directLightingPlan.emissiveBlockList().selectedLightCount()
+                + "|"
+                + directLightingPlan.shadowRayPlan().budgetedCandidateCount()
+                + "|"
+                + giCacheInputs.sourceDirtyRegionCount()
+                + "|"
+                + giCacheInputs.coalescedDirtyRegionCount()
+                + "|"
+                + giCacheInputs.pendingDirtyRegionCountAfterDrain()
+                + "|"
+                + giCacheInputs.snapshot().latestDirtyGeneration()
                 + "|"
                 + cacheRecordCount;
         if (dispatchKey.equals(this.lastPreparedLightingDispatchKey)) {
@@ -517,25 +535,25 @@ public final class LucernaController {
     }
 
     private DirectLightingPlan buildDirectLightingPlan(
-            ChunkSectionSnapshotExtractionResult sectionExtraction,
+            List<ChunkSectionVoxelSnapshot> sectionSnapshots,
             List<VoxelSectionSnapshotReference> sectionReferences,
             LucernaFrameConstants frameConstants
     ) {
-        long frameIndex = frameConstants == null ? 0L : frameConstants.frameIndex();
-        DirectShadowRayPlan shadowRayPlan = DirectShadowRayPlan.fromCandidates(
-                frameIndex,
-                List.of(),
-                new VoxelRayBudgetConfig(0, 1, 0, this.shadowRayBudget(), 512, 64),
-                sectionReferences
+        LucernaFrameConstants resolvedFrameConstants = frameConstants == null
+                ? LucernaFrameConstants.unavailable()
+                : frameConstants;
+        DirectCelestialLightingPlan celestialLighting = DirectCelestialLightingPlan.fromFrameConstants(resolvedFrameConstants);
+        DirectEmissiveBlockListPlan emissiveBlockList = DirectEmissiveBlockListPlan.fromSectionSnapshots(
+                sectionSnapshots == null ? List.of() : sectionSnapshots,
+                this.maxSelectedEmissiveLights()
         );
-        return DirectLightingPlan.builder()
-                .frameConstants(frameConstants == null ? LucernaFrameConstants.unavailable() : frameConstants)
-                .emissiveBlockListFromSectionSnapshots(
-                        sectionExtraction == null ? List.of() : sectionExtraction.snapshots(),
-                        this.maxSelectedEmissiveLights()
-                )
-                .shadowRayPlan(shadowRayPlan)
-                .build();
+        var shadowRayPlan = DirectShadowRayPlanner.plan(
+                celestialLighting,
+                emissiveBlockList,
+                new VoxelRayBudgetConfig(0, 1, 0, this.shadowRayBudget(), 512, 64),
+                sectionReferences == null ? List.of() : sectionReferences
+        );
+        return DirectLightingPlan.from(celestialLighting, emissiveBlockList, shadowRayPlan);
     }
 
     private PostProcessingPipelinePlan buildPostProcessingPlan(
@@ -680,16 +698,33 @@ public final class LucernaController {
         );
     }
 
-    private List<VoxelSectionSnapshotReference> uniqueSectionReferences(List<NativeSectionSnapshotUpload> sectionUploads) {
+    private List<ChunkSectionVoxelSnapshot> currentSectionSnapshots(ChunkSectionSnapshotExtractionResult fallback) {
+        List<ChunkSectionVoxelSnapshot> cachedSnapshots = this.sectionSnapshotCoordinator.cachedSnapshots();
+        if (!cachedSnapshots.isEmpty()) {
+            return cachedSnapshots;
+        }
+        return fallback == null ? List.of() : fallback.snapshots();
+    }
+
+    private List<VoxelSectionSnapshotReference> currentSectionReferences(List<NativeSectionSnapshotUpload> sectionUploads) {
         var referencesByKey = new LinkedHashMap<String, VoxelSectionSnapshotReference>();
+        for (ChunkSectionVoxelSnapshot snapshot : this.sectionSnapshotCoordinator.cachedSnapshots()) {
+            this.putLatestSectionReference(referencesByKey, VoxelSectionSnapshotReference.from(snapshot));
+        }
         for (NativeSectionSnapshotUpload sectionUpload : sectionUploads) {
-            VoxelSectionSnapshotReference reference = VoxelSectionSnapshotReference.from(sectionUpload);
-            VoxelSectionSnapshotReference existing = referencesByKey.get(reference.stableKey());
-            if (existing == null || reference.combinedGeneration() >= existing.combinedGeneration()) {
-                referencesByKey.put(reference.stableKey(), reference);
-            }
+            this.putLatestSectionReference(referencesByKey, VoxelSectionSnapshotReference.from(sectionUpload));
         }
         return List.copyOf(referencesByKey.values());
+    }
+
+    private void putLatestSectionReference(
+            LinkedHashMap<String, VoxelSectionSnapshotReference> referencesByKey,
+            VoxelSectionSnapshotReference reference
+    ) {
+        VoxelSectionSnapshotReference existing = referencesByKey.get(reference.stableKey());
+        if (existing == null || reference.combinedGeneration() >= existing.combinedGeneration()) {
+            referencesByKey.put(reference.stableKey(), reference);
+        }
     }
 
     private int[] currentViewportDimensions(Minecraft client) {

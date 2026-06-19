@@ -1,7 +1,8 @@
 #version 450
 
-// Placeholder entry point for Lucerna flat composite staging.
-// Future composite writes only the borrowed Minecraft/Sodium world color target after denoise and debug overlay handoff.
-// This placeholder does not touch swapchain ownership, HUD composition, storage images, or color/depth outputs.
+// Placeholder entry point for lucerna.composite.final.
+// Future composite consumes lucerna.denoise.diffuse and optional lucerna.debug.overlay.
+// It writes only lucerna.composite.worldColor, the borrowed Minecraft/Sodium world color target before HUD and late translucency.
+// This placeholder declares no storage writes, image writes, atomics, barriers, color output, or depth output.
 void main() {
 }

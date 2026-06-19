@@ -1,7 +1,8 @@
 #version 450
 
-// Placeholder entry point for Lucerna debug overlays.
-// Future overlays read DebugLabelTable plus cache confidence, variance, adaptive ray budget, timing, and native queue metadata.
-// This placeholder intentionally emits no overlay target writes until the controller integrates the debug pass.
+// Placeholder entry point for lucerna.debug.overlay.
+// Future overlays read DebugLabelTable plus direct lighting, diffuse GI, denoise, cache confidence, variance, ray budget, timing, and native queue metadata.
+// This pass is scheduled before lucerna.composite.final so composite can consume lucerna.debug.overlay when enabled.
+// This placeholder declares no storage writes, image writes, atomics, barriers, color output, or depth output.
 void main() {
 }

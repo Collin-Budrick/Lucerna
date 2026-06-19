@@ -80,6 +80,13 @@ public record NativeBridgeTelemetryStatus(
         return NativePassTelemetryStatus.fromNativeStatus(this.nativeStatus);
     }
 
+    public LightingDispatchTelemetryStatus lightingDispatchStatus() {
+        if (!this.statusAvailable) {
+            return LightingDispatchTelemetryStatus.unavailable("Native bridge status has not been reported.");
+        }
+        return LightingDispatchTelemetryStatus.fromNativeStatus(this.nativeStatus);
+    }
+
     private static String blankToEmpty(String value) {
         if (value == null || value.isBlank()) {
             return "";

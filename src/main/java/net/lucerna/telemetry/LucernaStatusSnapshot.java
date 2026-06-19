@@ -242,6 +242,14 @@ public record LucernaStatusSnapshot(
         return this.nativePassStates().compactLabel();
     }
 
+    public LightingDispatchTelemetryStatus lightingDispatchStatus() {
+        return this.nativeBridge.lightingDispatchStatus();
+    }
+
+    public String lightingDispatchStatusLabel() {
+        return this.lightingDispatchStatus().compactLabel();
+    }
+
     public FirstPassValidationTelemetryStatus firstPassValidation() {
         return FirstPassValidationTelemetryStatus.placeholder(this);
     }
@@ -307,7 +315,7 @@ public record LucernaStatusSnapshot(
     }
 
     public String compactStatusLine() {
-        return "Lucerna renderer=%s backend=%s native=%s iris=%s context=%s frameStage=%s constants=%s dirty=%d worldGen=%d uploadWorldGen=%d uploadMatGen=%d sectionGen=%d gbuffer=%d/%d firstPass=%s cpuScopes=%d gpuScopes=%d"
+        return "Lucerna renderer=%s backend=%s native=%s iris=%s context=%s frameStage=%s constants=%s dirty=%d worldGen=%d uploadWorldGen=%d uploadMatGen=%d sectionGen=%d gbuffer=%d/%d lighting=%s firstPass=%s cpuScopes=%d gpuScopes=%d"
                 .formatted(
                         this.rendererStateLabel(),
                         this.backend.kind().name(),
@@ -323,6 +331,7 @@ public record LucernaStatusSnapshot(
                         this.uploadSectionGeneration(),
                         this.stagedGBufferStagingCount(),
                         this.uploadGBufferStagingGeneration(),
+                        this.lightingDispatchStatusLabel(),
                         this.firstPassValidation().placeholder() ? "placeholder" : "reported",
                         this.cpuScopeDurationsMillis().size(),
                         this.gpuScopeDurationsMillis().size()
@@ -351,6 +360,7 @@ public record LucernaStatusSnapshot(
         fields.put("native.diagnostic", this.nativeBridge.diagnosticMessage());
         fields.put("native.passStates", this.nativePassStateLabel());
         fields.putAll(this.nativePassStates().validationFields("native.pass"));
+        fields.putAll(this.lightingDispatchStatus().validationFields("lighting.dispatch"));
         fields.put("iris.statusAvailable", Boolean.toString(this.iris.statusAvailable()));
         fields.put("iris.installed", Boolean.toString(this.iris.installed()));
         fields.put("iris.disableAttempted", Boolean.toString(this.iris.disableAttempted()));

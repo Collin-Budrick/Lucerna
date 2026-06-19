@@ -1,7 +1,8 @@
 #version 450
 
-// Placeholder entry point for Lucerna temporal/spatial denoise passes.
-// Future denoise consumes direct lighting, diffuse GI, cache confidence, variance, adaptive ray budget, and history.
-// It will write denoised diffuse lighting plus a rejection mask; this placeholder remains side-effect free.
+// Placeholder entry point for lucerna.denoise.diffuse.
+// Future work consumes direct lighting, diffuse GI, cache confidence, variance, ray budget, and history.
+// It writes lucerna.denoise.diffuse plus lucerna.denoise.rejectionMask after clearing them.
+// This placeholder declares no storage writes, image writes, atomics, barriers, color output, or depth output.
 void main() {
 }

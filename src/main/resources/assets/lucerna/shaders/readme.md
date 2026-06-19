@@ -11,6 +11,10 @@ These shader files are placeholders for the Sodium Vulkan integration milestones
 - `composite/`: flat-composite staging into the active Minecraft target without corrupting vanilla HUD or late translucency.
 - `debug/`: overlays used by controller-run verification: backend state, dirty regions, material ids, timings, native queues, cache confidence, variance, adaptive sampling, and label views.
 
+## Phase 5 Order
+
+The canonical Phase 5 dependency order is `lucerna.lighting.direct`, `lucerna.lighting.gi`, `lucerna.denoise.diffuse`, `lucerna.debug.overlay`, then `lucerna.composite.final`. Debug overlay is scheduled before composite because composite may consume `lucerna.debug.overlay` when overlay mode is active.
+
 ## Naming
 
 Stable pass ids use `lucerna.<stage>.<name>` and must remain stable once a native or Java caller references them. Use lowercase shader file names with the stage suffix when real shaders land:
@@ -24,6 +28,8 @@ Keep placeholder files side-effect free. Sub-agents may add or refine shader ass
 `lucerna.gbuffer.main` must keep its attachment names aligned with `GBufferTargetContract`: `lucerna.gbuffer.depth`, `lucerna.gbuffer.normalRoughness`, `lucerna.gbuffer.albedoOpacity`, `lucerna.gbuffer.materialId`, `lucerna.gbuffer.emissive`, and `lucerna.gbuffer.motionHistory`.
 
 Phase 5 lighting metadata adds these public handoff targets: `lucerna.lighting.direct`, `lucerna.lighting.diffuseGi`, `lucerna.lighting.cacheConfidence`, `lucerna.lighting.variance`, `lucerna.lighting.rayBudget`, `lucerna.denoise.diffuse`, `lucerna.denoise.rejectionMask`, `lucerna.debug.overlay`, and `lucerna.composite.worldColor`. Keep their write semantics aligned with `layout.json`.
+
+Phase 5 debug target keys are `overlay.direct_lighting`, `overlay.diffuse_gi`, `overlay.cache_confidence`, `overlay.variance`, `overlay.ray_budget`, `overlay.denoised_diffuse`, `overlay.denoise_rejection`, `overlay.debug_overlay`, and `overlay.final_composite`. `overlay.adaptive_sampling` is retained only as an alias for `overlay.ray_budget`.
 
 ## Descriptor Contract
 

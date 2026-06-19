@@ -25,13 +25,31 @@ The current contract reserves this order:
 6. `lucerna.debug.overlay`: reads diagnostic resources, debug labels, cache confidence, variance, and adaptive ray budget before writing the debug overlay target.
 7. `lucerna.composite.final`: currently represents flat-composite staging into the borrowed Minecraft/Sodium world color target before vanilla HUD and late translucency.
 
+Debug overlay runs before final composite so `lucerna.composite.final` can blend or ignore `lucerna.debug.overlay` according to the selected overlay mode. `numericId` values remain stable native/debug identifiers and are not used to sort this pipeline.
+
 ## Phase 5 Write Semantics
 
 - Direct lighting writes `lucerna.lighting.direct` after clearing it; it never blends into Minecraft/Sodium color targets.
-- GI writes `lucerna.lighting.diffuseGi`, `lucerna.lighting.cacheConfidence`, `lucerna.lighting.variance`, and `lucerna.lighting.rayBudget` after clearing them. `lucerna.lighting.rayBudget` is reserved adaptive sampling metadata with values `0` reuse-only, `1` low, `2` medium, and `3` high.
+- GI writes `lucerna.lighting.diffuseGi`, `lucerna.lighting.cacheConfidence`, `lucerna.lighting.variance`, and `lucerna.lighting.rayBudget` after clearing them. `lucerna.lighting.rayBudget` is the canonical ray-budget debug target and reserved adaptive sampling metadata with values `0` reuse-only, `1` low, `2` medium, and `3` high.
 - Denoise writes `lucerna.denoise.diffuse` and `lucerna.denoise.rejectionMask` after clearing them. Both are history-sensitive and depend on cache confidence plus variance metadata.
 - Debug writes `lucerna.debug.overlay` only when overlay mode needs it. It is optional, clear-before-write, and consumes `DebugLabelTable` for stable display names.
 - Composite writes only `lucerna.composite.worldColor`, the borrowed Minecraft/Sodium world color target. It must not own presentation or the swapchain.
+
+## Phase 5 Telemetry Names
+
+`phase5Telemetry.debugTargetNames` in `layout.json` is the canonical list for overlay labels and controller validation. The stable keys are:
+
+- `overlay.direct_lighting`: `lucerna.lighting.direct`
+- `overlay.diffuse_gi`: `lucerna.lighting.diffuseGi`
+- `overlay.cache_confidence`: `lucerna.lighting.cacheConfidence`
+- `overlay.variance`: `lucerna.lighting.variance`
+- `overlay.ray_budget`: `lucerna.lighting.rayBudget`
+- `overlay.denoised_diffuse`: `lucerna.denoise.diffuse`
+- `overlay.denoise_rejection`: `lucerna.denoise.rejectionMask`
+- `overlay.debug_overlay`: `lucerna.debug.overlay`
+- `overlay.final_composite`: `lucerna.composite.worldColor`
+
+`overlay.adaptive_sampling` remains a debug-label alias for `lucerna.lighting.rayBudget`; new code should prefer `overlay.ray_budget`.
 
 ## Descriptor Ownership
 

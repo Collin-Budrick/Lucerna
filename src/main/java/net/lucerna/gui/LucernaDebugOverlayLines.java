@@ -1,6 +1,8 @@
 package net.lucerna.gui;
 
 import net.lucerna.config.DebugOverlay;
+import net.lucerna.telemetry.LightingDispatchStageTelemetryStatus;
+import net.lucerna.telemetry.LightingDispatchTelemetryStatus;
 import net.lucerna.telemetry.NativePassTelemetryStatus;
 import net.lucerna.telemetry.LucernaStatusSnapshot;
 import net.minecraft.network.chat.Component;
@@ -160,6 +162,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("G-buffer staging explicit: " + snapshot.explicitGBufferStagingLabel()));
         lines.add(Component.literal("Staging payloads: " + snapshot.stagingPayloadLabel()));
         addNativePassStateLines(lines, snapshot);
+        addLightingDispatchLines(lines, snapshot);
         lines.add(Component.literal("Frame pass status: " + snapshot.framePassStatusLabel()));
         lines.add(Component.literal("First-pass validation: " + snapshot.firstPassValidationSummary()));
     }
@@ -173,6 +176,18 @@ public final class LucernaDebugOverlayLines {
 
         for (Map.Entry<String, String> entry : nativePassStates.passStates().entrySet()) {
             lines.add(Component.literal("Native pass " + entry.getKey() + ": " + entry.getValue()));
+        }
+    }
+
+    private static void addLightingDispatchLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        LightingDispatchTelemetryStatus lightingDispatch = snapshot.lightingDispatchStatus();
+        lines.add(Component.literal("Lighting dispatch: " + lightingDispatch.compactLabel()));
+        if (!lightingDispatch.hasStageStatuses()) {
+            return;
+        }
+
+        for (LightingDispatchStageTelemetryStatus stage : lightingDispatch.stages().values()) {
+            lines.add(Component.literal("Lighting stage: " + stage.compactLabel()));
         }
     }
 
