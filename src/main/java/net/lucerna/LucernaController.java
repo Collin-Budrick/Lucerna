@@ -300,6 +300,10 @@ public final class LucernaController {
         return this.nativeBridge.status();
     }
 
+    public DirectLightingCpuOutputPayload directLightingCpuOutputPayload() {
+        return this.nativeBridge.directLightingCpuOutputPayload();
+    }
+
     public void onViewportChanged(int width, int height) {
         if (width == this.viewportWidth && height == this.viewportHeight) {
             return;
