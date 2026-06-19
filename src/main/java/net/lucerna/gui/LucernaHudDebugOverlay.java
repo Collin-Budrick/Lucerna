@@ -3,6 +3,7 @@ package net.lucerna.gui;
 import net.lucerna.LucernaController;
 import net.lucerna.config.DebugOverlay;
 import net.lucerna.nativebridge.DirectLightingCpuOutputPayload;
+import net.lucerna.nativebridge.Round6DiffuseGiCpuOutputPayload;
 import net.lucerna.telemetry.LucernaStatusSnapshot;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -23,6 +24,9 @@ public final class LucernaHudDebugOverlay {
     private static final int PROOF_BACKGROUND_COLOR = 0xD0203038;
     private static final int PROOF_ACCENT_COLOR = 0xFF39E6FF;
     private static final int PROOF_READY_COLOR = 0xFFFFD34D;
+    private static final int GI_PROOF_FILL_COLOR = 0x78FFB040;
+    private static final int GI_PROOF_BORDER_COLOR = 0xFFFFF0A8;
+    private static final int GI_PROOF_LABEL_BACKGROUND_COLOR = 0xD0182418;
 
     private LucernaHudDebugOverlay() {
     }
@@ -38,7 +42,8 @@ public final class LucernaHudDebugOverlay {
 
         boolean debugOverlayVisible = controller.getConfig().debugOverlay() != DebugOverlay.OFF;
         boolean proofOverlayVisible = shouldRenderDirectLightProofOverlay(snapshot);
-        if (!debugOverlayVisible && !proofOverlayVisible) {
+        boolean round6GiProofVisible = shouldRenderRound6GiProofOverlay(snapshot);
+        if (!debugOverlayVisible && !proofOverlayVisible && !round6GiProofVisible) {
             return;
         }
 
@@ -47,6 +52,9 @@ public final class LucernaHudDebugOverlay {
         }
         if (proofOverlayVisible) {
             renderDirectLightProofOverlay(graphics, client, controller.directLightingCpuOutputPayload());
+        }
+        if (round6GiProofVisible) {
+            renderRound6GiProofOverlay(graphics, client, controller.round6DiffuseGiCpuOutputPayload());
         }
     }
 
@@ -98,6 +106,57 @@ public final class LucernaHudDebugOverlay {
             return false;
         }
         return LucernaController.getInstance().directLightingCpuOutputPayload().readyForPreviewDraw();
+    }
+
+    private static void renderRound6GiProofOverlay(
+            GuiGraphicsExtractor graphics,
+            Minecraft client,
+            Round6DiffuseGiCpuOutputPayload payload
+    ) {
+        int left = Math.max(0, Math.round(graphics.guiWidth() * 0.30F));
+        int top = Math.max(0, Math.round(graphics.guiHeight() * 0.20F));
+        int right = Math.min(graphics.guiWidth(), Math.round(graphics.guiWidth() * 0.70F));
+        int bottom = Math.min(graphics.guiHeight(), Math.round(graphics.guiHeight() * 0.75F));
+        if (right <= left || bottom <= top) {
+            return;
+        }
+
+        graphics.fill(left, top, right, bottom, GI_PROOF_FILL_COLOR);
+        graphics.fill(left, top, right, top + 2, GI_PROOF_BORDER_COLOR);
+        graphics.fill(left, bottom - 2, right, bottom, GI_PROOF_BORDER_COLOR);
+        graphics.fill(left, top, left + 2, bottom, GI_PROOF_BORDER_COLOR);
+        graphics.fill(right - 2, top, right, bottom, GI_PROOF_BORDER_COLOR);
+
+        int labelWidth = Math.min(150, Math.max(92, right - left - 8));
+        int labelLeft = left + 4;
+        int labelTop = top + 4;
+        graphics.fill(labelLeft, labelTop, labelLeft + labelWidth, labelTop + 22, GI_PROOF_LABEL_BACKGROUND_COLOR);
+        graphics.text(client.font, Component.literal("R6 GI proof"), labelLeft + 4, labelTop + 3, 0xFFFFFFFF);
+        graphics.text(
+                client.font,
+                Component.literal("GI " + round6GiEvidenceLabel(payload)),
+                labelLeft + 4,
+                labelTop + 13,
+                0xFFE5F0FF
+        );
+    }
+
+    private static boolean shouldRenderRound6GiProofOverlay(LucernaStatusSnapshot snapshot) {
+        if (!snapshot.rendererEnabled() || !snapshot.rendererActive()) {
+            return false;
+        }
+        return LucernaController.getInstance().round6DiffuseGiCpuOutputPayload().readyForPreviewDraw();
+    }
+
+    private static String round6GiEvidenceLabel(Round6DiffuseGiCpuOutputPayload payload) {
+        if (payload == null || !payload.readyForPreviewDraw()) {
+            return "";
+        }
+        String checksum = payload.snapshot().outputChecksum();
+        if (checksum.length() > 8) {
+            checksum = checksum.substring(checksum.length() - 8);
+        }
+        return "#" + checksum;
     }
 
     private static String proofEvidenceLabel(DirectLightingCpuOutputPayload payload) {
