@@ -50,8 +50,8 @@ public record Round6DiffuseGiPreviewCompositeState(
                     && cacheReadCount > 0
                     && cacheRecordCount > 0
                     && sourceDirectLightingReady
-                    ? "Round 6 diffuse GI/cache metadata is ready for final-composite preview"
-                    : "Round 6 diffuse GI/cache metadata is not ready for final-composite preview";
+                    ? "Round 6 diffuse GI output-source metadata is ready for final-composite preview"
+                    : "Round 6 diffuse GI output-source metadata is not ready for final-composite preview";
         } else {
             reason = reason.trim();
         }
@@ -148,13 +148,13 @@ public record Round6DiffuseGiPreviewCompositeState(
             return this.reason;
         }
         if (sourcePayload == null) {
-            return "Round 6 diffuse GI/cache metadata is ready, but no native GI preview payload is available";
+            return "Round 6 diffuse GI output-source metadata is ready, but no native diffuse GI RGBA8 payload is available";
         }
         if (!sourcePayload.readyForPreviewDraw()) {
-            return "Round 6 diffuse GI/cache metadata is ready, but the native GI preview payload is not displayable: "
+            return "Round 6 diffuse GI output-source metadata is ready, but the native diffuse GI RGBA8 payload is not displayable: "
                     + sourcePayload.previewReadinessReason();
         }
-        return "Round 6 diffuse GI/cache metadata and native GI RGBA8 payload are ready for GI-specific final-composite preview";
+        return "Round 6 diffuse GI output-source metadata and native diffuse GI RGBA8 payload are ready for diffuse-GI final-composite preview";
     }
 
     public String summary() {
@@ -171,7 +171,7 @@ public record Round6DiffuseGiPreviewCompositeState(
                 + ",surfaceRecords=" + this.surfaceRecordCount
                 + ",radianceRecords=" + this.radianceRecordCount
                 + ",cacheUsable=" + this.cacheUsable
-                + ",sourceDirectLightingReady=" + this.sourceDirectLightingReady
+                + ",sourceDirectInputReady=" + this.sourceDirectLightingReady
                 + ",source=\"" + this.sourceDebugLabel + "\""
                 + ",reason=\"" + this.reason + "\"";
     }
@@ -196,12 +196,12 @@ public record Round6DiffuseGiPreviewCompositeState(
             return "Round 6 diffuse GI dispatch has no rays";
         }
         if (!sourceDirectLightingReady) {
-            return "Round 6 diffuse GI source summary does not yet report direct-light readiness: "
+            return "Round 6 diffuse GI source summary does not yet report diffuse-GI source-input readiness: "
                     + (sourceDebugLabel == null || sourceDebugLabel.isBlank() ? "unavailable" : sourceDebugLabel.trim());
         }
         if (!cacheEnabled) {
-            return "Round 6 diffuse GI metadata is preview-ready with nonzero grid, rays, and direct-light source readiness; sparse cache record/write proof remains separate";
+            return "Round 6 diffuse GI metadata is preview-ready with nonzero grid, rays, and source-input readiness; sparse cache record/write proof remains separate";
         }
-        return "Round 6 diffuse GI/cache metadata is enabled with nonzero grid, rays, sparse cache records, and direct-light source readiness";
+        return "Round 6 diffuse GI/cache metadata is enabled with nonzero grid, rays, sparse cache records, and source-input readiness";
     }
 }

@@ -309,6 +309,14 @@ This is not yet controller-validated real native low-resolution GI lighting. The
 
 This still is not controller-validated real native low-resolution GI tracing. The validated replacement proves the final-composite preview source is native diffuse-GI metadata/output-source plumbing instead of the temporary direct-light RGBA payload.
 
+Immediate Round 6 slice:
+
+Move from metadata-backed native diffuse-GI preview output to deterministic native low-resolution GI output. The native path should produce a repeatable low-res diffuse-GI buffer from bounded scene inputs, not a visibility marker, metadata-derived brightness field, direct-light payload substitute, or focus-window-only proof source. The output can remain simple and low quality, but it must be attributable to native GI ray/sample/cache work and stable enough for controller screenshot and log comparison from the same scene.
+
+Current controller result for this slice:
+
+Native now has a build-green deterministic diffuse-GI-looking CPU output path that derives the bounded RGBA signal from GI ray/sample activity, cache read/write activity, and the latest native direct-light payload's emissive/celestial scene metadata. Java/log wording now identifies the source as native diffuse-GI output, and the HUD proof badge uses the neutral "CPU output proof" label instead of the older "R5 visual proof" label. Controller validation launched Sodium + Iris + Vulkan and captured enabled/baseline/debug screenshots, but the focused wall-region proof still failed: `run/validation-logs/round6-deterministic-native-gi-v5-proof-20260619-123851.json` reports `nativeGiOutputSourcePresent=True`, `temporaryDirectLightSourcePresent=False`, `max.giRays=409920`, `max.giCacheReads=13812`, and `nativeErrorPresent=False`, but `focus.changedPixelPercent=0`, `focus.brighterPixelPercent=0`, and `focus.meanSignedLuma=-0.114`. Treat this as compile/runtime progress only, not visible-GI validation.
+
 Validation by controller:
 
 Build and launch with Sodium Vulkan active.
@@ -332,6 +340,13 @@ low-res target dimensions,
 ray budget summary,
 cache confidence summary,
 no invalid descriptor/native errors.
+For the next deterministic native-output slice, controller proof must also show:
+native low-res GI output-source markers that identify real GI sample/output population rather than metadata-backed preview synthesis,
+deterministic output dimensions, sample count, nonzero write count, nonzero energy/checksum, and stable readiness reason,
+scene input counters tied to the proof scene, including emissive or skylight sources, surface/sample counts, cache reads or writes when enabled, and any rejected/fallback sample counts,
+baseline/enabled/debug screenshots from one controller launch, with a focused delta region that corresponds to the GI-lit surface or cave area,
+debug/raw GI view or overlay evidence from the same scene,
+no fallback to temporary direct-light RGBA payloads, metadata-only preview source, focus-window-only brightness, or proof-marker-only rendering.
 
 Visible-GI proof is separate from cache-write proof:
 
@@ -340,6 +355,8 @@ Controller must keep the log-only cache record/write evidence in a separate arti
 Controller-visible GI proof can use `scripts/Assert-LucernaRound6VisibleGiProof.ps1` to combine baseline/enabled focused screenshot delta, optional debug screenshot presence, and optional Round 6 GI dispatch log markers into one JSON report. This helper supports validation capture only; it does not replace controller-run Minecraft launch/screenshots and does not by itself mark visible GI validated.
 
 When replacing the temporary direct-light RGBA source, controller validation must require native diffuse-GI output-source markers distinct from the old temporary payload. Use `scripts/Invoke-LucernaVisualProof.ps1 -ValidationProfile Round6NativeDiffuseGi` for capture-time log gating, and run `scripts/Assert-LucernaRound6VisibleGiProof.ps1` with `-RequireLogProof -RequireNativeGiOutputSource` for the final proof JSON. The stricter helper path should fail if the launch log still reports `temporarySourceReady=true` or the readiness reason that says the GI preview is using the current direct-light RGBA payload.
+
+For the deterministic native low-res GI slice, these proof helpers may need stricter markers or a new profile. The controller-owned proof should fail if the log only proves native output-source replacement, metadata-backed preview readiness, cache writes, or screenshot-visible focus-window brightness without deterministic GI sample/output counters.
 
 The previous Application Control blocker is resolved for controller validation by signing the staged local native DLL with the local Lucerna development code-signing certificate and using the new `signNativeRuntime` Gradle task during validation.
 
@@ -403,6 +420,8 @@ Round 6 evidence split:
 - Real visible low-res GI evidence remains open until screenshots show native diffuse-GI output rather than the temporary direct-light RGBA source.
 - ~~Native-output replacement evidence includes the same screenshot proof plus a log-proof source gate that identifies native diffuse-GI output and rejects the temporary direct-light payload source marker.~~ **DONE/VALIDATED in `run/validation-logs/round6-native-gi-proof-20260619-121147.json`; `nativeGiOutputSourcePresent=True`, `temporaryDirectLightSourcePresent=False`, `focus.changedPixelPercent=42.7753`, `focus.brighterPixelPercent=41.4972`, `focus.meanSignedLuma=6.5612`**
 - Real visible low-res GI evidence remains open until screenshots show physical diffuse-GI tracing/accumulation rather than a metadata-backed native preview source.
+- Deterministic native low-res GI output evidence remains open until controller proof shows repeatable native GI sample/output population, nonzero GI writes/energy/checksum, scene-tied input counters, baseline/enabled/debug screenshots, and no metadata-backed preview/focus-window/proof-marker fallback.
+- Deterministic native output implementation is build/launch green but screenshot-proof failed for the focused wall region. **OPEN in `run/validation-logs/round6-deterministic-native-gi-v5-proof-20260619-123851.json`; logs prove native source markers and no temporary direct-light fallback, but the wall-region visual delta is still zero.**
 - Combined Round 6 acceptance: only mark Round 6 GI/cache criteria **DONE/VALIDATED** after both evidence tracks pass in controller-run validation.
 Round 7: Denoise and Composite Path
 Goal
@@ -965,12 +984,12 @@ Do not jump to neural/ReSTIR/Nanite-like systems before the first lighting miles
 
 Current implementation focus:
 
-Round 5 has a controller-validated focus-window final-composite proof, but physically correct direct/emissive surface projection remains open. Round 6 native diffuse-GI source replacement is now controller-validated as a metadata-backed native preview source; do not present it as real low-res GI tracing or physically correct diffuse GI.
+Round 5 has a controller-validated focus-window final-composite proof, but physically correct direct/emissive surface projection remains open. Round 6 native diffuse-GI source replacement is controller-validated as a metadata-backed native preview source, and the deterministic native-output attempt is build/launch green but still screenshot-proof failed in the focused wall region; do not present either as real low-res GI tracing or physically correct diffuse GI.
 
 Immediate Round 6 documentation/validation boundary:
 
-Java-side GI source-summary, native upload metadata, dirty-region listener, sparse radiance-cache scaffolding, Round 6 overlay text, native Round 6 telemetry, controller GI/cache metadata logs, log-only cache records/writes, and native diffuse-GI source replacement are now validated. The remaining Round 6 gap is real low-resolution diffuse-GI tracing/accumulation plus a dedicated GI/cache debug overlay screenshot.
+Java-side GI source-summary, native upload metadata, dirty-region listener, sparse radiance-cache scaffolding, Round 6 overlay text, native Round 6 telemetry, controller GI/cache metadata logs, log-only cache records/writes, native diffuse-GI source replacement, and build-green deterministic native output generation are now implemented. The remaining Round 6 gap is making that native output actually brighten the proof wall/scene through a real composite or surface-projection path, plus a dedicated GI/cache debug overlay screenshot.
 
 The next immediate milestone is:
 
-Make low-res diffuse GI visibly affect a simple scene through real native GI tracing/accumulation, screenshot raw/debug output, and prove the logs match.
+Make low-res diffuse GI visibly affect a simple scene through deterministic native GI sample/output population, screenshot raw/debug output, and prove the logs match the scene without falling back to metadata-backed preview, focus-window-only brightness, proof markers, or direct-light payload substitution.

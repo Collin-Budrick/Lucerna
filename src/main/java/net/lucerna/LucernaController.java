@@ -1280,7 +1280,7 @@ public final class LucernaController {
 
         this.lastLoggedRound6DiffuseGiPreviewKey = logKey;
         Lucerna.LOGGER.info(
-                "Lucerna Round 6 diffuse GI preview composite: ready={} diffuseGiEnabled={} cacheEnabled={} generation={} grid={}x{} samples={} rays={} cacheReads={} cacheWrites={} cacheRecords={} sourceDirectReady={} nativeDiffuseGiOutputReady={} sourceType=nativeDiffuseGi nativeGiPayload={} reason={}.",
+                "Lucerna Round 6 diffuse GI preview composite: ready={} diffuseGiEnabled={} cacheEnabled={} generation={} grid={}x{} samples={} rays={} cacheReads={} cacheWrites={} cacheRecords={} sourceDirectInputReady={} nativeDiffuseGiOutputReady={} outputSource=nativeDiffuseGi nativeDiffuseGiPayload={} reason={}.",
                 state.readyForFinalComposite(sourcePayload),
                 state.diffuseGiEnabled(),
                 state.cacheEnabled(),

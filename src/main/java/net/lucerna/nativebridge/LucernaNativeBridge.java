@@ -130,7 +130,7 @@ public final class LucernaNativeBridge {
             return new Round6DiffuseGiCpuOutputPayload(
                     snapshot,
                     new byte[0],
-                    "Round 6 diffuse GI/cache metadata is not ready for native GI preview payload: "
+                    "Round 6 diffuse GI/cache metadata is not ready for native diffuse GI output preview payload: "
                             + previewState.summary()
             );
         }

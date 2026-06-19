@@ -83,7 +83,7 @@ public final class LucernaHudDebugOverlay {
         graphics.fill(left, top, left + 2, bottom, PROOF_ACCENT_COLOR);
         graphics.fill(right - 2, top, right, bottom, PROOF_ACCENT_COLOR);
         graphics.fill(left + 5, top + 6, left + 17, bottom - 6, PROOF_READY_COLOR);
-        graphics.text(client.font, Component.literal("R5 visual proof"), left + 22, top + 5, 0xFFFFFFFF);
+        graphics.text(client.font, Component.literal("CPU output proof"), left + 22, top + 5, 0xFFFFFFFF);
         graphics.text(
                 client.font,
                 Component.literal("CPU " + proofEvidenceLabel(payload)),

@@ -463,7 +463,7 @@ public final class RenderThreadPreviewTargetFactory {
                     true,
                     target.attachmentMetadata().javaOpaque(),
                     PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
-                    "public Mojang Round 6 diffuse GI final composite skipped because native GI RGBA8 payload is unavailable"
+                    "public Mojang Round 6 diffuse GI final composite skipped because native diffuse GI RGBA8 output payload is unavailable"
             );
         }
         if (!diffuseGiPayload.readyForPreviewDraw()) {
@@ -471,7 +471,7 @@ public final class RenderThreadPreviewTargetFactory {
                     true,
                     target.attachmentMetadata().javaOpaque(),
                     PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
-                    "public Mojang Round 6 diffuse GI final composite skipped because native GI RGBA8 payload is not displayable: "
+                    "public Mojang Round 6 diffuse GI final composite skipped because native diffuse GI RGBA8 output payload is not displayable: "
                             + diffuseGiPayload.debugSummary()
             );
         }
@@ -513,9 +513,9 @@ public final class RenderThreadPreviewTargetFactory {
                 drawScaffold.drawCallsIssued(),
                 target.attachmentMetadata().javaOpaque(),
                 PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
-                "public Mojang Round 6 diffuse GI final composite preview render pass submitted; readiness: "
+                "public Mojang Round 6 diffuse GI output final composite preview render pass submitted; readiness: "
                         + previewState.summary()
-                        + "; native GI payload: "
+                        + "; native diffuse GI output payload: "
                         + diffuseGiPayload.debugSummary()
                         + "; upload: "
                         + upload.summary()

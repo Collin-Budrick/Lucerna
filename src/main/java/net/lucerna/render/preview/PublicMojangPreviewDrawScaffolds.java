@@ -276,7 +276,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                     FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                     SINGLE_INSTANCE_COUNT,
                     FIRST_INSTANCE,
-                    "public Mojang Round 6 diffuse GI final composite APIs are present, but no temporary source texture view is available"
+                    "public Mojang Round 6 diffuse GI final composite APIs are present, but no native diffuse GI output texture view is available"
             );
         }
 
@@ -288,7 +288,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang Round 6 diffuse GI final composite can bind a temporary source texture and issue one bounded focus-window additive draw"
+                "public Mojang Round 6 diffuse GI final composite can bind a native diffuse GI output texture and issue one bounded focus-window additive draw"
         );
     }
 
@@ -309,7 +309,7 @@ public final class PublicMojangPreviewDrawScaffolds {
         }
         if (sourceSampler == null) {
             return PublicMojangPreviewDrawScaffold.unavailable(
-                    "public Mojang Round 6 diffuse GI final composite draw skipped because no temporary source sampler is available"
+                    "public Mojang Round 6 diffuse GI final composite draw skipped because no native diffuse GI output sampler is available"
             );
         }
 
