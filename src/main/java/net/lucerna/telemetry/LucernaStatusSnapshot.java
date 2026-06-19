@@ -113,7 +113,7 @@ public record LucernaStatusSnapshot(
                 ),
                 UploadGenerationTelemetryStatus.from(controller.uploadQueue()),
                 frameLifecycle,
-                FrameConstantsTelemetryStatus.unavailable(frameLifecycle, capturedNanos),
+                FrameConstantsTelemetryStatus.from(controller.frameConstants(), frameLifecycle, capturedNanos),
                 FrameTimingTelemetryStatus.from(controller.telemetry()),
                 capturedNanos
         );

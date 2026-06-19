@@ -25,6 +25,13 @@ enum class NativeResourceKind : std::uint8_t {
     Image
 };
 
+enum class NativeResourceIntentStage : std::uint8_t {
+    WorldDeltaUpload,
+    SectionUpload,
+    VoxelUpload,
+    FutureGBuffer
+};
+
 struct BorrowedVulkanContext {
     std::uint64_t instance = 0;
     std::uint64_t physical_device = 0;
@@ -52,6 +59,26 @@ struct ResourceLifetimeCounters {
     std::uint64_t reused = 0;
     std::uint64_t released = 0;
     std::uint64_t live = 0;
+};
+
+struct ResourceAllocationIntent {
+    NativeResourceKind kind = NativeResourceKind::Buffer;
+    NativeResourceIntentStage stage = NativeResourceIntentStage::WorldDeltaUpload;
+    std::uint64_t generation = 0;
+    std::uint64_t frame_index = 0;
+    std::uint64_t estimated_bytes = 0;
+    std::int32_t width = 0;
+    std::int32_t height = 0;
+    std::uint32_t format_tag = 0;
+    std::string debug_label;
+};
+
+struct ResourceAllocationIntentCounters {
+    std::uint64_t recorded = 0;
+    std::uint64_t buffers = 0;
+    std::uint64_t images = 0;
+    std::uint64_t estimated_bytes = 0;
+    std::uint64_t last_generation = 0;
 };
 
 struct NativeBufferHandle {
@@ -86,14 +113,17 @@ struct FrameResources {
     std::uint64_t reset_count = 0;
     std::vector<NativeBufferHandle> transient_buffers;
     std::vector<NativeImageHandle> transient_images;
+    std::vector<ResourceAllocationIntent> allocation_intents;
     ResourceLifetimeCounters buffer_lifetime;
     ResourceLifetimeCounters image_lifetime;
+    ResourceAllocationIntentCounters allocation_intent_counters;
 
     void clear_transient();
     void clear_transient(std::uint64_t release_generation);
 
     [[nodiscard]] std::size_t live_buffer_count() const;
     [[nodiscard]] std::size_t live_image_count() const;
+    [[nodiscard]] std::size_t allocation_intent_count() const;
     [[nodiscard]] FrameResourceRingStats stats() const;
     [[nodiscard]] std::string status() const;
 };
@@ -107,8 +137,10 @@ struct FrameResourceRingStats {
     std::size_t transient_image_count = 0;
     std::size_t live_buffer_count = 0;
     std::size_t live_image_count = 0;
+    std::size_t allocation_intent_count = 0;
     ResourceLifetimeCounters buffer_lifetime;
     ResourceLifetimeCounters image_lifetime;
+    ResourceAllocationIntentCounters allocation_intent_counters;
 };
 
 struct ResourceManagerStats {
@@ -124,8 +156,10 @@ struct ResourceManagerStats {
     std::size_t transient_image_count = 0;
     std::size_t live_buffer_count = 0;
     std::size_t live_image_count = 0;
+    std::size_t allocation_intent_count = 0;
     ResourceLifetimeCounters buffer_lifetime;
     ResourceLifetimeCounters image_lifetime;
+    ResourceAllocationIntentCounters allocation_intent_counters;
     std::vector<FrameResourceRingStats> rings;
 };
 
@@ -156,6 +190,19 @@ public:
             std::uint32_t format_tag,
             std::string debug_label,
             NativeResourceOwnership ownership = NativeResourceOwnership::LucernaPlaceholder);
+    ResourceAllocationIntent& track_buffer_allocation_intent(
+            std::uint64_t frame_index,
+            std::uint64_t byte_size,
+            std::string debug_label,
+            NativeResourceIntentStage stage);
+    ResourceAllocationIntent& track_image_allocation_intent(
+            std::uint64_t frame_index,
+            std::int32_t width,
+            std::int32_t height,
+            std::uint32_t format_tag,
+            std::uint64_t estimated_bytes,
+            std::string debug_label,
+            NativeResourceIntentStage stage);
 
     [[nodiscard]] bool has_context() const;
     [[nodiscard]] std::uint32_t frames_in_flight() const;
@@ -184,6 +231,8 @@ private:
 };
 
 [[nodiscard]] const char* to_string(BorrowedContextState state);
+[[nodiscard]] const char* to_string(NativeResourceKind kind);
 [[nodiscard]] const char* to_string(NativeResourceOwnership ownership);
+[[nodiscard]] const char* to_string(NativeResourceIntentStage stage);
 
 } // namespace lucerna

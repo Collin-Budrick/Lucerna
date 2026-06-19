@@ -39,12 +39,38 @@ const char* to_string(BorrowedContextState state) {
     return "unknown";
 }
 
+const char* to_string(NativeResourceKind kind) {
+    switch (kind) {
+        case NativeResourceKind::Buffer:
+            return "buffer";
+        case NativeResourceKind::Image:
+            return "image";
+    }
+
+    return "unknown";
+}
+
 const char* to_string(NativeResourceOwnership ownership) {
     switch (ownership) {
         case NativeResourceOwnership::Borrowed:
             return "borrowed";
         case NativeResourceOwnership::LucernaPlaceholder:
             return "lucerna_placeholder";
+    }
+
+    return "unknown";
+}
+
+const char* to_string(NativeResourceIntentStage stage) {
+    switch (stage) {
+        case NativeResourceIntentStage::WorldDeltaUpload:
+            return "world_delta_upload";
+        case NativeResourceIntentStage::SectionUpload:
+            return "section_upload";
+        case NativeResourceIntentStage::VoxelUpload:
+            return "voxel_upload";
+        case NativeResourceIntentStage::FutureGBuffer:
+            return "future_gbuffer";
     }
 
     return "unknown";
@@ -88,6 +114,7 @@ void FrameResources::clear_transient(std::uint64_t release_generation) {
         }
     }
     transient_images.clear();
+    allocation_intents.clear();
     buffer_lifetime.live = 0;
     image_lifetime.live = 0;
 }
@@ -112,6 +139,10 @@ std::size_t FrameResources::live_image_count() const {
     return count;
 }
 
+std::size_t FrameResources::allocation_intent_count() const {
+    return allocation_intents.size();
+}
+
 FrameResourceRingStats FrameResources::stats() const {
     return FrameResourceRingStats{
         ring_index,
@@ -122,8 +153,10 @@ FrameResourceRingStats FrameResources::stats() const {
         transient_images.size(),
         live_buffer_count(),
         live_image_count(),
+        allocation_intent_count(),
         buffer_lifetime,
-        image_lifetime
+        image_lifetime,
+        allocation_intent_counters
     };
 }
 
@@ -142,6 +175,13 @@ std::string FrameResources::status() const {
         << ",created=" << image_lifetime.created
         << ",reused=" << image_lifetime.reused
         << ",released=" << image_lifetime.released
+        << "}"
+        << " allocation_intents={active=" << allocation_intent_count()
+        << ",recorded=" << allocation_intent_counters.recorded
+        << ",buffers=" << allocation_intent_counters.buffers
+        << ",images=" << allocation_intent_counters.images
+        << ",estimated_bytes=" << allocation_intent_counters.estimated_bytes
+        << ",last_generation=" << allocation_intent_counters.last_generation
         << "}";
 
     if (!transient_buffers.empty()) {
@@ -167,6 +207,21 @@ std::string FrameResources::status() const {
             << ",created_generation=" << image.lifetime.created_generation
             << ",last_used_generation=" << image.lifetime.last_used_generation
             << "}";
+    }
+
+    if (!allocation_intents.empty()) {
+        const auto& intent = allocation_intents.front();
+        out << " first_intent={label=\"" << intent.debug_label
+            << "\",kind=" << to_string(intent.kind)
+            << ",stage=" << to_string(intent.stage)
+            << ",frame=" << intent.frame_index
+            << ",generation=" << intent.generation
+            << ",estimated_bytes=" << intent.estimated_bytes;
+        if (intent.kind == NativeResourceKind::Image) {
+            out << ",size=" << intent.width << "x" << intent.height
+                << ",format_tag=" << intent.format_tag;
+        }
+        out << "}";
     }
 
     return out.str();
@@ -327,6 +382,60 @@ NativeImageHandle& ResourceManager::track_transient_image(
     return resources.transient_images.back();
 }
 
+ResourceAllocationIntent& ResourceManager::track_buffer_allocation_intent(
+        std::uint64_t frame_index,
+        std::uint64_t byte_size,
+        std::string debug_label,
+        NativeResourceIntentStage stage) {
+    auto& resources = frame(frame_index);
+    const auto generation = next_resource_generation();
+
+    ResourceAllocationIntent intent;
+    intent.kind = NativeResourceKind::Buffer;
+    intent.stage = stage;
+    intent.generation = generation;
+    intent.frame_index = frame_index;
+    intent.estimated_bytes = byte_size;
+    intent.debug_label = label_or(std::move(debug_label), "buffer-allocation-intent");
+
+    resources.allocation_intents.push_back(std::move(intent));
+    resources.allocation_intent_counters.recorded++;
+    resources.allocation_intent_counters.buffers++;
+    resources.allocation_intent_counters.estimated_bytes += byte_size;
+    resources.allocation_intent_counters.last_generation = generation;
+    return resources.allocation_intents.back();
+}
+
+ResourceAllocationIntent& ResourceManager::track_image_allocation_intent(
+        std::uint64_t frame_index,
+        std::int32_t width,
+        std::int32_t height,
+        std::uint32_t format_tag,
+        std::uint64_t estimated_bytes,
+        std::string debug_label,
+        NativeResourceIntentStage stage) {
+    auto& resources = frame(frame_index);
+    const auto generation = next_resource_generation();
+
+    ResourceAllocationIntent intent;
+    intent.kind = NativeResourceKind::Image;
+    intent.stage = stage;
+    intent.generation = generation;
+    intent.frame_index = frame_index;
+    intent.estimated_bytes = estimated_bytes;
+    intent.width = width;
+    intent.height = height;
+    intent.format_tag = format_tag;
+    intent.debug_label = label_or(std::move(debug_label), "image-allocation-intent");
+
+    resources.allocation_intents.push_back(std::move(intent));
+    resources.allocation_intent_counters.recorded++;
+    resources.allocation_intent_counters.images++;
+    resources.allocation_intent_counters.estimated_bytes += estimated_bytes;
+    resources.allocation_intent_counters.last_generation = generation;
+    return resources.allocation_intents.back();
+}
+
 bool ResourceManager::has_context() const {
     return has_context_;
 }
@@ -369,6 +478,7 @@ ResourceManagerStats ResourceManager::stats() const {
         result.transient_image_count += ring.transient_image_count;
         result.live_buffer_count += ring.live_buffer_count;
         result.live_image_count += ring.live_image_count;
+        result.allocation_intent_count += ring.allocation_intent_count;
         result.buffer_lifetime.created += ring.buffer_lifetime.created;
         result.buffer_lifetime.reused += ring.buffer_lifetime.reused;
         result.buffer_lifetime.released += ring.buffer_lifetime.released;
@@ -377,6 +487,13 @@ ResourceManagerStats ResourceManager::stats() const {
         result.image_lifetime.reused += ring.image_lifetime.reused;
         result.image_lifetime.released += ring.image_lifetime.released;
         result.image_lifetime.live += ring.image_lifetime.live;
+        result.allocation_intent_counters.recorded += ring.allocation_intent_counters.recorded;
+        result.allocation_intent_counters.buffers += ring.allocation_intent_counters.buffers;
+        result.allocation_intent_counters.images += ring.allocation_intent_counters.images;
+        result.allocation_intent_counters.estimated_bytes += ring.allocation_intent_counters.estimated_bytes;
+        if (ring.allocation_intent_counters.last_generation > result.allocation_intent_counters.last_generation) {
+            result.allocation_intent_counters.last_generation = ring.allocation_intent_counters.last_generation;
+        }
         result.rings.push_back(ring);
     }
 
@@ -407,12 +524,18 @@ std::string ResourceManager::status() const {
         << ",transient_images=" << resource_stats.transient_image_count
         << ",live_buffers=" << resource_stats.live_buffer_count
         << ",live_images=" << resource_stats.live_image_count
+        << ",allocation_intents=" << resource_stats.allocation_intent_count
         << ",buffers_created=" << resource_stats.buffer_lifetime.created
         << ",buffers_reused=" << resource_stats.buffer_lifetime.reused
         << ",buffers_released=" << resource_stats.buffer_lifetime.released
         << ",images_created=" << resource_stats.image_lifetime.created
         << ",images_reused=" << resource_stats.image_lifetime.reused
         << ",images_released=" << resource_stats.image_lifetime.released
+        << ",intent_recorded=" << resource_stats.allocation_intent_counters.recorded
+        << ",intent_buffers=" << resource_stats.allocation_intent_counters.buffers
+        << ",intent_images=" << resource_stats.allocation_intent_counters.images
+        << ",intent_estimated_bytes=" << resource_stats.allocation_intent_counters.estimated_bytes
+        << ",intent_last_generation=" << resource_stats.allocation_intent_counters.last_generation
         << "}"
         << " frame_rings=[";
     for (std::size_t index = 0; index < frames_.size(); index++) {

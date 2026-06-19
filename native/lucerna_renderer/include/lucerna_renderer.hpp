@@ -87,6 +87,50 @@ struct NativeRenderPassCounters {
     bool submitted_this_frame = false;
 };
 
+struct NativeSectionStagingTelemetry {
+    std::uint64_t packets = 0;
+    std::uint64_t advertised_dirty_regions = 0;
+    std::uint64_t payload_dirty_regions = 0;
+    std::uint64_t section_scoped_regions = 0;
+    std::uint64_t global_regions = 0;
+    std::uint64_t last_packet_generation = 0;
+    std::uint64_t last_first_generation = 0;
+    std::uint64_t last_generation = 0;
+    std::uint64_t last_estimated_bytes = 0;
+    std::uint64_t total_estimated_bytes = 0;
+    std::uint64_t placeholder_buffers = 0;
+};
+
+struct NativeVoxelStagingTelemetry {
+    std::uint64_t packets = 0;
+    std::uint64_t dirty_sections = 0;
+    std::uint64_t last_dirty_sections = 0;
+    std::uint64_t last_estimated_voxels = 0;
+    std::uint64_t last_occupancy_words = 0;
+    std::uint64_t last_material_indices = 0;
+    std::uint64_t last_estimated_bytes = 0;
+    std::uint64_t total_estimated_bytes = 0;
+    std::uint64_t placeholder_buffers = 0;
+};
+
+struct NativeGBufferStagingTelemetry {
+    std::uint64_t frames_planned = 0;
+    std::uint64_t allocation_intents = 0;
+    std::uint64_t attachment_intents = 0;
+    std::uint64_t last_attachment_count = 0;
+    std::uint64_t last_estimated_bytes = 0;
+    std::uint64_t total_estimated_bytes = 0;
+    std::int32_t last_width = 0;
+    std::int32_t last_height = 0;
+    bool planned_this_frame = false;
+};
+
+struct NativeStagingTelemetry {
+    NativeSectionStagingTelemetry section;
+    NativeVoxelStagingTelemetry voxel;
+    NativeGBufferStagingTelemetry gbuffer;
+};
+
 class Renderer {
 public:
     Renderer();
@@ -114,7 +158,11 @@ private:
     void clear_error();
     void set_error(std::string error);
     [[nodiscard]] std::uint64_t estimate_upload_staging_bytes(const UploadPacket& packet) const;
+    [[nodiscard]] std::uint64_t estimate_section_staging_bytes(std::uint64_t dirty_section_count) const;
+    [[nodiscard]] std::uint64_t estimate_voxel_staging_bytes(std::uint64_t dirty_section_count) const;
+    [[nodiscard]] std::uint64_t estimate_gbuffer_attachment_bytes(std::int32_t width, std::int32_t height, std::uint32_t bytes_per_pixel) const;
     void track_upload_staging_placeholder(const UploadPacket& packet);
+    void track_gbuffer_placeholder_intent();
     [[nodiscard]] std::uint64_t track_noop_lighting_placeholder();
     [[nodiscard]] std::uint64_t track_flat_composite_placeholder();
     void reset_pass_counters();
@@ -127,6 +175,7 @@ private:
 
     std::unique_ptr<ResourceManager> resources_;
     std::array<NativeRenderPassCounters, kNativeRenderPassCount> pass_counters_;
+    NativeStagingTelemetry staging_;
     std::string last_error_;
     bool initialized_ = false;
     bool frame_open_ = false;

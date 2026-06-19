@@ -4,6 +4,7 @@ import net.lucerna.compat.BackendKind;
 import net.lucerna.compat.BackendStatus;
 import net.lucerna.compat.iris.IrisCompat;
 import net.lucerna.compat.sodium.LucernaBackendDetector;
+import net.lucerna.config.DebugOverlay;
 import net.lucerna.config.LucernaConfig;
 import net.lucerna.config.LucernaConfigManager;
 import net.lucerna.material.MaterialRegistry;
@@ -12,9 +13,14 @@ import net.lucerna.material.extract.MaterialTableRefreshResult;
 import net.lucerna.nativebridge.LucernaNativeBridge;
 import net.lucerna.render.LucernaFrameHooks;
 import net.lucerna.render.context.MojangVulkanBorrowedContextProbe;
+import net.lucerna.render.frame.FrameConstantsCapture;
+import net.lucerna.render.frame.FrameRenderFlags;
+import net.lucerna.render.frame.LucernaFrameConstantsCollector;
+import net.lucerna.render.frame.LucernaFrameConstants;
 import net.lucerna.telemetry.LucernaTelemetry;
 import net.lucerna.upload.NativeUploadQueue;
 import net.lucerna.world.LucernaWorldFeed;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.resources.model.ModelManager;
 
 public final class LucernaController {
@@ -34,13 +40,19 @@ public final class LucernaController {
             telemetry,
             MojangVulkanBorrowedContextProbe.instance()
     );
+    private final LucernaFrameConstantsCollector frameConstantsCollector = new LucernaFrameConstantsCollector();
 
     private BackendStatus backendStatus = BackendStatus.disabled(BackendKind.UNKNOWN, "Lucerna has not checked the renderer backend yet.");
     private boolean initialized;
     private boolean nativeInitialized;
     private int viewportWidth = -1;
     private int viewportHeight = -1;
+    private long frameConstantsFrameIndex;
     private String lastLoggedFrameContextKey = "";
+    private String lastLoggedFrameConstantsKey = "";
+    private FrameConstantsCapture frameConstantsCapture = FrameConstantsCapture.unavailable(
+            "Frame constants have not been captured by Fabric level extraction yet."
+    );
 
     private LucernaController() {
     }
@@ -85,6 +97,9 @@ public final class LucernaController {
             this.nativeInitialized = false;
         }
         this.telemetry.clear();
+        this.frameConstantsCollector.reset();
+        this.frameConstantsFrameIndex = 0L;
+        this.frameConstantsCapture = FrameConstantsCapture.unavailable("Lucerna is shutting down.");
         Lucerna.LOGGER.info("Lucerna shutdown complete.");
     }
 
@@ -135,6 +150,14 @@ public final class LucernaController {
         return this.frameHooks;
     }
 
+    public FrameConstantsCapture frameConstantsCapture() {
+        return this.frameConstantsCapture;
+    }
+
+    public LucernaFrameConstants frameConstants() {
+        return this.frameConstantsCapture.constants();
+    }
+
     public LucernaNativeBridge.NativeBridgeStatus nativeBridgeStatus() {
         return this.nativeBridge.status();
     }
@@ -146,7 +169,28 @@ public final class LucernaController {
 
         this.viewportWidth = width;
         this.viewportHeight = height;
+        this.frameConstantsCollector.requestHistoryReset("Viewport changed to " + width + "x" + height + ".");
         this.frameHooks.onResize(width, height);
+    }
+
+    public void captureFrameConstants(Object renderContext, float tickDelta) {
+        if (!this.initialized || renderContext == null) {
+            return;
+        }
+
+        long frameIndex = ++this.frameConstantsFrameIndex;
+        this.frameConstantsCapture = this.frameConstantsCollector.captureMinecraftContext(
+                Minecraft.getInstance(),
+                renderContext,
+                this.currentFrameRenderFlags(),
+                frameIndex,
+                tickDelta
+        );
+        this.logFrameConstantsStatusIfChanged();
+    }
+
+    public void requestFrameHistoryReset(String reason) {
+        this.frameConstantsCollector.requestHistoryReset(reason);
     }
 
     public MaterialTableRefreshResult refreshMaterials(ModelManager modelManager) {
@@ -212,6 +256,21 @@ public final class LucernaController {
         this.refreshMaterials(null);
     }
 
+    private FrameRenderFlags currentFrameRenderFlags() {
+        boolean active = this.isRendererActive();
+        return new FrameRenderFlags(
+                this.getConfig().qualityPreset(),
+                this.getConfig().debugOverlay(),
+                this.getConfig().rendererEnabled(),
+                active,
+                active,
+                active,
+                active,
+                active,
+                this.getConfig().debugOverlay() != DebugOverlay.OFF
+        );
+    }
+
     private void submitNoOpFrame(float tickDelta) {
         var beginResult = this.frameHooks.beginFrame(this.backendStatus, tickDelta);
         this.logFrameContextStatusIfChanged();
@@ -242,6 +301,25 @@ public final class LucernaController {
                 acquisition.status(),
                 acquisition.source(),
                 acquisition.message()
+        );
+    }
+
+    private void logFrameConstantsStatusIfChanged() {
+        String logKey = this.frameConstantsCapture.stateLabel()
+                + "|"
+                + this.frameConstantsCapture.source()
+                + "|"
+                + this.frameConstantsCapture.message();
+        if (logKey.equals(this.lastLoggedFrameConstantsKey)) {
+            return;
+        }
+
+        this.lastLoggedFrameConstantsKey = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna frame constants {} via {}: {}",
+                this.frameConstantsCapture.stateLabel(),
+                this.frameConstantsCapture.source(),
+                this.frameConstantsCapture.message()
         );
     }
 }

@@ -31,3 +31,7 @@ The current contract reserves this order:
 ## Validation Notes
 
 The validation scenarios in `layout.json` are controller-run only. Sub-agents may edit this metadata and placeholder files, but must not run shader compilation, Gradle checks, compiler checks, native builds, Minecraft launches, or render smoke tests.
+
+## Java Metadata Scaffold
+
+`net.lucerna.render.resources` mirrors the descriptive parts of `layout.json` for Java-side validation and future native handoff planning. It parses from a caller-provided reader, models pass ids, descriptor sets, descriptor bindings, attachments, and validation findings, and does not load renderer state or compile shader sources.

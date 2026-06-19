@@ -13,8 +13,18 @@ namespace {
 
 constexpr std::uint64_t kEstimatedDirtyRegionUploadBytes = 64;
 constexpr std::uint64_t kEstimatedMaterialUploadBytes = 128;
+constexpr std::uint64_t kEstimatedSectionMetadataBytes = 96;
+constexpr std::uint64_t kSectionVoxelCount = 16 * 16 * 16;
+constexpr std::uint64_t kVoxelOccupancyWordCount = kSectionVoxelCount / 64;
+constexpr std::uint64_t kVoxelOccupancyBytesPerSection = kVoxelOccupancyWordCount * sizeof(std::uint64_t);
+constexpr std::uint64_t kVoxelMaterialIndexBytesPerSection = kSectionVoxelCount * sizeof(std::uint16_t);
 constexpr std::uint64_t kLightingConstantsBytes = 256;
 constexpr std::uint32_t kNoopCompositeFormatTag = 1;
+constexpr std::uint32_t kGBufferDepthFormatTag = 10;
+constexpr std::uint32_t kGBufferNormalMaterialFormatTag = 11;
+constexpr std::uint32_t kGBufferAlbedoEmissiveFormatTag = 12;
+constexpr std::uint32_t kGBufferMotionHistoryFormatTag = 13;
+constexpr std::uint32_t kGBufferReactiveMaskFormatTag = 14;
 
 std::size_t pass_index(NativeRenderPass pass) {
     return static_cast<std::size_t>(pass);
@@ -105,6 +115,7 @@ void Renderer::init() {
     end_frame_without_context_count_ = 0;
     end_frame_without_lighting_count_ = 0;
     reset_pass_counters();
+    staging_ = {};
     clear_error();
 }
 
@@ -149,6 +160,7 @@ void Renderer::shutdown() {
     end_frame_without_context_count_ = 0;
     end_frame_without_lighting_count_ = 0;
     reset_pass_counters();
+    staging_ = {};
     clear_error();
 }
 
@@ -443,7 +455,35 @@ std::string Renderer::status() const {
         << ",materials=" << upload_material_payload_total_
         << "}"
         << " world_generation=" << last_upload_packet_.first_world_generation << "-" << last_upload_packet_.last_world_generation
-        << " material_generation=" << last_upload_packet_.material_generation;
+        << " material_generation=" << last_upload_packet_.material_generation
+        << " staging={section={packets=" << staging_.section.packets
+        << ",advertised_dirty_regions=" << staging_.section.advertised_dirty_regions
+        << ",payload_dirty_regions=" << staging_.section.payload_dirty_regions
+        << ",section_scoped=" << staging_.section.section_scoped_regions
+        << ",global=" << staging_.section.global_regions
+        << ",last_packet_generation=" << staging_.section.last_packet_generation
+        << ",last_generation_range=" << staging_.section.last_first_generation << "-" << staging_.section.last_generation
+        << ",last_estimated_bytes=" << staging_.section.last_estimated_bytes
+        << ",total_estimated_bytes=" << staging_.section.total_estimated_bytes
+        << ",placeholder_buffers=" << staging_.section.placeholder_buffers
+        << "},voxel={packets=" << staging_.voxel.packets
+        << ",dirty_sections=" << staging_.voxel.dirty_sections
+        << ",last_dirty_sections=" << staging_.voxel.last_dirty_sections
+        << ",last_estimated_voxels=" << staging_.voxel.last_estimated_voxels
+        << ",last_occupancy_words=" << staging_.voxel.last_occupancy_words
+        << ",last_material_indices=" << staging_.voxel.last_material_indices
+        << ",last_estimated_bytes=" << staging_.voxel.last_estimated_bytes
+        << ",total_estimated_bytes=" << staging_.voxel.total_estimated_bytes
+        << ",placeholder_buffers=" << staging_.voxel.placeholder_buffers
+        << "},gbuffer={frames_planned=" << staging_.gbuffer.frames_planned
+        << ",allocation_intents=" << staging_.gbuffer.allocation_intents
+        << ",attachment_intents=" << staging_.gbuffer.attachment_intents
+        << ",last_attachment_count=" << staging_.gbuffer.last_attachment_count
+        << ",last_size=" << staging_.gbuffer.last_width << "x" << staging_.gbuffer.last_height
+        << ",last_estimated_bytes=" << staging_.gbuffer.last_estimated_bytes
+        << ",total_estimated_bytes=" << staging_.gbuffer.total_estimated_bytes
+        << ",planned_this_frame=" << staging_.gbuffer.planned_this_frame
+        << "}}";
     if (resources_ != nullptr) {
         const auto resource_stats = resources_->stats();
         out << " resource_ring_stats={frames_in_flight=" << resource_stats.frames_in_flight
@@ -460,6 +500,11 @@ std::string Renderer::status() const {
             << ",images_created=" << resource_stats.image_lifetime.created
             << ",images_reused=" << resource_stats.image_lifetime.reused
             << ",images_released=" << resource_stats.image_lifetime.released
+            << ",allocation_intents=" << resource_stats.allocation_intent_count
+            << ",intent_recorded=" << resource_stats.allocation_intent_counters.recorded
+            << ",intent_buffers=" << resource_stats.allocation_intent_counters.buffers
+            << ",intent_images=" << resource_stats.allocation_intent_counters.images
+            << ",intent_estimated_bytes=" << resource_stats.allocation_intent_counters.estimated_bytes
             << "}";
         out << " resources={" << resources_->status() << "}";
     } else {
@@ -491,17 +536,139 @@ std::uint64_t Renderer::estimate_upload_staging_bytes(const UploadPacket& packet
     return dirty_bytes + material_bytes;
 }
 
+std::uint64_t Renderer::estimate_section_staging_bytes(std::uint64_t dirty_section_count) const {
+    return dirty_section_count * kEstimatedSectionMetadataBytes;
+}
+
+std::uint64_t Renderer::estimate_voxel_staging_bytes(std::uint64_t dirty_section_count) const {
+    return dirty_section_count * (kVoxelOccupancyBytesPerSection + kVoxelMaterialIndexBytesPerSection);
+}
+
+std::uint64_t Renderer::estimate_gbuffer_attachment_bytes(
+        std::int32_t width,
+        std::int32_t height,
+        std::uint32_t bytes_per_pixel) const {
+    if (width <= 0 || height <= 0 || bytes_per_pixel == 0) {
+        return 0;
+    }
+
+    return static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height) * bytes_per_pixel;
+}
+
 void Renderer::track_upload_staging_placeholder(const UploadPacket& packet) {
+    std::uint64_t section_scoped_regions = 0;
+    for (const auto& dirty_region : packet.dirty_regions) {
+        if (dirty_region.section_scoped) {
+            section_scoped_regions++;
+        }
+    }
+
+    const auto payload_dirty_regions = static_cast<std::uint64_t>(packet.dirty_regions.size());
+    const auto global_regions = payload_dirty_regions - section_scoped_regions;
+    const auto section_staging_bytes = estimate_section_staging_bytes(payload_dirty_regions);
+    const auto voxel_staging_bytes = estimate_voxel_staging_bytes(section_scoped_regions);
+
+    staging_.section.packets++;
+    staging_.section.advertised_dirty_regions += static_cast<std::uint64_t>(packet.dirty_region_count);
+    staging_.section.payload_dirty_regions += payload_dirty_regions;
+    staging_.section.section_scoped_regions += section_scoped_regions;
+    staging_.section.global_regions += global_regions;
+    staging_.section.last_packet_generation = packet.generation;
+    staging_.section.last_first_generation = packet.first_world_generation;
+    staging_.section.last_generation = packet.last_world_generation;
+    staging_.section.last_estimated_bytes = section_staging_bytes;
+    staging_.section.total_estimated_bytes += section_staging_bytes;
+
+    staging_.voxel.packets++;
+    staging_.voxel.dirty_sections += section_scoped_regions;
+    staging_.voxel.last_dirty_sections = section_scoped_regions;
+    staging_.voxel.last_estimated_voxels = section_scoped_regions * kSectionVoxelCount;
+    staging_.voxel.last_occupancy_words = section_scoped_regions * kVoxelOccupancyWordCount;
+    staging_.voxel.last_material_indices = section_scoped_regions * kSectionVoxelCount;
+    staging_.voxel.last_estimated_bytes = voxel_staging_bytes;
+    staging_.voxel.total_estimated_bytes += voxel_staging_bytes;
+
+    const auto staging_bytes = estimate_upload_staging_bytes(packet);
     if (resources_ == nullptr || !frame_open_) {
         return;
     }
 
-    const auto staging_bytes = estimate_upload_staging_bytes(packet);
-    if (staging_bytes == 0) {
+    if (staging_bytes != 0) {
+        resources_->track_buffer_allocation_intent(
+                frame_index_,
+                staging_bytes,
+                "upload:world-delta-staging-intent",
+                NativeResourceIntentStage::WorldDeltaUpload);
+        resources_->track_transient_buffer(frame_index_, 0, staging_bytes, "upload:world-delta-staging");
+    }
+
+    if (section_staging_bytes != 0) {
+        resources_->track_buffer_allocation_intent(
+                frame_index_,
+                section_staging_bytes,
+                "upload:section-metadata-staging-intent",
+                NativeResourceIntentStage::SectionUpload);
+        resources_->track_transient_buffer(frame_index_, 0, section_staging_bytes, "upload:section-metadata-staging");
+        staging_.section.placeholder_buffers++;
+    }
+
+    if (voxel_staging_bytes != 0) {
+        resources_->track_buffer_allocation_intent(
+                frame_index_,
+                voxel_staging_bytes,
+                "upload:voxel-occupancy-material-staging-intent",
+                NativeResourceIntentStage::VoxelUpload);
+        resources_->track_transient_buffer(frame_index_, 0, voxel_staging_bytes, "upload:voxel-occupancy-material-staging");
+        staging_.voxel.placeholder_buffers++;
+    }
+}
+
+void Renderer::track_gbuffer_placeholder_intent() {
+    staging_.gbuffer.frames_planned++;
+    staging_.gbuffer.last_width = width_;
+    staging_.gbuffer.last_height = height_;
+    staging_.gbuffer.last_attachment_count = 0;
+    staging_.gbuffer.last_estimated_bytes = 0;
+    staging_.gbuffer.planned_this_frame = false;
+
+    if (resources_ == nullptr || !frame_open_ || width_ <= 0 || height_ <= 0) {
         return;
     }
 
-    resources_->track_transient_buffer(frame_index_, 0, staging_bytes, "upload:world-delta-staging");
+    struct AttachmentIntent {
+        const char* label;
+        std::uint32_t format_tag;
+        std::uint32_t bytes_per_pixel;
+    };
+
+    constexpr AttachmentIntent attachments[] = {
+        {"gbuffer:depth-intent", kGBufferDepthFormatTag, 4},
+        {"gbuffer:normal-material-intent", kGBufferNormalMaterialFormatTag, 4},
+        {"gbuffer:albedo-emissive-intent", kGBufferAlbedoEmissiveFormatTag, 8},
+        {"gbuffer:motion-history-intent", kGBufferMotionHistoryFormatTag, 8},
+        {"gbuffer:reactive-mask-intent", kGBufferReactiveMaskFormatTag, 1}
+    };
+
+    std::uint64_t frame_estimated_bytes = 0;
+    for (const auto& attachment : attachments) {
+        const auto estimated_bytes = estimate_gbuffer_attachment_bytes(width_, height_, attachment.bytes_per_pixel);
+        resources_->track_image_allocation_intent(
+                frame_index_,
+                width_,
+                height_,
+                attachment.format_tag,
+                estimated_bytes,
+                attachment.label,
+                NativeResourceIntentStage::FutureGBuffer);
+        frame_estimated_bytes += estimated_bytes;
+        staging_.gbuffer.allocation_intents++;
+        staging_.gbuffer.attachment_intents++;
+        staging_.gbuffer.last_attachment_count++;
+    }
+
+    staging_.gbuffer.last_estimated_bytes = frame_estimated_bytes;
+    staging_.gbuffer.total_estimated_bytes += frame_estimated_bytes;
+    staging_.gbuffer.planned_this_frame = true;
 }
 
 std::uint64_t Renderer::track_noop_lighting_placeholder() {
@@ -547,6 +714,7 @@ void Renderer::prepare_frame_passes() {
             : NativeRenderPassState::WaitingForContext;
     }
 
+    track_gbuffer_placeholder_intent();
     mark_pass_not_wired(NativeRenderPass::FutureGBuffer);
 }
 
