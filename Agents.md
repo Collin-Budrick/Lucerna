@@ -11,7 +11,7 @@ This percentage is conservative:
 - Latest controller work also adds a HUD-safe, explicitly labeled Round 5 visual-proof marker gated by the same preview-ready native direct-light CPU payload used by the sampled draw path. This proves screenshot-visible native direct-light readiness, but it is not a substitute for real surface lighting.
 - Latest controller work moves the final world-color composite hook from `GameRenderer.renderLevel` tail to immediately after `LevelRenderer.render(...)`, removes the older sampled public preview draw from that hook, adds final-composite frame/pass intent contracts, and validates final-composite public Mojang draw submission before hand/HUD composition. Screenshot delta still shows no focused wall-region brightening, so real surface lighting remains open.
 - Latest controller work restores the launchable native DLL path after the unvalidated native spatialization generated an Application Control-blocked DLL, then moves the Round 5 visible proof into a final-composite-only focus-window shader. Sodium + Iris + Vulkan now loads the native DLL, submits the focus-window final composite, and screenshot delta proves visible brightening in the focused wall region while preserving the HUD.
-- Current Round 6 preparation has controller-validated Java/cache scaffolding for GI source summaries, native diffuse-GI upload metadata, dirty-region listener hooks, sparse voxel radiance cache records/confidence/invalidation/debug status, Round 6 debug overlay presentation, native Round 6 dispatch telemetry, a bounded native diffuse-GI visible-signal telemetry marker, a GI-labeled final-composite preview path, and a screenshot-delta proof for a Round 6 GI-gated preview. Sodium + Iris + Vulkan launch validation proves low-res GI dispatch metadata can become enabled with nonzero rays/cache reads, a separate cache proof validates nonzero cache records/writes, and the GI preview path produces a focused screenshot difference. True native low-res GI output/tracing remains open because the current visible preview still uses the direct-light RGBA payload as its temporary source.
+- Current Round 6 preparation has controller-validated Java/cache scaffolding for GI source summaries, native diffuse-GI upload metadata, dirty-region listener hooks, sparse voxel radiance cache records/confidence/invalidation/debug status, Round 6 debug overlay presentation, native Round 6 dispatch telemetry, a bounded native diffuse-GI visible-signal telemetry marker, a GI-labeled final-composite preview path, and a screenshot-delta proof for a Round 6 GI-gated preview. Sodium + Iris + Vulkan launch validation proves low-res GI dispatch metadata can become enabled with nonzero rays/cache reads, a separate cache proof validates nonzero cache records/writes, and the GI preview path produces a focused screenshot difference. Native diffuse-GI output-source replacement work is implemented and build-green, but runtime validation is currently blocked because Windows Application Control blocks `run/native/lucerna_renderer/lucerna_renderer.dll`; keep true native low-res GI output/tracing open until that DLL can load and the stricter native-source visual proof passes.
 - The remaining work is the hardest part: turning Phase 5 metadata/planning into visible direct light, low-res GI, denoise, composite behavior, and richer debug telemetry.
 
 Legend:
@@ -303,7 +303,9 @@ This does not prove screenshot-visible low-resolution GI output, visible indirec
 
 ~~Controller launch/screenshot validation now proves a bounded Round 6 GI-gated final-composite preview path can produce a focused visible image delta with enabled diffuse-GI/cache metadata and a submitted `round6-diffuse-gi-focus-window-additive` draw.~~ **DONE/VALIDATED as preview-only in `run/validation-logs/latest-round6-visible-gi-enabled-20260619-103414.log`, `run/validation-screenshots/round6-visible-gi-enabled-20260619-103414-Enabled.png`, `run/validation-screenshots/round6-visible-gi-baseline-20260619-103615-Baseline.png`, `run/validation-screenshots/round6-visible-gi-debug-20260619-103655-Debug.png`, and `run/validation-logs/round6-visible-gi-proof-20260619-103414.json`**
 
-This is not yet real native low-resolution GI lighting. The visible preview is explicitly gated by Round 6 diffuse-GI/cache metadata but uses the current direct-light RGBA payload as the temporary visible source until a native GI output buffer is exposed.
+This is not yet controller-validated real native low-resolution GI lighting. The visible preview above is explicitly gated by Round 6 diffuse-GI/cache metadata but uses the current direct-light RGBA payload as the temporary visible source.
+
+Native diffuse-GI output-source replacement work is implemented and build-green, but it is not struck through here because the controller has not completed runtime validation. The immediate blocker is Windows Application Control blocking `run/native/lucerna_renderer/lucerna_renderer.dll` during launch, so the stricter native diffuse-GI source proof cannot yet confirm that the temporary direct-light payload source has been replaced in a real Sodium + Iris + Vulkan run.
 
 Validation by controller:
 
@@ -334,6 +336,10 @@ Visible-GI proof is separate from cache-write proof:
 Controller must keep the log-only cache record/write evidence in a separate artifact from screenshot delta evidence. Nonzero cache records or `cache_writes` prove cache activity only; they do not prove visible diffuse GI. A Round 6 visible-GI pass still needs baseline/enabled screenshots, a focused image-delta report for the lit surface or cave region, and a debug GI/cache screenshot from the same scene.
 
 Controller-visible GI proof can use `scripts/Assert-LucernaRound6VisibleGiProof.ps1` to combine baseline/enabled focused screenshot delta, optional debug screenshot presence, and optional Round 6 GI dispatch log markers into one JSON report. This helper supports validation capture only; it does not replace controller-run Minecraft launch/screenshots and does not by itself mark visible GI validated.
+
+When replacing the temporary direct-light RGBA source, controller validation must require native diffuse-GI output-source markers distinct from the old temporary payload. Use `scripts/Invoke-LucernaVisualProof.ps1 -ValidationProfile Round6NativeDiffuseGi` for capture-time log gating, and run `scripts/Assert-LucernaRound6VisibleGiProof.ps1` with `-RequireLogProof -RequireNativeGiOutputSource` for the final proof JSON. The stricter helper path should fail if the launch log still reports `temporarySourceReady=true` or the readiness reason that says the GI preview is using the current direct-light RGBA payload.
+
+Current blocker for that replacement proof: Windows Application Control blocks `run/native/lucerna_renderer/lucerna_renderer.dll`, preventing controller launch validation of the build-green native diffuse-GI source work.
 Agent T: First Sparse Voxel Radiance Cache
 
 Owns:
@@ -387,6 +393,7 @@ Round 6 evidence split:
 - ~~Cache record/write evidence: log-only, pass/fail, based on nonzero sparse/cache records plus nonzero cache writes in the Round 6 dispatch/cache telemetry.~~ **DONE/VALIDATED**
 - ~~Visible-GI preview evidence: screenshot-based, pass/fail, based on baseline/enabled/debug captures and objective region delta for the target surface or cave area.~~ **DONE/VALIDATED for the GI-gated preview path in `run/validation-logs/round6-visible-gi-proof-20260619-103414.json`**
 - Real visible low-res GI evidence remains open until screenshots show native diffuse-GI output rather than the temporary direct-light RGBA source.
+- Native-output replacement evidence must include the same screenshot proof plus a log-proof source gate that identifies native diffuse-GI output and rejects the temporary direct-light payload source marker; do not count the existing GI-gated preview proof as this replacement evidence. The source replacement is implemented/build-green but remains runtime-blocked until Windows Application Control stops blocking `run/native/lucerna_renderer/lucerna_renderer.dll`.
 - Combined Round 6 acceptance: only mark Round 6 GI/cache criteria **DONE/VALIDATED** after both evidence tracks pass in controller-run validation.
 Round 7: Denoise and Composite Path
 Goal
@@ -853,6 +860,7 @@ Latest strong validation evidence:
   - ~~Low-res GI dispatch metadata becomes enabled with `diffuse_gi={{enabled=true,size=427x240,samples=2,rays=409920,cache_reads=14150,...}}`.~~ **DONE/VALIDATED in `run/validation-logs/latest-round6-gi-cache-partial-sodium-iris-vulkan-20260619-094433.log`**
   - ~~Sparse cache dirty-region telemetry, nonzero records, and nonzero cache writes are validated with `max.cacheRecords=128`, `max.cacheWrites=256`, and `max.cacheReads=7564`.~~ **DONE/VALIDATED in `run/validation-logs/latest-round6-cache-stage-sodium-iris-vulkan-20260619-095852.log` and `run/validation-logs/round6-cache-stage-proof-20260619-095852.json`**
   - ~~Round 6 GI-gated final-composite preview is screenshot-validated with focused region delta `changedPixelPercent=57.5159`, `brighterPixelPercent=58.1384`, and `meanSignedLuma=8.8609`, plus `round6-diffuse-gi-focus-window-additive` draw submission.~~ **DONE/VALIDATED as preview-only in `run/validation-logs/round6-visible-gi-proof-20260619-103414.json` and `run/validation-logs/latest-round6-visible-gi-enabled-20260619-103414.log`**
+  - Native diffuse-GI output-source replacement is implemented/build-green, but runtime validation is blocked by Windows Application Control blocking `run/native/lucerna_renderer/lucerna_renderer.dll`; do not mark it **DONE/VALIDATED** until the controller can launch with that DLL and the native-source proof gate passes.
   - Low-res GI, denoise, physically correct final surface projection, and full final composite remain open.
 
 ## Assumptions
@@ -948,12 +956,12 @@ Do not jump to neural/ReSTIR/Nanite-like systems before the first lighting miles
 
 Current implementation focus:
 
-Round 5 has a controller-validated focus-window final-composite proof, but physically correct direct/emissive surface projection remains open. Round 6 should now advance low-resolution diffuse GI and sparse radiance-cache behavior without presenting Java/cache scaffolding as validated rendering.
+Round 5 has a controller-validated focus-window final-composite proof, but physically correct direct/emissive surface projection remains open. Round 6 native diffuse-GI source replacement is implemented/build-green, but runtime validation is blocked by Windows Application Control blocking `run/native/lucerna_renderer/lucerna_renderer.dll`; do not present the replacement as validated rendering until controller launch proof exists.
 
 Immediate Round 6 documentation/validation boundary:
 
-Java-side GI source-summary, native upload metadata, dirty-region listener, sparse radiance-cache scaffolding, Round 6 overlay text, native Round 6 telemetry, controller GI/cache metadata logs, and log-only cache records/writes are now validated. The controller still needs to fill the visual evidence gap with debug overlay screenshots and before/after scene screenshots before the Round 6 visible-GI acceptance criteria are marked **DONE/VALIDATED**.
+Java-side GI source-summary, native upload metadata, dirty-region listener, sparse radiance-cache scaffolding, Round 6 overlay text, native Round 6 telemetry, controller GI/cache metadata logs, and log-only cache records/writes are now validated. The native diffuse-GI source replacement is only implemented/build-green until Windows Application Control stops blocking `run/native/lucerna_renderer/lucerna_renderer.dll` and the controller can capture the stricter native-source proof.
 
-The next immediate visual milestone is:
+The next immediate milestone is:
 
-Make low-res diffuse GI visibly affect a simple scene, screenshot raw/debug output, and prove the logs match.
+Unblock `run/native/lucerna_renderer/lucerna_renderer.dll` under Windows Application Control, then run the native diffuse-GI source proof that rejects the temporary direct-light RGBA payload. After that, make low-res diffuse GI visibly affect a simple scene, screenshot raw/debug output, and prove the logs match.

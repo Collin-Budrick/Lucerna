@@ -2,7 +2,7 @@ param(
     [ValidateSet("Baseline", "Enabled", "Debug")]
     [string] $Mode,
 
-    [ValidateSet("Round5Direct", "Round6DiffuseGi")]
+    [ValidateSet("Round5Direct", "Round6DiffuseGi", "Round6NativeDiffuseGi")]
     [string] $ValidationProfile = "Round5Direct",
 
     [string] $WorldName = "New World",
@@ -81,10 +81,33 @@ function Wait-LatestLogPattern {
     param(
         [string] $LogPath,
         [string[]] $RequiredPatterns,
-        [datetime] $Deadline
+        [datetime] $Deadline,
+        [string[]] $EarlyFailureLogPaths = @()
     )
 
+    $earlyFailurePatterns = @(
+        "Lucerna native library is not available yet",
+        "Application Control policy has blocked this file"
+    )
+    $pathsToScan = @($LogPath) + @($EarlyFailureLogPaths)
+
     while ((Get-Date) -lt $Deadline) {
+        foreach ($path in $pathsToScan) {
+            if ([string]::IsNullOrWhiteSpace($path) -or -not (Test-Path -LiteralPath $path)) {
+                continue
+            }
+            try {
+                $candidateLog = Get-Content -Raw -LiteralPath $path
+            } catch {
+                continue
+            }
+            foreach ($pattern in $earlyFailurePatterns) {
+                if ($candidateLog -match $pattern) {
+                    throw "Lucerna visual proof failed early before required markers were observed. Matched native-load failure marker '$pattern' in $path."
+                }
+            }
+        }
+
         if (Test-Path -LiteralPath $LogPath) {
             try {
                 $log = Get-Content -Raw -LiteralPath $LogPath
@@ -307,7 +330,14 @@ try {
         "Lucerna backend status: SODIUM_VULKAN",
         "joined the game"
     )
-    $enabledPatterns = if ($ValidationProfile -eq "Round6DiffuseGi") {
+    $enabledPatterns = if ($ValidationProfile -eq "Round6NativeDiffuseGi") {
+        @(
+            "Lucerna Round 6 lighting dispatch prepared: .*diffuse_gi=\{\{enabled=true,.*rays=[1-9][0-9]*,cache_reads=[1-9][0-9]*",
+            "Lucerna Round 6 diffuse GI preview composite: .*ready=true .*(?:nativeGiOutputReady|nativeDiffuseGiOutputReady|sourceNativeGiReady)=true",
+            "Lucerna Round 6 diffuse GI preview composite: .*ready=true .*(?:temporarySourceReady=false|(?:visibleSource|outputSource|source|sourceType)=`"?native[-_ ]?diffuse[-_ ]?gi)",
+            "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*mode=round6-diffuse-gi-"
+        )
+    } elseif ($ValidationProfile -eq "Round6DiffuseGi") {
         @(
             "Lucerna Round 6 lighting dispatch prepared: .*diffuse_gi=\{\{enabled=true,.*rays=[1-9][0-9]*,cache_reads=[1-9][0-9]*",
             "Lucerna Round 6 diffuse GI preview composite: ready=true .*temporarySourceReady=true",
@@ -320,7 +350,8 @@ try {
         "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*mode=final-composite-direct-light-focus-window-additive"
         )
     }
-    Wait-LatestLogPattern $latestLog $commonPatterns $deadline
+    $earlyFailureLogPaths = @($gradleOut, $gradleErr)
+    Wait-LatestLogPattern $latestLog $commonPatterns $deadline $earlyFailureLogPaths
 
     Invoke-OptionalSceneSetup
     if ($SetupScene) {
@@ -328,7 +359,7 @@ try {
     }
 
     if ($Mode -ne "Baseline") {
-        Wait-LatestLogPattern $latestLog $enabledPatterns $deadline
+        Wait-LatestLogPattern $latestLog $enabledPatterns $deadline $earlyFailureLogPaths
     }
 
     $existingScreenshotNames = @(Get-ChildItem -LiteralPath $screenshotDir -Filter "*.png" -ErrorAction SilentlyContinue |

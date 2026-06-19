@@ -33,9 +33,17 @@ param(
 
     [long] $MinGiCacheReads = 1,
 
+    [string[]] $NativeGiOutputSourcePatterns = @(
+        "Lucerna Round 6 diffuse GI preview composite: .*ready=true .*(?:nativeGiOutputReady|nativeDiffuseGiOutputReady|sourceNativeGiReady)=true",
+        "Lucerna Round 6 diffuse GI preview composite: .*ready=true .*(?:visibleSource|outputSource|source|sourceType)=`"?native[-_ ]?diffuse[-_ ]?gi",
+        "Lucerna public Mojang final composite: .*mode=round6-diffuse-gi-.*(?:visibleSource|outputSource|source|sourceType)=`"?native[-_ ]?diffuse[-_ ]?gi"
+    ),
+
     [switch] $RequireDebugScreenshot,
 
-    [switch] $RequireLogProof
+    [switch] $RequireLogProof,
+
+    [switch] $RequireNativeGiOutputSource
 )
 
 $ErrorActionPreference = "Stop"
@@ -133,6 +141,20 @@ function Test-Regex {
     return [regex]::IsMatch($Text, $Pattern)
 }
 
+function Test-AnyRegex {
+    param(
+        [string] $Text,
+        [string[]] $Patterns
+    )
+
+    foreach ($pattern in $Patterns) {
+        if (Test-Regex $Text $pattern) {
+            return $true
+        }
+    }
+    return $false
+}
+
 function Measure-Round6LogProof {
     param([string] $ResolvedLogPath)
 
@@ -143,6 +165,8 @@ function Measure-Round6LogProof {
     $giSizePresent = Test-Regex $log "diffuse_gi=\{\{?enabled=true,size=\d+x\d+"
     $cacheConfidencePresent = Test-Regex $log "(cache_confidence|confidence)="
     $debugOverlayPresent = Test-Regex $log "(Round 6|GI|cache).*debug|debug.*(Round 6|GI|cache)"
+    $nativeGiOutputSourcePresent = Test-AnyRegex $log $NativeGiOutputSourcePatterns
+    $temporaryDirectLightSourcePresent = Test-Regex $log "Lucerna Round 6 diffuse GI preview composite: .*temporarySourceReady=true|using the current direct-light RGBA payload as the temporary visible source until native GI output is exposed"
     $nativeErrorPresent = Test-Regex $log "(?i)(invalid descriptor|VK_ERROR|Lucerna native error|native error)"
 
     $maxGiRays = Get-MaxRegexNumber $log "(?:diffuse_gi=\{\{?enabled=true,[^`r`n]*?rays=|rays=)(\d+)"
@@ -160,6 +184,8 @@ function Measure-Round6LogProof {
             cacheStagePresent = $cacheStagePresent
             cacheConfidencePresent = $cacheConfidencePresent
             debugOverlayPresent = $debugOverlayPresent
+            nativeGiOutputSourcePresent = $nativeGiOutputSourcePresent
+            temporaryDirectLightSourcePresent = $temporaryDirectLightSourcePresent
             nativeErrorPresent = $nativeErrorPresent
         }
         maxima = [ordered]@{
@@ -231,6 +257,12 @@ if ($logProof) {
     if ($logProof.markers.nativeErrorPresent) {
         $failures.Add("Log contains native/Vulkan error markers.")
     }
+    if ($RequireNativeGiOutputSource -and -not $logProof.markers.nativeGiOutputSourcePresent) {
+        $failures.Add("Missing native diffuse-GI output source marker distinct from the temporary direct-light payload.")
+    }
+    if ($RequireNativeGiOutputSource -and $logProof.markers.temporaryDirectLightSourcePresent) {
+        $failures.Add("Log still contains the temporary direct-light payload source marker.")
+    }
 }
 
 $result = [ordered]@{
@@ -246,6 +278,8 @@ $result = [ordered]@{
         brightPixelThreshold = $BrightPixelThreshold
         minGiRays = $MinGiRays
         minGiCacheReads = $MinGiCacheReads
+        requireNativeGiOutputSource = [bool]$RequireNativeGiOutputSource
+        nativeGiOutputSourcePatterns = @($NativeGiOutputSourcePatterns)
         requireDebugScreenshot = [bool]$RequireDebugScreenshot
         requireLogProof = [bool]$RequireLogProof
     }
@@ -281,6 +315,8 @@ if ($logProof) {
     Write-Host "roundSixDispatchPresent=$($logProof.markers.roundSixDispatchPresent)"
     Write-Host "diffuseGiEnabled=$($logProof.markers.diffuseGiEnabled)"
     Write-Host "giSizePresent=$($logProof.markers.giSizePresent)"
+    Write-Host "nativeGiOutputSourcePresent=$($logProof.markers.nativeGiOutputSourcePresent)"
+    Write-Host "temporaryDirectLightSourcePresent=$($logProof.markers.temporaryDirectLightSourcePresent)"
     Write-Host "max.giRays=$($logProof.maxima.giRays)"
     Write-Host "max.giCacheReads=$($logProof.maxima.giCacheReads)"
     Write-Host "nativeErrorPresent=$($logProof.markers.nativeErrorPresent)"

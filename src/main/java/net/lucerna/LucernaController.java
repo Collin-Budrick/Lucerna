@@ -13,6 +13,7 @@ import net.lucerna.material.extract.MaterialTableRefreshResult;
 import net.lucerna.nativebridge.DirectLightingPreviewCompositeSubmissionResult;
 import net.lucerna.nativebridge.DirectLightingCpuOutputPayload;
 import net.lucerna.nativebridge.LucernaNativeBridge;
+import net.lucerna.nativebridge.Round6DiffuseGiCpuOutputPayload;
 import net.lucerna.render.GBufferDescriptor;
 import net.lucerna.render.gbuffer.GBufferWriteIntent;
 import net.lucerna.render.gbuffer.PrimaryVoxelGBufferPassPlan;
@@ -296,7 +297,9 @@ public final class LucernaController {
             this.logDirectPreviewCompositeStatusIfChanged(submission);
             DirectLightingCpuOutputPayload directOutputPayload = this.nativeBridge.directLightingCpuOutputPayload();
             Round6DiffuseGiPreviewCompositeState giPreviewState = this.round6DiffuseGiPreviewCompositeState;
-            this.logRound6DiffuseGiPreviewStatusIfChanged(giPreviewState, directOutputPayload);
+            Round6DiffuseGiCpuOutputPayload diffuseGiPayload =
+                    this.nativeBridge.round6DiffuseGiCpuOutputPayload(giPreviewState);
+            this.logRound6DiffuseGiPreviewStatusIfChanged(giPreviewState, diffuseGiPayload);
             LucernaFramePassRequest finalCompositeRequest = LucernaFramePassRequest.finalWorldColorComposite(
                     this.frameHooks.frameIndex(),
                     target,
@@ -304,11 +307,11 @@ public final class LucernaController {
                     0.35F
             );
             PublicMojangFinalCompositeSubmissionResult finalCompositeSubmission = giPreviewState.readyForFinalComposite(
-                    directOutputPayload
+                    diffuseGiPayload
             )
                     ? RenderThreadPreviewTargetFactory.submitRound6DiffuseGiFinalCompositePublicDraw(
                             target,
-                            directOutputPayload,
+                            diffuseGiPayload,
                             giPreviewState
                     )
                     : RenderThreadPreviewTargetFactory.submitFinalCompositePublicDraw(target, directOutputPayload);
@@ -334,6 +337,10 @@ public final class LucernaController {
 
     public DirectLightingCpuOutputPayload directLightingCpuOutputPayload() {
         return this.nativeBridge.directLightingCpuOutputPayload();
+    }
+
+    public Round6DiffuseGiCpuOutputPayload round6DiffuseGiCpuOutputPayload() {
+        return this.nativeBridge.round6DiffuseGiCpuOutputPayload(this.round6DiffuseGiPreviewCompositeState);
     }
 
     public void onViewportChanged(int width, int height) {
@@ -1236,7 +1243,7 @@ public final class LucernaController {
 
     private void logRound6DiffuseGiPreviewStatusIfChanged(
             Round6DiffuseGiPreviewCompositeState state,
-            DirectLightingCpuOutputPayload sourcePayload
+            Round6DiffuseGiCpuOutputPayload sourcePayload
     ) {
         if (state == null) {
             return;
@@ -1273,7 +1280,7 @@ public final class LucernaController {
 
         this.lastLoggedRound6DiffuseGiPreviewKey = logKey;
         Lucerna.LOGGER.info(
-                "Lucerna Round 6 diffuse GI preview composite: ready={} diffuseGiEnabled={} cacheEnabled={} generation={} grid={}x{} samples={} rays={} cacheReads={} cacheWrites={} cacheRecords={} sourceDirectReady={} temporarySourceReady={} reason={}.",
+                "Lucerna Round 6 diffuse GI preview composite: ready={} diffuseGiEnabled={} cacheEnabled={} generation={} grid={}x{} samples={} rays={} cacheReads={} cacheWrites={} cacheRecords={} sourceDirectReady={} nativeDiffuseGiOutputReady={} sourceType=nativeDiffuseGi nativeGiPayload={} reason={}.",
                 state.readyForFinalComposite(sourcePayload),
                 state.diffuseGiEnabled(),
                 state.cacheEnabled(),
@@ -1287,6 +1294,7 @@ public final class LucernaController {
                 state.cacheRecordCount(),
                 state.sourceDirectLightingReady(),
                 sourceReady,
+                sourcePayload == null ? "missing" : sourcePayload.debugSummary(),
                 readinessReason
         );
     }

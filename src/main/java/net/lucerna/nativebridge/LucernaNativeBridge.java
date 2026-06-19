@@ -5,6 +5,7 @@ import net.lucerna.render.gbuffer.GBufferTargetContract;
 import net.lucerna.render.pass.LucernaFramePassKind;
 import net.lucerna.render.pass.LucernaFramePassRequest;
 import net.lucerna.render.pass.LucernaFramePassTarget;
+import net.lucerna.render.preview.Round6DiffuseGiPreviewCompositeState;
 import net.lucerna.upload.NativeDirectLightingUploadPacket;
 import net.lucerna.upload.NativeGBufferStagingUploadPacket;
 import net.lucerna.upload.NativeLightingDispatchUploadPacket;
@@ -33,6 +34,7 @@ public final class LucernaNativeBridge {
     private long lastLoggedLightingDispatchGeneration;
     private String lastLoggedDirectLightingExecutionKey = "";
     private boolean directLightingUploadUnavailableLogged;
+    private boolean diffuseGiPreviewRgba8ExportUnavailable;
 
     public synchronized boolean hasLoadAttempted() {
         return this.loadAttempted;
@@ -106,6 +108,84 @@ public final class LucernaNativeBridge {
                 snapshot,
                 rgba8,
                 "native direct-light CPU output preview RGBA8 payload copied"
+        );
+    }
+
+    public synchronized Round6DiffuseGiCpuOutputSnapshot round6DiffuseGiCpuOutputSnapshot() {
+        if (!this.loaded) {
+            return Round6DiffuseGiCpuOutputSnapshot.unavailable("native library not loaded");
+        }
+        return Round6DiffuseGiCpuOutputSnapshot.fromNativeStatus(this.queryNativeStatus());
+    }
+
+    public synchronized Round6DiffuseGiCpuOutputPayload round6DiffuseGiCpuOutputPayload(
+            Round6DiffuseGiPreviewCompositeState previewState
+    ) {
+        if (!this.loaded) {
+            return Round6DiffuseGiCpuOutputPayload.unavailable("native library not loaded");
+        }
+
+        Round6DiffuseGiCpuOutputSnapshot snapshot = this.round6DiffuseGiCpuOutputSnapshot();
+        if (previewState != null && !previewState.readyForRound6PreviewSource()) {
+            return new Round6DiffuseGiCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "Round 6 diffuse GI/cache metadata is not ready for native GI preview payload: "
+                            + previewState.summary()
+            );
+        }
+        if (!snapshot.readyForPreviewPayload()) {
+            return new Round6DiffuseGiCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "Round 6 diffuse GI CPU output telemetry is not ready for Java preview upload"
+            );
+        }
+
+        if (this.diffuseGiPreviewRgba8ExportUnavailable) {
+            return new Round6DiffuseGiCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native Round 6 diffuse GI preview RGBA8 JNI export is not available yet"
+            );
+        }
+
+        byte[] rgba8;
+        try {
+            rgba8 = nativeDiffuseGiCpuOutputPreviewRgba8();
+        } catch (UnsatisfiedLinkError error) {
+            this.diffuseGiPreviewRgba8ExportUnavailable = true;
+            return new Round6DiffuseGiCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native Round 6 diffuse GI preview RGBA8 JNI export is not available yet"
+            );
+        } catch (Throwable throwable) {
+            return new Round6DiffuseGiCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native Round 6 diffuse GI preview RGBA8 call failed: " + throwable.getMessage()
+            );
+        }
+        if (rgba8 == null) {
+            return new Round6DiffuseGiCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native Round 6 diffuse GI preview payload returned null"
+            );
+        }
+        long expectedBytes = Math.max(0L, snapshot.outputPixels()) * 4L;
+        if (expectedBytes > Integer.MAX_VALUE || rgba8.length != (int) expectedBytes) {
+            return new Round6DiffuseGiCpuOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native Round 6 diffuse GI preview RGBA8 payload size did not match telemetry"
+            );
+        }
+        return new Round6DiffuseGiCpuOutputPayload(
+                snapshot,
+                rgba8,
+                "native Round 6 diffuse GI preview RGBA8 payload copied"
         );
     }
 
@@ -301,6 +381,7 @@ public final class LucernaNativeBridge {
             this.loaded = true;
             this.available = true;
             this.initialized = false;
+            this.diffuseGiPreviewRgba8ExportUnavailable = false;
             this.lastError = "";
         } catch (UnsatisfiedLinkError error) {
             this.loaded = false;
@@ -331,6 +412,7 @@ public final class LucernaNativeBridge {
         this.lastLoggedLightingDispatchGeneration = 0L;
         this.lastLoggedDirectLightingExecutionKey = "";
         this.directLightingUploadUnavailableLogged = false;
+        this.diffuseGiPreviewRgba8ExportUnavailable = false;
         this.initialized = true;
         return true;
     }
@@ -1034,6 +1116,8 @@ public final class LucernaNativeBridge {
     private static native String nativeStatus();
 
     private static native byte[] nativeDirectLightingCpuOutputPreviewRgba8();
+
+    private static native byte[] nativeDiffuseGiCpuOutputPreviewRgba8();
 
     private static native String nativeLastError();
 }

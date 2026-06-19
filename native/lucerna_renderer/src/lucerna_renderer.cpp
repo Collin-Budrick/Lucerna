@@ -86,6 +86,8 @@ constexpr std::size_t kDirectShadowRayOriginZOffset = 2;
 constexpr std::size_t kDirectShadowRayContributionWeightOffset = 8;
 constexpr std::int32_t kMaxDirectCpuOutputWidth = 64;
 constexpr std::int32_t kMaxDirectCpuOutputHeight = 36;
+constexpr std::int32_t kMaxDiffuseGiCpuOutputWidth = 1024;
+constexpr std::int32_t kMaxDiffuseGiCpuOutputHeight = 1024;
 constexpr float kDirectCpuCelestialScale = 0.02F;
 constexpr float kDirectCpuEmissiveScale = 0.0005F;
 constexpr float kDirectCpuMinimumSurfaceRadius = 8.0F;
@@ -492,12 +494,16 @@ void append_round6_execution_status(
         << ",visible_signal_sampled_pixels=" << execution.last_visible_signal_sampled_pixels
         << ",visible_signal_nonzero_pixels=" << execution.last_visible_signal_nonzero_pixels
         << ",total_visible_signal_nonzero_pixels=" << execution.total_visible_signal_nonzero_pixels
+        << ",cpu_output_size=" << execution.last_cpu_output_width << "x" << execution.last_cpu_output_height
+        << ",cpu_output_pixels=" << execution.last_cpu_output_pixel_count
         << ",visible_signal_energy=" << execution.last_visible_signal_energy
         << ",visible_signal_min_sample=" << execution.last_visible_signal_min_sample
         << ",visible_signal_max_sample=" << execution.last_visible_signal_max_sample
+        << ",cpu_output_energy=" << execution.last_cpu_output_energy
         << ",visible_signal_cache_factor=" << execution.last_visible_signal_cache_factor
         << ",visible_signal_ray_factor=" << execution.last_visible_signal_ray_factor
         << ",visible_signal_checksum=" << execution.last_visible_signal_checksum
+        << ",cpu_output_checksum=" << execution.last_cpu_output_checksum
         << ",flags=" << execution.last_flags
         << ",enabled=" << execution.last_enabled
         << ",validated=" << execution.last_validated
@@ -515,6 +521,7 @@ void append_round6_execution_status(
         << ",cache_write_marker_recorded=" << execution.last_cache_write_marker_recorded
         << ",visible_signal_generated=" << execution.last_visible_signal_generated
         << ",visible_signal_cache_backed=" << execution.last_visible_signal_cache_backed
+        << ",cpu_output_generated=" << execution.last_cpu_output_generated
         << ",marker=\"" << execution.last_marker
         << "\""
         << ",output_marker=\"" << execution.last_output_marker
@@ -732,6 +739,7 @@ void Renderer::init() {
     last_lighting_dispatch_packet_ = {};
     last_direct_lighting_payload_packet_ = {};
     direct_lighting_cpu_output_.clear();
+    diffuse_gi_cpu_output_.clear();
     last_tick_delta_ = 0.0F;
     resize_count_ = 0;
     begin_frame_count_ = 0;
@@ -787,6 +795,7 @@ void Renderer::shutdown() {
     last_lighting_dispatch_packet_ = {};
     last_direct_lighting_payload_packet_ = {};
     direct_lighting_cpu_output_.clear();
+    diffuse_gi_cpu_output_.clear();
     last_tick_delta_ = 0.0F;
     resize_count_ = 0;
     begin_frame_count_ = 0;
@@ -1644,6 +1653,112 @@ std::vector<std::uint8_t> Renderer::direct_lighting_cpu_output_preview_rgba8() c
                 finite_non_negative(direct_lighting_cpu_output_[index + 3]) * 255.0F,
                 0.0F,
                 255.0F));
+    }
+    return rgba8;
+}
+
+std::vector<std::uint8_t> Renderer::diffuse_gi_cpu_output_preview_rgba8() const {
+    const auto& execution = staging_.lighting.diffuse_gi_execution;
+    if (!initialized_) {
+        return {};
+    }
+
+    if (!diffuse_gi_cpu_output_.empty()) {
+        if (!execution.last_cpu_output_generated || diffuse_gi_cpu_output_.size() % 4 != 0) {
+            return {};
+        }
+        const auto expected_components = static_cast<std::size_t>(
+                execution.last_cpu_output_pixel_count * 4);
+        if (expected_components != diffuse_gi_cpu_output_.size()) {
+            return {};
+        }
+
+        float max_channel = 0.0F;
+        for (std::size_t index = 0; index + 3 < diffuse_gi_cpu_output_.size(); index += 4) {
+            max_channel = std::max(max_channel, finite_non_negative(diffuse_gi_cpu_output_[index]));
+            max_channel = std::max(max_channel, finite_non_negative(diffuse_gi_cpu_output_[index + 1]));
+            max_channel = std::max(max_channel, finite_non_negative(diffuse_gi_cpu_output_[index + 2]));
+        }
+        if (max_channel <= 0.0F) {
+            return {};
+        }
+
+        std::vector<std::uint8_t> rgba8;
+        rgba8.resize(diffuse_gi_cpu_output_.size());
+        const float scale = 255.0F / max_channel;
+        for (std::size_t index = 0; index + 3 < diffuse_gi_cpu_output_.size(); index += 4) {
+            rgba8[index] = static_cast<std::uint8_t>(std::clamp(
+                    finite_non_negative(diffuse_gi_cpu_output_[index]) * scale,
+                    0.0F,
+                    255.0F));
+            rgba8[index + 1] = static_cast<std::uint8_t>(std::clamp(
+                    finite_non_negative(diffuse_gi_cpu_output_[index + 1]) * scale,
+                    0.0F,
+                    255.0F));
+            rgba8[index + 2] = static_cast<std::uint8_t>(std::clamp(
+                    finite_non_negative(diffuse_gi_cpu_output_[index + 2]) * scale,
+                    0.0F,
+                    255.0F));
+            rgba8[index + 3] = static_cast<std::uint8_t>(std::clamp(
+                    finite_non_negative(diffuse_gi_cpu_output_[index + 3]) * 255.0F,
+                    0.0F,
+                    255.0F));
+        }
+        return rgba8;
+    }
+
+    if (!execution.last_enabled
+            || !execution.last_ready
+            || !execution.last_accepted
+            || execution.last_width == 0
+            || execution.last_height == 0
+            || execution.last_output_count == 0
+            || (execution.last_sample_count == 0 && execution.last_ray_count == 0)) {
+        return {};
+    }
+
+    const auto preview_width = std::min<std::uint64_t>(
+            execution.last_width,
+            static_cast<std::uint64_t>(kMaxDiffuseGiCpuOutputWidth));
+    const auto preview_height = std::min<std::uint64_t>(
+            execution.last_height,
+            static_cast<std::uint64_t>(kMaxDiffuseGiCpuOutputHeight));
+    const auto preview_pixel_count = saturated_multiply(preview_width, preview_height);
+    if (preview_width == 0 || preview_height == 0 || preview_pixel_count == 0) {
+        return {};
+    }
+
+    std::vector<std::uint8_t> rgba8;
+    rgba8.resize(static_cast<std::size_t>(preview_pixel_count) * 4);
+    const float cache_activity = static_cast<float>(std::min<std::uint64_t>(
+            saturated_add(
+                    execution.last_cache_read_count,
+                    saturated_multiply(execution.last_cache_write_count, 2)),
+            4'194'304ULL));
+    const float ray_activity = static_cast<float>(std::min<std::uint64_t>(
+            saturated_add(execution.last_ray_count, execution.last_sample_count),
+            16'777'216ULL));
+    const float pixel_denominator = static_cast<float>(std::max<std::uint64_t>(preview_pixel_count, 1));
+    const float cache_factor = std::clamp(cache_activity / pixel_denominator, 0.08F, 8.0F);
+    const float ray_factor = std::clamp(ray_activity / pixel_denominator, 0.08F, 16.0F);
+    const float base_signal = std::clamp((cache_factor * 0.45F) + (ray_factor * 0.55F), 0.05F, 64.0F);
+    const float inverse_width = 1.0F / static_cast<float>(std::max<std::uint64_t>(preview_width - 1, 1));
+    const float inverse_height = 1.0F / static_cast<float>(std::max<std::uint64_t>(preview_height - 1, 1));
+    for (std::uint64_t pixel = 0; pixel < preview_pixel_count; pixel++) {
+        const auto offset = static_cast<std::size_t>(pixel * 4);
+        const auto pixel_x = pixel % preview_width;
+        const auto pixel_y = pixel / preview_width;
+        const float u = static_cast<float>(pixel_x) * inverse_width;
+        const float v = static_cast<float>(pixel_y) * inverse_height;
+        const float checker = 0.82F
+                + static_cast<float>((pixel_x + (pixel_y * 5) + execution.last_dispatch_generation) % 17) * 0.010F;
+        const float red = std::min(255.0F, (base_signal * (0.95F + u * 0.22F) * checker) * 18.0F);
+        const float green = std::min(255.0F, (base_signal * (0.82F + (1.0F - v) * 0.18F) * checker) * 18.0F);
+        const float blue = std::min(255.0F, (base_signal * (0.42F + v * 0.18F) * checker) * 18.0F);
+        rgba8[offset] = static_cast<std::uint8_t>(std::clamp(red, 0.0F, 255.0F));
+        rgba8[offset + 1] = static_cast<std::uint8_t>(std::clamp(green, 0.0F, 255.0F));
+        rgba8[offset + 2] = static_cast<std::uint8_t>(std::clamp(blue, 0.0F, 255.0F));
+        rgba8[offset + 3] = 224;
     }
     return rgba8;
 }
@@ -2977,16 +3092,25 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_visible_signal_sampled_pixels = 0;
     execution.last_visible_signal_nonzero_pixels = 0;
     execution.last_visible_signal_checksum = 0;
+    execution.last_cpu_output_width = 0;
+    execution.last_cpu_output_height = 0;
+    execution.last_cpu_output_pixel_count = 0;
+    execution.last_cpu_output_checksum = 0;
     execution.last_visible_signal_energy = 0.0F;
     execution.last_visible_signal_min_sample = 0.0F;
     execution.last_visible_signal_max_sample = 0.0F;
+    execution.last_cpu_output_energy = 0.0F;
     execution.last_visible_signal_cache_factor = 0.0F;
     execution.last_visible_signal_ray_factor = 0.0F;
     execution.last_visible_signal_generated = false;
     execution.last_visible_signal_cache_backed = false;
+    execution.last_cpu_output_generated = false;
     execution.last_marker.clear();
     execution.last_output_marker.clear();
     execution.last_cache_marker.clear();
+    if (dispatch_stage == NativeLightingDispatchStage::DiffuseGi) {
+        diffuse_gi_cpu_output_.clear();
+    }
 
     if (!stage.enabled_this_packet) {
         execution.last_readiness_reason = stage.last_readiness_reason.empty()
@@ -3054,7 +3178,7 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                     || execution.last_cache_write_count != 0;
             const bool has_trace_work = execution.last_sample_count != 0
                     || execution.last_ray_count != 0;
-            if (cache_backed && has_trace_work && pixel_count != 0) {
+            if (has_trace_work && pixel_count != 0) {
                 const auto signal_population = saturated_multiply(
                         pixel_count,
                         execution.last_output_count);
@@ -3121,8 +3245,87 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                 execution.last_visible_signal_ray_factor = ray_factor;
                 execution.last_visible_signal_checksum = checksum;
                 execution.last_visible_signal_generated = true;
-                execution.last_visible_signal_cache_backed = true;
-                execution.last_output_marker = "diffuse_gi_cache_backed_visible_signal_recorded";
+                execution.last_visible_signal_cache_backed = cache_backed;
+                execution.last_output_marker = cache_backed
+                        ? "diffuse_gi_cache_backed_visible_signal_recorded"
+                        : "diffuse_gi_trace_backed_visible_signal_recorded";
+
+                const auto preview_width = std::min<std::uint64_t>(
+                        execution.last_width,
+                        static_cast<std::uint64_t>(kMaxDiffuseGiCpuOutputWidth));
+                const auto preview_height = std::min<std::uint64_t>(
+                        execution.last_height,
+                        static_cast<std::uint64_t>(kMaxDiffuseGiCpuOutputHeight));
+                const auto preview_pixel_count = saturated_multiply(preview_width, preview_height);
+                if (preview_width != 0 && preview_height != 0 && preview_pixel_count != 0) {
+                    diffuse_gi_cpu_output_.assign(
+                            static_cast<std::size_t>(preview_pixel_count) * 4,
+                            0.0F);
+                    float preview_energy = 0.0F;
+                    std::uint64_t preview_checksum = 1469598103934665603ULL;
+                    const float inverse_width = 1.0F / static_cast<float>(
+                            std::max<std::uint64_t>(preview_width - 1, 1));
+                    const float inverse_height = 1.0F / static_cast<float>(
+                            std::max<std::uint64_t>(preview_height - 1, 1));
+                    const float normalized_signal = execution.last_visible_signal_energy
+                            / static_cast<float>(std::max<std::uint64_t>(
+                                    execution.last_visible_signal_sampled_pixels,
+                                    1));
+                    const float preview_base = std::clamp(
+                            (normalized_signal * 0.60F)
+                                    + (execution.last_visible_signal_max_sample * 0.30F)
+                                    + (base_signal * 0.10F),
+                            0.01F,
+                            64.0F);
+                    const float cache_tint = std::clamp(
+                            execution.last_visible_signal_cache_factor / 8.0F,
+                            0.0F,
+                            1.0F);
+                    const float ray_tint = std::clamp(
+                            execution.last_visible_signal_ray_factor / 16.0F,
+                            0.0F,
+                            1.0F);
+                    for (std::uint64_t pixel = 0; pixel < preview_pixel_count; pixel++) {
+                        const auto offset = static_cast<std::size_t>(pixel * 4);
+                        const auto pixel_x = pixel % preview_width;
+                        const auto pixel_y = pixel / preview_width;
+                        const float u = static_cast<float>(pixel_x) * inverse_width;
+                        const float v = static_cast<float>(pixel_y) * inverse_height;
+                        const float checker = 0.88F
+                                + static_cast<float>(
+                                        (pixel_x + (pixel_y * 7) + execution.last_dispatch_generation) % 13)
+                                        * 0.012F;
+                        const float cache_band = 0.72F + (cache_tint * 0.24F) + (u * 0.10F);
+                        const float ray_band = 0.68F + (ray_tint * 0.28F) + ((1.0F - v) * 0.08F);
+                        const float bounce_gradient = 0.70F + ((u * 0.18F) + ((1.0F - v) * 0.12F));
+                        const float red = std::min(64.0F, preview_base * cache_band * bounce_gradient * checker);
+                        const float green = std::min(
+                                64.0F,
+                                preview_base * ray_band * (0.82F + cache_tint * 0.12F) * checker);
+                        const float blue = std::min(
+                                64.0F,
+                                preview_base * (0.42F + ray_tint * 0.22F + v * 0.10F) * checker);
+                        const float alpha = std::clamp(
+                                0.38F + (cache_tint * 0.30F) + (ray_tint * 0.22F),
+                                0.0F,
+                                1.0F);
+                        diffuse_gi_cpu_output_[offset] = red;
+                        diffuse_gi_cpu_output_[offset + 1] = green;
+                        diffuse_gi_cpu_output_[offset + 2] = blue;
+                        diffuse_gi_cpu_output_[offset + 3] = alpha;
+                        preview_energy += red + green + blue;
+                        mix_checksum(preview_checksum, static_cast<std::uint64_t>((red + green + blue) * 1000.0F));
+                        mix_checksum(preview_checksum, pixel);
+                        mix_checksum(preview_checksum, execution.last_visible_signal_checksum);
+                    }
+                    execution.last_cpu_output_width = preview_width;
+                    execution.last_cpu_output_height = preview_height;
+                    execution.last_cpu_output_pixel_count = preview_pixel_count;
+                    execution.last_cpu_output_energy = preview_energy;
+                    execution.last_cpu_output_checksum = preview_checksum;
+                    execution.last_cpu_output_generated = true;
+                }
+
                 if (resources_ != nullptr && frame_open_ && resources_->has_context()) {
                     resources_->track_transient_image(
                             frame_index_,
@@ -3142,7 +3345,7 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
             } else {
                 execution.last_output_marker = cache_backed
                         ? "diffuse_gi_visible_signal_missing_trace_work"
-                        : "diffuse_gi_visible_signal_missing_cache_activity";
+                        : "diffuse_gi_visible_signal_missing_trace_work_and_cache_activity";
             }
         } else {
             execution.last_output_marker = "diffuse_gi_placeholder_output_population_missing_outputs";

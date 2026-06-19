@@ -494,9 +494,14 @@ struct NativeRound6DispatchExecutionTelemetry {
     std::uint64_t last_visible_signal_nonzero_pixels = 0;
     std::uint64_t total_visible_signal_nonzero_pixels = 0;
     std::uint64_t last_visible_signal_checksum = 0;
+    std::uint64_t last_cpu_output_width = 0;
+    std::uint64_t last_cpu_output_height = 0;
+    std::uint64_t last_cpu_output_pixel_count = 0;
+    std::uint64_t last_cpu_output_checksum = 0;
     float last_visible_signal_energy = 0.0F;
     float last_visible_signal_min_sample = 0.0F;
     float last_visible_signal_max_sample = 0.0F;
+    float last_cpu_output_energy = 0.0F;
     float last_visible_signal_cache_factor = 0.0F;
     float last_visible_signal_ray_factor = 0.0F;
     std::uint32_t last_flags = 0;
@@ -516,6 +521,7 @@ struct NativeRound6DispatchExecutionTelemetry {
     bool last_cache_write_marker_recorded = false;
     bool last_visible_signal_generated = false;
     bool last_visible_signal_cache_backed = false;
+    bool last_cpu_output_generated = false;
     std::string last_marker;
     std::string last_output_marker;
     std::string last_cache_marker;
@@ -614,6 +620,7 @@ public:
     [[nodiscard]] std::string last_error() const;
     [[nodiscard]] std::string status() const;
     [[nodiscard]] std::vector<std::uint8_t> direct_lighting_cpu_output_preview_rgba8() const;
+    [[nodiscard]] std::vector<std::uint8_t> diffuse_gi_cpu_output_preview_rgba8() const;
 
 private:
     void ensure_initialized(const char* operation) const;
@@ -671,6 +678,7 @@ private:
     LightingDispatchPacket last_lighting_dispatch_packet_;
     DirectLightingPayloadPacket last_direct_lighting_payload_packet_;
     std::vector<float> direct_lighting_cpu_output_;
+    std::vector<float> diffuse_gi_cpu_output_;
     float last_tick_delta_ = 0.0F;
     std::uint64_t resize_count_ = 0;
     std::uint64_t begin_frame_count_ = 0;

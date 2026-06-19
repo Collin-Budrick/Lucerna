@@ -1,6 +1,6 @@
 package net.lucerna.render.preview;
 
-import net.lucerna.nativebridge.DirectLightingCpuOutputPayload;
+import net.lucerna.nativebridge.Round6DiffuseGiCpuOutputPayload;
 import net.lucerna.upload.NativeDiffuseGiPlanUpload;
 import net.lucerna.upload.NativeDiffuseGiUploadPacket;
 
@@ -137,24 +137,24 @@ public record Round6DiffuseGiPreviewCompositeState(
                 && this.sourceDirectLightingReady;
     }
 
-    public boolean readyForFinalComposite(DirectLightingCpuOutputPayload sourcePayload) {
+    public boolean readyForFinalComposite(Round6DiffuseGiCpuOutputPayload sourcePayload) {
         return readyForRound6PreviewSource()
                 && sourcePayload != null
                 && sourcePayload.readyForPreviewDraw();
     }
 
-    public String finalCompositeReadinessReason(DirectLightingCpuOutputPayload sourcePayload) {
+    public String finalCompositeReadinessReason(Round6DiffuseGiCpuOutputPayload sourcePayload) {
         if (!readyForRound6PreviewSource()) {
             return this.reason;
         }
         if (sourcePayload == null) {
-            return "Round 6 diffuse GI/cache metadata is ready, but no temporary preview source payload is available";
+            return "Round 6 diffuse GI/cache metadata is ready, but no native GI preview payload is available";
         }
         if (!sourcePayload.readyForPreviewDraw()) {
-            return "Round 6 diffuse GI/cache metadata is ready, but the temporary preview source payload is not displayable: "
+            return "Round 6 diffuse GI/cache metadata is ready, but the native GI preview payload is not displayable: "
                     + sourcePayload.previewReadinessReason();
         }
-        return "Round 6 diffuse GI/cache metadata is ready for GI-specific final-composite preview; using the current direct-light RGBA payload as the temporary visible source until native GI output is exposed";
+        return "Round 6 diffuse GI/cache metadata and native GI RGBA8 payload are ready for GI-specific final-composite preview";
     }
 
     public String summary() {

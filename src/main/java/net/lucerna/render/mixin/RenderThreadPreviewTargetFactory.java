@@ -8,6 +8,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.textures.GpuTexture;
 import com.mojang.blaze3d.textures.GpuTextureView;
 import net.lucerna.nativebridge.DirectLightingCpuOutputPayload;
+import net.lucerna.nativebridge.Round6DiffuseGiCpuOutputPayload;
 import net.lucerna.render.preview.DirectLightPreviewTextureUploadResult;
 import net.lucerna.render.preview.DirectLightPreviewTextureUploader;
 import net.lucerna.render.preview.PublicMojangFinalCompositeSubmissionResult;
@@ -410,7 +411,7 @@ public final class RenderThreadPreviewTargetFactory {
 
     public static PublicMojangFinalCompositeSubmissionResult submitRound6DiffuseGiFinalCompositePublicDraw(
             LucernaFramePassTarget target,
-            DirectLightingCpuOutputPayload temporarySourcePayload,
+            Round6DiffuseGiCpuOutputPayload diffuseGiPayload,
             Round6DiffuseGiPreviewCompositeState previewState
     ) {
         if (previewState == null) {
@@ -457,31 +458,31 @@ public final class RenderThreadPreviewTargetFactory {
                     "public Mojang Round 6 diffuse GI final composite skipped because command encoder or color view is unavailable"
             );
         }
-        if (temporarySourcePayload == null) {
+        if (diffuseGiPayload == null) {
             return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
                     true,
                     target.attachmentMetadata().javaOpaque(),
                     PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
-                    "public Mojang Round 6 diffuse GI final composite skipped because temporary RGBA8 source payload is unavailable"
+                    "public Mojang Round 6 diffuse GI final composite skipped because native GI RGBA8 payload is unavailable"
             );
         }
-        if (!temporarySourcePayload.readyForPreviewDraw()) {
+        if (!diffuseGiPayload.readyForPreviewDraw()) {
             return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
                     true,
                     target.attachmentMetadata().javaOpaque(),
                     PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
-                    "public Mojang Round 6 diffuse GI final composite skipped because temporary RGBA8 source payload is not displayable: "
-                            + temporarySourcePayload.debugSummary()
+                    "public Mojang Round 6 diffuse GI final composite skipped because native GI RGBA8 payload is not displayable: "
+                            + diffuseGiPayload.debugSummary()
             );
         }
 
-        ByteBuffer sourceBuffer = temporarySourcePayload.copyToByteBuffer();
+        ByteBuffer sourceBuffer = diffuseGiPayload.copyToByteBuffer();
         DirectLightPreviewTextureUploadResult upload = ROUND6_DIFFUSE_GI_FINAL_COMPOSITE_TEXTURE_UPLOADER.upload(
                 RenderSystem.getDevice(),
                 commandEncoder,
                 sourceBuffer,
-                temporarySourcePayload.width(),
-                temporarySourcePayload.height()
+                diffuseGiPayload.width(),
+                diffuseGiPayload.height()
         );
         if (!upload.availableForDraw()) {
             Reference.reachabilityFence(sourceBuffer);
@@ -489,7 +490,7 @@ public final class RenderThreadPreviewTargetFactory {
                     true,
                     target.attachmentMetadata().javaOpaque(),
                     PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
-                    "public Mojang Round 6 diffuse GI final composite skipped because temporary texture upload was unavailable: "
+                    "public Mojang Round 6 diffuse GI final composite skipped because native GI texture upload was unavailable: "
                             + upload.summary()
             );
         }
@@ -514,8 +515,8 @@ public final class RenderThreadPreviewTargetFactory {
                 PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
                 "public Mojang Round 6 diffuse GI final composite preview render pass submitted; readiness: "
                         + previewState.summary()
-                        + "; temporary source payload: "
-                        + temporarySourcePayload.debugSummary()
+                        + "; native GI payload: "
+                        + diffuseGiPayload.debugSummary()
                         + "; upload: "
                         + upload.summary()
                         + "; draw scaffold: "
