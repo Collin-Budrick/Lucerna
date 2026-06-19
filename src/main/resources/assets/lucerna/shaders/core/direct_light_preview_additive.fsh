@@ -6,8 +6,13 @@ in vec2 texCoord;
 
 out vec4 fragColor;
 
+const float PREVIEW_GAIN = 12.0;
+const vec3 MIN_PREVIEW_RADIANCE = vec3(0.18, 0.11, 0.035);
+
 void main() {
     vec4 directPreview = texture(InSampler, texCoord);
-    vec3 directLight = max(directPreview.rgb, vec3(0.0)) * clamp(directPreview.a, 0.0, 1.0);
-    fragColor = vec4(directLight, 0.0);
+    float previewMask = clamp(directPreview.a, 0.0, 1.0);
+    vec3 directLight = max(directPreview.rgb, vec3(0.0)) * previewMask * PREVIEW_GAIN;
+    directLight += MIN_PREVIEW_RADIANCE * previewMask;
+    fragColor = vec4(directLight, 1.0);
 }

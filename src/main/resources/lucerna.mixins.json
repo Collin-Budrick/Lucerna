@@ -3,7 +3,8 @@
   "package": "net.lucerna.mixin.client",
   "compatibilityLevel": "JAVA_21",
   "client": [
-    "GameRendererMixin"
+    "GameRendererMixin",
+    "GuiMixin"
   ],
   "injectors": {
     "defaultRequire": 1

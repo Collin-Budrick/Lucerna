@@ -2,11 +2,11 @@
 
 ## Progress Audit
 
-Current controller estimate: **about 91% complete against this file**.
+Current controller estimate: **about 92% complete against this file**.
 
 This percentage is conservative:
 - Rounds 0-3 are mostly implemented and controller-validated.
-- Round 4 has Java/native/shader scaffolding, dirty-region GI inputs, direct shadow candidate planning, compact extracted opaque surface sample metadata, native direct/GI/post handoff DTOs, payload-category telemetry, native dispatch validation, Round 5 direct payload handoff, direct execution/output-marker telemetry, a native CPU direct-light output buffer with energy/checksum telemetry, Java direct-output snapshot/status contracts, HUD-preserving world-color frame target contracts, metadata-only versus Java-opaque versus native-writable attachment contracts, direct-light preview submission result plumbing, a validated render-thread `GameRenderer.renderLevel` target hook, validated public Mojang Java-opaque target capture, validated public Mojang no-draw preview render-pass submission, validated public Mojang diagnostic draw submission, validated public Mojang sampled direct-light preview texture upload/draw submission, validated extracted surface-sample direct-light origins, and validated native surface-sample masked direct-light preview generation, but the first real visible lighting milestone is not complete yet.
+- Round 4 has Java/native/shader scaffolding, dirty-region GI inputs, direct shadow candidate planning, compact extracted opaque surface sample metadata, native direct/GI/post handoff DTOs, payload-category telemetry, native dispatch validation, Round 5 direct payload handoff, direct execution/output-marker telemetry, a native CPU direct-light output buffer with energy/checksum telemetry, Java direct-output snapshot/status contracts, HUD-preserving world-color frame target contracts, metadata-only versus Java-opaque versus native-writable attachment contracts, direct-light preview submission result plumbing, a validated render-thread `GameRenderer.renderLevel` target hook, validated public Mojang Java-opaque target capture, validated public Mojang no-draw preview render-pass submission, validated public Mojang diagnostic draw submission, validated public Mojang sampled direct-light preview texture upload/draw submission, validated extracted surface-sample direct-light origins, validated native surface-sample masked direct-light preview generation, a controller visual-proof harness, and screenshot-validated in-world direct-light debug overlay text, but the first real visible lighting milestone is not complete yet.
 - The remaining work is the hardest part: turning Phase 5 metadata/planning into visible direct light, low-res GI, denoise, composite behavior, and richer debug telemetry.
 
 Legend:
@@ -113,7 +113,7 @@ Legend:
 - **Agent M: Direct Lighting** **PARTIAL**
   - Owns sun/moon lighting, emissive block list sampling, voxel shadow ray scaffolding.
   - ~~Status: Java planning contracts, emissive sampling, bounded direct shadow candidate generation, compact extracted opaque surface sample metadata, surface-sample-preserving section reference merges, extracted surface-origin shadow candidates, native direct-light handoff DTOs, direct payload JNI/native storage, resource-category stage counts, native dispatch metadata, native direct execution output/resolve markers, a native CPU direct-light output buffer with nonzero energy/checksum telemetry, JNI/Java RGBA8 readback, public Mojang texture upload, sampled additive preview draw, and native surface-sample masked preview generation exist and have been validated.~~ **DONE/VALIDATED**
-  - Status: baseline/enabled screenshot proof is still open.
+  - Status: baseline/enabled screenshot proof is still open; controller captured disabled/enabled proof screenshots, but the accepted enabled surface brightening is still too subtle to mark complete.
 
 - **Agent N: First GI** **PARTIAL**
   - Owns low-res single-bounce diffuse GI, temporal accumulation inputs, and cache confidence output.
@@ -240,7 +240,7 @@ CPU/native/GPU timing placeholder or timing if available.
 Status:
 
 ~~Direct lighting overlay mode and native direct execution parser are implemented and compile/launch validated through native status/log telemetry.~~ **DONE/VALIDATED**
-Visual overlay screenshot validation is still open.
+~~Visual overlay screenshot validation is complete.~~ **DONE/VALIDATED**
 
 Validation by controller:
 
@@ -251,10 +251,10 @@ Take screenshot of direct lighting overlay.
 Validate overlay is readable and does not overlap catastrophically with vanilla HUD.
 Validate logs contain overlay mode changes and direct lighting telemetry.
 Round 5 Acceptance Criteria
-Direct/emissive lighting has a visible effect in-world.
-Controller screenshots show clear before/after difference.
+Direct/emissive lighting has a visible effect in-world. **OPEN**
+Controller screenshots show clear before/after difference. **OPEN**
 ~~Native logs prove lighting dispatch executed with candidate count, output-write marker, and resolve marker.~~ **DONE/VALIDATED for the current scaffold**
-HUD/translucency are not corrupted.
+HUD readability is screenshot-validated for the direct-light debug overlay; targeted translucency corruption validation remains open.
 Disabling Lucerna restores vanilla/no-op behavior.
 ~~No crash on world join, world leave, or shutdown.~~ **DONE/VALIDATED for current scaffold**
 Resize remains covered by prior lifecycle validation, but visible Round 5 resize behavior still needs targeted validation.
@@ -747,6 +747,8 @@ Logs prove candidate reuse and reservoir invalidation behavior.
 - ~~No sub-agent is allowed to "verify" fixes by running tests or build-like checks. They patch, explain, and wait for controller feedback.~~ **DONE/ONGOING**
 
 Latest strong validation evidence:
+- ~~Controller build/native build passes with the Round 5 visual-proof harness and direct-light HUD overlay changes; Sodium + Iris + Vulkan captures disabled baseline, enabled surface-sample direct-light preview, and direct-light debug overlay screenshots in `New World`. The direct-light debug overlay is readable and shows active renderer/native status, direct candidates/samples/rays, dispatch generation, output-write/resolve counters, and CPU output telemetry.~~ **DONE/VALIDATED in `run/validation-screenshots/round5-gain-baseline-disabled-visual-proof-20260619-065543-Baseline.png`, `run/validation-screenshots/round5-gain-enabled-surface-direct-visual-proof-20260619-065622-Enabled.png`, `run/validation-screenshots/round5-gain-direct-lighting-debug-visual-proof-20260619-065845-Debug.png`, `run/validation-logs/latest-round5-gain-enabled-surface-direct-visual-proof-20260619-065622.log`, and `run/validation-logs/latest-round5-gain-direct-lighting-debug-visual-proof-20260619-065845.log`**
+- A stronger native preview-alpha experiment could not be runtime-validated because Windows Application Control blocked the freshly rebuilt `lucerna_renderer.dll`; the unvalidated alpha-floor source change was reverted. **OPEN/BLOCKED FOR THAT EXPERIMENT in `run/logs/latest.log` lines reporting `An Application Control policy has blocked this file`**
 - ~~Sodium + Iris + Vulkan launches, joins `New World`, extracts compact opaque surface sample metadata, plans direct-light shadow candidates with nonzero surface sample sections/samples, generates native surface-sample masked CPU direct-light output, uploads the bounded RGBA8 payload to a public Mojang `GpuTexture`, submits `mode=surface-sample-masked-direct-light-additive`, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-extracted-surface-sample-origins-sodium-iris-vulkan-fixed-20260619-061849.log`**
 - ~~Sodium + Iris + Vulkan launches, joins `New World`, generates native surface-sample masked CPU direct-light output from emissive payload and shadow-candidate origins, uploads the bounded RGBA8 payload to a public Mojang `GpuTexture`, submits `mode=surface-sample-masked-direct-light-additive`, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-surface-sample-masked-direct-preview-sodium-iris-vulkan-20260619-055425.log`**
 - ~~Sodium + Iris + Vulkan launches, joins `New World`, generates native CPU direct-light output, copies the bounded RGBA8 payload through JNI/Java, uploads it to a public Mojang `GpuTexture`, submits the sampled additive direct-light preview draw with `pipeline=lucerna:pipeline/direct_light_preview_additive`, and shuts down cleanly.~~ **DONE/VALIDATED in `run/validation-logs/latest-round5-sampled-direct-preview-texture-sodium-iris-vulkan-hardened-20260619-054155.log`**
