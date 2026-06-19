@@ -363,9 +363,11 @@ public final class LucernaController {
             );
         }
         if (modeStatus.finalCompositeVisualMode() && denoisedGiPayload != null && denoisedGiPayload.readyForPreviewDraw()) {
-            return RenderThreadPreviewTargetFactory.submitRound7DenoisedGiFinalCompositePublicDraw(
+            return RenderThreadPreviewTargetFactory.submitRound7FinalCompositePublicDraw(
                     target,
-                    denoisedGiPayload
+                    diffuseGiPayload,
+                    denoisedGiPayload,
+                    giPreviewState
             );
         }
         if (giPreviewState.readyForFinalComposite(diffuseGiPayload)) {

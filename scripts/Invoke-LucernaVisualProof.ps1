@@ -25,6 +25,22 @@ param(
 
     [double] $ImageDeltaRegionHeightPercent = 55.0,
 
+    [switch] $AutoImageDeltaRegion,
+
+    [double] $AutoImageDeltaSearchLeftPercent = 5.0,
+
+    [double] $AutoImageDeltaSearchTopPercent = 10.0,
+
+    [double] $AutoImageDeltaSearchWidthPercent = 90.0,
+
+    [double] $AutoImageDeltaSearchHeightPercent = 80.0,
+
+    [int] $AutoImageDeltaRegionColumns = 12,
+
+    [int] $AutoImageDeltaRegionRows = 8,
+
+    [int] $AutoImageDeltaRegionPaddingCells = 1,
+
     [int] $TimeoutSeconds = 240
 )
 
@@ -50,6 +66,18 @@ function Invoke-ImageDeltaComparison {
         "-RegionWidthPercent", $ImageDeltaRegionWidthPercent,
         "-RegionHeightPercent", $ImageDeltaRegionHeightPercent
     )
+    if ($AutoImageDeltaRegion) {
+        $args += @(
+            "-AutoFocusRegion",
+            "-AutoRegionSearchLeftPercent", $AutoImageDeltaSearchLeftPercent,
+            "-AutoRegionSearchTopPercent", $AutoImageDeltaSearchTopPercent,
+            "-AutoRegionSearchWidthPercent", $AutoImageDeltaSearchWidthPercent,
+            "-AutoRegionSearchHeightPercent", $AutoImageDeltaSearchHeightPercent,
+            "-AutoRegionColumns", $AutoImageDeltaRegionColumns,
+            "-AutoRegionRows", $AutoImageDeltaRegionRows,
+            "-AutoRegionPaddingCells", $AutoImageDeltaRegionPaddingCells
+        )
+    }
     if (-not [string]::IsNullOrWhiteSpace($JsonPath)) {
         $args += @("-OutputJsonPath", $JsonPath)
     }
@@ -129,7 +157,7 @@ function Get-Round7CaptureIntent {
                     "Lucerna Round 7 denoised GI CPU output: .*denoisedCpuOutputGenerated=true",
                     "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true",
                     "round7\.finalCompositeMode=final-composite.*round7\.finalCompositeSourceMix=base=true,direct=enabled-ready,gi=enabled-ready,denoised=enabled-ready",
-                    "public Mojang Round 7 DENOISED_GI visual render pass submitted; .*mode=ROUND7_DENOISED_GI.*denoisedPayloadEvidence=round7\.denoisedGi\.cpuDenoisedDiffuseGiPayload"
+                    "public Mojang Round 7 FINAL_COMPOSITE visual render pass submitted; .*mode=FINAL_LUCERNA_COMPOSITE.*evidence=round7\.composite\.final\.base_direct_gi"
                 )
             }
         }
@@ -229,9 +257,15 @@ function Wait-LatestLogPattern {
 }
 
 function Get-MinecraftWindowProcess {
-    Get-Process | Where-Object {
+    Get-Process java,javaw -ErrorAction SilentlyContinue | Where-Object {
         $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -like "*Minecraft*"
-    } | Sort-Object StartTime -Descending | Select-Object -First 1
+    } | Sort-Object @{ Expression = {
+                try {
+                    $_.StartTime
+                } catch {
+                    [datetime]::MinValue
+                }
+            }; Descending = $true } | Select-Object -First 1
 }
 
 function Focus-MinecraftWindow {
@@ -272,12 +306,14 @@ function Invoke-OptionalSceneSetup {
 
     $commands = @(
         "/gamerule sendCommandFeedback false",
+        "/gamerule doDaylightCycle false",
         "/gamemode creative",
-        "/time set midnight",
+        "/time set 18000",
         "/weather clear",
         "/kill @e[type=!player,distance=..32]",
         "/fill ~4 ~-1 ~-3 ~4 ~3 ~3 minecraft:smooth_stone",
         "/setblock ~3 ~ ~ minecraft:glowstone",
+        "/time set 18000",
         "/tp @s ~ ~ ~ -90 0"
     )
     foreach ($command in $commands) {
@@ -364,10 +400,15 @@ function Copy-FreshLatestLog {
         [string] $Root,
         [string] $ValidationDir,
         [string] $Scenario,
-        [string] $Stamp
+        [string] $Stamp,
+        [string] $SourceLog = ""
     )
 
-    $latestLog = Join-Path $Root "run\logs\latest.log"
+    $latestLog = if ([string]::IsNullOrWhiteSpace($SourceLog)) {
+        Join-Path $Root "run\logs\latest.log"
+    } else {
+        $SourceLog
+    }
     if (-not (Test-Path -LiteralPath $latestLog)) {
         return ""
     }
@@ -453,7 +494,12 @@ try {
         $aliasPath = Join-Path $root ("run\saves\" + $safeWorldName)
         if (Test-Path -LiteralPath $aliasPath) {
             $existing = Get-Item -LiteralPath $aliasPath
-            if ($existing.Target -ne $worldTarget) {
+            $existingTarget = if ($existing.Target -is [array]) { $existing.Target -join "" } else { [string]$existing.Target }
+            if ($existing.LinkType -ne "Junction" -or [string]::IsNullOrWhiteSpace($existingTarget)) {
+                Remove-Item -LiteralPath $aliasPath -Recurse -Force
+                New-Item -ItemType Junction -Path $aliasPath -Target $worldTarget | Out-Null
+                $createdAlias = $true
+            } elseif ($existingTarget -ne $worldTarget) {
                 throw "Quick-play alias already exists with a different target: $aliasPath"
             }
         } else {
@@ -551,8 +597,9 @@ try {
     } else {
         @()
     }
+    $markerLog = $gradleOut
     $earlyFailureLogPaths = @($gradleOut, $gradleErr)
-    Wait-LatestLogPattern $latestLog $commonPatterns $deadline $earlyFailureLogPaths $forbiddenPatterns
+    Wait-LatestLogPattern $markerLog $commonPatterns $deadline $earlyFailureLogPaths $forbiddenPatterns
 
     Invoke-OptionalSceneSetup
     if ($SetupScene) {
@@ -560,7 +607,7 @@ try {
     }
 
     if ($enabledPatterns.Count -gt 0) {
-        Wait-LatestLogPattern $latestLog $enabledPatterns $deadline $earlyFailureLogPaths $forbiddenPatterns
+        Wait-LatestLogPattern $markerLog $enabledPatterns $deadline $earlyFailureLogPaths $forbiddenPatterns
     }
     if ($ValidationProfile -eq "Round7DenoiseComposite" -and -not $SetupScene) {
         Start-Sleep -Seconds 8
@@ -583,7 +630,7 @@ try {
         $screenshotSource = "window-fallback"
     }
 
-    $logPath = Copy-FreshLatestLog $root $validationDir $scenario $stamp
+    $logPath = Copy-FreshLatestLog $root $validationDir $scenario $stamp $markerLog
     Write-Host "screenshot=$archivePath"
     Write-Host "screenshotSource=$screenshotSource"
     if ($round7CaptureIntent) {

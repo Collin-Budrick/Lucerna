@@ -95,6 +95,59 @@ public record PublicMojangFinalCompositeSubmissionResult(
         return "native-direct-light-rgba8".equals(this.submittedSourceIdentity());
     }
 
+    public boolean submittedRawGiSource() {
+        return "native-diffuse-gi-rgba8".equals(this.submittedSourceIdentity());
+    }
+
+    public boolean submittedDenoisedGiSource() {
+        return "native-denoised-diffuse-gi-rgba8".equals(this.submittedSourceIdentity());
+    }
+
+    public boolean submittedRound7GiSource() {
+        return this.submittedRawGiSource() || this.submittedDenoisedGiSource();
+    }
+
+    public String focusedRegionReadiness() {
+        if (!this.submitted) {
+            return "not-ready:not-submitted";
+        }
+        if (!this.drawCallsIssued) {
+            return "not-ready:no-draw-calls";
+        }
+        if (this.targetStatus != TargetStatus.READY) {
+            return "not-ready:target-" + this.targetStatus.name().toLowerCase(Locale.ROOT);
+        }
+        if (this.submittedFocusWindowOnly()) {
+            return "not-ready:focus-window-only";
+        }
+        if (this.submittedDirectLightSource()) {
+            return "not-ready:direct-light-substitution";
+        }
+        if (!this.submittedRound7GiSource()) {
+            return "not-ready:unknown-source";
+        }
+        return "ready-for-controller-focused-region-delta";
+    }
+
+    public String visualProofExpectation() {
+        if (!this.submitted) {
+            return "visual proof should not pass until a selected Round 7 source draw is submitted";
+        }
+        if (!this.drawCallsIssued) {
+            return "visual proof should not pass because the submission reported no draw calls";
+        }
+        if (this.submittedFocusWindowOnly()) {
+            return "visual proof should not pass because Round 7 rejects focus-window-only brightness";
+        }
+        if (this.submittedDirectLightSource()) {
+            return "visual proof should not pass because Round 7 rejects direct-light payload substitution";
+        }
+        if (this.submittedRound7GiSource()) {
+            return "visual proof can only pass if controller screenshots show focused-surface delta for this submitted source";
+        }
+        return "visual proof should remain inconclusive because the submitted source identity is unknown";
+    }
+
     public String summary() {
         return "attempted=" + this.attempted
                 + ",submitted=" + this.submitted
@@ -103,6 +156,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",targetStatus=" + this.targetStatus
                 + ",sourceIdentity=" + this.submittedSourceIdentity()
                 + ",focusWindowOnly=" + this.submittedFocusWindowOnly()
+                + ",round7GiSource=" + this.submittedRound7GiSource()
+                + ",focusedRegionReadiness=" + this.focusedRegionReadiness()
+                + ",visualProofExpectation=\"" + this.visualProofExpectation() + "\""
                 + ",reason=" + this.reason;
     }
 

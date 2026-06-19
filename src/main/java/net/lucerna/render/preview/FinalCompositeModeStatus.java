@@ -110,6 +110,7 @@ public record FinalCompositeModeStatus(
                 + ",evidenceKey=" + this.evidenceKey
                 + ",visualMode=" + this.visualModeId
                 + ",round7.finalCompositeMode=" + this.visualModeId
+                + ",selectedSourcePolicy=" + this.selectedSourcePolicy()
                 + ",baseWorldColor=" + this.baseWorldColorEnabled
                 + ",directLighting=" + this.directLightingEnabled
                 + ",diffuseGi=" + this.diffuseGiEnabled
@@ -129,7 +130,15 @@ public record FinalCompositeModeStatus(
         return "base=" + this.baseWorldColorEnabled
                 + ",direct=" + sourceState(this.directLightingEnabled, directSourceReady)
                 + ",gi=" + sourceState(this.diffuseGiEnabled || this.rawGiVisualMode(), giSourceReady)
-                + ",denoised=" + sourceState(this.denoisedGiVisualMode() || this.finalCompositeVisualMode(), denoisedSourceReady);
+                + ",denoised=" + sourceState(
+                (this.denoisedGiVisualMode() || this.finalCompositeVisualMode()) && this.diffuseGiEnabled,
+                denoisedSourceReady
+        )
+                + ",selected=" + this.selectedSourceReadinessSummary(
+                directSourceReady,
+                giSourceReady,
+                denoisedSourceReady
+        );
     }
 
     public boolean rejectsFocusWindowOnlyComposite() {
@@ -149,7 +158,8 @@ public record FinalCompositeModeStatus(
         return "round7.finalCompositeRejectFocusWindowOnly=" + focusWindowRejected
                 + ",round7.finalCompositeRejectDirectLightSubstitution=" + directSubstitutionRejected
                 + ",focusWindowOnlySubmitted=" + submittedFocusWindowOnly
-                + ",directLightSourceSubmitted=" + submittedDirectLightSource;
+                + ",directLightSourceSubmitted=" + submittedDirectLightSource
+                + ",round7.focusedRegionProofPolicy=" + this.focusedRegionProofExpectation();
     }
 
     public String debugLine() {
@@ -189,11 +199,90 @@ public record FinalCompositeModeStatus(
         return "custom/partial";
     }
 
+    public String selectedSourcePolicy() {
+        if (this.baselineVisualMode()) {
+            return "baseline-control/no-lucerna-source";
+        }
+        if (this.rawGiVisualMode()) {
+            return "raw-gi/native-diffuse-gi-rgba8";
+        }
+        if (this.denoisedGiVisualMode()) {
+            return "denoised-gi/cpu-denoised-diffuse-gi-rgba8";
+        }
+        if (this.directLightingEnabled && !this.diffuseGiEnabled) {
+            return "direct-light/native-direct-light-rgba8";
+        }
+        if (this.finalCompositeVisualMode()) {
+            return "final-composite/denoised-gi-preferred/raw-gi-fallback";
+        }
+        return "custom/unspecified";
+    }
+
+    public String selectedSourceReadinessSummary(
+            boolean directSourceReady,
+            boolean giSourceReady,
+            boolean denoisedSourceReady
+    ) {
+        if (this.baselineVisualMode()) {
+            return "baseline-control:ready";
+        }
+        if (this.rawGiVisualMode()) {
+            return "raw-gi:" + readyState(giSourceReady);
+        }
+        if (this.denoisedGiVisualMode()) {
+            return "denoised-gi:" + readyState(denoisedSourceReady);
+        }
+        if (this.directLightingEnabled && !this.diffuseGiEnabled) {
+            return "direct-light:" + readyState(directSourceReady);
+        }
+        if (this.finalCompositeVisualMode()) {
+            if (denoisedSourceReady) {
+                return "final-selected=denoised-gi:ready";
+            }
+            if (giSourceReady) {
+                return "final-selected=raw-gi-fallback:ready,denoised-gi=missing";
+            }
+            return "final-selected=missing,denoised-gi=missing,raw-gi=missing,direct="
+                    + readyState(directSourceReady);
+        }
+        return "custom:direct=" + readyState(directSourceReady)
+                + ",raw-gi=" + readyState(giSourceReady)
+                + ",denoised-gi=" + readyState(denoisedSourceReady);
+    }
+
+    public String focusedRegionProofExpectation() {
+        if (this.baselineVisualMode()) {
+            return "control-frame; visual proof should not pass as Lucerna lighting";
+        }
+        if (this.rawGiVisualMode()) {
+            return "requires submitted full-target raw-GI draw plus controller focused-surface screenshot delta";
+        }
+        if (this.denoisedGiVisualMode()) {
+            return "requires submitted full-target denoised-GI draw plus controller focused-surface screenshot delta";
+        }
+        if (this.directLightingEnabled && !this.diffuseGiEnabled) {
+            return "direct diagnostic mode; Round 7 raw/denoised/final visual proof should not pass from this source";
+        }
+        if (this.finalCompositeVisualMode()) {
+            return "requires final mode source identity, submitted full-target draw, HUD-safe target, and controller focused-surface screenshot delta";
+        }
+        return "requires mode-specific controller screenshot delta; status alone is not visual proof";
+    }
+
+    public String visualProofBoundarySummary() {
+        return "selectedSourcePolicy=" + this.selectedSourcePolicy()
+                + ",focusedRegionProof=\"" + this.focusedRegionProofExpectation() + "\""
+                + ",rejectsFocusWindowOnly=" + this.rejectsFocusWindowOnlyComposite()
+                + ",rejectsDirectLightSubstitution=" + this.rejectsDirectLightSubstitution();
+    }
+
     public String validationSummary() {
         return "displayName=\"" + this.displayName
                 + "\",evidenceKey=\"" + this.evidenceKey
                 + "\",visualMode=\"" + this.visualModeId
                 + "\",isolation=\"" + this.signalIsolationLabel()
+                + "\",selectedSourcePolicy=\"" + this.selectedSourcePolicy()
+                + "\",focusedRegionProof=\"" + this.focusedRegionProofExpectation()
                 + "\",reason=\"" + this.modeReason
                 + "\",expectedEvidence=\"" + this.expectedEvidence + "\"";
     }
@@ -217,5 +306,9 @@ public record FinalCompositeModeStatus(
             return "excluded";
         }
         return sourceReady ? "enabled-ready" : "enabled-missing";
+    }
+
+    private static String readyState(boolean sourceReady) {
+        return sourceReady ? "ready" : "missing";
     }
 }

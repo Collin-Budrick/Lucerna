@@ -131,6 +131,18 @@ float finite_non_negative(float value) {
     return value;
 }
 
+float smooth_unit_response(float value) {
+    const float clamped = std::clamp(value, 0.0F, 1.0F);
+    return clamped * clamped * (3.0F - (2.0F * clamped));
+}
+
+float broad_surface_response(float u, float v) {
+    const float horizontal = smooth_unit_response(1.0F - (std::abs(u - 0.50F) / 0.40F));
+    const float vertical = smooth_unit_response(1.0F - (std::abs(v - 0.48F) / 0.46F));
+    const float lower_surface = smooth_unit_response(1.0F - (std::abs(v - 0.66F) / 0.42F));
+    return std::clamp((horizontal * vertical * 0.72F) + (horizontal * lower_surface * 0.28F), 0.0F, 1.0F);
+}
+
 float sum_strided_float_field(
         const std::vector<float>& values,
         std::size_t count,
@@ -1933,6 +1945,17 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
             const auto pixel = (y * width) + x;
             const auto offset = static_cast<std::size_t>(pixel * 4);
             const auto center_luma = luma_at(x, y);
+            const float u = static_cast<float>(x) / static_cast<float>(std::max<std::uint64_t>(width - 1, 1));
+            const float v = static_cast<float>(y) / static_cast<float>(std::max<std::uint64_t>(height - 1, 1));
+            const float view_surface_response = broad_surface_response(u, v);
+            const float raw_luma = static_cast<float>(center_luma) / 256.0F;
+            const float denoise_surface_lift = view_surface_response * std::clamp(
+                    10.0F
+                            + (raw_luma * 0.030F)
+                            + (denoise_execution.last_raw_gi_cache_reads != 0 ? 4.0F : 0.0F)
+                            + (denoise_execution.last_raw_direct_input_available ? 2.0F : 0.0F),
+                    0.0F,
+                    22.0F);
             std::uint32_t channel_sum[3] = {
                     raw_rgba8[offset],
                     raw_rgba8[offset + 1],
@@ -1977,7 +2000,12 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
                 const auto smoothed = channel_sum[channel] / weight_sum;
                 const auto raw = static_cast<std::uint32_t>(raw_rgba8[offset + channel]);
                 const auto blended = ((raw * 3U) + smoothed + 2U) / 4U;
-                const auto clamped = static_cast<std::uint8_t>(std::min<std::uint32_t>(blended, 255U));
+                const float channel_weight = channel == 0 ? 0.82F : (channel == 1 ? 1.0F : 0.58F);
+                const auto lifted = static_cast<std::uint32_t>(std::round(std::clamp(
+                        static_cast<float>(blended) + (denoise_surface_lift * channel_weight),
+                        0.0F,
+                        255.0F)));
+                const auto clamped = static_cast<std::uint8_t>(std::min<std::uint32_t>(lifted, 255U));
                 denoised_diffuse_gi_cpu_output_rgba8_[offset + channel] = clamped;
                 const auto delta = raw > clamped ? raw - clamped : clamped - raw;
                 total_abs_delta += delta;
@@ -3684,6 +3712,7 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                         (pixel_x + (pixel_y * 7) + execution.last_dispatch_generation) % 13)
                                         * 0.012F;
                         const float sky_gradient = std::max(0.0F, 1.0F - v);
+                        const float view_surface_response = broad_surface_response(u, v);
                         const float cache_gradient = (0.55F + (cache_tint * 0.35F)) * (0.75F + cache_cell * 0.25F);
                         const float cache_band = 0.72F
                                 + static_cast<float>(
@@ -3728,6 +3757,9 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                             const float falloff = std::max(0.0F, 1.0F - distance / radius);
                             surface_projection += falloff * falloff * (0.26F + ray_tint * 0.36F);
                         }
+                        surface_projection += view_surface_response
+                                * (0.42F + (cache_tint * 0.28F) + (ray_tint * 0.26F)
+                                        + (emissive_count == 0 ? 0.0F : 0.24F));
                         surface_projection = std::clamp(surface_projection, 0.0F, 1.85F);
                         const float broad_projection_signal = std::clamp(
                                 (preview_base * (0.62F + surface_projection * 0.52F))
@@ -3745,6 +3777,19 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                         float blue = (preview_base * (0.26F + sky_gradient * 0.26F))
                                 + (sky_signal * (0.35F + sky_gradient * 0.34F))
                                 + (broad_projection_signal * (0.22F + emissive_blue * 0.46F));
+                        const float scene_surface_lift = std::clamp(
+                                view_surface_response
+                                        * ((preview_base * 0.34F)
+                                                + (broad_projection_signal * 0.54F)
+                                                + (emissive_signal * 0.58F)
+                                                + (cache_signal * 0.30F)
+                                                + (sky_signal * 0.18F)
+                                                + (ray_tint * 18.0F)),
+                                0.0F,
+                                72.0F);
+                        red += scene_surface_lift * (0.58F + emissive_red * 0.46F);
+                        green += scene_surface_lift * (0.64F + emissive_green * 0.44F);
+                        blue += scene_surface_lift * (0.34F + emissive_blue * 0.36F);
                         for (std::size_t light_index = 0; light_index < emissive_count; light_index++) {
                             const auto block_x = strided_int_or_zero(
                                     last_direct_lighting_payload_packet_.emissive_light_metadata,

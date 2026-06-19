@@ -691,6 +691,164 @@ public final class RenderThreadPreviewTargetFactory {
         );
     }
 
+    public static PublicMojangFinalCompositeSubmissionResult submitRound7FinalCompositePublicDraw(
+            LucernaFramePassTarget target,
+            Round6DiffuseGiCpuOutputPayload diffuseGiPayload,
+            DenoisedDiffuseGiCpuOutputPayload denoisedGiPayload,
+            Round6DiffuseGiPreviewCompositeState previewState
+    ) {
+        Round7RawGiVisualSource rawGiSource = Round7RawGiVisualSource.from(previewState, diffuseGiPayload);
+        Round7DenoisedGiVisualSource denoisedGiSource = Round7DenoisedGiVisualSource.from(denoisedGiPayload);
+        if (target == null || !target.available()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    false,
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.TARGET_MISSING,
+                    "public Mojang Round 7 FINAL_COMPOSITE visual mode skipped because no frame target is available; raw source: "
+                            + rawGiSource.summary()
+                            + "; denoised source: "
+                            + denoisedGiSource.summary()
+            );
+        }
+        if (!target.safeForAttachment()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang Round 7 FINAL_COMPOSITE visual mode skipped because the target is not HUD-safe; raw source: "
+                            + rawGiSource.summary()
+                            + "; denoised source: "
+                            + denoisedGiSource.summary()
+            );
+        }
+        if (!(target.commandEncoder() instanceof CommandEncoder commandEncoder)
+                || !(target.colorTarget() instanceof GpuTextureView colorView)) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    target.attachmentMetadata().javaOpaque()
+                            ? PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT
+                            : PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang Round 7 FINAL_COMPOSITE visual mode skipped because command encoder or color view is unavailable; raw source: "
+                            + rawGiSource.summary()
+                            + "; denoised source: "
+                            + denoisedGiSource.summary()
+            );
+        }
+        if (denoisedGiPayload == null) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang Round 7 FINAL_COMPOSITE visual mode skipped because denoised diffuse-GI RGBA8 CPU payload is unavailable; raw source: "
+                            + rawGiSource.summary()
+                            + "; denoised source: "
+                            + denoisedGiSource.summary()
+            );
+        }
+        if (!denoisedGiPayload.readyForPreviewDraw()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang Round 7 FINAL_COMPOSITE visual mode skipped because denoised diffuse-GI RGBA8 CPU payload is not displayable: "
+                            + denoisedGiPayload.debugSummary()
+                            + "; raw source: "
+                            + rawGiSource.summary()
+                            + "; denoised source: "
+                            + denoisedGiSource.summary()
+            );
+        }
+
+        ByteBuffer rawSourceBuffer = null;
+        DirectLightPreviewTextureUploadResult rawUpload = null;
+        if (diffuseGiPayload != null && previewState != null && previewState.readyForFinalComposite(diffuseGiPayload)) {
+            rawSourceBuffer = diffuseGiPayload.copyToByteBuffer();
+            rawUpload = ROUND6_DIFFUSE_GI_FINAL_COMPOSITE_TEXTURE_UPLOADER.upload(
+                    RenderSystem.getDevice(),
+                    commandEncoder,
+                    rawSourceBuffer,
+                    diffuseGiPayload.width(),
+                    diffuseGiPayload.height()
+            );
+        }
+
+        ByteBuffer denoisedSourceBuffer = denoisedGiPayload.copyToByteBuffer();
+        DirectLightPreviewTextureUploadResult denoisedUpload = ROUND7_DENOISED_GI_TEXTURE_UPLOADER.upload(
+                RenderSystem.getDevice(),
+                commandEncoder,
+                denoisedSourceBuffer,
+                denoisedGiPayload.width(),
+                denoisedGiPayload.height()
+        );
+        if (!denoisedUpload.availableForDraw()) {
+            Reference.reachabilityFence(rawSourceBuffer);
+            Reference.reachabilityFence(denoisedSourceBuffer);
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang Round 7 FINAL_COMPOSITE visual mode skipped because denoised diffuse-GI source texture upload was unavailable: "
+                            + denoisedUpload.summary()
+                            + "; raw upload: "
+                            + (rawUpload == null ? "not-attempted" : rawUpload.summary())
+                            + "; raw source: "
+                            + rawGiSource.summary()
+                            + "; denoised source: "
+                            + denoisedGiSource.summary()
+            );
+        }
+
+        boolean rawUploadAvailable = rawUpload != null && rawUpload.availableForDraw();
+        PublicMojangPreviewDrawScaffold drawScaffold;
+        try (RenderPass renderPass = createFullTargetRenderPass(
+                commandEncoder,
+                () -> "lucerna public Round 7 FINAL_COMPOSITE raw plus denoised GI visual draw pass",
+                colorView,
+                target
+        )) {
+            renderPass.disableScissor();
+            drawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenRound7FinalCompositeVisualDraw(
+                    renderPass,
+                    rawUploadAvailable ? rawUpload.textureView() : null,
+                    rawUploadAvailable ? rawUpload.sampler() : null,
+                    denoisedUpload.textureView(),
+                    denoisedUpload.sampler()
+            );
+        }
+        commandEncoder.submit();
+        Reference.reachabilityFence(rawSourceBuffer);
+        Reference.reachabilityFence(denoisedSourceBuffer);
+        return PublicMojangFinalCompositeSubmissionResult.submitted(
+                drawScaffold.drawCallsIssued(),
+                target.attachmentMetadata().javaOpaque(),
+                PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
+                "public Mojang Round 7 FINAL_COMPOSITE visual render pass submitted; "
+                        + "mode=FINAL_LUCERNA_COMPOSITE,mode=round7-final-composite"
+                        + ",evidence=round7.composite.final.base_direct_gi"
+                        + ",readiness=\"denoised diffuse-GI CPU output is displayable"
+                        + (rawUploadAvailable ? " and raw native diffuse-GI source is blended" : " and raw native diffuse-GI source is unavailable")
+                        + "\",raw source: "
+                        + rawGiSource.summary()
+                        + "; denoised source: "
+                        + denoisedGiSource.summary()
+                        + "; target: "
+                        + targetAttachmentSummary(target)
+                        + "; javaOpaquePublicFallback="
+                        + target.attachmentMetadata().javaOpaque()
+                        + "; raw native diffuse-GI source payload: "
+                        + (diffuseGiPayload == null ? "missing" : diffuseGiPayload.debugSummary())
+                        + "; raw upload: "
+                        + (rawUpload == null ? "not-attempted" : rawUpload.summary())
+                        + "; denoised diffuse-GI CPU source payload: "
+                        + denoisedGiPayload.debugSummary()
+                        + "; denoised upload: "
+                        + denoisedUpload.summary()
+                        + "; draw scaffold: "
+                        + drawScaffold.summary()
+        );
+    }
+
     private static String targetAttachmentSummary(LucernaFramePassTarget target) {
         if (target == null || target.attachmentMetadata() == null) {
             return "missing";

@@ -34,6 +34,22 @@ param(
 
     [double] $RegionHeightPercent = 55.0,
 
+    [switch] $DisableAutoFocusRegion,
+
+    [double] $AutoRegionSearchLeftPercent = 5.0,
+
+    [double] $AutoRegionSearchTopPercent = 10.0,
+
+    [double] $AutoRegionSearchWidthPercent = 90.0,
+
+    [double] $AutoRegionSearchHeightPercent = 80.0,
+
+    [int] $AutoRegionColumns = 12,
+
+    [int] $AutoRegionRows = 8,
+
+    [int] $AutoRegionPaddingCells = 1,
+
     [int] $ChangedPixelThreshold = 8,
 
     [int] $BrightPixelThreshold = 6,
@@ -177,16 +193,37 @@ function Invoke-DeltaHelper {
 
     $tempJson = Join-Path ([System.IO.Path]::GetTempPath()) ("lucerna-round7-$Label-delta-{0}.json" -f ([guid]::NewGuid().ToString("N")))
     try {
-        & $compareScript `
-            -BaselineImagePath $BaselinePath `
-            -EnabledImagePath $EnabledPath `
-            -OutputJsonPath $tempJson `
-            -RegionLeftPercent $RegionLeftPercent `
-            -RegionTopPercent $RegionTopPercent `
-            -RegionWidthPercent $RegionWidthPercent `
-            -RegionHeightPercent $RegionHeightPercent `
-            -ChangedPixelThreshold $ChangedPixelThreshold `
-            -BrightPixelThreshold $BrightPixelThreshold | Out-Host
+        if (-not $DisableAutoFocusRegion) {
+            & $compareScript `
+                    -BaselineImagePath $BaselinePath `
+                    -EnabledImagePath $EnabledPath `
+                    -OutputJsonPath $tempJson `
+                    -RegionLeftPercent $RegionLeftPercent `
+                    -RegionTopPercent $RegionTopPercent `
+                    -RegionWidthPercent $RegionWidthPercent `
+                    -RegionHeightPercent $RegionHeightPercent `
+                    -ChangedPixelThreshold $ChangedPixelThreshold `
+                    -BrightPixelThreshold $BrightPixelThreshold `
+                    -AutoFocusRegion `
+                    -AutoRegionSearchLeftPercent $AutoRegionSearchLeftPercent `
+                    -AutoRegionSearchTopPercent $AutoRegionSearchTopPercent `
+                    -AutoRegionSearchWidthPercent $AutoRegionSearchWidthPercent `
+                    -AutoRegionSearchHeightPercent $AutoRegionSearchHeightPercent `
+                    -AutoRegionColumns $AutoRegionColumns `
+                    -AutoRegionRows $AutoRegionRows `
+                    -AutoRegionPaddingCells $AutoRegionPaddingCells | Out-Host
+        } else {
+            & $compareScript `
+                    -BaselineImagePath $BaselinePath `
+                    -EnabledImagePath $EnabledPath `
+                    -OutputJsonPath $tempJson `
+                    -RegionLeftPercent $RegionLeftPercent `
+                    -RegionTopPercent $RegionTopPercent `
+                    -RegionWidthPercent $RegionWidthPercent `
+                    -RegionHeightPercent $RegionHeightPercent `
+                    -ChangedPixelThreshold $ChangedPixelThreshold `
+                    -BrightPixelThreshold $BrightPixelThreshold | Out-Host
+        }
 
         if (-not (Test-Path -LiteralPath $tempJson)) {
             throw "Image comparison helper did not write expected JSON: $tempJson"
@@ -237,7 +274,9 @@ function Measure-Round7LogProof {
     $realDenoiseShaderOutputPresent = Test-Regex $log "realDenoiseShaderOutput=true|real_denoise_shader_output=true"
     $realDenoiseShaderOutputFalsePresent = Test-Regex $log "realDenoiseShaderOutput=false|real_denoise_shader_output=false"
     $proofMarkerPresent = Test-Regex $log "proof marker|R6 GI proof|R7 proof|CPU output proof"
-    $focusWindowOnlyPresent = Test-Regex $log "focus-window"
+    $submittedFocusWindowOnlyPresent = Test-Regex $log "sourceIdentity=native-direct-light-rgba8,focusWindowOnly=true|mode=final-composite-direct-light-focus-window-additive"
+    $submittedRound7GiSourcePresent = Test-Regex $log "sourceIdentity=native-denoised-diffuse-gi-rgba8,focusWindowOnly=false,round7GiSource=true|mode=round7-final-composite"
+    $focusWindowOnlyPresent = $submittedFocusWindowOnlyPresent -and -not $submittedRound7GiSourcePresent
     $nativeErrorPresent = Test-Regex $log "invalid descriptor|VK_ERROR|Lucerna native error|native error"
 
     return [ordered]@{
@@ -254,6 +293,8 @@ function Measure-Round7LogProof {
             realDenoiseShaderOutputFalsePresent = $realDenoiseShaderOutputFalsePresent
             proofMarkerPresent = $proofMarkerPresent
             focusWindowOnlyPresent = $focusWindowOnlyPresent
+            submittedFocusWindowOnlyPresent = $submittedFocusWindowOnlyPresent
+            submittedRound7GiSourcePresent = $submittedRound7GiSourcePresent
             nativeErrorPresent = $nativeErrorPresent
         }
         patterns = [ordered]@{
@@ -369,6 +410,17 @@ $result = [ordered]@{
         minFinalMeanAbsLuma = $MinFinalMeanAbsLuma
         changedPixelThreshold = $ChangedPixelThreshold
         brightPixelThreshold = $BrightPixelThreshold
+        focusRegionSelection = if ($DisableAutoFocusRegion) { "fixed" } else { "auto" }
+        autoFocusRegion = [ordered]@{
+            enabled = -not [bool]$DisableAutoFocusRegion
+            searchLeftPercent = $AutoRegionSearchLeftPercent
+            searchTopPercent = $AutoRegionSearchTopPercent
+            searchWidthPercent = $AutoRegionSearchWidthPercent
+            searchHeightPercent = $AutoRegionSearchHeightPercent
+            columns = $AutoRegionColumns
+            rows = $AutoRegionRows
+            paddingCells = $AutoRegionPaddingCells
+        }
         requireLogProof = [bool]$RequireLogProof
         requireDebugScreenshot = [bool]$RequireDebugScreenshot
     }
@@ -383,6 +435,11 @@ $result = [ordered]@{
         baselineToRawGi = $rawDelta
         rawGiToDenoisedGi = $denoiseDelta
         baselineToFinalComposite = $finalDelta
+    }
+    selectedFocusRegions = [ordered]@{
+        baselineToRawGi = $rawDelta.focusRegion
+        rawGiToDenoisedGi = $denoiseDelta.focusRegion
+        baselineToFinalComposite = $finalDelta.focusRegion
     }
     logProof = $logProof
     proofClarity = [ordered]@{
@@ -448,9 +505,13 @@ Write-Host "denoisedGiImage=$($result.denoisedGiImage)"
 Write-Host "finalCompositeImage=$($result.finalCompositeImage)"
 Write-Host "debugImage=$($result.debugImage)"
 Write-Host "logPath=$($result.logPath)"
+Write-Host "focusRegionSelection=$($result.thresholds.focusRegionSelection)"
+Write-Host "raw.focusRegion=$($rawDelta.focusRegion.left),$($rawDelta.focusRegion.top),$($rawDelta.focusRegion.width),$($rawDelta.focusRegion.height)"
 Write-Host "raw.focus.changedPixelPercent=$($rawDelta.focusRegionMetrics.changedPixelPercent)"
+Write-Host "denoise.focusRegion=$($denoiseDelta.focusRegion.left),$($denoiseDelta.focusRegion.top),$($denoiseDelta.focusRegion.width),$($denoiseDelta.focusRegion.height)"
 Write-Host "denoise.focus.changedPixelPercent=$($denoiseDelta.focusRegionMetrics.changedPixelPercent)"
 Write-Host "denoise.focus.meanAbsLuma=$($denoiseDelta.focusRegionMetrics.meanAbsLuma)"
+Write-Host "final.focusRegion=$($finalDelta.focusRegion.left),$($finalDelta.focusRegion.top),$($finalDelta.focusRegion.width),$($finalDelta.focusRegion.height)"
 Write-Host "final.focus.changedPixelPercent=$($finalDelta.focusRegionMetrics.changedPixelPercent)"
 Write-Host "final.focus.meanAbsLuma=$($finalDelta.focusRegionMetrics.meanAbsLuma)"
 if ($logProof) {

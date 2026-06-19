@@ -73,8 +73,20 @@ public record Round7RawGiVisualSource(
                 + ",source=\"" + this.sourceLabel + "\""
                 + ",evidence=" + this.evidenceLabel
                 + ",shader=" + this.shaderLabel
+                + ",sourceIdentity=" + this.sourceIdentity()
+                + ",focusedRegionProof=\"" + this.focusedRegionProofExpectation() + "\""
                 + ",ready=" + this.sourceReady
                 + ",reason=\"" + this.reason + "\"";
+    }
+
+    public String sourceIdentity() {
+        return "native-diffuse-gi-rgba8/raw-gi";
+    }
+
+    public String focusedRegionProofExpectation() {
+        return this.sourceReady
+                ? "source-ready only; controller still needs focused-surface screenshot delta"
+                : "not ready; visual proof should not pass";
     }
 
     private static String normalize(String value, String fallback) {

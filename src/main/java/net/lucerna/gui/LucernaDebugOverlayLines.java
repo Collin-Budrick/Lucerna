@@ -87,6 +87,8 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Round 7 composite status: " + compositeStatus.statusText()));
         lines.add(Component.literal("Round 7 composite evidence: " + compositeStatus.controllerEvidenceLine()));
         lines.add(Component.literal("Round 7 composite reason: " + compositeStatus.modeReason()));
+        lines.add(Component.literal("Round 7 selected source: " + compositeStatus.selectedSourcePolicy()));
+        lines.add(Component.literal("Round 7 focused proof: " + compositeStatus.focusedRegionProofExpectation()));
         lines.add(Component.literal("Round 7 boundary: " + compositeStatus.foundationBoundary()));
     }
 
@@ -105,6 +107,10 @@ public final class LucernaDebugOverlayLines {
                 + ",diffuseGi:"
                 + yesNo(compositeStatus.diffuseGiEnabled())));
         lines.add(Component.literal("round7.compositeIsolation=" + compositeStatus.signalIsolationLabel()));
+        lines.add(Component.literal("round7.selectedSourcePolicy=" + compositeStatus.selectedSourcePolicy()));
+        lines.add(Component.literal("round7.focusedRegionProofExpectation="
+                + compositeStatus.focusedRegionProofExpectation()));
+        lines.add(Component.literal("round7.visualProofBoundary=" + compositeStatus.visualProofBoundarySummary()));
         lines.add(Component.literal("round7.compositeReason=" + compositeStatus.modeReason()));
         lines.add(Component.literal("round7.compositeExpectedEvidence=" + compositeStatus.expectedEvidence()));
         lines.add(Component.literal("round7.compositeValidation=" + compositeStatus.validationSummary()));

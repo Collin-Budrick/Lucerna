@@ -9,8 +9,8 @@ public enum CompositeMode {
             false,
             false,
             "vanilla/base world color only; Lucerna lighting composite is bypassed",
-            "baseline screenshot/control frame with Lucerna direct and diffuse GI excluded",
-            "Use this mode to prove the vanilla/base target is preserved before Lucerna lighting is blended."
+            "baseline screenshot/control frame with Lucerna direct, raw GI, denoised GI, and final composite excluded",
+            "Use this mode as the control frame; visual proof should not pass as Lucerna lighting in this mode."
     ),
     DIRECT_ONLY(
             "Direct only",
@@ -42,8 +42,8 @@ public enum CompositeMode {
             false,
             true,
             "raw native diffuse-GI contribution only; denoise and final blend are excluded",
-            "same-scene raw GI screenshot/debug frame showing the native diffuse-GI RGBA8 source",
-            "Use this mode to capture Round 7 raw GI evidence before denoise."
+            "same-scene raw GI screenshot/debug frame showing the native diffuse-GI RGBA8 source and focused-surface delta",
+            "Use this mode to capture Round 7 raw GI source evidence before denoise; source readiness alone is not screenshot proof."
     ),
     DENOISED_GI(
             "Denoised GI",
@@ -53,8 +53,8 @@ public enum CompositeMode {
             false,
             true,
             "CPU denoised diffuse-GI contribution only; final visual quality is not claimed",
-            "same-scene denoised GI screenshot/debug frame showing the CPU denoised diffuse-GI output",
-            "Use this mode to compare denoised GI against the raw GI source without claiming shader/final quality."
+            "same-scene denoised GI screenshot/debug frame showing the CPU denoised diffuse-GI output and focused-surface delta",
+            "Use this mode to compare denoised GI against the raw GI source without claiming shader/final quality; source readiness alone is not screenshot proof."
     ),
     FINAL_LUCERNA_COMPOSITE(
             "Final Lucerna composite",
@@ -64,8 +64,8 @@ public enum CompositeMode {
             true,
             true,
             "base world color plus Lucerna direct and diffuse GI contributions",
-            "final screenshot with base world color, direct light, and diffuse GI combined",
-            "Use this mode to prove the final composite path preserves HUD/vanilla rendering while adding Lucerna lighting."
+            "final screenshot with base world color, direct light, selected GI source, HUD preservation, and focused-surface delta",
+            "Use this mode to prove the final composite path selected a real GI source, preserved HUD/vanilla rendering, and produced focused-region screenshot evidence."
     );
 
     private final String displayName;
