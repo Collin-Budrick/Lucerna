@@ -19,7 +19,7 @@ public final class PublicMojangPreviewDrawScaffolds {
     private static final String DIRECT_LIGHT_SOURCE_BINDING = "InSampler";
     private static final String NO_TEXTURE_BINDING = "none";
     private static final String TEXTURED_FULLSCREEN_MODE = "surface-sample-masked-direct-light-additive";
-    private static final String FINAL_COMPOSITE_FULLSCREEN_MODE = "final-composite-direct-light-additive";
+    private static final String FINAL_COMPOSITE_FULLSCREEN_MODE = "final-composite-direct-light-focus-window-additive";
     private static final String DIAGNOSTIC_FULLSCREEN_MODE = "diagnostic-fullscreen-warm-additive";
     private static final int FULLSCREEN_TRIANGLE_FIRST_VERTEX = 0;
     private static final int FULLSCREEN_TRIANGLE_VERTEX_COUNT = 3;
@@ -69,7 +69,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                     .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
                     .withFragmentShader(Identifier.fromNamespaceAndPath(
                             "lucerna",
-                            "core/direct_light_preview_additive"
+                            "core/direct_light_final_composite_focus"
                     ))
                     .withBindGroupLayout(BindGroupLayouts.IN_SAMPLER)
                     .withColorTargetState(new ColorTargetState(
@@ -187,10 +187,10 @@ public final class PublicMojangPreviewDrawScaffolds {
                 DIRECT_LIGHT_SOURCE_BINDING,
                 FINAL_COMPOSITE_FULLSCREEN_MODE,
                 FULLSCREEN_TRIANGLE_FIRST_VERTEX,
-                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
-                SINGLE_INSTANCE_COUNT,
-                FIRST_INSTANCE,
-                "public Mojang final composite can bind the native direct-light CPU payload texture and issue one bounded draw"
+                    FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                    SINGLE_INSTANCE_COUNT,
+                    FIRST_INSTANCE,
+                    "public Mojang final composite can bind the native direct-light CPU payload texture and issue one bounded focus-window additive draw"
         );
     }
 
@@ -232,7 +232,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang final composite direct-light draw issued"
+                "public Mojang final composite direct-light focus-window additive draw issued"
         );
     }
 
