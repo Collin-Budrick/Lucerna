@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalStable", "TemporalMoved", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay", "VoxelRayDebug", "RtEntityDebug", "HybridHitDebug", "DirectReservoirDebug", "GiReservoirDebug", "ReservoirReuseDebug")]
+    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalStable", "TemporalMoved", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay", "VoxelRayDebug", "RtEntityDebug", "HybridHitDebug", "DirectReservoirDebug", "GiReservoirDebug", "ReservoirReuseDebug", "DirectBruteBaseline", "RestirDirectEnabled", "RestirTemporalStable", "RestirTemporalMoved", "RestirExecutionDebug")]
     [string] $Mode,
 
     [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round7DenoiseComposite", "Round7CompositeStability", "Round7EmissiveGiSurface", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry", "Round10HybridTracing", "Round11Restir")]
@@ -665,6 +665,21 @@ function Get-Round11CaptureIntent {
     $confidencePatterns = @(
         "(?:confidence|minConfidence|maxConfidence|meanConfidence|combinedConfidence|reservoir_confidence|round11\.confidence)="
     )
+    $restirDirectExecutionPatterns = @(
+        "(?:Lucerna Round 11 ReSTIR DI execution|round11\.(?:restirDi|restirDI|directExecution|execution).*?(?:executed|enabled|ready)=(?:true|1)|restirDirectExecution(?:Ready|Enabled|Executed)?=(?:true|1)|realRestirDiExecution=(?:true|1)|restirDiExecutionPresent=(?:true|1))"
+    )
+    $selectedCountPatterns = @(
+        "(?:selected(?:Candidate)?(?:Count|s)?|selected_candidate_count|round11\.selected(?:Candidate)?Count|round11\.(?:restirDi|directReservoir).*selected)=([1-9][0-9]*)"
+    )
+    $candidateReductionPatterns = @(
+        "(?:candidateReductionRatio|candidate_reduction_ratio|round11\.candidateReductionRatio)=([1-9][0-9]*(?:\.[0-9]+)?|[0-9]+\.[0-9]*[1-9][0-9]*)"
+    )
+    $outputEnergyPatterns = @(
+        "(?:restir(?:Direct|Di|DI)?OutputEnergy|outputEnergy|cpuOutputEnergy|round11\.(?:restirDi|directOutput).*energy)=([1-9][0-9.eE+-]*)"
+    )
+    $outputChecksumPatterns = @(
+        "(?:restir(?:Direct|Di|DI)?OutputChecksum|outputChecksum|cpuOutputChecksum|round11\.(?:restirDi|directOutput).*checksum)=([1-9][0-9]*)"
+    )
 
     switch ($CaptureMode) {
         "DirectReservoirDebug" {
@@ -700,6 +715,68 @@ function Get-Round11CaptureIntent {
                 sceneKind = "round11-restir-reuse"
                 requiredPatterns = @($round11CommonPatterns) + @($temporalReusePatterns) + @($spatialReusePatterns) + @($pathReusePatterns) + @($invalidationPatterns) + @($confidencePatterns) + @(
                     "(?:reservoirReuseDebug(?:Visible|Submitted|Enabled)?=true|round11ArtifactRole=reservoir-reuse-debug|artifactRole=reservoir-reuse-debug|debug\.overlay=RESERVOIR_REUSE_DEBUG|Overlay state: RESERVOIR_REUSE_DEBUG)"
+                )
+            }
+        }
+        "DirectBruteBaseline" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "DIRECT_ONLY"
+                artifactRole = "direct-brute-baseline"
+                sceneKind = "round11-restir-direct"
+                sceneState = "direct-brute-baseline"
+                sceneAction = "direct-baseline"
+                requiredPatterns = @()
+            }
+        }
+        "RestirDirectEnabled" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "restir-direct-enabled"
+                sceneKind = "round11-restir-direct"
+                sceneState = "restir-direct-enabled"
+                sceneAction = "direct-enabled"
+                requiredPatterns = @($round11CommonPatterns) + @($restirDirectExecutionPatterns) + @($reservoirCountPatterns) + @($candidateCountPatterns) + @($selectedCountPatterns) + @($candidateReductionPatterns) + @($temporalReusePatterns) + @($spatialReusePatterns) + @($outputEnergyPatterns) + @($outputChecksumPatterns)
+            }
+        }
+        "RestirTemporalStable" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "restir-temporal-stable"
+                sceneKind = "round11-restir-temporal"
+                sceneState = "stable"
+                sceneAction = "temporal-stable"
+                requiredPatterns = @($round11CommonPatterns) + @($restirDirectExecutionPatterns) + @($temporalReusePatterns) + @($spatialReusePatterns) + @($outputEnergyPatterns) + @($outputChecksumPatterns)
+            }
+        }
+        "RestirTemporalMoved" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "restir-temporal-moved"
+                sceneKind = "round11-restir-temporal"
+                sceneState = "moved-disoccluded"
+                sceneAction = "temporal-moved"
+                requiredPatterns = @($round11CommonPatterns) + @($restirDirectExecutionPatterns) + @($temporalReusePatterns) + @($spatialReusePatterns) + @($invalidationPatterns) + @($outputEnergyPatterns) + @($outputChecksumPatterns)
+            }
+        }
+        "RestirExecutionDebug" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "RESERVOIR_REUSE_DEBUG"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "restir-execution-debug"
+                sceneKind = "round11-restir-execution"
+                sceneState = "execution-debug"
+                sceneAction = "execution-debug"
+                requiredPatterns = @($round11CommonPatterns) + @($restirDirectExecutionPatterns) + @($reservoirCountPatterns) + @($candidateCountPatterns) + @($selectedCountPatterns) + @($candidateReductionPatterns) + @($temporalReusePatterns) + @($spatialReusePatterns) + @($outputEnergyPatterns) + @($outputChecksumPatterns) + @(
+                    "(?:restirExecutionDebug(?:Visible|Submitted|Enabled)?=true|round11ArtifactRole=restir-execution-debug|artifactRole=restir-execution-debug|debug\.overlay=RESERVOIR_REUSE_DEBUG|Overlay state: RESERVOIR_REUSE_DEBUG)"
                 )
             }
         }
@@ -1109,6 +1186,60 @@ function Invoke-Round10SceneAction {
     }
 }
 
+function Invoke-Round11SceneAction {
+    param(
+        [string] $SceneAction,
+        [string] $MarkerPath
+    )
+
+    Send-MinecraftChatCommand "/gamerule sendCommandFeedback false"
+    Send-MinecraftChatCommand "/gamemode creative"
+    Send-MinecraftChatCommand "/weather clear"
+    Send-MinecraftChatCommand "/time set 18000"
+
+    if ($SetupScene) {
+        Send-MinecraftChatCommand "/kill @e[type=!player,distance=..48]"
+        Send-MinecraftChatCommand "/fill ~3 ~-1 ~-5 ~9 ~4 ~5 minecraft:smooth_stone"
+        Send-MinecraftChatCommand "/fill ~5 ~ ~-4 ~5 ~3 ~4 minecraft:air"
+        Send-MinecraftChatCommand "/fill ~6 ~ ~-4 ~6 ~3 ~-2 minecraft:blue_concrete"
+        Send-MinecraftChatCommand "/fill ~6 ~ ~2 ~6 ~3 ~4 minecraft:red_concrete"
+        Send-MinecraftChatCommand "/fill ~7 ~ ~-1 ~7 ~2 ~1 minecraft:lime_concrete"
+        Send-MinecraftChatCommand "/setblock ~3 ~1 ~ minecraft:glowstone"
+        Send-MinecraftChatCommand "/setblock ~4 ~ ~3 minecraft:sea_lantern"
+        Send-MinecraftChatCommand "/setblock ~4 ~ ~-3 minecraft:shroomlight"
+    }
+
+    switch ($SceneAction) {
+        "direct-baseline" {
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -90 0"
+            Add-LucernaControllerMarker $MarkerPath "round11.execution.scene=direct-brute-baseline directBruteBaseline=true sameSceneRestirPair=true temporalWorldSurfaceRegion=upper-mid-no-hud"
+        }
+        "direct-enabled" {
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -90 0"
+            Add-LucernaControllerMarker $MarkerPath "round11.execution.scene=restir-direct-enabled restirDirectEnabled=true sameSceneRestirPair=true temporalWorldSurfaceRegion=upper-mid-no-hud"
+        }
+        "temporal-stable" {
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -90 0"
+            Start-Sleep -Seconds 5
+            Add-LucernaControllerMarker $MarkerPath "round11.stability.scene=temporal sceneState=stable restirTemporalStable=true sameSceneStablePair=true temporalWorldSurfaceRegion=upper-mid-no-hud"
+        }
+        "temporal-moved" {
+            Send-MinecraftChatCommand "/tp @s ~-1 ~ ~1 -70 1"
+            Start-Sleep -Milliseconds 750
+            Send-MinecraftChatCommand "/tp @s ~2 ~ ~-2 -125 7"
+            Start-Sleep -Seconds 3
+            Add-LucernaControllerMarker $MarkerPath "round11.stability.scene=temporal sceneState=moved-disoccluded restirTemporalMoved=true movedCameraTemporalPair=true temporalCameraTranslation=true temporalWorldSurfaceRegion=upper-mid-no-hud"
+        }
+        "execution-debug" {
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -90 0"
+            Add-LucernaControllerMarker $MarkerPath "round11.execution.scene=execution-debug restirExecutionDebug=true executionTelemetryDebugScene=true temporalWorldSurfaceRegion=upper-mid-no-hud"
+        }
+        default {
+            throw "Unsupported Round 11 ReSTIR scene action: $SceneAction"
+        }
+    }
+}
+
 function Wait-NewScreenshot {
     param(
         [string] $ScreenshotDir,
@@ -1446,11 +1577,23 @@ try {
         $psi.Environment["LUCERNA_ROUND11_CAPTURE_MODE"] = [string]$round11CaptureIntent.artifactRole
         $psi.Environment["LUCERNA_ROUND11_ARTIFACT_ROLE"] = [string]$round11CaptureIntent.artifactRole
         $psi.Environment["LUCERNA_ROUND11_SCENE_KIND"] = [string]$round11CaptureIntent.sceneKind
+        if ($round11CaptureIntent.Contains("sceneState")) {
+            $psi.Environment["LUCERNA_ROUND11_SCENE_STATE"] = [string]$round11CaptureIntent.sceneState
+        }
+        if ($round11CaptureIntent.Contains("sceneAction")) {
+            $psi.Environment["LUCERNA_ROUND11_SCENE_ACTION"] = [string]$round11CaptureIntent.sceneAction
+        }
+        $psi.Environment["LUCERNA_ROUND11_EXECUTION_MODE"] = [string]$round11CaptureIntent.artifactRole
         $psi.Environment["LUCERNA_ROUND11_VISUAL_PROOF_OWNER"] = "controller"
+        $psi.Environment["LUCERNA_ROUND11_TEMPORAL_CAPTURE_COUNT"] = [string]$TemporalCaptureCount
+        $psi.Environment["LUCERNA_ROUND11_TEMPORAL_CAPTURE_INTERVAL_SECONDS"] = [string]$TemporalCaptureIntervalSeconds
+        if (-not [string]::IsNullOrWhiteSpace($TemporalCaptureLabel)) {
+            $psi.Environment["LUCERNA_ROUND11_TEMPORAL_CAPTURE_LABEL"] = $TemporalCaptureLabel
+        }
     }
     if ($ScreenshotSource -eq "InClient") {
         $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_REQUEST"] = "true"
-        $screenshotDelayTicks = if ($ValidationProfile -eq "Round7CompositeStability") { "1400" } else { "180" }
+        $screenshotDelayTicks = if ($ValidationProfile -eq "Round7CompositeStability" -or ($ValidationProfile -eq "Round11Restir" -and $round11CaptureIntent -and [string]$round11CaptureIntent.sceneKind -eq "round11-restir-temporal")) { "1400" } else { "180" }
         $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_DELAY_TICKS"] = $screenshotDelayTicks
     }
     $script:LucernaMinecraftLaunchStart = Get-Date
@@ -1655,6 +1798,10 @@ try {
         Invoke-Round10SceneAction ([string]$round10CaptureIntent.sceneAction) $markerLog
         Start-Sleep -Seconds 5
     }
+    if ($ValidationProfile -eq "Round11Restir" -and $round11CaptureIntent.Contains("sceneAction")) {
+        Invoke-Round11SceneAction ([string]$round11CaptureIntent.sceneAction) $markerLog
+        Start-Sleep -Seconds 5
+    }
     if ($ValidationProfile -eq "Round7CompositeStability") {
         Invoke-Round7CompositeStabilitySceneAction ([string]$round7StabilityCaptureIntent.sceneAction) $markerLog
         Start-Sleep -Seconds 3
@@ -1691,14 +1838,21 @@ try {
         Add-LucernaControllerMarker $markerLog "round7.emissiveGiSurface.captureRole=$($round7SurfaceCaptureIntent.artifactRole) hideGuiBeforeScreenshot=false fixedWorldSurfaceRegion=true commandFeedback=false chatCleared=true"
     }
     $temporalRepeatEnabled = (
-        $ValidationProfile -eq "Round7CompositeStability" -and
-        $round7StabilityCaptureIntent -and
-        [string]$round7StabilityCaptureIntent.sceneKind -eq "temporal" -and
+        (
+            $ValidationProfile -eq "Round7CompositeStability" -and
+            $round7StabilityCaptureIntent -and
+            [string]$round7StabilityCaptureIntent.sceneKind -eq "temporal"
+        ) -or (
+            $ValidationProfile -eq "Round11Restir" -and
+            $round11CaptureIntent -and
+            [string]$round11CaptureIntent.sceneKind -eq "round11-restir-temporal"
+        )
+    ) -and (
         $TemporalCaptureCount -gt 1
     )
     $effectiveCaptureCount = if ($temporalRepeatEnabled) { $TemporalCaptureCount } else { 1 }
     if ($TemporalCaptureCount -gt 1 -and -not $temporalRepeatEnabled) {
-        Add-LucernaControllerMarker $markerLog "round7.stability.temporal.repeatIgnored=true requestedCount=$TemporalCaptureCount reason=non-temporal-capture"
+        Add-LucernaControllerMarker $markerLog "$($ValidationProfile).temporal.repeatIgnored=true requestedCount=$TemporalCaptureCount reason=non-temporal-capture"
     }
     $captureLabelBase = if ([string]::IsNullOrWhiteSpace($TemporalCaptureLabel)) {
         [string]$Mode
@@ -1722,7 +1876,9 @@ try {
                 Join-Path $screenshotArchiveDir ("$scenario-$stamp-$Mode-$captureLabelSafe-repeat{0:D2}.png" -f ($captureIndex + 1))
             }
             if ($temporalRepeatEnabled) {
-                Add-LucernaControllerMarker $markerLog "round7.stability.temporal.repeatCapture index=$($captureIndex + 1) count=$effectiveCaptureCount label=$captureLabelSafe intervalSeconds=$TemporalCaptureIntervalSeconds sceneState=$($round7StabilityCaptureIntent.sceneState)"
+                $repeatSceneState = if ($ValidationProfile -eq "Round11Restir") { [string]$round11CaptureIntent.sceneState } else { [string]$round7StabilityCaptureIntent.sceneState }
+                $repeatMarkerPrefix = if ($ValidationProfile -eq "Round11Restir") { "round11.stability.temporal" } else { "round7.stability.temporal" }
+                Add-LucernaControllerMarker $markerLog "$repeatMarkerPrefix.repeatCapture index=$($captureIndex + 1) count=$effectiveCaptureCount label=$captureLabelSafe intervalSeconds=$TemporalCaptureIntervalSeconds sceneState=$repeatSceneState"
             }
             $existingScreenshotNames = @(Get-ChildItem -LiteralPath $screenshotDir -Filter "*.png" -ErrorAction SilentlyContinue |
                     Select-Object -ExpandProperty Name)
@@ -1841,6 +1997,12 @@ try {
     if ($round11CaptureIntent) {
         Write-Host "round11ArtifactRole=$($round11CaptureIntent.artifactRole)"
         Write-Host "round11SceneKind=$($round11CaptureIntent.sceneKind)"
+        if ($round11CaptureIntent.Contains("sceneState")) {
+            Write-Host "round11SceneState=$($round11CaptureIntent.sceneState)"
+        }
+        if ($round11CaptureIntent.Contains("sceneAction")) {
+            Write-Host "round11SceneAction=$($round11CaptureIntent.sceneAction)"
+        }
         Write-Host "round11DebugOverlay=$($round11CaptureIntent.debugOverlay)"
         Write-Host "round11CompositeMode=$($round11CaptureIntent.compositeMode)"
     }

@@ -102,6 +102,9 @@ constexpr std::size_t kDirectSectionEmissiveVoxelCountOffset = 7;
 constexpr std::size_t kDirectSectionMaterialPaletteSizeOffset = 13;
 constexpr std::int32_t kMaxDirectCpuOutputWidth = 64;
 constexpr std::int32_t kMaxDirectCpuOutputHeight = 36;
+constexpr std::size_t kRound11RestirDiMaxCandidateCount = 4096;
+constexpr std::size_t kRound11RestirDiMaxReservoirCount = 64;
+constexpr float kRound11RestirDiPreviewGain = 0.075F;
 constexpr std::int32_t kMaxDiffuseGiCpuOutputWidth = 1024;
 constexpr std::int32_t kMaxDiffuseGiCpuOutputHeight = 1024;
 constexpr std::uint64_t kRound9ClusterVoxelCapacity = 8ULL * 8ULL * 8ULL;
@@ -410,6 +413,15 @@ std::int32_t strided_int_or_zero(
 void mix_checksum(std::uint64_t& checksum, std::uint64_t value) {
     checksum ^= value;
     checksum *= 1099511628211ULL;
+}
+
+float deterministic_unit_interval(std::uint64_t seed) {
+    seed ^= seed >> 33U;
+    seed *= 0xff51afd7ed558ccdULL;
+    seed ^= seed >> 33U;
+    seed *= 0xc4ceb9fe1a85ec53ULL;
+    seed ^= seed >> 33U;
+    return static_cast<float>((seed >> 11U) & 0x1fffffULL) / static_cast<float>(0x1fffffULL);
 }
 
 std::size_t pass_index(NativeRenderPass pass) {
@@ -1258,6 +1270,13 @@ void append_round11_restir_status(
         << ",gi_reservoir_count=" << restir.gi_reservoir_count
         << ",path_reuse_count=" << restir.path_reuse_count
         << ",invalidated_reservoir_count=" << restir.invalidated_reservoir_count
+        << ",restir_di_candidate_count=" << restir.restir_di_candidate_count
+        << ",restir_di_selected_count=" << restir.restir_di_selected_count
+        << ",restir_di_candidate_reduction_ratio=" << restir.restir_di_candidate_reduction_ratio
+        << ",restir_di_temporal_reuse_count=" << restir.restir_di_temporal_reuse_count
+        << ",restir_di_spatial_reuse_count=" << restir.restir_di_spatial_reuse_count
+        << ",restir_di_output_energy=" << restir.restir_di_output_energy
+        << ",restir_di_output_checksum=" << restir.restir_di_output_checksum
         << ",confidence={samples=" << restir.confidence_sample_count
         << ",min=" << restir.confidence_min
         << ",mean=" << restir.confidence_mean
@@ -1268,6 +1287,7 @@ void append_round11_restir_status(
         << "\"}"
         << ",metadata_only=" << restir.metadata_only
         << ",real_restir_execution=" << restir.real_restir_execution
+        << ",realRestirDiExecution=" << restir.real_restir_di_execution
         << ",source_marker=\"" << (restir.source_marker.empty()
             ? "round11_restir_source_metadata_not_recorded"
             : restir.source_marker)
@@ -2364,18 +2384,18 @@ void Renderer::render_lighting() {
     last_render_lighting_order_valid_ = true;
     current_frame_render_lighting_submitted_ = true;
     lighting_pass_count_++;
-    const auto lighting_placeholder_resources =
-        track_noop_lighting_placeholder()
-        + track_direct_lighting_execution_scaffold()
-        + track_round6_dispatch_execution_scaffold(
-                NativeLightingDispatchStage::DiffuseGi,
-                staging_.lighting.diffuse_gi_execution,
-                "diffuse_gi_dispatch_accepted_metadata_marker")
-        + track_denoise_execution_scaffold()
-        + track_round6_dispatch_execution_scaffold(
-                NativeLightingDispatchStage::Cache,
-                staging_.lighting.cache_execution,
-                "lighting_cache_dispatch_accepted_metadata_marker");
+    auto lighting_placeholder_resources = track_noop_lighting_placeholder();
+    lighting_placeholder_resources += track_direct_lighting_execution_scaffold();
+    lighting_placeholder_resources += track_round6_dispatch_execution_scaffold(
+            NativeLightingDispatchStage::DiffuseGi,
+            staging_.lighting.diffuse_gi_execution,
+            "diffuse_gi_dispatch_accepted_metadata_marker");
+    lighting_placeholder_resources += track_denoise_execution_scaffold();
+    lighting_placeholder_resources += track_round6_dispatch_execution_scaffold(
+            NativeLightingDispatchStage::Cache,
+            staging_.lighting.cache_execution,
+            "lighting_cache_dispatch_accepted_metadata_marker");
+    track_round11_restir_metadata();
     mark_pass_submitted(NativeRenderPass::NoopLighting, lighting_placeholder_resources);
     mark_pass_submitted(NativeRenderPass::FlatComposite, track_flat_composite_placeholder());
 
@@ -4086,7 +4106,7 @@ void Renderer::track_round11_restir_metadata() {
     const auto& direct_stage = lighting_stage_telemetry(NativeLightingDispatchStage::DirectLighting);
     const auto& gi_stage = lighting_stage_telemetry(NativeLightingDispatchStage::DiffuseGi);
     const auto& cache_stage = lighting_stage_telemetry(NativeLightingDispatchStage::Cache);
-    const auto& direct_execution = staging_.lighting.direct_execution;
+    auto& direct_execution = staging_.lighting.direct_execution;
     const auto& budget = staging_.lighting.adaptive_budget;
 
     const auto selected_light_count = saturated_add(
@@ -4123,6 +4143,276 @@ void Renderer::track_round11_restir_metadata() {
                     budget.invalid_budget_rejections,
                     direct_execution.invalid_ray_budget_rejections));
 
+    struct DirectReservoirCandidate {
+        std::uint64_t id = 0;
+        float priority = 0.0F;
+        float red = 0.0F;
+        float green = 0.0F;
+        float blue = 0.0F;
+        float energy = 0.0F;
+        float influence = 0.0F;
+    };
+
+    std::vector<DirectReservoirCandidate> reservoirs;
+    const auto requested_reservoir_count = direct_reservoir_count == 0
+            ? 1ULL
+            : direct_reservoir_count;
+    const auto bounded_reservoir_count = std::min<std::uint64_t>(
+            requested_reservoir_count,
+            static_cast<std::uint64_t>(kRound11RestirDiMaxReservoirCount));
+    const auto reservoir_limit = static_cast<std::size_t>(std::max<std::uint64_t>(
+            1ULL,
+            bounded_reservoir_count));
+    reservoirs.reserve(reservoir_limit);
+
+    std::uint64_t restir_di_candidate_count = 0;
+    float selected_red = 0.0F;
+    float selected_green = 0.0F;
+    float selected_blue = 0.0F;
+    float selected_energy = 0.0F;
+    float selected_color_weight = 0.0F;
+    const std::uint64_t reservoir_seed = staging_.lighting.last_generation
+            ^ (direct_execution.last_payload_generation << 1U)
+            ^ (frame_index_ << 17U)
+            ^ direct_execution.last_payload_emissive_generation
+            ^ (direct_execution.last_payload_shadow_candidate_generation << 3U);
+
+    auto consider_candidate = [&](DirectReservoirCandidate candidate) {
+        if (candidate.energy <= 0.0F || restir_di_candidate_count >= kRound11RestirDiMaxCandidateCount) {
+            return;
+        }
+        std::uint64_t priority_seed = reservoir_seed;
+        mix_checksum(priority_seed, candidate.id);
+        mix_checksum(priority_seed, static_cast<std::uint64_t>(candidate.energy * 1000.0F));
+        candidate.priority = candidate.energy * (0.65F + deterministic_unit_interval(priority_seed) * 0.70F);
+        restir_di_candidate_count++;
+        if (reservoirs.size() < reservoir_limit) {
+            reservoirs.push_back(candidate);
+            return;
+        }
+
+        auto replace_iter = std::min_element(
+                reservoirs.begin(),
+                reservoirs.end(),
+                [](const DirectReservoirCandidate& left, const DirectReservoirCandidate& right) {
+                    return left.priority < right.priority;
+                });
+        if (replace_iter != reservoirs.end() && replace_iter->priority < candidate.priority) {
+            *replace_iter = candidate;
+        }
+    };
+
+    const auto emissive_count = static_cast<std::size_t>(
+            non_negative_u64(last_direct_lighting_payload_packet_.selected_emissive_count));
+    for (std::size_t light_index = 0;
+            light_index < emissive_count && restir_di_candidate_count < kRound11RestirDiMaxCandidateCount;
+            light_index++) {
+        const float red = strided_float_or_zero(
+                last_direct_lighting_payload_packet_.emissive_light_data,
+                light_index,
+                kDirectEmissiveLightDataStride,
+                kDirectEmissiveColorRedOffset);
+        const float green = strided_float_or_zero(
+                last_direct_lighting_payload_packet_.emissive_light_data,
+                light_index,
+                kDirectEmissiveLightDataStride,
+                kDirectEmissiveColorGreenOffset);
+        const float blue = strided_float_or_zero(
+                last_direct_lighting_payload_packet_.emissive_light_data,
+                light_index,
+                kDirectEmissiveLightDataStride,
+                kDirectEmissiveColorBlueOffset);
+        const float intensity = std::max(0.0F, strided_float_or_zero(
+                last_direct_lighting_payload_packet_.emissive_light_data,
+                light_index,
+                kDirectEmissiveLightDataStride,
+                kDirectEmissiveIntensityOffset));
+        const float radius = std::max(1.0F, strided_float_or_zero(
+                last_direct_lighting_payload_packet_.emissive_light_data,
+                light_index,
+                kDirectEmissiveLightDataStride,
+                kDirectEmissiveInfluenceRadiusOffset));
+        const float luma = (red * 0.2126F) + (green * 0.7152F) + (blue * 0.0722F);
+        consider_candidate({
+                0x11000000ULL + static_cast<std::uint64_t>(light_index),
+                0.0F,
+                red <= 0.0F && green <= 0.0F && blue <= 0.0F ? 1.0F : red,
+                red <= 0.0F && green <= 0.0F && blue <= 0.0F ? 0.88F : green,
+                red <= 0.0F && green <= 0.0F && blue <= 0.0F ? 0.62F : blue,
+                std::max(0.001F, intensity * std::sqrt(radius) * std::max(0.25F, luma)),
+                std::clamp(radius / 32.0F, 0.15F, 1.0F)});
+    }
+
+    const auto celestial_count = static_cast<std::size_t>(
+            non_negative_u64(last_direct_lighting_payload_packet_.celestial_light_count));
+    const float celestial_energy = sum_strided_float_field(
+            last_direct_lighting_payload_packet_.celestial_light_data,
+            celestial_count,
+            kDirectCelestialLightDataStride,
+            8);
+    if (celestial_energy > 0.0F && restir_di_candidate_count < kRound11RestirDiMaxCandidateCount) {
+        consider_candidate({
+                0x22000000ULL + direct_execution.last_payload_celestial_generation,
+                0.0F,
+                0.72F,
+                0.82F,
+                1.0F,
+                std::max(0.001F, celestial_energy * 0.45F),
+                0.45F});
+    }
+
+    const auto shadow_count = static_cast<std::size_t>(
+            non_negative_u64(last_direct_lighting_payload_packet_.shadow_candidate_count));
+    const float emissive_energy_scale = std::max(
+            0.25F,
+            finite_non_negative(last_direct_lighting_payload_packet_.selected_emissive_energy)
+                    / static_cast<float>(std::max<std::size_t>(1, emissive_count)));
+    for (std::size_t shadow_index = 0;
+            shadow_index < shadow_count && restir_di_candidate_count < kRound11RestirDiMaxCandidateCount;
+            shadow_index++) {
+        const float contribution_weight = strided_float_or_zero(
+                last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                shadow_index,
+                kDirectShadowCandidateRayStride,
+                kDirectShadowRayContributionWeightOffset);
+        if (contribution_weight <= 0.0F) {
+            continue;
+        }
+        const std::size_t light_index = emissive_count == 0 ? 0 : shadow_index % emissive_count;
+        const float red = emissive_count == 0 ? 1.0F : strided_float_or_zero(
+                last_direct_lighting_payload_packet_.emissive_light_data,
+                light_index,
+                kDirectEmissiveLightDataStride,
+                kDirectEmissiveColorRedOffset);
+        const float green = emissive_count == 0 ? 0.88F : strided_float_or_zero(
+                last_direct_lighting_payload_packet_.emissive_light_data,
+                light_index,
+                kDirectEmissiveLightDataStride,
+                kDirectEmissiveColorGreenOffset);
+        const float blue = emissive_count == 0 ? 0.62F : strided_float_or_zero(
+                last_direct_lighting_payload_packet_.emissive_light_data,
+                light_index,
+                kDirectEmissiveLightDataStride,
+                kDirectEmissiveColorBlueOffset);
+        consider_candidate({
+                0x33000000ULL + static_cast<std::uint64_t>(shadow_index),
+                0.0F,
+                red <= 0.0F && green <= 0.0F && blue <= 0.0F ? 1.0F : red,
+                red <= 0.0F && green <= 0.0F && blue <= 0.0F ? 0.88F : green,
+                red <= 0.0F && green <= 0.0F && blue <= 0.0F ? 0.62F : blue,
+                std::max(0.001F, contribution_weight * emissive_energy_scale),
+                std::clamp(contribution_weight, 0.05F, 1.0F)});
+    }
+
+    for (const auto& candidate : reservoirs) {
+        selected_red += candidate.red * candidate.energy;
+        selected_green += candidate.green * candidate.energy;
+        selected_blue += candidate.blue * candidate.energy;
+        selected_color_weight += candidate.energy;
+        selected_energy += candidate.energy * std::max(0.05F, candidate.influence);
+    }
+    if (selected_color_weight > 0.0F) {
+        selected_red = std::clamp(selected_red / selected_color_weight, 0.0F, 1.5F);
+        selected_green = std::clamp(selected_green / selected_color_weight, 0.0F, 1.5F);
+        selected_blue = std::clamp(selected_blue / selected_color_weight, 0.0F, 1.5F);
+    } else {
+        selected_red = 1.0F;
+        selected_green = 0.88F;
+        selected_blue = 0.62F;
+    }
+
+    const auto restir_di_selected_count = static_cast<std::uint64_t>(reservoirs.size());
+    const auto restir_di_temporal_reuse_count = std::min(temporal_reuse_count, restir_di_selected_count);
+    const auto restir_di_spatial_reuse_count = std::min(
+            spatial_reuse_count,
+            restir_di_selected_count >= restir_di_temporal_reuse_count
+                    ? restir_di_selected_count - restir_di_temporal_reuse_count
+                    : 0ULL);
+    const double restir_di_candidate_reduction_ratio = restir_di_selected_count == 0
+            ? 0.0
+            : static_cast<double>(restir_di_candidate_count)
+                    / static_cast<double>(restir_di_selected_count);
+
+    float restir_di_output_energy = 0.0F;
+    std::uint64_t restir_di_output_checksum = 0;
+    const bool can_affect_direct_output = restir_di_selected_count > 0
+            && direct_execution.last_cpu_output_generated
+            && direct_execution.last_frame_index == frame_index_
+            && direct_execution.last_output_pixel_count > 0
+            && direct_lighting_cpu_output_.size()
+                    == static_cast<std::size_t>(direct_execution.last_output_pixel_count * 4);
+    if (can_affect_direct_output) {
+        restir_di_output_checksum = 1469598103934665603ULL;
+        const auto output_width = std::max<std::uint64_t>(1, direct_execution.last_output_width);
+        const auto output_height = std::max<std::uint64_t>(1, direct_execution.last_output_height);
+        const float reservoir_gain = std::clamp(
+                kRound11RestirDiPreviewGain
+                        * (1.0F + static_cast<float>(restir_di_temporal_reuse_count) * 0.025F
+                                + static_cast<float>(restir_di_spatial_reuse_count) * 0.015F),
+                0.025F,
+                0.18F);
+        float total_output_energy = 0.0F;
+        float min_sample = 0.0F;
+        float max_sample = 0.0F;
+        bool has_sample = false;
+        for (std::uint64_t pixel = 0; pixel < direct_execution.last_output_pixel_count; pixel++) {
+            const auto offset = static_cast<std::size_t>(pixel * 4);
+            const auto pixel_x = pixel % output_width;
+            const auto pixel_y = pixel / output_width;
+            const float u = output_width <= 1
+                    ? 0.5F
+                    : static_cast<float>(pixel_x) / static_cast<float>(output_width - 1);
+            const float v = output_height <= 1
+                    ? 0.5F
+                    : static_cast<float>(pixel_y) / static_cast<float>(output_height - 1);
+            const float surface_lobe = std::max(
+                    broad_surface_response(u, v) * 0.55F,
+                    smooth_unit_response(1.0F - std::abs(v - 0.58F) / 0.48F) * 0.35F);
+            const float alpha_lobe = std::max(
+                    direct_lighting_cpu_output_[offset + 3],
+                    surface_lobe);
+            const float bounded_energy = std::clamp(
+                    selected_energy * reservoir_gain * alpha_lobe,
+                    0.0F,
+                    14.0F);
+            direct_lighting_cpu_output_[offset] = std::min(
+                    96.0F,
+                    direct_lighting_cpu_output_[offset] + selected_red * bounded_energy);
+            direct_lighting_cpu_output_[offset + 1] = std::min(
+                    96.0F,
+                    direct_lighting_cpu_output_[offset + 1] + selected_green * bounded_energy);
+            direct_lighting_cpu_output_[offset + 2] = std::min(
+                    96.0F,
+                    direct_lighting_cpu_output_[offset + 2] + selected_blue * bounded_energy);
+            direct_lighting_cpu_output_[offset + 3] = std::clamp(
+                    std::max(direct_lighting_cpu_output_[offset + 3], alpha_lobe * 0.42F),
+                    0.0F,
+                    1.0F);
+
+            const float sample_energy = direct_lighting_cpu_output_[offset]
+                    + direct_lighting_cpu_output_[offset + 1]
+                    + direct_lighting_cpu_output_[offset + 2];
+            restir_di_output_energy += bounded_energy;
+            total_output_energy += sample_energy;
+            min_sample = has_sample ? std::min(min_sample, sample_energy) : sample_energy;
+            max_sample = std::max(max_sample, sample_energy);
+            has_sample = true;
+            mix_checksum(restir_di_output_checksum, static_cast<std::uint64_t>(sample_energy * 1000.0F));
+            mix_checksum(restir_di_output_checksum, static_cast<std::uint64_t>(bounded_energy * 1000.0F));
+            mix_checksum(restir_di_output_checksum, pixel);
+            mix_checksum(restir_di_output_checksum, restir_di_selected_count);
+        }
+        direct_execution.last_output_energy = total_output_energy;
+        direct_execution.last_output_min_sample = min_sample;
+        direct_execution.last_output_max_sample = max_sample;
+        direct_execution.last_output_checksum = restir_di_output_checksum;
+        direct_execution.last_output_marker = direct_execution.last_output_write_recorded
+            ? "direct_light_output_modulated_by_round11_restir_di_cpu_preview"
+            : "direct_light_cpu_output_modulated_by_round11_restir_di_preview_without_resource_write";
+        direct_execution.last_readiness_reason = "direct_lighting_cpu_output_modulated_by_round11_restir_di_preview";
+        direct_execution.last_metadata_only = false;
+    }
+
     restir.metadata_packets++;
     restir.last_frame_index = frame_index_;
     restir.last_packet_generation = staging_.lighting.last_packet_generation;
@@ -4136,32 +4426,48 @@ void Renderer::track_round11_restir_metadata() {
     restir.gi_reservoir_count = gi_reservoir_count;
     restir.path_reuse_count = path_reuse_count;
     restir.invalidated_reservoir_count = invalidated_reservoir_count;
-    restir.metadata_only = true;
-    restir.real_restir_execution = false;
-    restir.boundary_marker = "native_round11_metadata_only_no_real_restir_execution";
-    restir.source_marker = "round11_restir_metadata_derived_from_existing_direct_gi_cache_dispatch_status";
+    restir.restir_di_candidate_count = restir_di_candidate_count;
+    restir.restir_di_selected_count = restir_di_selected_count;
+    restir.restir_di_candidate_reduction_ratio = restir_di_candidate_reduction_ratio;
+    restir.restir_di_temporal_reuse_count = restir_di_temporal_reuse_count;
+    restir.restir_di_spatial_reuse_count = restir_di_spatial_reuse_count;
+    restir.restir_di_output_energy = restir_di_output_energy;
+    restir.restir_di_output_checksum = restir_di_output_checksum;
+    restir.real_restir_di_execution = restir_di_selected_count > 0;
+    restir.real_restir_execution = restir.real_restir_di_execution;
+    restir.metadata_only = !can_affect_direct_output;
+    restir.boundary_marker = can_affect_direct_output
+            ? "first_bounded_cpu_native_restir_di_preview_not_final_gpu_restir"
+            : (restir.real_restir_di_execution
+                    ? "first_bounded_cpu_native_restir_di_selection_waiting_for_direct_output_not_final_gpu_restir"
+                    : "native_round11_no_restir_di_candidates_selected_not_final_gpu_restir");
+    restir.source_marker = "round11_restir_di_cpu_reservoir_from_direct_emissive_celestial_shadow_metadata";
 
     const auto confidence_sample_count = budget.last_cell_count == 0
-            ? gi_reservoir_count
+            ? std::max(gi_reservoir_count, restir_di_selected_count)
             : budget.last_cell_count;
     restir.confidence_sample_count = confidence_sample_count;
     if (confidence_sample_count == 0) {
         restir.confidence_min = 0.0;
         restir.confidence_mean = 0.0;
         restir.confidence_max = 0.0;
-        restir.confidence_marker = "round11_confidence_metadata_unavailable_no_reservoirs";
+        restir.confidence_marker = "round11_confidence_unavailable_no_reservoirs";
         return;
     }
 
     const auto confidence_contribution = saturated_add(
-            saturated_add(budget.last_cache_confidence_contribution, temporal_reuse_count),
-            spatial_reuse_count);
+            saturated_add(
+                    budget.last_cache_confidence_contribution,
+                    saturated_add(temporal_reuse_count, restir_di_temporal_reuse_count)),
+            saturated_add(spatial_reuse_count, restir_di_spatial_reuse_count));
     const auto bounded_contribution = std::min(confidence_contribution, confidence_sample_count);
     restir.confidence_min = invalidated_reservoir_count == 0 ? 0.25 : 0.0;
     restir.confidence_mean = static_cast<double>(bounded_contribution)
             / static_cast<double>(confidence_sample_count);
     restir.confidence_max = bounded_contribution == 0 ? restir.confidence_min : 1.0;
-    restir.confidence_marker = "round11_confidence_stats_metadata_only_from_cache_history_reuse_counts";
+    restir.confidence_marker = can_affect_direct_output
+            ? "round11_confidence_stats_include_bounded_cpu_restir_di_preview"
+            : "round11_confidence_stats_from_restir_di_selection_and_cache_history_reuse_counts";
 }
 
 void Renderer::track_gbuffer_placeholder_intent() {

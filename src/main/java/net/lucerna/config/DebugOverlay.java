@@ -18,6 +18,7 @@ public enum DebugOverlay {
     VOXEL_RAY_DEBUG("Round 10 voxel ray debug"),
     RT_ENTITY_DEBUG("Round 10 RT entity debug"),
     HYBRID_HIT_DEBUG("Round 10 hybrid hit debug"),
+    RESTIR_EXECUTION_DEBUG("Round 11 ReSTIR execution debug"),
     DIRECT_RESERVOIR_DEBUG("Round 11 direct reservoir debug"),
     GI_RESERVOIR_DEBUG("Round 11 GI reservoir debug"),
     RESERVOIR_REUSE_DEBUG("Round 11 reservoir reuse debug");

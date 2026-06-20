@@ -1855,19 +1855,69 @@ public final class LucernaController {
         String sceneKind = envValue("LUCERNA_ROUND11_SCENE_KIND", "unspecified");
         String captureMode = envValue("LUCERNA_ROUND11_CAPTURE_MODE", artifactRole);
         String owner = envValue("LUCERNA_ROUND11_VISUAL_PROOF_OWNER", "controller");
-        String directReservoirs = round9NativeValue(nativeStatus, "direct_reservoir_count", "0");
-        String candidates = round9NativeValue(nativeStatus, "candidate_count", "0");
-        String selectedLights = round9NativeValue(nativeStatus, "selected_light_count", "0");
-        String temporalReuse = round9NativeValue(nativeStatus, "temporal_reuse_count", "0");
-        String spatialReuse = round9NativeValue(nativeStatus, "spatial_reuse_count", "0");
-        String giReservoirs = round9NativeValue(nativeStatus, "gi_reservoir_count", "0");
-        String pathReuse = round9NativeValue(nativeStatus, "path_reuse_count", "0");
-        String invalidated = round9NativeValue(nativeStatus, "invalidated_reservoir_count", "0");
-        String minConfidence = round9NativeValue(nativeStatus, "min_confidence", "0");
-        String meanConfidence = round9NativeValue(nativeStatus, "mean_confidence", "0");
-        String maxConfidence = round9NativeValue(nativeStatus, "max_confidence", "0");
-        String sourceMarker = round9NativeValue(nativeStatus, "source_marker", "round11_restir_source_metadata_not_recorded");
-        String boundary = round9NativeValue(nativeStatus, "boundary", "round11_restir_boundary_not_recorded");
+        String baselineArtifactRole = round11RestirNativeValue(nativeStatus, "baseline_artifact_role", envValue("LUCERNA_ROUND11_BASELINE_ARTIFACT_ROLE", "round11-baseline"));
+        String baselineCaptureMode = round11RestirNativeValue(nativeStatus, "baseline_capture_mode", envValue("LUCERNA_ROUND11_BASELINE_CAPTURE_MODE", "baseline"));
+        String directArtifactRole = round11RestirNativeValue(nativeStatus, "direct_artifact_role", envValue("LUCERNA_ROUND11_DIRECT_ARTIFACT_ROLE", "round11-direct"));
+        String directCaptureMode = round11RestirNativeValue(nativeStatus, "direct_capture_mode", envValue("LUCERNA_ROUND11_DIRECT_CAPTURE_MODE", "direct"));
+        String restirArtifactRole = round11RestirNativeValue(nativeStatus, "restir_artifact_role", envValue("LUCERNA_ROUND11_RESTIR_ARTIFACT_ROLE", "round11-restir"));
+        String restirCaptureMode = round11RestirNativeValue(nativeStatus, "restir_capture_mode", envValue("LUCERNA_ROUND11_RESTIR_CAPTURE_MODE", "restir"));
+        String temporalArtifactRole = round11RestirNativeValue(nativeStatus, "temporal_artifact_role", envValue("LUCERNA_ROUND11_TEMPORAL_ARTIFACT_ROLE", "round11-temporal"));
+        String temporalCaptureMode = round11RestirNativeValue(nativeStatus, "temporal_capture_mode", envValue("LUCERNA_ROUND11_TEMPORAL_CAPTURE_MODE", "temporal"));
+        String directReservoirs = round11RestirNativeValue(nativeStatus, "direct_reservoir_count", "0");
+        String candidates = round11RestirNativeValue(nativeStatus, "candidate_count", "0");
+        String selectedLights = round11RestirNativeValue(nativeStatus, "selected_light_count", "0");
+        String temporalReuse = round11RestirNativeValue(nativeStatus, "temporal_reuse_count", "0");
+        String spatialReuse = round11RestirNativeValue(nativeStatus, "spatial_reuse_count", "0");
+        String giReservoirs = round11RestirNativeValue(nativeStatus, "gi_reservoir_count", "0");
+        String pathReuse = round11RestirNativeValue(nativeStatus, "path_reuse_count", "0");
+        String invalidated = round11RestirNativeValue(nativeStatus, "invalidated_reservoir_count", "0");
+        String minConfidence = round11RestirNativeValue(nativeStatus, new String[]{"min_confidence", "min"}, "0");
+        String meanConfidence = round11RestirNativeValue(nativeStatus, new String[]{"mean_confidence", "mean"}, "0");
+        String maxConfidence = round11RestirNativeValue(nativeStatus, new String[]{"max_confidence", "max"}, "0");
+        String sourceMarker = round11RestirNativeValue(nativeStatus, "source_marker", "round11_restir_source_metadata_not_recorded");
+        String boundary = round11RestirNativeValue(nativeStatus, "boundary", "round11_restir_boundary_not_recorded");
+        String metadataOnlyRestir = round11RestirNativeValue(nativeStatus, "metadata_only", "true");
+        String realRestirExecution = round11RestirNativeValue(nativeStatus, "real_restir_execution", "false");
+        String realRestirDiExecution = round11RestirNativeValue(
+                nativeStatus,
+                new String[]{"real_restir_di_execution", "realRestirDiExecution"},
+                "false"
+        );
+        String restirDiExecutionPresent = round11RestirNativeValue(
+                nativeStatus,
+                new String[]{"restir_di_execution_present", "restirDiExecutionPresent"},
+                realRestirDiExecution
+        );
+        String restirDiSelectedCount = round11RestirNativeValue(
+                nativeStatus,
+                new String[]{"restir_di_selected_count", "restirDiSelectedCount"},
+                selectedLights
+        );
+        String candidateReductionRatio = round11RestirNativeValue(
+                nativeStatus,
+                new String[]{"candidate_reduction_ratio", "candidateReductionRatio"},
+                "not_recorded"
+        );
+        String restirOutputEnergy = round11RestirNativeValue(
+                nativeStatus,
+                new String[]{"restir_output_energy", "restir_di_output_energy", "round11_output_energy", "output_energy"},
+                "not_recorded"
+        );
+        String restirOutputChecksum = round11RestirNativeValue(
+                nativeStatus,
+                new String[]{"restir_output_checksum", "restir_di_output_checksum", "round11_output_checksum", "output_checksum"},
+                "not_recorded"
+        );
+        String realRestirGiReuseExecution = round11RestirNativeValue(
+                nativeStatus,
+                new String[]{"real_restir_gi_reuse_execution", "realRestirGiReuseExecution"},
+                "false"
+        );
+        String restirStabilityProofReady = round11RestirNativeValue(
+                nativeStatus,
+                new String[]{"restir_stability_proof_ready", "restirStabilityProofReady"},
+                "false"
+        );
         boolean directDebug = "direct-reservoir-debug".equals(captureMode);
         boolean giDebug = "gi-reservoir-debug".equals(captureMode);
         boolean reuseDebug = "reservoir-reuse-debug".equals(captureMode);
@@ -1891,19 +1941,59 @@ public final class LucernaController {
                 + "|"
                 + invalidated
                 + "|"
-                + sourceMarker;
+                + sourceMarker
+                + "|"
+                + realRestirDiExecution
+                + "|"
+                + restirDiExecutionPresent
+                + "|"
+                + restirDiSelectedCount
+                + "|"
+                + candidateReductionRatio
+                + "|"
+                + restirOutputEnergy
+                + "|"
+                + restirOutputChecksum
+                + "|"
+                + realRestirGiReuseExecution
+                + "|"
+                + restirStabilityProofReady
+                + "|"
+                + baselineArtifactRole
+                + "|"
+                + baselineCaptureMode
+                + "|"
+                + directArtifactRole
+                + "|"
+                + directCaptureMode
+                + "|"
+                + restirArtifactRole
+                + "|"
+                + restirCaptureMode
+                + "|"
+                + temporalArtifactRole
+                + "|"
+                + temporalCaptureMode;
         if (logKey.equals(this.lastLoggedRound11RestirKey)) {
             return;
         }
 
         this.lastLoggedRound11RestirKey = logKey;
         Lucerna.LOGGER.info(
-                "Lucerna Round 11 ReSTIR reservoir metadata: artifactRole={} round11ArtifactRole={} sceneKind={} captureMode={} owner={} directReservoirDebugVisible={} round11.directReservoirDebugVisible={} giReservoirDebugVisible={} round11.giReservoirDebugVisible={} reservoirReuseDebugVisible={} round11.reservoirReuseDebugVisible={} reservoirCount={} round11.reservoirCount={} round11.reservoirs={} direct_reservoir_count={} round11.directReservoir=count={} gi_reservoir_count={} round11.giReservoir=count={} candidateCount={} round11.candidateCount={} candidate_count={} round11.directCandidate=count={} round11.giCandidate=count={} selectedLightCount={} temporalReuseCount={} round11.temporalReuse=count={} spatialReuseCount={} round11.spatialReuse=count={} pathReuseCount={} round11.pathReuse=count={} invalidatedReservoirs={} round11.invalidation=count={} confidence=min={},mean={},max={} round11.confidence=min={},mean={},max={} minConfidence={} meanConfidence={} maxConfidence={} sourceMarker={} boundary={} metadataOnlyRestir=true realRestirExecution=false.",
+                "Lucerna Round 11 ReSTIR reservoir metadata: artifactRole={} round11ArtifactRole={} sceneKind={} captureMode={} owner={} baselineArtifactRole={} baselineCaptureMode={} directArtifactRole={} directCaptureMode={} restirArtifactRole={} restirCaptureMode={} temporalArtifactRole={} temporalCaptureMode={} directReservoirDebugVisible={} round11.directReservoirDebugVisible={} giReservoirDebugVisible={} round11.giReservoirDebugVisible={} reservoirReuseDebugVisible={} round11.reservoirReuseDebugVisible={} reservoirCount={} round11.reservoirCount={} round11.reservoirs={} direct_reservoir_count={} round11.directReservoir=count={} gi_reservoir_count={} round11.giReservoir=count={} candidateCount={} round11.candidateCount={} candidate_count={} round11.directCandidate=count={} round11.giCandidate=count={} selectedLightCount={} restirDiSelectedCount={} temporalReuseCount={} round11.temporalReuse=count={} restirTemporalReuseCount={} spatialReuseCount={} round11.spatialReuse=count={} restirSpatialReuseCount={} pathReuseCount={} round11.pathReuse=count={} invalidatedReservoirs={} round11.invalidation=count={} confidence=min={},mean={},max={} round11.confidence=min={},mean={},max={} minConfidence={} meanConfidence={} maxConfidence={} sourceMarker={} boundary={} metadataOnlyRestir={} realRestirExecution={} realRestirDiExecution={} restirDiExecutionPresent={} candidateReductionRatio={} restirOutputEnergy={} restirOutputChecksum={} realRestirGiReuseExecution={} restirStabilityProofReady={} physicalFinalRestirClaimed={}.",
                 artifactRole,
                 artifactRole,
                 sceneKind,
                 captureMode,
                 owner,
+                baselineArtifactRole,
+                baselineCaptureMode,
+                directArtifactRole,
+                directCaptureMode,
+                restirArtifactRole,
+                restirCaptureMode,
+                temporalArtifactRole,
+                temporalCaptureMode,
                 directDebug,
                 directDebug,
                 giDebug,
@@ -1923,8 +2013,11 @@ public final class LucernaController {
                 candidates,
                 candidates,
                 selectedLights,
+                restirDiSelectedCount,
                 temporalReuse,
                 temporalReuse,
+                temporalReuse,
+                spatialReuse,
                 spatialReuse,
                 spatialReuse,
                 pathReuse,
@@ -1941,7 +2034,17 @@ public final class LucernaController {
                 meanConfidence,
                 maxConfidence,
                 sourceMarker,
-                boundary
+                boundary,
+                metadataOnlyRestir,
+                realRestirExecution,
+                realRestirDiExecution,
+                restirDiExecutionPresent,
+                candidateReductionRatio,
+                restirOutputEnergy,
+                restirOutputChecksum,
+                realRestirGiReuseExecution,
+                restirStabilityProofReady,
+                realRestirExecution
         );
     }
 
@@ -2117,6 +2220,46 @@ public final class LucernaController {
             return fallback;
         }
         return nativeStatus.substring(valueStart, valueEnd).replace("\"", "");
+    }
+
+    private static String round11RestirNativeValue(String nativeStatus, String key, String fallback) {
+        return round11RestirNativeValue(nativeStatus, new String[]{key}, fallback);
+    }
+
+    private static String round11RestirNativeValue(String nativeStatus, String[] keys, String fallback) {
+        String round11Status = round11RestirNativeStatus(nativeStatus);
+        for (String key : keys) {
+            String value = round9NativeValue(round11Status, key, "");
+            if (!value.isBlank()) {
+                return value;
+            }
+        }
+        return fallback;
+    }
+
+    private static String round11RestirNativeStatus(String nativeStatus) {
+        if (nativeStatus == null || nativeStatus.isBlank()) {
+            return "";
+        }
+        String search = "round11_restir={";
+        int start = nativeStatus.indexOf(search);
+        if (start < 0) {
+            return "";
+        }
+        int contentStart = start + search.length();
+        int depth = 1;
+        for (int index = contentStart; index < nativeStatus.length(); index++) {
+            char character = nativeStatus.charAt(index);
+            if (character == '{') {
+                depth++;
+            } else if (character == '}') {
+                depth--;
+                if (depth == 0) {
+                    return nativeStatus.substring(contentStart, index);
+                }
+            }
+        }
+        return nativeStatus.substring(contentStart);
     }
 
     private static int stageIndex(NativeLightingDispatchUploadPacket packet, Phase5Stage stage) {
