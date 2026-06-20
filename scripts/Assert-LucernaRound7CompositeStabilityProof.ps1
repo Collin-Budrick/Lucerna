@@ -33,6 +33,8 @@ param(
 
     [string[]] $TemporalCaptureLabels = @(),
 
+    [string[]] $TemporalCaptureManifestJsonPath = @(),
+
     [string[]] $LogPath = @(),
 
     [string] $OutputJsonPath = "",
@@ -140,6 +142,11 @@ param(
         "round8\.historyConfidence",
         "historyAccepted=[0-9]+.*historyRejected=[0-9]+",
         "historyRejected=[1-9][0-9]*",
+        "stablePixels=[0-9]+",
+        "unstablePixels=[0-9]+",
+        "flickerScore=[0-9]+(?:\.[0-9]+)?",
+        "ghostingRisk=(?:low|medium|high|[0-9]+(?:\.[0-9]+)?)",
+        "temporalReadiness=(?:ready|not-ready|pending|open|true|false)",
         "sceneState=(?:stable|moved|disoccluded|moved-disoccluded)"
     ),
 
@@ -189,6 +196,23 @@ function Resolve-OptionalFiles {
         $resolved.Add((Resolve-ExistingFile $path $Label)) | Out-Null
     }
     return $resolved.ToArray()
+}
+
+function Read-OptionalJsonFiles {
+    param(
+        [string[]] $Paths,
+        [string] $Label
+    )
+
+    $resolved = Resolve-OptionalFiles $Paths $Label
+    $items = New-Object System.Collections.Generic.List[object]
+    foreach ($path in $resolved) {
+        $items.Add([ordered]@{
+            path = $path
+            manifest = Get-Content -Raw -LiteralPath $path | ConvertFrom-Json
+        }) | Out-Null
+    }
+    return $items.ToArray()
 }
 
 function Resolve-TemporalSequenceFiles {
@@ -341,6 +365,7 @@ function Measure-TemporalSequenceDrift {
     $labels = @(for ($index = 0; $index -lt $Paths.Count; $index++) {
         Get-TemporalCaptureLabel $index $LabelPrefix
     })
+    $comparisonArray = @($comparisons.ToArray())
 
     return [ordered]@{
         captureCount = $Paths.Count
@@ -354,6 +379,8 @@ function Measure-TemporalSequenceDrift {
         averageTileChangedPixelStdDev = [Math]::Round($averageTileStdDev, 4)
         maxTileChangedPixelStdDev = [Math]::Round($maxTileStdDev, 4)
         roughnessScore = [Math]::Round($roughnessScore, 4)
+        labels = @($labels)
+        consecutiveComparisons = $comparisonArray
     }
 }
 
@@ -430,6 +457,73 @@ function Test-AnyRegex {
     return $false
 }
 
+function Get-FirstRegexValue {
+    param(
+        [string] $Text,
+        [string[]] $Patterns
+    )
+
+    foreach ($pattern in $Patterns) {
+        $match = [regex]::Match($Text, $pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+        if ($match.Success -and $match.Groups.Count -gt 1) {
+            return $match.Groups[1].Value
+        }
+    }
+    return $null
+}
+
+function Get-TemporalTelemetryFields {
+    param([string] $Log)
+
+    $stablePixels = Get-FirstRegexValue $Log @(
+        "(?:round7\.temporal\.stablePixels|temporalStablePixels|stablePixels)=([0-9]+)",
+        "(?:stablePixelCount|stable_pixels)=([0-9]+)"
+    )
+    $unstablePixels = Get-FirstRegexValue $Log @(
+        "(?:round7\.temporal\.unstablePixels|temporalUnstablePixels|unstablePixels)=([0-9]+)",
+        "(?:unstablePixelCount|unstable_pixels)=([0-9]+)"
+    )
+    $frameDelta = Get-FirstRegexValue $Log @(
+        "(?:round7\.temporal\.frameDeltaMs|temporalFrameDeltaMs|frameDeltaMs)=([0-9]+(?:\.[0-9]+)?)",
+        "(?:round7\.temporal\.frameDelta|temporalFrameDelta|frameDelta)=([0-9]+(?:\.[0-9]+)?)"
+    )
+    $historyConfidence = Get-FirstRegexValue $Log @(
+        "(?:round7\.temporal\.historyConfidence|temporalHistoryConfidence|historyConfidence)=([0-9]+(?:\.[0-9]+)?)",
+        "(?:Lucerna Round 8 history confidence|round8\.historyConfidence)[^`r`n]*(?:value|confidence(?:Map)?)=([0-9]+(?:\.[0-9]+)?)"
+    )
+    $flickerScore = Get-FirstRegexValue $Log @(
+        "(?:round7\.temporal\.flickerScore|temporalFlickerScore|flickerScore)=([0-9]+(?:\.[0-9]+)?)",
+        "(?:flicker_score)=([0-9]+(?:\.[0-9]+)?)"
+    )
+    $ghostingRisk = Get-FirstRegexValue $Log @(
+        "(?:round7\.temporal\.ghostingRisk|temporalGhostingRisk|ghostingRisk)=([A-Za-z0-9_.-]+)",
+        "(?:ghosting_risk)=([A-Za-z0-9_.-]+)"
+    )
+    $temporalReadiness = Get-FirstRegexValue $Log @(
+        "(?:round7\.temporal\.readiness|temporalReadiness|temporalReadyState)=([A-Za-z0-9_.-]+)",
+        "(?:temporalReady|round7\.temporal\.ready)=(true|false)"
+    )
+
+    return [ordered]@{
+        stablePixels = if ($null -ne $stablePixels) { [int64]$stablePixels } else { $null }
+        unstablePixels = if ($null -ne $unstablePixels) { [int64]$unstablePixels } else { $null }
+        frameDelta = if ($null -ne $frameDelta) { [double]$frameDelta } else { $null }
+        historyConfidence = if ($null -ne $historyConfidence) { [double]$historyConfidence } else { $null }
+        flickerScore = if ($null -ne $flickerScore) { [double]$flickerScore } else { $null }
+        ghostingRisk = $ghostingRisk
+        temporalReadiness = $temporalReadiness
+        present = [ordered]@{
+            stablePixels = $null -ne $stablePixels
+            unstablePixels = $null -ne $unstablePixels
+            frameDelta = $null -ne $frameDelta
+            historyConfidence = $null -ne $historyConfidence
+            flickerScore = $null -ne $flickerScore
+            ghostingRisk = $null -ne $ghostingRisk
+            temporalReadiness = $null -ne $temporalReadiness
+        }
+    }
+}
+
 function Measure-Round7CompositeStabilityLogProof {
     param([string[]] $ResolvedLogPaths)
 
@@ -450,6 +544,7 @@ function Measure-Round7CompositeStabilityLogProof {
     $focusWindowOnlyPresent = Test-Regex $log "focusWindowOnly(?:Submitted)?=true|focus_window_only=true|sourceIdentity=native-direct-light-rgba8,focusWindowOnly=true|mode=final-composite-direct-light-focus-window-additive|round6-diffuse-gi-focus-window-additive"
     $wrongWindowScreenshotPresent = Test-Regex $log "screenshotSource=(?:window|window-fallback)|temporalCaptureSources=[^`r`n]*(?:window|window-fallback)"
     $nativeErrorPresent = Test-Regex $log "invalid descriptor|VK_ERROR|VK_[A-Z_]*ERROR|Lucerna native error|native error|Vulkan error"
+    $temporalTelemetry = Get-TemporalTelemetryFields $log
 
     return [ordered]@{
         markers = [ordered]@{
@@ -466,6 +561,7 @@ function Measure-Round7CompositeStabilityLogProof {
             wrongWindowScreenshotPresent = $wrongWindowScreenshotPresent
             nativeErrorPresent = $nativeErrorPresent
         }
+        temporalTelemetry = $temporalTelemetry
         patterns = [ordered]@{
             finalCompositePatterns = @($FinalCompositePatterns)
             hudPreservationPatterns = @($HudPreservationPatterns)
@@ -490,6 +586,7 @@ $temporalMovedSequenceResolved = Resolve-TemporalSequenceFiles `
     -Paths $TemporalMovedSequenceImagePath `
     -FirstPath $temporalMovedResolved `
     -Label "Temporal moved sequence image"
+$temporalCaptureManifests = Read-OptionalJsonFiles $TemporalCaptureManifestJsonPath "Temporal capture manifest"
 $logResolved = Resolve-OptionalFiles $LogPath "Log"
 
 $particleBaselineDimensions = Get-ImageDimensions $particleBaselineResolved
@@ -681,6 +778,7 @@ $result = [ordered]@{
     temporalMovedImage = $temporalMovedResolved
     temporalStableSequenceImages = @($temporalStableSequenceResolved)
     temporalMovedSequenceImages = @($temporalMovedSequenceResolved)
+    temporalCaptureManifests = @($temporalCaptureManifests)
     screenshotSources = @($ScreenshotSource)
     logPaths = @($logResolved)
     thresholds = [ordered]@{
@@ -783,6 +881,7 @@ $result = [ordered]@{
             wrongWindowScreenshotPresent = if ($logProof) { [bool]$logProof.markers.wrongWindowScreenshotPresent } else { $null }
             nativeErrorPresent = if ($logProof) { [bool]$logProof.markers.nativeErrorPresent } else { $null }
         }
+        temporalTelemetry = if ($logProof) { $logProof.temporalTelemetry } else { $null }
     }
     passed = $failures.Count -eq 0
     failures = @($failures)
@@ -805,6 +904,7 @@ Write-Host "temporalStableImage=$($result.temporalStableImage)"
 Write-Host "temporalMovedImage=$($result.temporalMovedImage)"
 Write-Host "temporalStableSequenceImages=$(@($result.temporalStableSequenceImages) -join ';')"
 Write-Host "temporalMovedSequenceImages=$(@($result.temporalMovedSequenceImages) -join ';')"
+Write-Host "temporalCaptureManifestJson=$(@($TemporalCaptureManifestJsonPath) -join ';')"
 Write-Host "screenshotSources=$(@($result.screenshotSources) -join ';')"
 Write-Host "logPaths=$(@($result.logPaths) -join ';')"
 Write-Host "particle.focus.changedPixelPercent=$($particleDelta.focusRegionMetrics.changedPixelPercent)"
@@ -841,6 +941,13 @@ if ($logProof) {
     Write-Host "focusWindowOnlyPresent=$($logProof.markers.focusWindowOnlyPresent)"
     Write-Host "wrongWindowScreenshotPresent=$($logProof.markers.wrongWindowScreenshotPresent)"
     Write-Host "nativeErrorPresent=$($logProof.markers.nativeErrorPresent)"
+    Write-Host "temporal.telemetry.stablePixels=$($logProof.temporalTelemetry.stablePixels)"
+    Write-Host "temporal.telemetry.unstablePixels=$($logProof.temporalTelemetry.unstablePixels)"
+    Write-Host "temporal.telemetry.frameDelta=$($logProof.temporalTelemetry.frameDelta)"
+    Write-Host "temporal.telemetry.historyConfidence=$($logProof.temporalTelemetry.historyConfidence)"
+    Write-Host "temporal.telemetry.flickerScore=$($logProof.temporalTelemetry.flickerScore)"
+    Write-Host "temporal.telemetry.ghostingRisk=$($logProof.temporalTelemetry.ghostingRisk)"
+    Write-Host "temporal.telemetry.temporalReadiness=$($logProof.temporalTelemetry.temporalReadiness)"
 }
 Write-Host "proof.classification=$($result.proofClarity.classification)"
 Write-Host "passed=$($result.passed)"

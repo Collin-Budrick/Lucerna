@@ -22,6 +22,14 @@ public record DenoiseExecutionSnapshot(
         long denoisedOutputChecksum,
         int denoisedOutputChangedPixels,
         int denoisedOutputMeanAbsDelta,
+        long previousDenoisedOutputChecksum,
+        long currentDenoisedOutputChecksum,
+        int frameToFrameChangedPixels,
+        int frameToFrameMeanAbsDelta,
+        int temporalStablePixels,
+        int temporalUnstablePixels,
+        double temporalHistoryConfidence,
+        double temporalFlickerScore,
         int shaderDenoiseOutputImageCandidateWidth,
         int shaderDenoiseOutputImageCandidateHeight,
         int shaderDenoiseOutputImageCandidatePixels,
@@ -56,6 +64,8 @@ public record DenoiseExecutionSnapshot(
         boolean shaderDenoiseOutputImageCandidateNonGpu,
         boolean shaderDenoiseOutputMaterialReady,
         boolean shaderDenoiseShaderGeneratedOutput,
+        boolean temporalReady,
+        boolean temporalGhostingRisk,
         boolean cpuFallbackQualityMetrics,
         boolean compositeStageRecorded,
         boolean compositeEnabled,
@@ -70,6 +80,8 @@ public record DenoiseExecutionSnapshot(
         String outputMarker,
         String rawInputMarker,
         String denoisedOutputMarker,
+        String temporalReadinessMarker,
+        String temporalGhostingRiskMarker,
         String shaderDenoiseOutputImageCandidateMarker,
         String shaderDenoiseOutputImageBlocker,
         String compositeMarker,
@@ -95,6 +107,14 @@ public record DenoiseExecutionSnapshot(
         denoisedOutputChecksum = Math.max(0L, denoisedOutputChecksum);
         denoisedOutputChangedPixels = Math.max(0, denoisedOutputChangedPixels);
         denoisedOutputMeanAbsDelta = Math.max(0, denoisedOutputMeanAbsDelta);
+        previousDenoisedOutputChecksum = Math.max(0L, previousDenoisedOutputChecksum);
+        currentDenoisedOutputChecksum = Math.max(0L, currentDenoisedOutputChecksum);
+        frameToFrameChangedPixels = Math.max(0, frameToFrameChangedPixels);
+        frameToFrameMeanAbsDelta = Math.max(0, frameToFrameMeanAbsDelta);
+        temporalStablePixels = Math.max(0, temporalStablePixels);
+        temporalUnstablePixels = Math.max(0, temporalUnstablePixels);
+        temporalHistoryConfidence = Math.max(0.0D, temporalHistoryConfidence);
+        temporalFlickerScore = Math.max(0.0D, temporalFlickerScore);
         shaderDenoiseOutputImageCandidateWidth = Math.max(0, shaderDenoiseOutputImageCandidateWidth);
         shaderDenoiseOutputImageCandidateHeight = Math.max(0, shaderDenoiseOutputImageCandidateHeight);
         shaderDenoiseOutputImageCandidatePixels = Math.max(0, shaderDenoiseOutputImageCandidatePixels);
@@ -106,6 +126,12 @@ public record DenoiseExecutionSnapshot(
         outputMarker = outputMarker == null || outputMarker.isBlank() ? "unknown" : outputMarker;
         rawInputMarker = rawInputMarker == null || rawInputMarker.isBlank() ? "unknown" : rawInputMarker;
         denoisedOutputMarker = denoisedOutputMarker == null || denoisedOutputMarker.isBlank() ? "unknown" : denoisedOutputMarker;
+        temporalReadinessMarker = temporalReadinessMarker == null || temporalReadinessMarker.isBlank()
+                ? "unknown"
+                : temporalReadinessMarker;
+        temporalGhostingRiskMarker = temporalGhostingRiskMarker == null || temporalGhostingRiskMarker.isBlank()
+                ? "unknown"
+                : temporalGhostingRiskMarker;
         shaderDenoiseOutputImageCandidateMarker = shaderDenoiseOutputImageCandidateMarker == null
                 || shaderDenoiseOutputImageCandidateMarker.isBlank()
                 ? "unknown"
@@ -149,6 +175,14 @@ public record DenoiseExecutionSnapshot(
                 0L, // denoisedOutputChecksum
                 0, // denoisedOutputChangedPixels
                 0, // denoisedOutputMeanAbsDelta
+                0L, // previousDenoisedOutputChecksum
+                0L, // currentDenoisedOutputChecksum
+                0, // frameToFrameChangedPixels
+                0, // frameToFrameMeanAbsDelta
+                0, // temporalStablePixels
+                0, // temporalUnstablePixels
+                0.0D, // temporalHistoryConfidence
+                0.0D, // temporalFlickerScore
                 0, // shaderDenoiseOutputImageCandidateWidth
                 0, // shaderDenoiseOutputImageCandidateHeight
                 0, // shaderDenoiseOutputImageCandidatePixels
@@ -183,6 +217,8 @@ public record DenoiseExecutionSnapshot(
                 true, // shaderDenoiseOutputImageCandidateNonGpu
                 false, // shaderDenoiseOutputMaterialReady
                 false, // shaderDenoiseShaderGeneratedOutput
+                false, // temporalReady
+                false, // temporalGhostingRisk
                 false, // cpuFallbackQualityMetrics
                 false, // compositeStageRecorded
                 false, // compositeEnabled
@@ -197,6 +233,8 @@ public record DenoiseExecutionSnapshot(
                 "unknown", // outputMarker
                 "unknown", // rawInputMarker
                 "unknown", // denoisedOutputMarker
+                "unknown", // temporalReadinessMarker
+                "unknown", // temporalGhostingRiskMarker
                 "unknown", // shaderDenoiseOutputImageCandidateMarker
                 "unknown", // shaderDenoiseOutputImageBlocker
                 "unknown", // compositeMarker
@@ -236,6 +274,44 @@ public record DenoiseExecutionSnapshot(
                 parseLong(extractField(denoiseExecution, "denoised_output_checksum")),
                 parseInt(extractField(denoiseExecution, "denoised_output_changed_pixels")),
                 parseInt(extractField(denoiseExecution, "denoised_output_mean_abs_delta")),
+                parseLongField(
+                        denoiseExecution,
+                        "previous_denoised_output_checksum",
+                        "denoised_output_previous_checksum"
+                ),
+                parseLongField(
+                        denoiseExecution,
+                        "current_denoised_output_checksum",
+                        "denoised_output_current_checksum",
+                        "denoised_output_checksum"
+                ),
+                parseIntField(
+                        denoiseExecution,
+                        "frame_to_frame_changed_pixels",
+                        "denoised_frame_to_frame_changed_pixels",
+                        "temporal_changed_pixels",
+                        "temporal_unstable_pixels"
+                ),
+                parseIntField(
+                        denoiseExecution,
+                        "frame_to_frame_mean_abs_delta",
+                        "denoised_frame_to_frame_mean_abs_delta",
+                        "temporal_mean_abs_delta"
+                ),
+                parseInt(extractField(denoiseExecution, "temporal_stable_pixels")),
+                parseInt(extractField(denoiseExecution, "temporal_unstable_pixels")),
+                parseDoubleField(
+                        denoiseExecution,
+                        "history_confidence",
+                        "temporal_history_confidence",
+                        "denoise_history_confidence"
+                ),
+                parseDoubleField(
+                        denoiseExecution,
+                        "flicker_score",
+                        "temporal_flicker_score",
+                        "denoise_flicker_score"
+                ),
                 dimensionOrFieldInt(
                         denoiseExecution,
                         "shader_denoise_output_image_candidate_size",
@@ -280,6 +356,19 @@ public record DenoiseExecutionSnapshot(
                 parseBoolean(extractField(denoiseExecution, "shader_denoise_output_image_candidate_non_gpu")),
                 parseBoolean(extractField(denoiseExecution, "shader_denoise_output_material_ready")),
                 parseBoolean(extractField(denoiseExecution, "shader_denoise_output_shader_generated")),
+                parseBooleanField(
+                        denoiseExecution,
+                        "temporal_ready",
+                        "temporal_history_ready",
+                        "temporal_proof_ready",
+                        "temporal_acceptance_ready"
+                ),
+                parseBooleanField(
+                        denoiseExecution,
+                        "ghosting_risk",
+                        "temporal_ghosting_risk",
+                        "denoise_ghosting_risk"
+                ),
                 parseBoolean(extractField(denoiseExecution, "cpu_fallback_quality_metrics")),
                 parseBoolean(extractField(denoiseExecution, "composite_stage_recorded")),
                 parseBoolean(extractField(denoiseExecution, "composite_enabled")),
@@ -294,6 +383,18 @@ public record DenoiseExecutionSnapshot(
                 extractField(denoiseExecution, "output_marker"),
                 extractField(denoiseExecution, "raw_input_marker"),
                 extractField(denoiseExecution, "denoised_output_marker"),
+                extractFieldOrDefault(
+                        denoiseExecution,
+                        "temporal_readiness_marker",
+                        "temporal_marker",
+                        "temporal_ready_marker"
+                ),
+                extractFieldOrDefault(
+                        denoiseExecution,
+                        "ghosting_risk_marker",
+                        "temporal_ghosting_risk_marker",
+                        "denoise_ghosting_risk_marker"
+                ),
                 extractField(denoiseExecution, "shader_denoise_output_image_candidate_marker"),
                 extractField(denoiseExecution, "shader_denoise_output_image_blocker"),
                 extractField(denoiseExecution, "composite_marker"),
@@ -399,6 +500,18 @@ public record DenoiseExecutionSnapshot(
                 + " denoisedOutputPixels=" + this.denoisedOutputPixels
                 + " denoisedOutputChangedPixels=" + this.denoisedOutputChangedPixels
                 + " denoisedOutputMeanAbsDelta=" + this.denoisedOutputMeanAbsDelta
+                + " previousDenoisedOutputChecksum=" + this.previousDenoisedOutputChecksum
+                + " currentDenoisedOutputChecksum=" + this.currentDenoisedOutputChecksum
+                + " frameToFrameChangedPixels=" + this.frameToFrameChangedPixels
+                + " frameToFrameMeanAbsDelta=" + this.frameToFrameMeanAbsDelta
+                + " temporalStablePixels=" + this.temporalStablePixels
+                + " temporalUnstablePixels=" + this.temporalUnstablePixels
+                + " temporalHistoryConfidence=" + this.temporalHistoryConfidence
+                + " temporalFlickerScore=" + this.temporalFlickerScore
+                + " temporalReady=" + this.temporalReady
+                + " temporalGhostingRisk=" + this.temporalGhostingRisk
+                + " temporalReadinessMarker=" + this.temporalReadinessMarker
+                + " temporalGhostingRiskMarker=" + this.temporalGhostingRiskMarker
                 + " denoisedOutputDiffersFromRaw=" + this.denoisedOutputDiffersFromRaw
                 + " realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
                 + " rawGiInputReady=" + this.rawGiInputReady
@@ -533,6 +646,43 @@ public record DenoiseExecutionSnapshot(
         } catch (NumberFormatException ignored) {
             return 0L;
         }
+    }
+
+    private static double parseDouble(String value) {
+        try {
+            return value == null || value.isBlank() ? 0.0D : Double.parseDouble(value);
+        } catch (NumberFormatException ignored) {
+            return 0.0D;
+        }
+    }
+
+    private static int parseIntField(String block, String... fieldNames) {
+        return parseInt(extractFieldOrDefault(block, fieldNames));
+    }
+
+    private static long parseLongField(String block, String... fieldNames) {
+        return parseLong(extractFieldOrDefault(block, fieldNames));
+    }
+
+    private static double parseDoubleField(String block, String... fieldNames) {
+        return parseDouble(extractFieldOrDefault(block, fieldNames));
+    }
+
+    private static boolean parseBooleanField(String block, String... fieldNames) {
+        return parseBoolean(extractFieldOrDefault(block, fieldNames));
+    }
+
+    private static String extractFieldOrDefault(String block, String... fieldNames) {
+        if (fieldNames == null) {
+            return "";
+        }
+        for (String fieldName : fieldNames) {
+            String value = extractField(block, fieldName);
+            if (!value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
     }
 
     private static int dimensionComponentInt(String dimensions, int component) {

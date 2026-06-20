@@ -738,9 +738,13 @@ struct NativeDenoiseExecutionTelemetry {
     std::uint64_t last_edge_input_count = 0;
     std::uint64_t last_history_input_count = 0;
     std::uint64_t last_denoised_output_pixels = 0;
+    std::uint64_t last_previous_denoised_output_checksum = 0;
+    std::uint64_t last_current_denoised_output_checksum = 0;
     std::uint64_t last_denoised_output_checksum = 0;
     std::uint64_t last_denoised_output_changed_pixels = 0;
     std::uint64_t last_denoised_output_mean_abs_delta = 0;
+    std::uint64_t last_frame_to_frame_changed_pixels = 0;
+    std::uint64_t last_frame_to_frame_mean_abs_delta = 0;
     std::uint64_t last_shader_denoise_output_image_candidate_width = 0;
     std::uint64_t last_shader_denoise_output_image_candidate_height = 0;
     std::uint64_t last_shader_denoise_output_image_candidate_pixels = 0;
@@ -749,6 +753,8 @@ struct NativeDenoiseExecutionTelemetry {
     std::uint64_t last_temporal_stable_pixels = 0;
     std::uint64_t last_temporal_unstable_pixels = 0;
     std::uint64_t last_temporal_mean_abs_delta = 0;
+    std::uint64_t last_temporal_history_confidence = 0;
+    std::uint64_t last_temporal_flicker_score = 0;
     std::uint64_t last_raw_neighbor_luma_delta = 0;
     std::uint64_t last_denoised_neighbor_luma_delta = 0;
     std::uint64_t last_noise_reduction_percent = 0;
@@ -800,6 +806,7 @@ struct NativeDenoiseExecutionTelemetry {
     bool last_edge_normal_available = false;
     bool last_edge_material_available = false;
     bool last_history_confidence_available = false;
+    bool last_temporal_stability_ready = false;
     bool last_shader_boundary_explicit = false;
     bool last_metadata_only_proof_rejected = true;
     bool last_focus_window_capture_rejected = true;
@@ -821,6 +828,8 @@ struct NativeDenoiseExecutionTelemetry {
     std::string last_history_rejection_reason;
     std::string last_shader_boundary_marker;
     std::string last_temporal_history_marker;
+    std::string last_temporal_stability_readiness_marker;
+    std::string last_temporal_ghosting_risk_marker;
     std::string last_proof_boundary_marker;
     std::string last_quality_marker;
     std::string last_readiness_reason;

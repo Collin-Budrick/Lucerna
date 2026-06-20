@@ -15,6 +15,14 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
         long nativeOutputChecksum,
         int nativeOutputChangedPixels,
         int nativeOutputMeanAbsDelta,
+        long previousDenoisedOutputChecksum,
+        long currentDenoisedOutputChecksum,
+        int frameToFrameChangedPixels,
+        int frameToFrameMeanAbsDelta,
+        int temporalStablePixels,
+        int temporalUnstablePixels,
+        double temporalHistoryConfidence,
+        double temporalFlickerScore,
         int shaderOutputImageCandidateWidth,
         int shaderOutputImageCandidateHeight,
         int shaderOutputImageCandidatePixels,
@@ -36,11 +44,15 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
         boolean shaderOutputImageCandidateCpuStaged,
         boolean shaderOutputImageCandidateNonGpu,
         boolean shaderDenoiseShaderGeneratedOutput,
+        boolean temporalReady,
+        boolean temporalGhostingRisk,
         boolean edgeInputsAvailable,
         boolean historyConfidenceAvailable,
         String outputMarker,
         String rawInputMarker,
         String denoisedOutputMarker,
+        String temporalReadinessMarker,
+        String temporalGhostingRiskMarker,
         String shaderOutputImageCandidateMarker,
         String shaderOutputImageBlocker,
         String readinessReason
@@ -58,6 +70,14 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
         nativeOutputChecksum = Math.max(0L, nativeOutputChecksum);
         nativeOutputChangedPixels = Math.max(0, nativeOutputChangedPixels);
         nativeOutputMeanAbsDelta = Math.max(0, nativeOutputMeanAbsDelta);
+        previousDenoisedOutputChecksum = Math.max(0L, previousDenoisedOutputChecksum);
+        currentDenoisedOutputChecksum = Math.max(0L, currentDenoisedOutputChecksum);
+        frameToFrameChangedPixels = Math.max(0, frameToFrameChangedPixels);
+        frameToFrameMeanAbsDelta = Math.max(0, frameToFrameMeanAbsDelta);
+        temporalStablePixels = Math.max(0, temporalStablePixels);
+        temporalUnstablePixels = Math.max(0, temporalUnstablePixels);
+        temporalHistoryConfidence = Math.max(0.0D, temporalHistoryConfidence);
+        temporalFlickerScore = Math.max(0.0D, temporalFlickerScore);
         shaderOutputImageCandidateWidth = Math.max(0, shaderOutputImageCandidateWidth);
         shaderOutputImageCandidateHeight = Math.max(0, shaderOutputImageCandidateHeight);
         shaderOutputImageCandidatePixels = Math.max(0, shaderOutputImageCandidatePixels);
@@ -72,6 +92,12 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
         denoisedOutputMarker = denoisedOutputMarker == null || denoisedOutputMarker.isBlank()
                 ? "unknown"
                 : denoisedOutputMarker;
+        temporalReadinessMarker = temporalReadinessMarker == null || temporalReadinessMarker.isBlank()
+                ? "unknown"
+                : temporalReadinessMarker;
+        temporalGhostingRiskMarker = temporalGhostingRiskMarker == null || temporalGhostingRiskMarker.isBlank()
+                ? "unknown"
+                : temporalGhostingRiskMarker;
         shaderOutputImageCandidateMarker = shaderOutputImageCandidateMarker == null
                 || shaderOutputImageCandidateMarker.isBlank()
                 ? "unknown"
@@ -100,6 +126,14 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
                 0L, // nativeOutputChecksum
                 0, // nativeOutputChangedPixels
                 0, // nativeOutputMeanAbsDelta
+                0L, // previousDenoisedOutputChecksum
+                0L, // currentDenoisedOutputChecksum
+                0, // frameToFrameChangedPixels
+                0, // frameToFrameMeanAbsDelta
+                0, // temporalStablePixels
+                0, // temporalUnstablePixels
+                0.0D, // temporalHistoryConfidence
+                0.0D, // temporalFlickerScore
                 0, // shaderOutputImageCandidateWidth
                 0, // shaderOutputImageCandidateHeight
                 0, // shaderOutputImageCandidatePixels
@@ -121,11 +155,15 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
                 false, // shaderOutputImageCandidateCpuStaged
                 false, // shaderOutputImageCandidateNonGpu
                 false, // shaderDenoiseShaderGeneratedOutput
+                false, // temporalReady
+                false, // temporalGhostingRisk
                 false, // edgeInputsAvailable
                 false, // historyConfidenceAvailable
                 "unknown", // outputMarker
                 "unknown", // rawInputMarker
                 "unknown", // denoisedOutputMarker
+                "unknown", // temporalReadinessMarker
+                "unknown", // temporalGhostingRiskMarker
                 "unknown", // shaderOutputImageCandidateMarker
                 reason, // shaderOutputImageBlocker
                 reason
@@ -162,6 +200,14 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
                 denoise.denoisedOutputChecksum(),
                 denoise.denoisedOutputChangedPixels(),
                 denoise.denoisedOutputMeanAbsDelta(),
+                denoise.previousDenoisedOutputChecksum(),
+                denoise.currentDenoisedOutputChecksum(),
+                denoise.frameToFrameChangedPixels(),
+                denoise.frameToFrameMeanAbsDelta(),
+                denoise.temporalStablePixels(),
+                denoise.temporalUnstablePixels(),
+                denoise.temporalHistoryConfidence(),
+                denoise.temporalFlickerScore(),
                 denoise.shaderDenoiseOutputImageCandidateWidth(),
                 denoise.shaderDenoiseOutputImageCandidateHeight(),
                 denoise.shaderDenoiseOutputImageCandidatePixels(),
@@ -183,11 +229,15 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
                 denoise.shaderDenoiseOutputImageCandidateCpuStaged(),
                 denoise.shaderDenoiseOutputImageCandidateNonGpu(),
                 denoise.shaderDenoiseShaderGeneratedOutput(),
+                denoise.temporalReady(),
+                denoise.temporalGhostingRisk(),
                 denoise.edgeInputsAvailable(),
                 denoise.historyConfidenceAvailable(),
                 denoise.outputMarker(),
                 denoise.rawInputMarker(),
                 denoise.denoisedOutputMarker(),
+                denoise.temporalReadinessMarker(),
+                denoise.temporalGhostingRiskMarker(),
                 denoise.shaderDenoiseOutputImageCandidateMarker(),
                 denoise.shaderDenoiseOutputImageBlocker(),
                 denoise.readinessReason()
@@ -328,6 +378,18 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
                 + " nativeOutputChecksum=" + this.nativeOutputChecksum
                 + " nativeOutputChangedPixels=" + this.nativeOutputChangedPixels
                 + " nativeOutputMeanAbsDelta=" + this.nativeOutputMeanAbsDelta
+                + " previousDenoisedOutputChecksum=" + this.previousDenoisedOutputChecksum
+                + " currentDenoisedOutputChecksum=" + this.currentDenoisedOutputChecksum
+                + " frameToFrameChangedPixels=" + this.frameToFrameChangedPixels
+                + " frameToFrameMeanAbsDelta=" + this.frameToFrameMeanAbsDelta
+                + " temporalStablePixels=" + this.temporalStablePixels
+                + " temporalUnstablePixels=" + this.temporalUnstablePixels
+                + " temporalHistoryConfidence=" + this.temporalHistoryConfidence
+                + " temporalFlickerScore=" + this.temporalFlickerScore
+                + " temporalReady=" + this.temporalReady
+                + " temporalGhostingRisk=" + this.temporalGhostingRisk
+                + " temporalReadinessMarker=" + this.temporalReadinessMarker
+                + " temporalGhostingRiskMarker=" + this.temporalGhostingRiskMarker
                 + " shaderOutputImageCandidateReady=" + this.shaderOutputImageCandidateReady
                 + " shaderOutputImageCandidateCpuStaged=" + this.shaderOutputImageCandidateCpuStaged
                 + " shaderOutputImageCandidateNonGpu=" + this.shaderOutputImageCandidateNonGpu

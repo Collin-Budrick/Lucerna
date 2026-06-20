@@ -2052,7 +2052,11 @@ try {
     }
     $capturedScreenshotPaths = New-Object System.Collections.Generic.List[string]
     $capturedScreenshotSources = New-Object System.Collections.Generic.List[string]
+    $capturedScreenshotStartedAt = New-Object System.Collections.Generic.List[string]
+    $capturedScreenshotCompletedAt = New-Object System.Collections.Generic.List[string]
+    $capturedScreenshotElapsedMs = New-Object System.Collections.Generic.List[object]
     try {
+        $previousCaptureStartedAt = $null
         for ($captureIndex = 0; $captureIndex -lt $effectiveCaptureCount; $captureIndex++) {
             if ($captureIndex -gt 0 -and $TemporalCaptureIntervalSeconds -gt 0) {
                 Start-Sleep -Seconds $TemporalCaptureIntervalSeconds
@@ -2071,6 +2075,12 @@ try {
             Send-MinecraftKeys "{ESC}"
             Send-MinecraftKeys "{ESC}"
             Start-Sleep -Milliseconds 500
+            $captureStartedAt = Get-Date
+            $elapsedFromPreviousStartMs = if ($previousCaptureStartedAt) {
+                [Math]::Round(($captureStartedAt - $previousCaptureStartedAt).TotalMilliseconds, 3)
+            } else {
+                $null
+            }
             $existingScreenshotNames = @(Get-ChildItem -LiteralPath $screenshotDir -Filter "*.png" -ErrorAction SilentlyContinue |
                     Select-Object -ExpandProperty Name)
             $beforeScreenshot = Get-Date
@@ -2104,8 +2114,13 @@ try {
             if ($RejectWindowScreenshotSource -and $capturedScreenshotSource -match "^(?:window|window-fallback)$") {
                 throw "Screenshot source '$capturedScreenshotSource' is rejected for visual proof. Use MinecraftF2 or InClient capture, preferably InClient for temporal/flicker evidence."
             }
+            $captureCompletedAt = Get-Date
             $capturedScreenshotPaths.Add($captureArchivePath) | Out-Null
             $capturedScreenshotSources.Add($capturedScreenshotSource) | Out-Null
+            $capturedScreenshotStartedAt.Add($captureStartedAt.ToString("o")) | Out-Null
+            $capturedScreenshotCompletedAt.Add($captureCompletedAt.ToString("o")) | Out-Null
+            $capturedScreenshotElapsedMs.Add($elapsedFromPreviousStartMs) | Out-Null
+            $previousCaptureStartedAt = $captureStartedAt
         }
     } finally {
         if ($hudHiddenForScreenshot) {
@@ -2126,9 +2141,23 @@ try {
         temporalCaptureEffectiveCount = $effectiveCaptureCount
         temporalCaptureIntervalSeconds = $TemporalCaptureIntervalSeconds
         temporalCaptureLabel = $captureLabelSafe
+        temporalSeries = [ordered]@{
+            enabled = [bool]$temporalRepeatEnabled
+            fixedIntervalRequested = [bool]($temporalRepeatEnabled -and $TemporalCaptureIntervalSeconds -gt 0)
+            requestedCount = $TemporalCaptureCount
+            effectiveCount = $effectiveCaptureCount
+            intervalSeconds = $TemporalCaptureIntervalSeconds
+            label = $captureLabelSafe
+            sceneState = if ($ValidationProfile -eq "Round11Restir" -and $round11CaptureIntent) { [string]$round11CaptureIntent.sceneState } elseif ($ValidationProfile -eq "Round7CompositeStability" -and $round7StabilityCaptureIntent) { [string]$round7StabilityCaptureIntent.sceneState } else { "" }
+            artifactRole = if ($ValidationProfile -eq "Round11Restir" -and $round11CaptureIntent) { [string]$round11CaptureIntent.artifactRole } elseif ($ValidationProfile -eq "Round7CompositeStability" -and $round7StabilityCaptureIntent) { [string]$round7StabilityCaptureIntent.artifactRole } else { "" }
+        }
         screenshots = @(for ($index = 0; $index -lt $capturedScreenshotPaths.Count; $index++) {
             [ordered]@{
                 index = $index
+                plannedOffsetSeconds = if ($temporalRepeatEnabled) { $index * $TemporalCaptureIntervalSeconds } else { 0 }
+                elapsedMsSincePreviousCaptureStart = $capturedScreenshotElapsedMs[$index]
+                startedAt = $capturedScreenshotStartedAt[$index]
+                completedAt = $capturedScreenshotCompletedAt[$index]
                 path = $capturedScreenshotPaths[$index]
                 source = $capturedScreenshotSources[$index]
             }

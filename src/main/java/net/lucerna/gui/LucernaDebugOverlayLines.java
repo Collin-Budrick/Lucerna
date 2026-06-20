@@ -229,6 +229,8 @@ public final class LucernaDebugOverlayLines {
             lines.add(Component.literal("Candidate boundary: blocker=telemetry-unavailable notRealShaderOut=true"));
             lines.add(Component.literal("Denoise output: source=? generated=? energy=missing checksum=missing"));
             lines.add(Component.literal("Edge/history: edgeReject=? edgeKeep=? histReject=?"));
+            lines.add(Component.literal("Temporal pixels: stable=? unstable=? f2fDelta=?"));
+            lines.add(Component.literal("Temporal quality: historyConf=? flicker=? ghostRisk=? ready=?"));
             lines.add(Component.literal("Temporal proof: accept=? reject=? reset=? missing=? ready=?"));
             lines.add(Component.literal("Proof boundary: controller screenshots/logs required before temporal or shader-quality claim."));
             return;
@@ -257,6 +259,13 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Edge/history: edgeReject=" + valueOrUnknown(denoiseStage == null ? null : denoiseStage.edgeRejectionCount())
                 + " edgeKeep=" + firstDetailOrUnknown(denoiseStage, "edge_preserved_count", "edge_preserved", "edge_kept")
                 + " histReject=" + valueOrUnknown(denoiseStage == null ? null : denoiseStage.historyRejectionCount())));
+        lines.add(Component.literal("Temporal pixels: stable=" + temporalDetailOrUnknown(denoiseStage, adaptiveStage, "stable_pixel_count", "stable_pixels", "temporal_stable_pixels", "history_stable_pixels")
+                + " unstable=" + temporalDetailOrUnknown(denoiseStage, adaptiveStage, "unstable_pixel_count", "unstable_pixels", "temporal_unstable_pixels", "flicker_unstable_pixels")
+                + " f2fDelta=" + temporalDetailOrUnknown(denoiseStage, adaptiveStage, "frame_to_frame_delta", "frame_delta", "f2f_delta", "mean_frame_delta", "temporal_delta")));
+        lines.add(Component.literal("Temporal quality: historyConf=" + temporalDetailOrUnknown(denoiseStage, adaptiveStage, "history_confidence", "avg_history_confidence", "average_history_confidence", "temporal_history_confidence")
+                + " flicker=" + temporalDetailOrUnknown(denoiseStage, adaptiveStage, "flicker_score", "temporal_flicker_score", "frame_flicker_score", "flicker_risk")
+                + " ghostRisk=" + temporalDetailOrUnknown(denoiseStage, adaptiveStage, "ghosting_risk", "temporal_ghosting_risk", "ghost_risk", "history_ghosting_risk")
+                + " ready=" + temporalReadinessLabel(denoiseStage, adaptiveStage)));
         lines.add(Component.literal("Temporal proof: accept=" + firstDetailOrUnknown(denoiseStage, "history_accepted_count", "history_accepted", "temporal_history_accepted")
                 + " reject=" + valueOrUnknown(denoiseStage == null ? null : denoiseStage.historyRejectionCount())
                 + " reset=" + firstDetailOrUnknown(denoiseStage, "history_reset_count", "history_reset", "temporal_history_reset")
@@ -2005,6 +2014,18 @@ public final class LucernaDebugOverlayLines {
             }
         }
         return "?";
+    }
+
+    private static String temporalDetailOrUnknown(
+            LightingDispatchStageTelemetryStatus denoiseStage,
+            LightingDispatchStageTelemetryStatus adaptiveStage,
+            String... keys
+    ) {
+        String denoiseValue = firstDetailOrUnknown(denoiseStage, keys);
+        if (!"?".equals(denoiseValue)) {
+            return shorten(denoiseValue, 32);
+        }
+        return shorten(firstDetailOrUnknown(adaptiveStage, keys), 32);
     }
 
     private static String denoiseTemporalStatusLabel(

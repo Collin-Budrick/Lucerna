@@ -69,6 +69,24 @@ public record LightingDispatchTelemetryStatus(
                     + "edge_rejected_count|denoise_edge_rejections|history_rejection_count|"
                     + "history_reject_count|history_rejections|history_rejected|history_rejected_count|"
                     + "temporal_history_rejected|temporal_history_rejection_count|last_history_rejected|"
+                    + "temporal_stable_pixels|temporal_stable_pixel_count|stable_pixels|stable_pixel_count|"
+                    + "temporal_pixels_stable|temporal_unstable_pixels|temporal_unstable_pixel_count|"
+                    + "unstable_pixels|unstable_pixel_count|temporal_pixels_unstable|frame_delta_pixels|"
+                    + "frame_delta_pixel_count|temporal_frame_delta_pixels|temporal_changed_pixels|"
+                    + "changed_pixels|denoised_output_changed_pixels|frame_delta_mean_delta|"
+                    + "frame_delta_mean_abs_delta|temporal_frame_delta_mean_delta|temporal_mean_abs_delta|"
+                    + "mean_abs_delta|denoised_output_mean_abs_delta|previous_output_checksum|"
+                    + "previous_denoised_output_checksum|previous_frame_checksum|previous_checksum|"
+                    + "temporal_previous_checksum|current_output_checksum|current_denoised_output_checksum|"
+                    + "current_frame_checksum|current_checksum|temporal_current_checksum|history_confidence|"
+                    + "avg_history_confidence|temporal_confidence|last_history_confidence|"
+                    + "temporal_history_confidence|flicker_score|temporal_flicker_score|"
+                    + "denoise_flicker_score|temporal_instability_score|ghosting_risk|"
+                    + "ghosting_risk_marker|temporal_ghosting_risk|temporal_ghosting_risk_marker|"
+                    + "temporal_ghosting_marker|temporal_ready|temporal_stability_ready|"
+                    + "temporal_history_ready|history_ready|temporal_proof_ready|temporal_acceptance_ready|"
+                    + "temporal_readiness_marker|temporal_stability_readiness_marker|"
+                    + "temporal_history_marker|last_temporal_history_marker|history_marker|temporal_marker|"
                     + "source_identity|source_id|denoise_source|denoise_source_identity|"
                     + "evidence_boundary|proof_boundary|boundary|quality_boundary|"
                     + "shader_denoise_evidence_boundary|shader_denoise_boundary|"
@@ -343,6 +361,18 @@ public record LightingDispatchTelemetryStatus(
         copyMissing(target, executionFields, "denoised_output_mean_abs_delta", "mean_abs_delta");
         copyMissing(target, executionFields, "edge_rejected", "edge_rejection_count");
         copyMissing(target, executionFields, "history_rejected", "history_rejection_count");
+        copyMissing(target, executionFields, "temporal_stable_pixels", "stable_pixels");
+        copyMissing(target, executionFields, "temporal_unstable_pixels", "unstable_pixels");
+        copyMissing(target, executionFields, "denoised_output_changed_pixels", "frame_delta_pixels");
+        copyMissing(target, executionFields, "temporal_mean_abs_delta", "frame_delta_mean_delta");
+        copyMissing(target, executionFields, "denoised_output_mean_abs_delta", "frame_delta_mean_delta");
+        copyMissing(target, executionFields, "previous_denoised_output_checksum", "previous_output_checksum");
+        copyMissing(target, executionFields, "current_denoised_output_checksum", "current_output_checksum");
+        copyMissing(target, executionFields, "temporal_history_confidence", "history_confidence");
+        copyMissing(target, executionFields, "temporal_flicker_score", "flicker_score");
+        copyMissing(target, executionFields, "temporal_ghosting_risk_marker", "ghosting_risk");
+        copyMissing(target, executionFields, "temporal_stability_ready", "temporal_ready");
+        copyMissing(target, executionFields, "temporal_stability_readiness_marker", "temporal_readiness_marker");
         copyMissing(target, executionFields, "shader_denoise_output_readiness_marker", "shader_denoise_blockers");
     }
 
@@ -813,6 +843,29 @@ public record LightingDispatchTelemetryStatus(
             case "history_reject_count", "history_rejections", "history_rejected",
                     "history_rejected_count", "temporal_history_rejected",
                     "temporal_history_rejection_count", "last_history_rejected" -> "history_rejection_count";
+            case "temporal_stable_pixel_count", "stable_pixels", "stable_pixel_count",
+                    "temporal_pixels_stable" -> "temporal_stable_pixels";
+            case "temporal_unstable_pixel_count", "unstable_pixels", "unstable_pixel_count",
+                    "temporal_pixels_unstable" -> "temporal_unstable_pixels";
+            case "frame_delta_pixel_count", "temporal_frame_delta_pixels", "temporal_changed_pixels",
+                    "changed_pixels", "denoised_output_changed_pixels" -> "frame_delta_pixels";
+            case "frame_delta_mean_abs_delta", "temporal_frame_delta_mean_delta", "temporal_mean_abs_delta",
+                    "mean_abs_delta", "denoised_output_mean_abs_delta" -> "frame_delta_mean_delta";
+            case "previous_denoised_output_checksum", "previous_frame_checksum", "previous_checksum",
+                    "temporal_previous_checksum" -> "previous_output_checksum";
+            case "current_denoised_output_checksum", "current_frame_checksum", "current_checksum",
+                    "temporal_current_checksum" -> "current_output_checksum";
+            case "avg_history_confidence", "temporal_confidence", "last_history_confidence",
+                    "temporal_history_confidence" -> "history_confidence";
+            case "temporal_flicker_score", "denoise_flicker_score",
+                    "temporal_instability_score" -> "flicker_score";
+            case "ghosting_risk_marker", "temporal_ghosting_risk", "temporal_ghosting_risk_marker",
+                    "temporal_ghosting_marker" -> "ghosting_risk";
+            case "temporal_stability_ready", "temporal_history_ready", "history_ready",
+                    "temporal_proof_ready", "temporal_acceptance_ready" -> "temporal_ready";
+            case "temporal_stability_readiness_marker", "temporal_history_marker",
+                    "last_temporal_history_marker", "history_marker",
+                    "temporal_marker" -> "temporal_readiness_marker";
             case "source_id", "denoise_source", "denoise_source_identity" -> "source_identity";
             case "proof_boundary", "boundary", "quality_boundary", "shader_denoise_evidence_boundary",
                     "shader_denoise_boundary", "denoise_evidence_boundary",

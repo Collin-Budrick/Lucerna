@@ -55,6 +55,17 @@ public record LightingDispatchStageTelemetryStatus(
         String shaderDenoiseBlockers,
         Long edgeRejectionCount,
         Long historyRejectionCount,
+        Long temporalStablePixelCount,
+        Long temporalUnstablePixelCount,
+        Long frameDeltaPixelCount,
+        String frameDeltaMeanDelta,
+        Long previousOutputChecksum,
+        Long currentOutputChecksum,
+        String historyConfidence,
+        String flickerScore,
+        String ghostingRisk,
+        Boolean temporalReady,
+        String temporalReadinessMarker,
         String sourceIdentity,
         String evidenceBoundary,
         Map<String, String> details
@@ -69,6 +80,11 @@ public record LightingDispatchStageTelemetryStatus(
         outputDimensions = blankToEmpty(stripQuotes(outputDimensions));
         outputEnergy = blankToEmpty(stripQuotes(outputEnergy));
         shaderDenoiseBlockers = blankToEmpty(stripQuotes(shaderDenoiseBlockers));
+        frameDeltaMeanDelta = blankToEmpty(stripQuotes(frameDeltaMeanDelta));
+        historyConfidence = blankToEmpty(stripQuotes(historyConfidence));
+        flickerScore = blankToEmpty(stripQuotes(flickerScore));
+        ghostingRisk = blankToEmpty(stripQuotes(ghostingRisk));
+        temporalReadinessMarker = blankToEmpty(stripQuotes(temporalReadinessMarker));
         sourceIdentity = blankToEmpty(stripQuotes(sourceIdentity));
         evidenceBoundary = blankToEmpty(stripQuotes(evidenceBoundary));
         details = immutable(details);
@@ -416,6 +432,97 @@ public record LightingDispatchStageTelemetryStatus(
                 "temporal_history_rejection_count",
                 "last_history_rejected"
         ));
+        Long temporalStablePixelCount = parseLong(firstPresent(
+                normalizedFields,
+                "temporal_stable_pixels",
+                "temporal_stable_pixel_count",
+                "stable_pixels",
+                "stable_pixel_count",
+                "temporal_pixels_stable"
+        ));
+        Long temporalUnstablePixelCount = parseLong(firstPresent(
+                normalizedFields,
+                "temporal_unstable_pixels",
+                "temporal_unstable_pixel_count",
+                "unstable_pixels",
+                "unstable_pixel_count",
+                "temporal_pixels_unstable"
+        ));
+        Long frameDeltaPixelCount = parseLong(firstPresent(
+                normalizedFields,
+                "frame_delta_pixels",
+                "frame_delta_pixel_count",
+                "temporal_frame_delta_pixels",
+                "temporal_changed_pixels",
+                "changed_pixels",
+                "denoised_output_changed_pixels"
+        ));
+        String frameDeltaMeanDelta = firstPresent(
+                normalizedFields,
+                "frame_delta_mean_delta",
+                "frame_delta_mean_abs_delta",
+                "temporal_frame_delta_mean_delta",
+                "temporal_mean_abs_delta",
+                "mean_abs_delta",
+                "denoised_output_mean_abs_delta"
+        );
+        Long previousOutputChecksum = parseLong(firstPresent(
+                normalizedFields,
+                "previous_output_checksum",
+                "previous_denoised_output_checksum",
+                "previous_frame_checksum",
+                "previous_checksum",
+                "temporal_previous_checksum"
+        ));
+        Long currentOutputChecksum = parseLong(firstPresent(
+                normalizedFields,
+                "current_output_checksum",
+                "current_denoised_output_checksum",
+                "current_frame_checksum",
+                "current_checksum",
+                "temporal_current_checksum"
+        ));
+        String historyConfidence = firstPresent(
+                normalizedFields,
+                "history_confidence",
+                "avg_history_confidence",
+                "temporal_confidence",
+                "last_history_confidence",
+                "temporal_history_confidence"
+        );
+        String flickerScore = firstPresent(
+                normalizedFields,
+                "flicker_score",
+                "temporal_flicker_score",
+                "denoise_flicker_score",
+                "temporal_instability_score"
+        );
+        String ghostingRisk = firstPresent(
+                normalizedFields,
+                "ghosting_risk",
+                "ghosting_risk_marker",
+                "temporal_ghosting_risk",
+                "temporal_ghosting_risk_marker",
+                "temporal_ghosting_marker"
+        );
+        Boolean temporalReady = parseBoolean(firstPresent(
+                normalizedFields,
+                "temporal_ready",
+                "temporal_stability_ready",
+                "temporal_history_ready",
+                "history_ready",
+                "temporal_proof_ready",
+                "temporal_acceptance_ready"
+        ));
+        String temporalReadinessMarker = firstPresent(
+                normalizedFields,
+                "temporal_readiness_marker",
+                "temporal_stability_readiness_marker",
+                "temporal_history_marker",
+                "last_temporal_history_marker",
+                "history_marker",
+                "temporal_marker"
+        );
         String sourceIdentity = firstPresent(
                 normalizedFields,
                 "source_identity",
@@ -492,6 +599,17 @@ public record LightingDispatchStageTelemetryStatus(
                 shaderDenoiseBlockers,
                 edgeRejectionCount,
                 historyRejectionCount,
+                temporalStablePixelCount,
+                temporalUnstablePixelCount,
+                frameDeltaPixelCount,
+                frameDeltaMeanDelta,
+                previousOutputChecksum,
+                currentOutputChecksum,
+                historyConfidence,
+                flickerScore,
+                ghostingRisk,
+                temporalReady,
+                temporalReadinessMarker,
                 sourceIdentity,
                 evidenceBoundary,
                 normalizedFields
@@ -523,6 +641,8 @@ public record LightingDispatchStageTelemetryStatus(
             fieldCount += append(label, "shaderMaterial", this.shaderOutputMaterialReady == null ? "" : Boolean.toString(this.shaderOutputMaterialReady));
             fieldCount += append(label, "shaderGenerated", this.shaderGeneratedOutput == null ? "" : Boolean.toString(this.shaderGeneratedOutput));
             fieldCount += append(label, "cpuFallback", this.cpuReadbackFallback == null ? "" : Boolean.toString(this.cpuReadbackFallback));
+            fieldCount += append(label, "temporalReady", this.temporalReady == null ? "" : Boolean.toString(this.temporalReady));
+            fieldCount += append(label, "flicker", this.flickerScore);
         }
         if (fieldCount == 0) {
             label.append(" reported");
@@ -650,6 +770,21 @@ public record LightingDispatchStageTelemetryStatus(
                 + " boundary=" + boundary;
     }
 
+    public String temporalFlickerEvidenceLine() {
+        return this.stageDisplayName()
+                + " temporal ready=" + booleanOrUnknown(this.temporalReady)
+                + " stable=" + valueOrUnknown(this.temporalStablePixelCount)
+                + " unstable=" + valueOrUnknown(this.temporalUnstablePixelCount)
+                + " frameDeltaPixels=" + valueOrUnknown(this.frameDeltaPixelCount)
+                + " meanDelta=" + valueOrUnknown(this.frameDeltaMeanDelta)
+                + " prevChecksum=" + valueOrUnknown(this.previousOutputChecksum)
+                + " currentChecksum=" + valueOrUnknown(this.currentOutputChecksum)
+                + " historyConfidence=" + valueOrUnknown(this.historyConfidence)
+                + " flickerScore=" + valueOrUnknown(this.flickerScore)
+                + " ghostingRisk=" + shorten(valueOrUnknown(this.ghostingRisk), 40)
+                + " marker=" + shorten(valueOrUnknown(this.temporalReadinessMarker), 40);
+    }
+
     public Map<String, String> validationFields(String prefix) {
         String normalizedPrefix = clean(prefix, "lighting.dispatch.stage." + sanitizeKey(this.stageId));
         Map<String, String> fields = new LinkedHashMap<>();
@@ -665,6 +800,7 @@ public record LightingDispatchStageTelemetryStatus(
             fields.put(normalizedPrefix + ".denoiseReadiness", this.denoiseReadinessStatusLine());
             fields.put(normalizedPrefix + ".shaderDenoiseState", this.shaderDenoiseStateStatusLine());
             fields.put(normalizedPrefix + ".denoiseEvidenceBoundary", this.denoiseEvidenceBoundaryLine());
+            fields.put(normalizedPrefix + ".temporalFlickerEvidence", this.temporalFlickerEvidenceLine());
         }
         if (this.enabled != null) {
             fields.put(normalizedPrefix + ".enabled", Boolean.toString(this.enabled));
@@ -813,6 +949,39 @@ public record LightingDispatchStageTelemetryStatus(
         if (this.historyRejectionCount != null) {
             fields.put(normalizedPrefix + ".historyRejectionCount", Long.toString(this.historyRejectionCount));
         }
+        if (this.temporalStablePixelCount != null) {
+            fields.put(normalizedPrefix + ".temporalStablePixels", Long.toString(this.temporalStablePixelCount));
+        }
+        if (this.temporalUnstablePixelCount != null) {
+            fields.put(normalizedPrefix + ".temporalUnstablePixels", Long.toString(this.temporalUnstablePixelCount));
+        }
+        if (this.frameDeltaPixelCount != null) {
+            fields.put(normalizedPrefix + ".frameDeltaPixels", Long.toString(this.frameDeltaPixelCount));
+        }
+        if (!this.frameDeltaMeanDelta.isBlank()) {
+            fields.put(normalizedPrefix + ".frameDeltaMeanDelta", this.frameDeltaMeanDelta);
+        }
+        if (this.previousOutputChecksum != null) {
+            fields.put(normalizedPrefix + ".previousOutputChecksum", Long.toString(this.previousOutputChecksum));
+        }
+        if (this.currentOutputChecksum != null) {
+            fields.put(normalizedPrefix + ".currentOutputChecksum", Long.toString(this.currentOutputChecksum));
+        }
+        if (!this.historyConfidence.isBlank()) {
+            fields.put(normalizedPrefix + ".historyConfidence", this.historyConfidence);
+        }
+        if (!this.flickerScore.isBlank()) {
+            fields.put(normalizedPrefix + ".flickerScore", this.flickerScore);
+        }
+        if (!this.ghostingRisk.isBlank()) {
+            fields.put(normalizedPrefix + ".ghostingRisk", this.ghostingRisk);
+        }
+        if (this.temporalReady != null) {
+            fields.put(normalizedPrefix + ".temporalReady", Boolean.toString(this.temporalReady));
+        }
+        if (!this.temporalReadinessMarker.isBlank()) {
+            fields.put(normalizedPrefix + ".temporalReadinessMarker", this.temporalReadinessMarker);
+        }
         if (!this.sourceIdentity.isBlank()) {
             fields.put(normalizedPrefix + ".sourceIdentity", this.sourceIdentity);
         }
@@ -930,6 +1099,17 @@ public record LightingDispatchStageTelemetryStatus(
                 || !this.shaderDenoiseBlockers.isBlank()
                 || this.edgeRejectionCount != null
                 || this.historyRejectionCount != null
+                || this.temporalStablePixelCount != null
+                || this.temporalUnstablePixelCount != null
+                || this.frameDeltaPixelCount != null
+                || !this.frameDeltaMeanDelta.isBlank()
+                || this.previousOutputChecksum != null
+                || this.currentOutputChecksum != null
+                || !this.historyConfidence.isBlank()
+                || !this.flickerScore.isBlank()
+                || !this.ghostingRisk.isBlank()
+                || this.temporalReady != null
+                || !this.temporalReadinessMarker.isBlank()
                 || !this.sourceIdentity.isBlank()
                 || !this.evidenceBoundary.isBlank();
     }
@@ -976,6 +1156,10 @@ public record LightingDispatchStageTelemetryStatus(
 
     private static String valueOrUnknown(Long value) {
         return value == null ? "?" : Long.toString(value);
+    }
+
+    private static String valueOrUnknown(String value) {
+        return value == null || value.isBlank() ? "?" : value;
     }
 
     private static String booleanOrUnknown(Boolean value) {
