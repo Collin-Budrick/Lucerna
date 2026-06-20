@@ -3,6 +3,7 @@ package net.lucerna.upload;
 import net.lucerna.render.frame.FrameJitter;
 import net.lucerna.render.lighting.gi.CacheConfidence;
 import net.lucerna.render.lighting.gi.DiffuseGiLowResolutionGrid;
+import net.lucerna.render.lighting.gi.DiffuseGiSceneInputSummary;
 import net.lucerna.render.lighting.gi.DiffuseGiSettings;
 import net.lucerna.render.lighting.gi.DiffuseGiSourceSummary;
 import net.lucerna.render.lighting.gi.DiffuseGiValidationReport;
@@ -90,6 +91,28 @@ public record NativeDiffuseGiPlanUpload(
         int sourceSectionSnapshotCount,
         int sourceDirtyRegionCount,
         int sourceMaterialUpdateCount,
+        int sceneSurfaceSampleCount,
+        int sceneColoredSurfaceSampleCount,
+        int sceneSkylitSurfaceCount,
+        int sceneSealedInteriorSurfaceCount,
+        int sceneEmissiveProximitySignals,
+        int sceneCacheSampleCountInput,
+        boolean sceneCacheDirtyInput,
+        int sceneRadianceSampleCount,
+        float sceneAverageAlbedoR,
+        float sceneAverageAlbedoG,
+        float sceneAverageAlbedoB,
+        float sceneAverageAlbedoSaturation,
+        float sceneColoredBounceInfluence,
+        float sceneSkylightExposureRatio,
+        float sceneSealedInteriorRatio,
+        float sceneEmissiveProximityScore,
+        float sceneCacheConfidenceInput,
+        float sceneCacheVarianceInput,
+        float sceneAverageRadianceR,
+        float sceneAverageRadianceG,
+        float sceneAverageRadianceB,
+        float sceneRadianceEnergy,
         int validationFindingCount,
         int validationErrorCount,
         int validationWarningCount,
@@ -183,6 +206,30 @@ public record NativeDiffuseGiPlanUpload(
     public static final int SOURCE_SECTION_SNAPSHOT_COUNT_OFFSET = 4;
     public static final int SOURCE_DIRTY_REGION_COUNT_OFFSET = 5;
     public static final int SOURCE_MATERIAL_UPDATE_COUNT_OFFSET = 6;
+    public static final int SCENE_INPUT_INTEGER_STRIDE = 8;
+    public static final int SCENE_SURFACE_SAMPLE_COUNT_OFFSET = 0;
+    public static final int SCENE_COLORED_SURFACE_SAMPLE_COUNT_OFFSET = 1;
+    public static final int SCENE_SKYLIT_SURFACE_COUNT_OFFSET = 2;
+    public static final int SCENE_SEALED_INTERIOR_SURFACE_COUNT_OFFSET = 3;
+    public static final int SCENE_EMISSIVE_PROXIMITY_SIGNAL_COUNT_OFFSET = 4;
+    public static final int SCENE_CACHE_SAMPLE_COUNT_INPUT_OFFSET = 5;
+    public static final int SCENE_CACHE_DIRTY_INPUT_OFFSET = 6;
+    public static final int SCENE_RADIANCE_SAMPLE_COUNT_OFFSET = 7;
+    public static final int SCENE_INPUT_FLOAT_STRIDE = 14;
+    public static final int SCENE_AVERAGE_ALBEDO_R_OFFSET = 0;
+    public static final int SCENE_AVERAGE_ALBEDO_G_OFFSET = 1;
+    public static final int SCENE_AVERAGE_ALBEDO_B_OFFSET = 2;
+    public static final int SCENE_AVERAGE_ALBEDO_SATURATION_OFFSET = 3;
+    public static final int SCENE_COLORED_BOUNCE_INFLUENCE_OFFSET = 4;
+    public static final int SCENE_SKYLIGHT_EXPOSURE_RATIO_OFFSET = 5;
+    public static final int SCENE_SEALED_INTERIOR_RATIO_OFFSET = 6;
+    public static final int SCENE_EMISSIVE_PROXIMITY_SCORE_OFFSET = 7;
+    public static final int SCENE_CACHE_CONFIDENCE_INPUT_OFFSET = 8;
+    public static final int SCENE_CACHE_VARIANCE_INPUT_OFFSET = 9;
+    public static final int SCENE_AVERAGE_RADIANCE_R_OFFSET = 10;
+    public static final int SCENE_AVERAGE_RADIANCE_G_OFFSET = 11;
+    public static final int SCENE_AVERAGE_RADIANCE_B_OFFSET = 12;
+    public static final int SCENE_RADIANCE_ENERGY_OFFSET = 13;
 
     public NativeDiffuseGiPlanUpload {
         requireNonNegative(generation, "generation");
@@ -280,6 +327,27 @@ public record NativeDiffuseGiPlanUpload(
         requireNonNegative(sourceSectionSnapshotCount, "sourceSectionSnapshotCount");
         requireNonNegative(sourceDirtyRegionCount, "sourceDirtyRegionCount");
         requireNonNegative(sourceMaterialUpdateCount, "sourceMaterialUpdateCount");
+        requireNonNegative(sceneSurfaceSampleCount, "sceneSurfaceSampleCount");
+        requireNonNegative(sceneColoredSurfaceSampleCount, "sceneColoredSurfaceSampleCount");
+        requireNonNegative(sceneSkylitSurfaceCount, "sceneSkylitSurfaceCount");
+        requireNonNegative(sceneSealedInteriorSurfaceCount, "sceneSealedInteriorSurfaceCount");
+        requireNonNegative(sceneEmissiveProximitySignals, "sceneEmissiveProximitySignals");
+        requireNonNegative(sceneCacheSampleCountInput, "sceneCacheSampleCountInput");
+        requireNonNegative(sceneRadianceSampleCount, "sceneRadianceSampleCount");
+        requireUnit(sceneAverageAlbedoR, "sceneAverageAlbedoR");
+        requireUnit(sceneAverageAlbedoG, "sceneAverageAlbedoG");
+        requireUnit(sceneAverageAlbedoB, "sceneAverageAlbedoB");
+        requireUnit(sceneAverageAlbedoSaturation, "sceneAverageAlbedoSaturation");
+        requireUnit(sceneColoredBounceInfluence, "sceneColoredBounceInfluence");
+        requireUnit(sceneSkylightExposureRatio, "sceneSkylightExposureRatio");
+        requireUnit(sceneSealedInteriorRatio, "sceneSealedInteriorRatio");
+        requireUnit(sceneEmissiveProximityScore, "sceneEmissiveProximityScore");
+        requireUnit(sceneCacheConfidenceInput, "sceneCacheConfidenceInput");
+        requireFiniteNonNegative(sceneCacheVarianceInput, "sceneCacheVarianceInput");
+        requireFiniteNonNegative(sceneAverageRadianceR, "sceneAverageRadianceR");
+        requireFiniteNonNegative(sceneAverageRadianceG, "sceneAverageRadianceG");
+        requireFiniteNonNegative(sceneAverageRadianceB, "sceneAverageRadianceB");
+        requireFiniteNonNegative(sceneRadianceEnergy, "sceneRadianceEnergy");
         requireNonNegative(validationFindingCount, "validationFindingCount");
         requireNonNegative(validationErrorCount, "validationErrorCount");
         requireNonNegative(validationWarningCount, "validationWarningCount");
@@ -305,6 +373,7 @@ public record NativeDiffuseGiPlanUpload(
         CacheConfidence confidence = plan.cacheConfidence();
         GiCacheSnapshot cacheSnapshot = plan.cacheSnapshot();
         DiffuseGiSourceSummary sourceSummary = plan.sourceSummary();
+        DiffuseGiSceneInputSummary sceneInputs = plan.sceneInputSummary();
         DiffuseGiValidationReport validationReport = plan.validationReport();
 
         long generation = max(
@@ -392,6 +461,28 @@ public record NativeDiffuseGiPlanUpload(
                 sourceSummary.sectionSnapshotCount(),
                 sourceSummary.dirtyRegionCount(),
                 sourceSummary.materialUpdateCount(),
+                sceneInputs.surfaceSampleCount(),
+                sceneInputs.coloredSurfaceSampleCount(),
+                sceneInputs.skylitSurfaceCount(),
+                sceneInputs.sealedInteriorSurfaceCount(),
+                sceneInputs.emissiveProximitySignals(),
+                sceneInputs.cacheSampleCountInput(),
+                sceneInputs.cacheDirtyInput(),
+                sceneInputs.radianceSampleCount(),
+                sceneInputs.averageAlbedoR(),
+                sceneInputs.averageAlbedoG(),
+                sceneInputs.averageAlbedoB(),
+                sceneInputs.averageAlbedoSaturation(),
+                sceneInputs.coloredBounceInfluence(),
+                sceneInputs.skylightExposureRatio(),
+                sceneInputs.sealedInteriorRatio(),
+                sceneInputs.emissiveProximityScore(),
+                sceneInputs.cacheConfidenceInput(),
+                sceneInputs.cacheVarianceInput(),
+                sceneInputs.averageRadianceR(),
+                sceneInputs.averageRadianceG(),
+                sceneInputs.averageRadianceB(),
+                sceneInputs.radianceEnergy(),
                 validationReport.findings().size(),
                 validationReport.errorCount(),
                 validationReport.warningCount(),
@@ -538,6 +629,38 @@ public record NativeDiffuseGiPlanUpload(
                 this.sourceSectionSnapshotCount,
                 this.sourceDirtyRegionCount,
                 this.sourceMaterialUpdateCount
+        };
+    }
+
+    public int[] sceneInputIntegers() {
+        return new int[]{
+                this.sceneSurfaceSampleCount,
+                this.sceneColoredSurfaceSampleCount,
+                this.sceneSkylitSurfaceCount,
+                this.sceneSealedInteriorSurfaceCount,
+                this.sceneEmissiveProximitySignals,
+                this.sceneCacheSampleCountInput,
+                this.sceneCacheDirtyInput ? 1 : 0,
+                this.sceneRadianceSampleCount
+        };
+    }
+
+    public float[] sceneInputFloats() {
+        return new float[]{
+                this.sceneAverageAlbedoR,
+                this.sceneAverageAlbedoG,
+                this.sceneAverageAlbedoB,
+                this.sceneAverageAlbedoSaturation,
+                this.sceneColoredBounceInfluence,
+                this.sceneSkylightExposureRatio,
+                this.sceneSealedInteriorRatio,
+                this.sceneEmissiveProximityScore,
+                this.sceneCacheConfidenceInput,
+                this.sceneCacheVarianceInput,
+                this.sceneAverageRadianceR,
+                this.sceneAverageRadianceG,
+                this.sceneAverageRadianceB,
+                this.sceneRadianceEnergy
         };
     }
 

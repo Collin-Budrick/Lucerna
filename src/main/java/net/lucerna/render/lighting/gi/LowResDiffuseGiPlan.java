@@ -9,6 +9,7 @@ public record LowResDiffuseGiPlan(
         CacheConfidence cacheConfidence,
         GiRayBudgetAllocation rayBudget,
         DiffuseGiSourceSummary sourceSummary,
+        DiffuseGiSceneInputSummary sceneInputSummary,
         DiffuseGiValidationReport validationReport
 ) {
     private static final float ROUND8_HIGH_VARIANCE_THRESHOLD = 0.50F;
@@ -25,6 +26,9 @@ public record LowResDiffuseGiPlan(
         Objects.requireNonNull(rayBudget, "rayBudget");
         if (sourceSummary == null) {
             sourceSummary = DiffuseGiSourceSummary.unavailable();
+        }
+        if (sceneInputSummary == null) {
+            sceneInputSummary = DiffuseGiSceneInputSummary.from(sourceSummary, cacheSnapshot, cacheConfidence);
         }
         if (validationReport == null) {
             validationReport = DiffuseGiValidationReport.empty();
@@ -46,6 +50,7 @@ public record LowResDiffuseGiPlan(
                 cacheConfidence,
                 rayBudget,
                 DiffuseGiSourceSummary.unavailable(),
+                null,
                 validationReport
         );
     }
@@ -58,6 +63,7 @@ public record LowResDiffuseGiPlan(
                 this.cacheConfidence,
                 this.rayBudget,
                 sourceSummary,
+                DiffuseGiSceneInputSummary.from(sourceSummary, this.cacheSnapshot, this.cacheConfidence),
                 this.validationReport
         );
     }
@@ -91,6 +97,7 @@ public record LowResDiffuseGiPlan(
                 + " " + this.cacheContributionLabel()
                 + " " + this.varianceContributionLabel()
                 + " " + this.emissiveContributionLabel()
+                + " " + this.sceneInputContributionLabel()
                 + " sources={" + this.sourceSummary.compactLabel() + "}";
     }
 
@@ -111,6 +118,7 @@ public record LowResDiffuseGiPlan(
                 + " " + this.cacheContributionLabel()
                 + " " + this.varianceContributionLabel()
                 + " " + this.emissiveContributionLabel()
+                + " " + this.sceneInputContributionLabel()
                 + " reason=" + this.rayBudget.reason();
     }
 
@@ -121,13 +129,15 @@ public record LowResDiffuseGiPlan(
                 + " samples=" + this.cacheConfidence.sampleCount()
                 + " dirty=" + this.cacheConfidence.dirty()
                 + " " + this.varianceContributionLabel()
+                + " " + this.sceneInputContributionLabel()
                 + " reason=" + this.cacheConfidence.reason();
     }
 
     public String sourceDebugLabel() {
         return this.sourceSummary.debugLabel()
                 + " sceneState=" + this.sceneState()
-                + " " + this.emissiveContributionLabel();
+                + " " + this.emissiveContributionLabel()
+                + " " + this.sceneInputContributionLabel();
     }
 
     private String sceneState() {
@@ -170,5 +180,9 @@ public record LowResDiffuseGiPlan(
                 + "/budgeted:" + this.sourceSummary.budgetedShadowCandidateCount()
                 + " emissiveRegions=sections:" + this.sourceSummary.sectionSnapshotCount()
                 + "/dirty:" + this.sourceSummary.dirtyRegionCount();
+    }
+
+    private String sceneInputContributionLabel() {
+        return "sceneInputs={" + this.sceneInputSummary.compactLabel() + "}";
     }
 }

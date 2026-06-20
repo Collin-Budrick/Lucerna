@@ -869,6 +869,13 @@ void append_denoise_execution_status(
         << ",denoised_output_checksum=" << execution.last_denoised_output_checksum
         << ",denoised_output_changed_pixels=" << execution.last_denoised_output_changed_pixels
         << ",denoised_output_mean_abs_delta=" << execution.last_denoised_output_mean_abs_delta
+        << ",temporal_stable_pixels=" << execution.last_temporal_stable_pixels
+        << ",temporal_unstable_pixels=" << execution.last_temporal_unstable_pixels
+        << ",temporal_mean_abs_delta=" << execution.last_temporal_mean_abs_delta
+        << ",raw_neighbor_luma_delta=" << execution.last_raw_neighbor_luma_delta
+        << ",denoised_neighbor_luma_delta=" << execution.last_denoised_neighbor_luma_delta
+        << ",noise_reduction_percent=" << execution.last_noise_reduction_percent
+        << ",roughness_noise_reduction_estimate=" << execution.last_noise_reduction_percent
         << ",composite_size=" << execution.last_composite_width << "x" << execution.last_composite_height
         << ",composite_outputs=" << execution.last_composite_outputs
         << ",flags=" << execution.last_flags
@@ -892,6 +899,8 @@ void append_denoise_execution_status(
         << ",denoised_cpu_output_generated=" << execution.last_denoised_cpu_output_generated
         << ",denoised_output_differs_from_raw=" << execution.last_denoised_output_differs_from_raw
         << ",real_denoise_shader_output=" << execution.last_real_denoise_shader_output
+        << ",real_shader_output=" << execution.last_real_denoise_shader_output
+        << ",cpu_fallback_quality_metrics=" << execution.last_cpu_fallback_quality_metrics
         << ",composite_stage_recorded=" << execution.last_composite_stage_recorded
         << ",composite_enabled=" << execution.last_composite_enabled
         << ",composite_ready=" << execution.last_composite_ready
@@ -907,6 +916,12 @@ void append_denoise_execution_status(
         << ",denoised_output_marker=\"" << execution.last_denoised_output_marker
         << "\""
         << ",composite_marker=\"" << execution.last_composite_marker
+        << "\""
+        << ",history_acceptance_reason=\"" << execution.last_history_acceptance_reason
+        << "\""
+        << ",history_rejection_reason=\"" << execution.last_history_rejection_reason
+        << "\""
+        << ",quality_marker=\"" << execution.last_quality_marker
         << "\""
         << ",readiness_reason=\"" << (execution.last_readiness_reason.empty()
             ? "denoise_stage_not_evaluated"
@@ -2326,13 +2341,22 @@ std::vector<std::uint8_t> Renderer::denoised_diffuse_gi_cpu_output_preview_rgba8
 
 bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
     auto& denoise_execution = staging_.lighting.denoise_execution;
+    const auto previous_denoised_rgba8 = denoised_diffuse_gi_cpu_output_rgba8_;
     denoised_diffuse_gi_cpu_output_rgba8_.clear();
     denoise_execution.last_denoised_output_pixels = 0;
     denoise_execution.last_denoised_output_checksum = 0;
     denoise_execution.last_denoised_output_changed_pixels = 0;
     denoise_execution.last_denoised_output_mean_abs_delta = 0;
+    denoise_execution.last_temporal_stable_pixels = 0;
+    denoise_execution.last_temporal_unstable_pixels = 0;
+    denoise_execution.last_temporal_mean_abs_delta = 0;
+    denoise_execution.last_raw_neighbor_luma_delta = 0;
+    denoise_execution.last_denoised_neighbor_luma_delta = 0;
+    denoise_execution.last_noise_reduction_percent = 0;
     denoise_execution.last_denoised_cpu_output_generated = false;
     denoise_execution.last_denoised_output_differs_from_raw = false;
+    denoise_execution.last_cpu_fallback_quality_metrics = false;
+    denoise_execution.last_quality_marker = "cpu_fallback_quality_metrics_unavailable";
 
     const auto& gi_execution = staging_.lighting.diffuse_gi_execution;
     const auto raw_rgba8 = diffuse_gi_cpu_output_preview_rgba8();
@@ -2364,6 +2388,12 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
     std::uint64_t checksum = 1469598103934665603ULL;
     std::uint64_t changed_pixels = 0;
     std::uint64_t total_abs_delta = 0;
+    std::uint64_t edge_preserved_neighbors = 0;
+    std::uint64_t edge_rejected_neighbors = 0;
+    std::uint64_t temporal_stable_pixels = 0;
+    std::uint64_t temporal_unstable_pixels = 0;
+    std::uint64_t temporal_total_abs_delta = 0;
+    const bool has_previous_cpu_history = previous_denoised_rgba8.size() == raw_rgba8.size();
     for (std::uint64_t y = 0; y < height; y++) {
         for (std::uint64_t x = 0; x < width; x++) {
             const auto pixel = (y * width) + x;
@@ -2407,15 +2437,25 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
                             ? center_luma - neighbor_luma
                             : neighbor_luma - center_luma;
                     if (luma_delta > (48U * 256U)) {
+                        edge_rejected_neighbors++;
                         continue;
                     }
 
                     const auto neighbor_offset = static_cast<std::size_t>(((ny * width) + nx) * 4);
-                    const std::uint32_t weight = (ox == 0 || oy == 0) ? 2U : 1U;
+                    const std::uint32_t base_weight = (ox == 0 || oy == 0) ? 2U : 1U;
+                    const std::uint32_t bilateral_weight = luma_delta <= (16U * 256U)
+                            ? 2U
+                            : (luma_delta <= (32U * 256U) ? 1U : 0U);
+                    if (bilateral_weight == 0U) {
+                        edge_rejected_neighbors++;
+                        continue;
+                    }
+                    const std::uint32_t weight = base_weight * bilateral_weight;
                     channel_sum[0] += static_cast<std::uint32_t>(raw_rgba8[neighbor_offset]) * weight;
                     channel_sum[1] += static_cast<std::uint32_t>(raw_rgba8[neighbor_offset + 1]) * weight;
                     channel_sum[2] += static_cast<std::uint32_t>(raw_rgba8[neighbor_offset + 2]) * weight;
                     weight_sum += weight;
+                    edge_preserved_neighbors++;
                 }
             }
 
@@ -2439,6 +2479,21 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
             if (pixel_changed) {
                 changed_pixels++;
             }
+            if (has_previous_cpu_history) {
+                std::uint64_t temporal_pixel_delta = 0;
+                for (std::size_t channel = 0; channel < 3; channel++) {
+                    const auto previous = static_cast<std::uint32_t>(previous_denoised_rgba8[offset + channel]);
+                    const auto current = static_cast<std::uint32_t>(
+                            denoised_diffuse_gi_cpu_output_rgba8_[offset + channel]);
+                    temporal_pixel_delta += previous > current ? previous - current : current - previous;
+                }
+                temporal_total_abs_delta += temporal_pixel_delta;
+                if ((temporal_pixel_delta / 3U) <= 12U) {
+                    temporal_stable_pixels++;
+                } else {
+                    temporal_unstable_pixels++;
+                }
+            }
 
             mix_checksum(checksum, denoised_diffuse_gi_cpu_output_rgba8_[offset]);
             mix_checksum(checksum, denoised_diffuse_gi_cpu_output_rgba8_[offset + 1]);
@@ -2448,13 +2503,92 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
         }
     }
 
+    auto denoised_luma_at = [this, width](std::uint64_t x, std::uint64_t y) {
+        const auto offset = static_cast<std::size_t>(((y * width) + x) * 4);
+        return (static_cast<std::uint32_t>(denoised_diffuse_gi_cpu_output_rgba8_[offset]) * 77U)
+                + (static_cast<std::uint32_t>(denoised_diffuse_gi_cpu_output_rgba8_[offset + 1]) * 150U)
+                + (static_cast<std::uint32_t>(denoised_diffuse_gi_cpu_output_rgba8_[offset + 2]) * 29U);
+    };
+    std::uint64_t raw_neighbor_delta_total = 0;
+    std::uint64_t denoised_neighbor_delta_total = 0;
+    std::uint64_t neighbor_pairs = 0;
+    for (std::uint64_t y = 0; y < height; y++) {
+        for (std::uint64_t x = 0; x < width; x++) {
+            const auto raw_center = luma_at(x, y);
+            const auto denoised_center = denoised_luma_at(x, y);
+            if (x + 1 < width) {
+                const auto raw_neighbor = luma_at(x + 1, y);
+                const auto denoised_neighbor = denoised_luma_at(x + 1, y);
+                raw_neighbor_delta_total += raw_center > raw_neighbor
+                        ? raw_center - raw_neighbor
+                        : raw_neighbor - raw_center;
+                denoised_neighbor_delta_total += denoised_center > denoised_neighbor
+                        ? denoised_center - denoised_neighbor
+                        : denoised_neighbor - denoised_center;
+                neighbor_pairs++;
+            }
+            if (y + 1 < height) {
+                const auto raw_neighbor = luma_at(x, y + 1);
+                const auto denoised_neighbor = denoised_luma_at(x, y + 1);
+                raw_neighbor_delta_total += raw_center > raw_neighbor
+                        ? raw_center - raw_neighbor
+                        : raw_neighbor - raw_center;
+                denoised_neighbor_delta_total += denoised_center > denoised_neighbor
+                        ? denoised_center - denoised_neighbor
+                        : denoised_neighbor - denoised_center;
+                neighbor_pairs++;
+            }
+        }
+    }
+    const auto raw_neighbor_delta = neighbor_pairs == 0 ? 0 : raw_neighbor_delta_total / neighbor_pairs;
+    const auto denoised_neighbor_delta = neighbor_pairs == 0 ? 0 : denoised_neighbor_delta_total / neighbor_pairs;
+    const auto noise_reduction_percent = raw_neighbor_delta == 0 || denoised_neighbor_delta >= raw_neighbor_delta
+            ? 0
+            : ((raw_neighbor_delta - denoised_neighbor_delta) * 100) / raw_neighbor_delta;
+
     denoise_execution.last_denoised_output_pixels = pixel_count;
     denoise_execution.last_denoised_output_checksum = checksum;
     denoise_execution.last_denoised_output_changed_pixels = changed_pixels;
     denoise_execution.last_denoised_output_mean_abs_delta =
             pixel_count == 0 ? 0 : total_abs_delta / pixel_count;
+    denoise_execution.last_temporal_stable_pixels = temporal_stable_pixels;
+    denoise_execution.last_temporal_unstable_pixels = has_previous_cpu_history
+            ? temporal_unstable_pixels
+            : (denoise_execution.last_temporal_history ? pixel_count : 0);
+    denoise_execution.last_temporal_mean_abs_delta = has_previous_cpu_history && pixel_count != 0
+            ? temporal_total_abs_delta / pixel_count
+            : 0;
+    denoise_execution.last_raw_neighbor_luma_delta = raw_neighbor_delta / 256U;
+    denoise_execution.last_denoised_neighbor_luma_delta = denoised_neighbor_delta / 256U;
+    denoise_execution.last_noise_reduction_percent = noise_reduction_percent;
+    denoise_execution.last_edge_preserved = edge_preserved_neighbors;
+    denoise_execution.last_edge_rejected = edge_rejected_neighbors;
+    denoise_execution.last_history_accepted = has_previous_cpu_history ? temporal_stable_pixels : 0;
+    denoise_execution.last_history_rejected = has_previous_cpu_history
+            ? temporal_unstable_pixels
+            : (denoise_execution.last_temporal_history ? pixel_count : 0);
+    denoise_execution.history_accepted = saturated_add(
+            denoise_execution.history_accepted,
+            denoise_execution.last_history_accepted);
+    denoise_execution.history_rejected = saturated_add(
+            denoise_execution.history_rejected,
+            denoise_execution.last_history_rejected);
     denoise_execution.last_denoised_cpu_output_generated = true;
     denoise_execution.last_denoised_output_differs_from_raw = changed_pixels != 0;
+    denoise_execution.last_cpu_fallback_quality_metrics = true;
+    denoise_execution.last_real_denoise_shader_output = false;
+    denoise_execution.last_history_acceptance_reason = has_previous_cpu_history
+            ? "previous_cpu_denoised_rgba8_within_temporal_delta_threshold"
+            : (denoise_execution.last_temporal_history
+                    ? "no_previous_cpu_denoised_rgba8_history_available"
+                    : "temporal_history_not_requested");
+    denoise_execution.last_history_rejection_reason = has_previous_cpu_history
+            ? "previous_cpu_denoised_rgba8_exceeded_temporal_delta_threshold"
+            : (denoise_execution.last_temporal_history
+                    ? "all_history_rejected_until_previous_cpu_frame_exists"
+                    : "temporal_history_not_requested");
+    denoise_execution.last_quality_marker =
+            "cpu_fallback_quality_metrics=true;real_shader_output=false;roughness_noise_reduction_estimate=neighbor_luma_delta";
     return true;
 }
 
@@ -4722,6 +4856,12 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
     execution.last_denoised_output_checksum = 0;
     execution.last_denoised_output_changed_pixels = 0;
     execution.last_denoised_output_mean_abs_delta = 0;
+    execution.last_temporal_stable_pixels = 0;
+    execution.last_temporal_unstable_pixels = 0;
+    execution.last_temporal_mean_abs_delta = 0;
+    execution.last_raw_neighbor_luma_delta = 0;
+    execution.last_denoised_neighbor_luma_delta = 0;
+    execution.last_noise_reduction_percent = 0;
     execution.last_raw_gi_input_available = execution.last_diffuse_gi_signal_available
             || execution.last_raw_gi_samples > 0
             || execution.last_raw_gi_rays > 0
@@ -4733,6 +4873,7 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
     execution.last_denoised_cpu_output_generated = false;
     execution.last_denoised_output_differs_from_raw = false;
     execution.last_real_denoise_shader_output = false;
+    execution.last_cpu_fallback_quality_metrics = false;
     execution.last_composite_stage_recorded = composite_stage.packets > 0;
     execution.last_composite_enabled = composite_stage.enabled_this_packet;
     execution.last_composite_ready = composite_stage.ready_for_native_execution_this_packet;
@@ -4764,6 +4905,14 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
                     ? "composite_stage_metadata_recorded_placeholder"
                     : "composite_stage_metadata_recorded_non_placeholder")
             : "composite_stage_metadata_missing";
+    execution.last_history_acceptance_reason = execution.last_temporal_history
+            ? "native_temporal_history_not_evaluated"
+            : "temporal_history_not_requested";
+    execution.last_history_rejection_reason = execution.last_temporal_history
+            ? "native_temporal_history_not_evaluated"
+            : "temporal_history_not_requested";
+    execution.last_quality_marker =
+            "cpu_fallback_quality_metrics=false;real_shader_output=false;quality_metrics_not_generated";
 
     std::uint64_t recorded_resources = 0;
     const bool validated_placeholder_metadata = denoise_stage.enabled_this_packet
@@ -4818,15 +4967,24 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
                     : "signal-separated denoise metadata accepted; native denoise shader/output not implemented");
     if (denoise_stage.last_temporal_history) {
         const auto pixel_count = execution.last_width * execution.last_height;
-        execution.last_history_accepted = pixel_count / 2;
-        execution.last_history_rejected = pixel_count - execution.last_history_accepted;
-        execution.history_accepted += execution.last_history_accepted;
-        execution.history_rejected += execution.last_history_rejected;
+        if (!denoised_output_generated) {
+            execution.last_history_accepted = 0;
+            execution.last_history_rejected = pixel_count;
+            execution.history_rejected = saturated_add(
+                    execution.history_rejected,
+                    execution.last_history_rejected);
+            execution.last_history_acceptance_reason =
+                    "no_cpu_denoised_output_available_for_temporal_acceptance";
+            execution.last_history_rejection_reason =
+                    "cpu_denoised_output_generation_failed";
+        }
     }
     if (execution.last_edge_inputs_available) {
         const auto pixel_count = execution.last_width * execution.last_height;
-        execution.last_edge_preserved = pixel_count / 2;
-        execution.last_edge_rejected = pixel_count - execution.last_edge_preserved;
+        if (!denoised_output_generated) {
+            execution.last_edge_preserved = 0;
+            execution.last_edge_rejected = pixel_count;
+        }
     }
 
     if (resources_ != nullptr && frame_open_ && resources_->has_context()) {

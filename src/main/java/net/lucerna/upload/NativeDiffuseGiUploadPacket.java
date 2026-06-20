@@ -170,6 +170,14 @@ public final class NativeDiffuseGiUploadPacket {
         return this.planUpload.sourceCounts();
     }
 
+    public int[] sceneInputIntegers() {
+        return this.planUpload.sceneInputIntegers();
+    }
+
+    public float[] sceneInputFloats() {
+        return this.planUpload.sceneInputFloats();
+    }
+
     public String[] debugLabels() {
         return this.planUpload.debugLabels();
     }

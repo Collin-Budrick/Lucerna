@@ -1,8 +1,8 @@
 param(
-    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay")]
+    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalStable", "TemporalMoved", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay")]
     [string] $Mode,
 
-    [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round7DenoiseComposite", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry")]
+    [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round7DenoiseComposite", "Round7CompositeStability", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry")]
     [string] $ValidationProfile = "Round5Direct",
 
     [string] $WorldName = "New World",
@@ -200,6 +200,103 @@ function Get-Round7CaptureIntent {
         }
         default {
             throw "Unsupported Round 7 capture mode: $CaptureMode"
+        }
+    }
+}
+
+function Get-Round7CompositeStabilityCaptureIntent {
+    param([string] $CaptureMode)
+
+    $finalCompositePatterns = @(
+        "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true",
+        "public Mojang Round 7 FINAL_COMPOSITE visual render pass submitted; .*mode=FINAL_LUCERNA_COMPOSITE.*finalBlendComplete=true",
+        "round7\.finalCompositeMode=final-composite.*round7\.finalCompositeSourceMix=base=true,direct=enabled-ready,gi=enabled-ready,denoised=enabled-ready"
+    )
+    $baselinePatterns = @(
+        "Using graphics backend Vulkan",
+        "Lucerna backend status: SODIUM_VULKAN"
+    )
+    switch ($CaptureMode) {
+        "ParticleBaseline" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "BASE_VANILLA_ONLY"
+                artifactRole = "particles-baseline"
+                sceneKind = "particles"
+                sceneState = "baseline"
+                sceneAction = "particles"
+                preScreenshotAction = "particles"
+                requiredPatterns = @($baselinePatterns)
+            }
+        }
+        "ParticleFinalComposite" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "particles-final-composite"
+                sceneKind = "particles"
+                sceneState = "final-composite"
+                sceneAction = "particles"
+                preScreenshotAction = "particles"
+                requiredPatterns = @($finalCompositePatterns)
+            }
+        }
+        "TranslucentBaseline" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "BASE_VANILLA_ONLY"
+                artifactRole = "translucency-baseline"
+                sceneKind = "translucency"
+                sceneState = "baseline"
+                sceneAction = "translucency"
+                preScreenshotAction = "none"
+                requiredPatterns = @($baselinePatterns)
+            }
+        }
+        "TranslucentFinalComposite" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "translucency-final-composite"
+                sceneKind = "translucency"
+                sceneState = "final-composite"
+                sceneAction = "translucency"
+                preScreenshotAction = "none"
+                requiredPatterns = @($finalCompositePatterns)
+            }
+        }
+        "TemporalStable" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "temporal-stable-final-composite"
+                sceneKind = "temporal"
+                sceneState = "stable"
+                sceneAction = "temporal-stable"
+                preScreenshotAction = "none"
+                requiredPatterns = @($finalCompositePatterns)
+            }
+        }
+        "TemporalMoved" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "temporal-moved-final-composite"
+                sceneKind = "temporal"
+                sceneState = "moved-disoccluded"
+                sceneAction = "temporal-moved"
+                preScreenshotAction = "none"
+                requiredPatterns = @($finalCompositePatterns)
+            }
+        }
+        default {
+            throw "Unsupported Round 7 composite stability capture mode: $CaptureMode"
         }
     }
 }
@@ -520,6 +617,96 @@ function Invoke-OptionalSceneSetup {
     }
 }
 
+function Add-LucernaControllerMarker {
+    param(
+        [string] $Path,
+        [string] $Message
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return
+    }
+    Add-Content -LiteralPath $Path -Value ("[Lucerna controller proof] " + $Message)
+}
+
+function Invoke-Round7CompositeStabilitySceneAction {
+    param(
+        [string] $SceneAction,
+        [string] $MarkerPath
+    )
+
+    Send-MinecraftChatCommand "/gamerule sendCommandFeedback false"
+    Send-MinecraftChatCommand "/gamemode creative"
+    Send-MinecraftChatCommand "/weather clear"
+    Send-MinecraftChatCommand "/time set 18000"
+
+    switch ($SceneAction) {
+        "particles" {
+            if ($SetupScene) {
+                Send-MinecraftChatCommand "/fill ~2 ~-1 ~-4 ~6 ~4 ~4 minecraft:smooth_stone"
+                Send-MinecraftChatCommand "/setblock ~3 ~ ~ minecraft:glowstone"
+                Send-MinecraftChatCommand "/setblock ~3 ~-1 ~1 minecraft:campfire[lit=true]"
+                Send-MinecraftChatCommand "/setblock ~3 ~ ~2 minecraft:soul_campfire[lit=true]"
+            }
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -90 0"
+            Add-LucernaControllerMarker $MarkerPath "round7.stability.scene=particles particleSceneMarker=true finalCompositeStabilityScene=true"
+        }
+        "translucency" {
+            if ($SetupScene) {
+                Send-MinecraftChatCommand "/fill ~2 ~-1 ~-4 ~7 ~4 ~4 minecraft:smooth_stone"
+                Send-MinecraftChatCommand "/fill ~4 ~ ~-2 ~4 ~2 ~2 minecraft:glass"
+                Send-MinecraftChatCommand "/fill ~5 ~ ~-1 ~5 ~1 ~1 minecraft:water"
+                Send-MinecraftChatCommand "/setblock ~3 ~ ~ minecraft:glowstone"
+                Send-MinecraftChatCommand "/setblock ~6 ~ ~ minecraft:tinted_glass"
+            }
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -90 0"
+            Add-LucernaControllerMarker $MarkerPath "round7.stability.scene=translucency translucentSceneMarker=true glassWaterSceneMarker=true finalCompositeStabilityScene=true"
+        }
+        "temporal-stable" {
+            if ($SetupScene) {
+                Send-MinecraftChatCommand "/fill ~2 ~-1 ~-4 ~7 ~4 ~4 minecraft:smooth_stone"
+                Send-MinecraftChatCommand "/setblock ~3 ~ ~ minecraft:glowstone"
+                Send-MinecraftChatCommand "/setblock ~4 ~ ~1 minecraft:blue_concrete"
+                Send-MinecraftChatCommand "/setblock ~4 ~ ~-1 minecraft:red_concrete"
+            }
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -90 0"
+            Start-Sleep -Seconds 5
+            Add-LucernaControllerMarker $MarkerPath "round7.stability.scene=temporal sceneState=stable temporalSceneMarker=true historyStableSceneMarker=true finalCompositeStabilityScene=true"
+        }
+        "temporal-moved" {
+            if ($SetupScene) {
+                Send-MinecraftChatCommand "/fill ~2 ~-1 ~-4 ~7 ~4 ~4 minecraft:smooth_stone"
+                Send-MinecraftChatCommand "/setblock ~3 ~ ~ minecraft:glowstone"
+                Send-MinecraftChatCommand "/setblock ~4 ~ ~1 minecraft:blue_concrete"
+                Send-MinecraftChatCommand "/setblock ~4 ~ ~-1 minecraft:red_concrete"
+            }
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -70 0"
+            Start-Sleep -Milliseconds 750
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -115 4"
+            Start-Sleep -Seconds 2
+            Add-LucernaControllerMarker $MarkerPath "round7.stability.scene=temporal sceneState=moved-disoccluded temporalSceneMarker=true historyMovedSceneMarker=true movedCameraTemporalPair=true finalCompositeStabilityScene=true"
+        }
+        default {
+            throw "Unsupported Round 7 composite stability scene action: $SceneAction"
+        }
+    }
+}
+
+function Invoke-Round7CompositeStabilityPreScreenshotAction {
+    param(
+        [string] $PreScreenshotAction,
+        [string] $MarkerPath
+    )
+
+    if ($PreScreenshotAction -ne "particles") {
+        return
+    }
+
+    Send-MinecraftChatCommand "/particle minecraft:flame ~3 ~1 ~ 0.55 0.45 0.55 0.02 160 force @s"
+    Send-MinecraftChatCommand "/particle minecraft:smoke ~3 ~1 ~1 0.75 0.7 0.75 0.01 140 force @s"
+    Add-LucernaControllerMarker $MarkerPath "round7.stability.particleBurst=true particleSceneMarker=true"
+}
+
 function Invoke-Round9SceneAction {
     param([string] $SceneAction)
 
@@ -666,6 +853,8 @@ if (-not (Test-Path -LiteralPath $gradlew)) {
 $scenario = if ([string]::IsNullOrWhiteSpace($ScenarioName)) {
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
         "round7-denoise-composite-$($Mode.ToLowerInvariant())"
+    } elseif ($ValidationProfile -eq "Round7CompositeStability") {
+        "round7-composite-stability-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
         "round8-adaptive-heatmap-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round9VirtualizedGeometry") {
@@ -698,6 +887,7 @@ $createdAlias = $false
 $process = $null
 try {
     $round7CaptureIntent = $null
+    $round7StabilityCaptureIntent = $null
     $round8CaptureIntent = $null
     $round9CaptureIntent = $null
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
@@ -707,6 +897,13 @@ try {
             ([bool]$round7CaptureIntent.rendererEnabled) `
             ([string]$round7CaptureIntent.debugOverlay) `
             ([string]$round7CaptureIntent.compositeMode)
+    } elseif ($ValidationProfile -eq "Round7CompositeStability") {
+        $round7StabilityCaptureIntent = Get-Round7CompositeStabilityCaptureIntent $Mode
+        Write-LucernaConfig `
+            $root `
+            ([bool]$round7StabilityCaptureIntent.rendererEnabled) `
+            ([string]$round7StabilityCaptureIntent.debugOverlay) `
+            ([string]$round7StabilityCaptureIntent.compositeMode)
     } elseif ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
         $round8CaptureIntent = Get-Round8CaptureIntent $Mode
         Write-LucernaConfig `
@@ -771,11 +968,18 @@ try {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
-    if ($ValidationProfile -eq "Round5DirectSurface" -or $ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry") {
+    if ($ValidationProfile -eq "Round5DirectSurface" -or $ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry") {
         $psi.Environment["LUCERNA_HIDE_PROOF_OVERLAYS"] = "true"
     }
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
         $psi.Environment["LUCERNA_ROUND7_CAPTURE_MODE"] = [string]$round7CaptureIntent.artifactRole
+    }
+    if ($ValidationProfile -eq "Round7CompositeStability") {
+        $psi.Environment["LUCERNA_ROUND7_CAPTURE_MODE"] = [string]$round7StabilityCaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_ROUND7_STABILITY_CAPTURE_MODE"] = [string]$round7StabilityCaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_ROUND7_STABILITY_SCENE"] = [string]$round7StabilityCaptureIntent.sceneKind
+        $psi.Environment["LUCERNA_ROUND7_STABILITY_SCENE_STATE"] = [string]$round7StabilityCaptureIntent.sceneState
+        $psi.Environment["LUCERNA_ROUND7_STABILITY_PROOF_OWNER"] = "controller"
     }
     if ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
         $psi.Environment["LUCERNA_ROUND8_CAPTURE_MODE"] = [string]$round8CaptureIntent.artifactRole
@@ -808,6 +1012,8 @@ try {
     )
     $enabledPatterns = if ($ValidationProfile -eq "Round7DenoiseComposite") {
         @($round7CaptureIntent.requiredPatterns)
+    } elseif ($ValidationProfile -eq "Round7CompositeStability") {
+        @($round7StabilityCaptureIntent.requiredPatterns)
     } elseif ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
         @($round8CaptureIntent.requiredPatterns)
     } elseif ($ValidationProfile -eq "Round9VirtualizedGeometry") {
@@ -847,11 +1053,13 @@ try {
         "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*mode=final-composite-direct-light-focus-window-additive"
         )
     }
-    $forbiddenPatterns = if ($ValidationProfile -eq "Round7DenoiseComposite") {
+    $forbiddenPatterns = if ($ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability") {
         @(
             "temporarySourceReady=true",
             "using the current direct-light RGBA payload as the temporary visible source",
             "round6-diffuse-gi-focus-window-additive",
+            "final-composite-direct-light-focus-window-additive",
+            "focus-window-only",
             "round6-gi-proof",
             "R6 GI proof",
             "proof marker",
@@ -940,11 +1148,15 @@ try {
         Invoke-Round9SceneAction ([string]$round9CaptureIntent.sceneAction)
         Start-Sleep -Seconds 5
     }
+    if ($ValidationProfile -eq "Round7CompositeStability") {
+        Invoke-Round7CompositeStabilitySceneAction ([string]$round7StabilityCaptureIntent.sceneAction) $markerLog
+        Start-Sleep -Seconds 3
+    }
 
     if ($enabledPatterns.Count -gt 0) {
         Wait-LatestLogPattern $markerLog $enabledPatterns $deadline $earlyFailureLogPaths $forbiddenPatterns
     }
-    if (($ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry") -and -not $SetupScene) {
+    if (($ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry") -and -not $SetupScene) {
         Start-Sleep -Seconds 8
     }
 
@@ -953,6 +1165,9 @@ try {
     $existingScreenshotNames = @(Get-ChildItem -LiteralPath $screenshotDir -Filter "*.png" -ErrorAction SilentlyContinue |
             Select-Object -ExpandProperty Name)
     $beforeScreenshot = Get-Date
+    if ($ValidationProfile -eq "Round7CompositeStability") {
+        Invoke-Round7CompositeStabilityPreScreenshotAction ([string]$round7StabilityCaptureIntent.preScreenshotAction) $markerLog
+    }
     Clear-MinecraftChat
     Send-MinecraftKeys "{F2}"
     $screenshotDeadline = (Get-Date).AddSeconds(45)
@@ -971,6 +1186,12 @@ try {
     if ($round7CaptureIntent) {
         Write-Host "round7ArtifactRole=$($round7CaptureIntent.artifactRole)"
         Write-Host "round7CompositeMode=$($round7CaptureIntent.compositeMode)"
+    }
+    if ($round7StabilityCaptureIntent) {
+        Write-Host "round7StabilityArtifactRole=$($round7StabilityCaptureIntent.artifactRole)"
+        Write-Host "round7StabilityScene=$($round7StabilityCaptureIntent.sceneKind)"
+        Write-Host "round7StabilitySceneState=$($round7StabilityCaptureIntent.sceneState)"
+        Write-Host "round7StabilityCompositeMode=$($round7StabilityCaptureIntent.compositeMode)"
     }
     if ($round8CaptureIntent) {
         Write-Host "round8ArtifactRole=$($round8CaptureIntent.artifactRole)"

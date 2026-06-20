@@ -3,6 +3,7 @@ package net.lucerna.gui;
 import net.lucerna.LucernaController;
 import net.lucerna.config.DebugOverlay;
 import net.lucerna.render.culling.Round9CullingDebugStatus;
+import net.lucerna.render.preview.FirstLightingQualityProofStatus;
 import net.lucerna.render.preview.FinalCompositeModeStatus;
 import net.lucerna.render.preview.Round8AdaptiveDebugStatus;
 import net.lucerna.telemetry.LightingDispatchStageTelemetryStatus;
@@ -53,8 +54,13 @@ public final class LucernaDebugOverlayLines {
             lines.add(Component.literal("Round 6 GI/cache: " + roundSixSummary));
         }
         FinalCompositeModeStatus compositeStatus = currentCompositeModeStatus();
+        FirstLightingQualityProofStatus qualityStatus = FirstLightingQualityProofStatus.fromSnapshot(
+                snapshot,
+                compositeStatus
+        );
         lines.add(Component.literal("Round 7 mix: " + compositeStatus.compactSourceMixPolicy()));
         lines.add(Component.literal("Round 7 denoise: " + compositeStatus.denoiseSourcePolicy()));
+        lines.add(Component.literal("First-light quality: " + qualityStatus.summaryLine()));
         Round8AdaptiveDebugStatus round8 = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("Round 8 adaptive debug: " + round8.summary()));
         lines.add(Component.literal("Round 8 heatmaps: " + round8.heatmapRolesLine()));
@@ -74,6 +80,7 @@ public final class LucernaDebugOverlayLines {
             case MATERIAL_IDS -> addMaterialLines(lines, snapshot);
             case FRAME_TIMINGS -> addTimingLines(lines, snapshot);
             case DIRECT_LIGHTING -> addDirectLightingLines(lines, snapshot);
+            case FIRST_LIGHTING_QUALITY -> addFirstLightingQualityLines(lines, snapshot);
             case NATIVE_QUEUE -> addNativeQueueLines(lines, snapshot);
             case ADAPTIVE_SAMPLING -> addAdaptiveSamplingLines(lines, snapshot);
             case RAY_BUDGET_HEATMAP -> addRayBudgetHeatmapLines(lines, snapshot);
@@ -106,6 +113,22 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Round 7 evidence: " + compositeStatus.controllerEvidenceLine()));
     }
 
+    private static void addFirstLightingQualityLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        FinalCompositeModeStatus compositeStatus = currentCompositeModeStatus();
+        FirstLightingQualityProofStatus qualityStatus = FirstLightingQualityProofStatus.fromSnapshot(
+                snapshot,
+                compositeStatus
+        );
+        lines.add(Component.literal("Overlay scope: final composite stability, particles/translucency, temporal history, and denoise source identity."));
+        lines.add(Component.literal("First-lighting quality: " + qualityStatus.summaryLine()));
+        lines.add(Component.literal("Final composite stability: " + qualityStatus.finalCompositeStability()));
+        lines.add(Component.literal("Particles/translucency: " + qualityStatus.particleTranslucencyPreservation()));
+        lines.add(Component.literal("Temporal/history: " + qualityStatus.temporalHistoryState()));
+        lines.add(Component.literal("Denoise source identity: " + qualityStatus.denoiseSourceIdentity()));
+        lines.add(Component.literal("Rejected evidence: " + qualityStatus.rejectedEvidenceTypes()));
+        lines.add(Component.literal("Quality proof gate: " + qualityStatus.readinessGate()));
+    }
+
     public static List<Component> validationLines(LucernaStatusSnapshot snapshot) {
         List<Component> lines = new ArrayList<>();
         lines.add(statusLine(snapshot));
@@ -136,6 +159,15 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("round7.denoiseSourcePolicy=" + compositeStatus.denoiseSourcePolicy()));
         lines.add(Component.literal("round7.firstLightingMilestoneGate="
                 + compositeStatus.firstLightingMilestoneGate()));
+        FirstLightingQualityProofStatus qualityStatus = FirstLightingQualityProofStatus.fromSnapshot(
+                snapshot,
+                compositeStatus
+        );
+        lines.add(Component.literal("round7.firstLightingQualitySummary=" + qualityStatus.summaryLine()));
+        qualityStatus.validationFields("round7.firstLightingQuality").entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> Component.literal(entry.getKey() + "=" + entry.getValue()))
+                .forEach(lines::add);
         Round8AdaptiveDebugStatus round8 = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("round8.adaptiveDebugSummary=" + round8.summary()));
         lines.add(Component.literal("round8.adaptiveSampling=" + round8.adaptiveSamplingLine()));

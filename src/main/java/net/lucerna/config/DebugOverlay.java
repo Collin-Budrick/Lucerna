@@ -7,6 +7,7 @@ public enum DebugOverlay {
     MATERIAL_IDS("Material ids"),
     FRAME_TIMINGS("Frame timings"),
     DIRECT_LIGHTING("Direct lighting"),
+    FIRST_LIGHTING_QUALITY("First-lighting quality"),
     NATIVE_QUEUE("Native queue"),
     ADAPTIVE_SAMPLING("Round 8 adaptive sampling"),
     RAY_BUDGET_HEATMAP("Round 8 ray budget heatmap"),

@@ -97,12 +97,18 @@ public final class LowResDiffuseGiPlanner {
                 resolvedSettings,
                 resolvedSourceSummary
         );
+        DiffuseGiSceneInputSummary sceneInputSummary = DiffuseGiSceneInputSummary.from(
+                resolvedSourceSummary,
+                resolvedCacheSnapshot,
+                cacheConfidence
+        );
         DiffuseGiValidationReport validationReport = validate(
                 frameInput,
                 temporalInput,
                 resolvedCacheSnapshot,
                 cacheConfidence,
                 resolvedSourceSummary,
+                sceneInputSummary,
                 rayBudget
         );
         return new LowResDiffuseGiPlan(
@@ -112,6 +118,7 @@ public final class LowResDiffuseGiPlanner {
                 cacheConfidence,
                 rayBudget,
                 resolvedSourceSummary,
+                sceneInputSummary,
                 validationReport
         );
     }
@@ -147,13 +154,14 @@ public final class LowResDiffuseGiPlanner {
             GiCacheSnapshot cacheSnapshot,
             CacheConfidence cacheConfidence,
             DiffuseGiSourceSummary sourceSummary,
+            DiffuseGiSceneInputSummary sceneInputSummary,
             GiRayBudgetAllocation rayBudget
     ) {
         List<DiffuseGiValidationFinding> findings = new ArrayList<>();
         validateFrameInput(findings, frameInput);
         validateTemporalInput(findings, temporalInput);
         validateCache(findings, cacheSnapshot, cacheConfidence);
-        validateSourceSummary(findings, sourceSummary);
+        validateSourceSummary(findings, sourceSummary, sceneInputSummary);
         validateRayBudget(findings, rayBudget);
         return new DiffuseGiValidationReport(findings);
     }
@@ -254,7 +262,8 @@ public final class LowResDiffuseGiPlanner {
 
     private static void validateSourceSummary(
             List<DiffuseGiValidationFinding> findings,
-            DiffuseGiSourceSummary sourceSummary
+            DiffuseGiSourceSummary sourceSummary,
+            DiffuseGiSceneInputSummary sceneInputSummary
     ) {
         if (!sourceSummary.hasWorldMaterialInputs()) {
             findings.add(DiffuseGiValidationFinding.info(
@@ -268,6 +277,16 @@ public final class LowResDiffuseGiPlanner {
                     "GI_SOURCE_DIRECT_LIGHT_PENDING",
                     "$.sourceSummary.directLighting",
                     sourceSummary.compactLabel()
+            ));
+        }
+        DiffuseGiSceneInputSummary sceneInputs = sceneInputSummary == null
+                ? DiffuseGiSceneInputSummary.from(sourceSummary, null, null)
+                : sceneInputSummary;
+        if (!sceneInputs.hasSceneTiedInputs()) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_SCENE_INPUTS_PENDING",
+                    "$.sceneInputs",
+                    "Scene-tied GI metadata will be populated from cache surface/radiance records when available"
             ));
         }
     }

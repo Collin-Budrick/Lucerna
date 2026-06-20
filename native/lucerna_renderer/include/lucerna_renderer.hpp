@@ -664,6 +664,12 @@ struct NativeDenoiseExecutionTelemetry {
     std::uint64_t last_denoised_output_checksum = 0;
     std::uint64_t last_denoised_output_changed_pixels = 0;
     std::uint64_t last_denoised_output_mean_abs_delta = 0;
+    std::uint64_t last_temporal_stable_pixels = 0;
+    std::uint64_t last_temporal_unstable_pixels = 0;
+    std::uint64_t last_temporal_mean_abs_delta = 0;
+    std::uint64_t last_raw_neighbor_luma_delta = 0;
+    std::uint64_t last_denoised_neighbor_luma_delta = 0;
+    std::uint64_t last_noise_reduction_percent = 0;
     std::uint64_t last_composite_width = 0;
     std::uint64_t last_composite_height = 0;
     std::uint64_t last_composite_outputs = 0;
@@ -688,6 +694,7 @@ struct NativeDenoiseExecutionTelemetry {
     bool last_denoised_cpu_output_generated = false;
     bool last_denoised_output_differs_from_raw = false;
     bool last_real_denoise_shader_output = false;
+    bool last_cpu_fallback_quality_metrics = false;
     bool last_composite_stage_recorded = false;
     bool last_composite_enabled = false;
     bool last_composite_ready = false;
@@ -700,6 +707,9 @@ struct NativeDenoiseExecutionTelemetry {
     std::string last_raw_input_marker;
     std::string last_denoised_output_marker;
     std::string last_composite_marker;
+    std::string last_history_acceptance_reason;
+    std::string last_history_rejection_reason;
+    std::string last_quality_marker;
     std::string last_readiness_reason;
 };
 
