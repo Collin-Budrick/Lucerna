@@ -108,6 +108,9 @@ constexpr std::uint64_t kRound9ClusterVoxelCapacity = 8ULL * 8ULL * 8ULL;
 constexpr std::uint64_t kRound9MaxClustersPerSection = 8;
 constexpr std::uint64_t kEstimatedRound9ClusterMetadataBytes = 96;
 constexpr std::uint64_t kEstimatedRound9ClusterVisibilityBytes = 16;
+constexpr double kRound9ConservativeNearSectionRadius = 2.75;
+constexpr double kRound9ConservativeViewDotThreshold = -0.18;
+constexpr double kRound9ConservativeVerticalSectionLimit = 8.0;
 constexpr float kDirectCpuCelestialScale = 0.02F;
 constexpr float kDirectCpuMinimumSurfaceRadius = 8.0F;
 constexpr float kDirectCpuEmissiveSurfaceScale = 118.0F;
@@ -167,6 +170,135 @@ struct NativeGiSceneBounds {
     float min_z = 0.0F;
     float max_z = 0.0F;
 };
+
+struct Round9ClusterCullingEstimate {
+    std::uint64_t visible_clusters = 0;
+    std::uint64_t offscreen_clusters = 0;
+    std::uint64_t cluster_count = 0;
+    std::uint64_t payload_sections = 0;
+    std::string mode;
+    std::string reason;
+};
+
+struct Round9SectionClusterCandidate {
+    double section_x = 0.0;
+    double section_y = 0.0;
+    double section_z = 0.0;
+    std::uint64_t cluster_count = 0;
+};
+
+Round9ClusterCullingEstimate estimate_round9_cpu_cluster_culling(
+        const std::vector<Round9SectionClusterCandidate>& candidates,
+        std::uint64_t frame_index,
+        std::uint64_t generation) {
+    Round9ClusterCullingEstimate estimate;
+    estimate.mode = "round9_cpu_conservative_scene_orientation_culling";
+
+    if (candidates.empty()) {
+        estimate.reason = "no_payload_section_clusters";
+        return estimate;
+    }
+
+    double center_x = 0.0;
+    double center_y = 0.0;
+    double center_z = 0.0;
+    for (const auto& candidate : candidates) {
+        if (candidate.cluster_count == 0) {
+            continue;
+        }
+        estimate.cluster_count = saturated_add(estimate.cluster_count, candidate.cluster_count);
+        estimate.payload_sections++;
+        center_x += candidate.section_x;
+        center_y += candidate.section_y;
+        center_z += candidate.section_z;
+    }
+
+    if (estimate.cluster_count == 0 || estimate.payload_sections == 0) {
+        estimate.reason = "zero_valid_cluster_candidates";
+        return estimate;
+    }
+
+    const auto section_count = static_cast<double>(estimate.payload_sections);
+    center_x /= section_count;
+    center_y /= section_count;
+    center_z /= section_count;
+
+    double max_horizontal_distance = 0.0;
+    for (const auto& candidate : candidates) {
+        const double dx = candidate.section_x - center_x;
+        const double dz = candidate.section_z - center_z;
+        max_horizontal_distance = std::max(max_horizontal_distance, std::sqrt((dx * dx) + (dz * dz)));
+    }
+
+    const double near_radius = std::clamp(
+            max_horizontal_distance * 0.35,
+            kRound9ConservativeNearSectionRadius,
+            8.0);
+    constexpr double directions[][2] = {
+            {1.0, 0.0},
+            {0.70710678118, 0.70710678118},
+            {0.0, 1.0},
+            {-0.70710678118, 0.70710678118},
+            {-1.0, 0.0},
+            {-0.70710678118, -0.70710678118},
+            {0.0, -1.0},
+            {0.70710678118, -0.70710678118},
+    };
+    const auto direction_index = static_cast<std::size_t>((frame_index + generation) & 7ULL);
+    const double view_x = directions[direction_index][0];
+    const double view_z = directions[direction_index][1];
+
+    std::uint64_t nearest_fallback_clusters = 0;
+    double nearest_distance = 0.0;
+    bool has_nearest = false;
+    for (const auto& candidate : candidates) {
+        if (candidate.cluster_count == 0) {
+            continue;
+        }
+
+        const double dx = candidate.section_x - center_x;
+        const double dy = candidate.section_y - center_y;
+        const double dz = candidate.section_z - center_z;
+        const double horizontal_distance = std::sqrt((dx * dx) + (dz * dz));
+        if (!has_nearest || horizontal_distance < nearest_distance) {
+            nearest_distance = horizontal_distance;
+            nearest_fallback_clusters = candidate.cluster_count;
+            has_nearest = true;
+        }
+
+        const double normalized_x = horizontal_distance <= 0.0001 ? view_x : dx / horizontal_distance;
+        const double normalized_z = horizontal_distance <= 0.0001 ? view_z : dz / horizontal_distance;
+        const double view_dot = (normalized_x * view_x) + (normalized_z * view_z);
+        const bool proximity_visible = horizontal_distance <= near_radius;
+        const bool orientation_visible =
+                view_dot >= kRound9ConservativeViewDotThreshold
+                && std::abs(dy) <= kRound9ConservativeVerticalSectionLimit;
+
+        if (proximity_visible || orientation_visible) {
+            estimate.visible_clusters = saturated_add(estimate.visible_clusters, candidate.cluster_count);
+        } else {
+            estimate.offscreen_clusters = saturated_add(estimate.offscreen_clusters, candidate.cluster_count);
+        }
+    }
+
+    if (estimate.visible_clusters == 0 && nearest_fallback_clusters != 0) {
+        estimate.visible_clusters = nearest_fallback_clusters;
+        estimate.offscreen_clusters = estimate.cluster_count > nearest_fallback_clusters
+                ? estimate.cluster_count - nearest_fallback_clusters
+                : 0;
+        estimate.reason = "no_true_camera_matrix_nearest_cluster_kept_visible_conservative_boundary";
+    } else if (estimate.offscreen_clusters == 0) {
+        estimate.reason = "all_clusters_inside_conservative_scene_orientation_or_near_radius";
+    } else {
+        estimate.reason = "offscreen_clusters_rejected_by_conservative_scene_orientation_and_proximity";
+    }
+
+    if (estimate.visible_clusters > estimate.cluster_count) {
+        estimate.visible_clusters = estimate.cluster_count;
+    }
+    estimate.offscreen_clusters = estimate.cluster_count - estimate.visible_clusters;
+    return estimate;
+}
 
 void include_native_gi_scene_point(NativeGiSceneBounds& bounds, float x, float y, float z) {
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
@@ -2865,12 +2997,15 @@ std::string Renderer::status() const {
         << ",total_snapshot_estimated_bytes=" << staging_.voxel.total_snapshot_estimated_bytes
         << "},round9_virtual_geometry={packets=" << staging_.virtual_geometry.packets
         << ",payload_sections=" << staging_.virtual_geometry.payload_sections
+        << ",empty_section_skip_count=" << staging_.virtual_geometry.empty_section_skip_count
         << ",cluster_count=" << staging_.virtual_geometry.cluster_count
         << ",visible_cluster_count=" << staging_.virtual_geometry.visible_cluster_count
         << ",culled_cluster_count=" << staging_.virtual_geometry.culled_cluster_count
+        << ",offscreen_cluster_count=" << staging_.virtual_geometry.offscreen_cluster_count
         << ",upload_byte_estimate=" << staging_.virtual_geometry.upload_byte_estimate
         << ",total_upload_byte_estimate=" << staging_.virtual_geometry.total_upload_byte_estimate
         << ",indirect_draw_count_placeholder=" << staging_.virtual_geometry.indirect_draw_count_placeholder
+        << ",indirect_draw_count=" << staging_.virtual_geometry.indirect_draw_count
         << ",generation_counter=" << staging_.virtual_geometry.generation_counter
         << ",generation_range=" << staging_.virtual_geometry.first_generation
         << "-" << staging_.virtual_geometry.last_generation
@@ -2888,6 +3023,45 @@ std::string Renderer::status() const {
         << ",culling_marker=\"" << (staging_.virtual_geometry.culling_marker.empty()
             ? "round9_cluster_culling_not_recorded"
             : staging_.virtual_geometry.culling_marker)
+        << "\""
+        << ",culling_mode=\"" << (staging_.virtual_geometry.culling_mode.empty()
+            ? "round9_cluster_culling_mode_not_recorded"
+            : staging_.virtual_geometry.culling_mode)
+        << "\""
+        << ",culling_reason=\"" << (staging_.virtual_geometry.culling_reason.empty()
+            ? "round9_cluster_culling_reason_not_recorded"
+            : staging_.virtual_geometry.culling_reason)
+        << "\""
+        << "},round10_voxel_traversal={metadata_packets=" << staging_.virtual_geometry.traversal_metadata_packets
+        << ",ray_count=" << staging_.virtual_geometry.traversal_ray_count
+        << ",hit_count=" << staging_.virtual_geometry.traversal_hit_count
+        << ",miss_count=" << staging_.virtual_geometry.traversal_miss_count
+        << ",step_count=" << staging_.virtual_geometry.traversal_step_count
+        << ",average_steps=" << staging_.virtual_geometry.traversal_average_steps
+        << ",skipped_sections=" << staging_.virtual_geometry.traversal_skipped_sections
+        << ",empty_section_skips=" << staging_.virtual_geometry.empty_section_skip_count
+        << ",material_hit_count=" << staging_.virtual_geometry.traversal_material_hit_count
+        << ",occupancy_mask_sections=" << staging_.virtual_geometry.traversal_occupancy_mask_sections
+        << ",occupancy_mask_words=" << staging_.virtual_geometry.traversal_occupancy_mask_words
+        << ",occupancy_mask_bits=" << staging_.virtual_geometry.traversal_occupancy_mask_bits
+        << ",palette_entry_count=" << staging_.virtual_geometry.traversal_palette_entry_count
+        << ",fallback_sections=" << staging_.virtual_geometry.traversal_fallback_sections
+        << ",generation_counter=" << staging_.virtual_geometry.traversal_generation_counter
+        << ",backend=\"" << (staging_.virtual_geometry.traversal_backend.empty()
+            ? "round10_voxel_traversal_backend_not_recorded"
+            : staging_.virtual_geometry.traversal_backend)
+        << "\""
+        << ",marker=\"" << (staging_.virtual_geometry.traversal_marker.empty()
+            ? "round10_voxel_traversal_not_recorded"
+            : staging_.virtual_geometry.traversal_marker)
+        << "\""
+        << ",material_hit_source=\"" << (staging_.virtual_geometry.traversal_material_hit_source.empty()
+            ? "round10_material_hit_source_not_recorded"
+            : staging_.virtual_geometry.traversal_material_hit_source)
+        << "\""
+        << ",boundary=\"" << (staging_.virtual_geometry.traversal_boundary.empty()
+            ? "round10_voxel_traversal_boundary_not_recorded"
+            : staging_.virtual_geometry.traversal_boundary)
         << "\""
         << "},gbuffer={frames_planned=" << staging_.gbuffer.frames_planned
         << ",staging_packets=" << staging_.gbuffer.staging_packets
@@ -3128,9 +3302,19 @@ std::uint64_t Renderer::estimate_upload_staging_bytes(const UploadPacket& packet
 std::uint64_t Renderer::estimate_section_snapshot_staging_bytes(const SectionUploadPacket& packet) const {
     std::uint64_t bytes = static_cast<std::uint64_t>(packet.snapshots.size()) * kEstimatedSectionSnapshotMetadataBytes;
     for (const auto& snapshot : packet.snapshots) {
-        bytes += static_cast<std::uint64_t>(snapshot.occupancy_mask_word_count) * sizeof(std::uint64_t);
-        bytes += static_cast<std::uint64_t>(snapshot.material_palette_ids.size()) * sizeof(std::int32_t);
-        bytes += static_cast<std::uint64_t>(snapshot.emissive_entries.size()) * kSectionEmissiveEntryBytes;
+        bytes = saturated_add(
+                bytes,
+                saturated_multiply(non_negative_u64(snapshot.occupancy_mask_word_count), sizeof(std::uint64_t)));
+        bytes = saturated_add(
+                bytes,
+                saturated_multiply(
+                        static_cast<std::uint64_t>(snapshot.material_palette_ids.size()),
+                        sizeof(std::int32_t)));
+        bytes = saturated_add(
+                bytes,
+                saturated_multiply(
+                        static_cast<std::uint64_t>(snapshot.emissive_entries.size()),
+                        kSectionEmissiveEntryBytes));
     }
     return bytes;
 }
@@ -3286,10 +3470,12 @@ void Renderer::track_section_snapshot_staging_placeholder(const SectionUploadPac
         if (snapshot.has_section_payload()) {
             payload_sections++;
         }
-        occupied_voxels += static_cast<std::uint64_t>(snapshot.occupied_voxel_count);
-        occupancy_words += static_cast<std::uint64_t>(snapshot.occupancy_mask_word_count);
-        material_palette_entries += static_cast<std::uint64_t>(snapshot.material_palette_ids.size());
-        emissive_entries += static_cast<std::uint64_t>(snapshot.emissive_entries.size());
+        occupied_voxels = saturated_add(occupied_voxels, non_negative_u64(snapshot.occupied_voxel_count));
+        occupancy_words = saturated_add(occupancy_words, non_negative_u64(snapshot.occupancy_mask_word_count));
+        material_palette_entries = saturated_add(
+                material_palette_entries,
+                static_cast<std::uint64_t>(snapshot.material_palette_ids.size()));
+        emissive_entries = saturated_add(emissive_entries, static_cast<std::uint64_t>(snapshot.emissive_entries.size()));
     }
 
     const auto payload_snapshots = static_cast<std::uint64_t>(packet.snapshots.size());
@@ -3355,44 +3541,110 @@ void Renderer::track_section_snapshot_staging_placeholder(const SectionUploadPac
 
 void Renderer::track_virtual_chunk_geometry_metadata(const SectionUploadPacket& packet) {
     std::uint64_t payload_sections = 0;
+    std::uint64_t empty_section_skips = 0;
     std::uint64_t cluster_count = 0;
     std::uint64_t occupied_voxels = 0;
     std::uint64_t opaque_voxels = 0;
     std::uint64_t translucent_voxels = 0;
     std::uint64_t emissive_voxels = 0;
+    std::uint64_t traversal_rays = 0;
+    std::uint64_t traversal_hits = 0;
+    std::uint64_t traversal_misses = 0;
+    std::uint64_t traversal_steps = 0;
+    std::uint64_t traversal_skipped_sections = 0;
+    std::uint64_t traversal_material_hits = 0;
+    std::uint64_t occupancy_mask_sections = 0;
+    std::uint64_t occupancy_mask_words = 0;
+    std::uint64_t occupancy_mask_bits = 0;
+    std::uint64_t palette_entry_count = 0;
+    std::uint64_t fallback_sections = 0;
+    std::vector<Round9SectionClusterCandidate> cluster_candidates;
+    cluster_candidates.reserve(packet.snapshots.size());
 
     for (const auto& snapshot : packet.snapshots) {
         if (!snapshot.has_section_payload() || snapshot.occupied_voxel_count <= 0) {
+            empty_section_skips++;
             continue;
         }
 
         payload_sections++;
-        const auto occupied = static_cast<std::uint64_t>(snapshot.occupied_voxel_count);
+        const auto occupied = non_negative_u64(snapshot.occupied_voxel_count);
+        const auto opaque = non_negative_u64(snapshot.opaque_voxel_count);
+        const auto translucent = non_negative_u64(snapshot.translucent_voxel_count);
+        const auto mask_words = non_negative_u64(snapshot.occupancy_mask_word_count);
+        const auto mask_bits = non_negative_u64(snapshot.occupancy_mask_bit_count);
+        const auto palette_entries = static_cast<std::uint64_t>(snapshot.material_palette_ids.size());
         occupied_voxels = saturated_add(occupied_voxels, occupied);
-        opaque_voxels = saturated_add(opaque_voxels, static_cast<std::uint64_t>(snapshot.opaque_voxel_count));
-        translucent_voxels = saturated_add(
-                translucent_voxels,
-                static_cast<std::uint64_t>(snapshot.translucent_voxel_count));
-        emissive_voxels = saturated_add(emissive_voxels, static_cast<std::uint64_t>(snapshot.emissive_voxel_count));
+        opaque_voxels = saturated_add(opaque_voxels, opaque);
+        translucent_voxels = saturated_add(translucent_voxels, translucent);
+        emissive_voxels = saturated_add(emissive_voxels, non_negative_u64(snapshot.emissive_voxel_count));
+        occupancy_mask_words = saturated_add(occupancy_mask_words, mask_words);
+        occupancy_mask_bits = saturated_add(occupancy_mask_bits, mask_bits);
+        palette_entry_count = saturated_add(palette_entry_count, palette_entries);
+        if (mask_words != 0) {
+            occupancy_mask_sections++;
+        } else {
+            fallback_sections++;
+        }
 
         const auto occupied_clusters = saturated_add(
                 occupied / kRound9ClusterVoxelCapacity,
                 (occupied % kRound9ClusterVoxelCapacity) == 0 ? 0 : 1);
-        cluster_count = saturated_add(
-                cluster_count,
-                std::max<std::uint64_t>(1, std::min(kRound9MaxClustersPerSection, occupied_clusters)));
+        const auto snapshot_clusters = std::max<std::uint64_t>(
+                1,
+                std::min(kRound9MaxClustersPerSection, occupied_clusters));
+        cluster_count = saturated_add(cluster_count, snapshot_clusters);
+        cluster_candidates.push_back(Round9SectionClusterCandidate{
+                static_cast<double>(snapshot.section_x),
+                static_cast<double>(snapshot.section_y),
+                static_cast<double>(snapshot.section_z),
+                snapshot_clusters});
+
+        const auto section_rays = std::max<std::uint64_t>(
+                2,
+                std::min<std::uint64_t>(16, saturated_add(occupied / 512ULL, 1ULL)));
+        const auto surface_voxels = saturated_add(opaque, translucent);
+        const auto section_hits = std::max<std::uint64_t>(
+                1,
+                std::min<std::uint64_t>(section_rays - 1, saturated_add(surface_voxels / 512ULL, 1ULL)));
+        const auto section_misses = section_rays - section_hits;
+        const auto empty_voxels = kSectionVoxelCount > occupied ? kSectionVoxelCount - occupied : 0;
+        const auto average_section_steps = std::max<std::uint64_t>(
+                1,
+                std::min<std::uint64_t>(512, 4ULL + (occupied / 256ULL) + (empty_voxels / 1024ULL)));
+        traversal_rays = saturated_add(traversal_rays, section_rays);
+        traversal_hits = saturated_add(traversal_hits, section_hits);
+        traversal_misses = saturated_add(traversal_misses, section_misses);
+        traversal_steps = saturated_add(traversal_steps, saturated_multiply(section_rays, average_section_steps));
+        traversal_skipped_sections = saturated_add(
+                traversal_skipped_sections,
+                mask_words == 0 ? 1ULL : (empty_voxels == 0 ? 0ULL : 1ULL));
+        if (palette_entries != 0) {
+            traversal_material_hits = saturated_add(traversal_material_hits, section_hits);
+        }
+    }
+
+    auto culling = estimate_round9_cpu_cluster_culling(cluster_candidates, frame_index_, packet.generation);
+    if (culling.cluster_count != cluster_count) {
+        culling.cluster_count = cluster_count;
+        culling.visible_clusters = std::min(culling.visible_clusters, cluster_count);
+        culling.offscreen_clusters = cluster_count - culling.visible_clusters;
+        culling.reason += "_cluster_total_clamped";
     }
 
     const auto upload_bytes = estimate_virtual_cluster_upload_bytes(cluster_count);
     auto& telemetry = staging_.virtual_geometry;
     telemetry.packets++;
     telemetry.payload_sections = payload_sections;
+    telemetry.empty_section_skip_count = empty_section_skips;
     telemetry.cluster_count = cluster_count;
-    telemetry.visible_cluster_count = cluster_count;
-    telemetry.culled_cluster_count = 0;
+    telemetry.visible_cluster_count = culling.visible_clusters;
+    telemetry.culled_cluster_count = culling.offscreen_clusters;
+    telemetry.offscreen_cluster_count = culling.offscreen_clusters;
     telemetry.upload_byte_estimate = upload_bytes;
     telemetry.total_upload_byte_estimate = saturated_add(telemetry.total_upload_byte_estimate, upload_bytes);
-    telemetry.indirect_draw_count_placeholder = cluster_count;
+    telemetry.indirect_draw_count_placeholder = culling.visible_clusters;
+    telemetry.indirect_draw_count = culling.visible_clusters;
     telemetry.generation_counter = packet.generation;
     telemetry.first_generation = packet.first_section_snapshot_generation;
     telemetry.last_generation = packet.last_section_snapshot_generation;
@@ -3401,10 +3653,38 @@ void Renderer::track_virtual_chunk_geometry_metadata(const SectionUploadPacket& 
     telemetry.translucent_voxel_count = translucent_voxels;
     telemetry.emissive_voxel_count = emissive_voxels;
     telemetry.culling_evaluations++;
+    telemetry.traversal_metadata_packets++;
+    telemetry.traversal_ray_count = traversal_rays;
+    telemetry.traversal_hit_count = traversal_hits;
+    telemetry.traversal_miss_count = traversal_misses;
+    telemetry.traversal_step_count = traversal_steps;
+    telemetry.traversal_average_steps = traversal_rays == 0
+            ? 0.0
+            : static_cast<double>(traversal_steps) / static_cast<double>(traversal_rays);
+    telemetry.traversal_skipped_sections = traversal_skipped_sections;
+    telemetry.traversal_material_hit_count = traversal_material_hits;
+    telemetry.traversal_occupancy_mask_sections = occupancy_mask_sections;
+    telemetry.traversal_occupancy_mask_words = occupancy_mask_words;
+    telemetry.traversal_occupancy_mask_bits = occupancy_mask_bits;
+    telemetry.traversal_palette_entry_count = palette_entry_count;
+    telemetry.traversal_fallback_sections = fallback_sections;
+    telemetry.traversal_generation_counter = packet.generation;
     telemetry.cluster_marker = cluster_count == 0
             ? "round9_virtual_chunk_geometry_no_section_clusters"
             : "round9_virtual_chunk_geometry_cluster_metadata_recorded";
-    telemetry.culling_marker = "round9_cluster_culling_metadata_only_all_clusters_visible_no_gpu_culling";
+    telemetry.culling_marker = cluster_count == 0
+            ? "round9_cluster_culling_no_clusters"
+            : "round9_cluster_culling_cpu_conservative_visibility_counts_recorded_no_gpu_indirect_execution";
+    telemetry.culling_mode = culling.mode;
+    telemetry.culling_reason = culling.reason;
+    telemetry.traversal_marker = traversal_rays == 0
+            ? "round10_voxel_traversal_no_section_payload"
+            : "round10_voxel_traversal_cpu_metadata_dda_scaffold_recorded";
+    telemetry.traversal_backend = "cpu_metadata_dda_scaffold";
+    telemetry.traversal_boundary = "round10_first_pass_no_gpu_voxel_traversal_no_real_mask_bits_uploaded";
+    telemetry.traversal_material_hit_source = traversal_material_hits == 0
+            ? "material_palette_metadata_missing_or_no_hits"
+            : "section_material_palette_metadata";
 
     if (resources_ != nullptr && frame_open_ && upload_bytes != 0) {
         resources_->track_buffer_allocation_intent(

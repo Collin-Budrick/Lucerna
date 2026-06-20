@@ -14,7 +14,10 @@ public enum DebugOverlay {
     VARIANCE_MAP("Round 8 variance map"),
     HISTORY_CONFIDENCE("Round 8 history confidence heatmap"),
     DISOCCLUSION_MASK("Round 8 disocclusion mask"),
-    CHUNK_CULLING("Round 9 chunk culling");
+    CHUNK_CULLING("Round 9 chunk culling"),
+    VOXEL_RAY_DEBUG("Round 10 voxel ray debug"),
+    RT_ENTITY_DEBUG("Round 10 RT entity debug"),
+    HYBRID_HIT_DEBUG("Round 10 hybrid hit debug");
 
     private final String displayName;
 

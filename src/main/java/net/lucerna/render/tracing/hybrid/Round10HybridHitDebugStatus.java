@@ -1,0 +1,360 @@
+package net.lucerna.render.tracing.hybrid;
+
+import net.lucerna.telemetry.LightingDispatchStageTelemetryStatus;
+import net.lucerna.telemetry.LightingDispatchTelemetryStatus;
+import net.lucerna.telemetry.LucernaStatusSnapshot;
+import net.lucerna.telemetry.NativePassTelemetryStatus;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+public record Round10HybridHitDebugStatus(
+        boolean telemetryPresent,
+        String summary,
+        String sourceCountsLine,
+        String priorityLine,
+        String materialConsistencyLine,
+        String fallbackLine,
+        String readinessLine,
+        String evidenceBoundaryLine
+) {
+    public Round10HybridHitDebugStatus {
+        summary = clean(summary, "hybrid hit telemetry unavailable");
+        sourceCountsLine = clean(sourceCountsLine, "Hybrid source counts: unavailable");
+        priorityLine = clean(priorityLine, "Hybrid priority: unavailable");
+        materialConsistencyLine = clean(materialConsistencyLine, "Hybrid material consistency: unavailable");
+        fallbackLine = clean(fallbackLine, "Hybrid fallback: unavailable");
+        readinessLine = clean(readinessLine, "Round 10 hybrid readiness: missing");
+        evidenceBoundaryLine = clean(
+                evidenceBoundaryLine,
+                "Round 10 evidence boundary: hit resolver/status only; native tracing and screenshot proof are controller-owned"
+        );
+    }
+
+    public static Round10HybridHitDebugStatus fromSnapshot(LucernaStatusSnapshot snapshot) {
+        LightingDispatchTelemetryStatus dispatch = snapshot.lightingDispatchStatus();
+        LightingDispatchStageTelemetryStatus hybridStage = firstStage(
+                dispatch,
+                "hybrid_hit",
+                "hybrid_hit_resolver",
+                "hybrid_resolver",
+                "round10_hybrid_hit"
+        );
+        LightingDispatchStageTelemetryStatus rtStage = firstStage(
+                dispatch,
+                "hardware_rt",
+                "vulkan_rt",
+                "ray_tracing",
+                "round10_rt"
+        );
+        LightingDispatchStageTelemetryStatus voxelStage = firstStage(
+                dispatch,
+                "voxel_trace",
+                "voxel_hit",
+                "voxel_tracing",
+                "voxel"
+        );
+        NativePassTelemetryStatus nativePasses = snapshot.nativePassStates();
+        Map<String, String> nativeHybridDetails = parseNativeBlock(
+                snapshot.nativeBridge().nativeStatus(),
+                "round10_hybrid_hit={"
+        );
+
+        String screenCount = firstValue(
+                hybridStage,
+                nativeHybridDetails,
+                nativePasses,
+                "screen_space_hits",
+                "screen_hits",
+                "screenspace_hits",
+                "screen"
+        );
+        String voxelCount = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativePasses,
+                "voxel_hits",
+                "voxel_hit_count",
+                "voxel"
+        );
+        String rtCount = firstValue(
+                hybridStage,
+                rtStage,
+                nativeHybridDetails,
+                nativePasses,
+                "hardware_rt_hits",
+                "rt_hits",
+                "raytraced_hits",
+                "hardware_rt"
+        );
+        String skyCount = firstValue(hybridStage, nativeHybridDetails, nativePasses, "sky_hits", "sky");
+        String missCount = firstValue(hybridStage, nativeHybridDetails, nativePasses, "misses", "miss_count", "miss");
+        String selectedSource = firstValue(
+                hybridStage,
+                nativeHybridDetails,
+                nativePasses,
+                "selected_source",
+                "priority_source",
+                "winner",
+                "resolved_source"
+        );
+        String materialConsistent = firstValue(
+                hybridStage,
+                nativeHybridDetails,
+                nativePasses,
+                "material_consistent",
+                "material_match",
+                "consistent_material"
+        );
+        String materialId = firstValue(hybridStage, nativeHybridDetails, nativePasses, "material_id", "material");
+        String expectedMaterialId = firstValue(
+                hybridStage,
+                nativeHybridDetails,
+                nativePasses,
+                "expected_material_id",
+                "expected_material"
+        );
+        String fallbackActive = firstValue(
+                hybridStage,
+                nativeHybridDetails,
+                nativePasses,
+                "fallback_active",
+                "fallback",
+                "using_fallback"
+        );
+        String voxelAvailable = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativePasses,
+                "voxel_available",
+                "voxel_path_available",
+                "voxel_ready"
+        );
+        String rtAvailable = firstValue(
+                hybridStage,
+                rtStage,
+                nativeHybridDetails,
+                nativePasses,
+                "hardware_rt_available",
+                "rt_available",
+                "rt_ready",
+                "hardware_rt_ready"
+        );
+        String fallbackReason = firstValue(
+                hybridStage,
+                nativeHybridDetails,
+                nativePasses,
+                "fallback_reason",
+                "reason",
+                "readiness_reason"
+        );
+
+        boolean hasTelemetry = hasAny(
+                screenCount,
+                voxelCount,
+                rtCount,
+                skyCount,
+                missCount,
+                selectedSource,
+                materialConsistent,
+                fallbackActive,
+                fallbackReason
+        );
+        String summary = "selected=" + valueOrUnknown(selectedSource)
+                + ",screen=" + valueOrUnknown(screenCount)
+                + ",voxel=" + valueOrUnknown(voxelCount)
+                + ",rt=" + valueOrUnknown(rtCount)
+                + ",sky=" + valueOrUnknown(skyCount)
+                + ",miss=" + valueOrUnknown(missCount)
+                + ",materialConsistent=" + valueOrUnknown(materialConsistent)
+                + ",fallback=" + valueOrUnknown(fallbackActive);
+        String countsLine = "Hybrid source counts: screen=" + valueOrUnknown(screenCount)
+                + " voxel=" + valueOrUnknown(voxelCount)
+                + " hardwareRt=" + valueOrUnknown(rtCount)
+                + " sky=" + valueOrUnknown(skyCount)
+                + " miss=" + valueOrUnknown(missCount);
+        String priorityLine = "Hybrid priority: selected=" + valueOrUnknown(selectedSource)
+                + " rule=hardwareRt>voxel>screenSpace>sky>miss"
+                + " fallback=" + valueOrUnknown(fallbackActive);
+        String materialLine = "Hybrid material consistency: consistent=" + valueOrUnknown(materialConsistent)
+                + " material=" + valueOrUnknown(materialId)
+                + " expected=" + valueOrUnknown(expectedMaterialId);
+        String fallbackLine = "Hybrid fallback: active=" + valueOrUnknown(fallbackActive)
+                + " voxelAvailable=" + valueOrUnknown(voxelAvailable)
+                + " hardwareRtAvailable=" + valueOrUnknown(rtAvailable)
+                + " reason=" + valueOrUnknown(fallbackReason, "awaiting native/controller telemetry");
+        String readinessLine = "Round 10 hybrid readiness: telemetry=" + yesNo(hasTelemetry)
+                + " sources=" + readinessFrom(screenCount, voxelCount, rtCount, skyCount, missCount)
+                + " priority=" + readinessFrom(selectedSource)
+                + " material=" + readinessFrom(materialConsistent, materialId, expectedMaterialId)
+                + " fallback=" + readinessFrom(fallbackActive, voxelAvailable, rtAvailable, fallbackReason);
+        String boundaryLine = "Round 10 evidence boundary: Java/status resolver only; unavailable voxel/RT paths must fall back explicitly and native execution remains unproven";
+
+        return new Round10HybridHitDebugStatus(
+                hasTelemetry,
+                summary,
+                countsLine,
+                priorityLine,
+                materialLine,
+                fallbackLine,
+                readinessLine,
+                boundaryLine
+        );
+    }
+
+    private static LightingDispatchStageTelemetryStatus firstStage(
+            LightingDispatchTelemetryStatus dispatch,
+            String... stageIds
+    ) {
+        if (dispatch == null || stageIds == null) {
+            return null;
+        }
+        for (String stageId : stageIds) {
+            LightingDispatchStageTelemetryStatus stage = dispatch.stages().get(stageId);
+            if (stage != null) {
+                return stage;
+            }
+        }
+        return null;
+    }
+
+    private static String firstValue(
+            LightingDispatchStageTelemetryStatus primary,
+            LightingDispatchStageTelemetryStatus secondary,
+            Map<String, String> nativeDetails,
+            NativePassTelemetryStatus nativePasses,
+            String... keys
+    ) {
+        String value = firstValue(primary, nativeDetails, nativePasses, keys);
+        if (!value.isBlank()) {
+            return value;
+        }
+        return firstValue(secondary, nativeDetails, nativePasses, keys);
+    }
+
+    private static String firstValue(
+            LightingDispatchStageTelemetryStatus stage,
+            Map<String, String> nativeDetails,
+            NativePassTelemetryStatus nativePasses,
+            String... keys
+    ) {
+        String value = firstDetail(stage, keys);
+        if (!value.isBlank()) {
+            return value;
+        }
+        value = firstMapDetail(nativeDetails, keys);
+        if (!value.isBlank()) {
+            return value;
+        }
+        return firstNativeDetail(nativePasses, keys);
+    }
+
+    private static String firstDetail(LightingDispatchStageTelemetryStatus stage, String... keys) {
+        if (stage == null || keys == null) {
+            return "";
+        }
+        Map<String, String> details = stage.details();
+        for (String key : keys) {
+            String value = details.get(key);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private static String firstMapDetail(Map<String, String> details, String... keys) {
+        if (details == null || details.isEmpty() || keys == null) {
+            return "";
+        }
+        for (String key : keys) {
+            String value = details.get(key);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
+    }
+
+    private static String firstNativeDetail(NativePassTelemetryStatus nativePasses, String... keys) {
+        if (nativePasses == null || keys == null) {
+            return "";
+        }
+        for (Map.Entry<String, String> entry : nativePasses.passDetails().entrySet()) {
+            String normalizedKey = normalize(entry.getKey());
+            for (String key : keys) {
+                if (normalizedKey.endsWith("." + normalize(key)) || normalizedKey.equals(normalize(key))) {
+                    return entry.getValue();
+                }
+            }
+        }
+        return "";
+    }
+
+    private static Map<String, String> parseNativeBlock(String nativeStatus, String marker) {
+        if (nativeStatus == null || nativeStatus.isBlank() || marker == null || marker.isBlank()) {
+            return Map.of();
+        }
+        int start = nativeStatus.indexOf(marker);
+        if (start < 0) {
+            return Map.of();
+        }
+        int blockStart = start + marker.length();
+        int blockEnd = nativeStatus.indexOf('}', blockStart);
+        if (blockEnd <= blockStart) {
+            return Map.of();
+        }
+        Map<String, String> details = new LinkedHashMap<>();
+        String block = nativeStatus.substring(blockStart, blockEnd);
+        for (String segment : block.split(",")) {
+            int delimiter = segment.indexOf('=');
+            if (delimiter <= 0) {
+                continue;
+            }
+            String key = segment.substring(0, delimiter).trim();
+            String value = segment.substring(delimiter + 1).trim();
+            if (!key.isBlank() && !value.isBlank()) {
+                details.putIfAbsent(key, value.replace("\"", ""));
+            }
+        }
+        return Map.copyOf(details);
+    }
+
+    private static String readinessFrom(String... values) {
+        return hasAny(values) ? "ready" : "missing";
+    }
+
+    private static boolean hasAny(String... values) {
+        if (values == null) {
+            return false;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String valueOrUnknown(String value) {
+        return valueOrUnknown(value, "?");
+    }
+
+    private static String valueOrUnknown(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private static String yesNo(boolean value) {
+        return value ? "yes" : "no";
+    }
+
+    private static String normalize(String value) {
+        return value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private static String clean(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value.trim();
+    }
+}

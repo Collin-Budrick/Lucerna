@@ -126,6 +126,7 @@ public final class LucernaController {
     private String lastLoggedRound7DenoisedGiCpuOutputKey = "";
     private String lastLoggedRound8AdaptiveDebugKey = "";
     private String lastLoggedRound9VirtualizedGeometryKey = "";
+    private String lastLoggedRound10HybridTracingKey = "";
     private String lastLoggedTickNoOpFrameKey = "";
     private boolean renderThreadFrameHookObserved;
     private NativeDirectLightingUploadPacket pendingDirectLightingUpload;
@@ -196,6 +197,7 @@ public final class LucernaController {
             this.logFirstPassPlanIfChanged(firstPassPlan);
             this.logLightingDispatchStatusIfChanged(lightingDispatchPacket);
             this.logRound9VirtualizedGeometryIfChanged();
+            this.logRound10HybridTracingIfChanged();
             this.submitTickFallbackFrame(0.0F);
         }
     }
@@ -1137,6 +1139,7 @@ public final class LucernaController {
         this.lastLoggedRound7DenoisedGiCpuOutputKey = "";
         this.lastLoggedRound8AdaptiveDebugKey = "";
         this.lastLoggedRound9VirtualizedGeometryKey = "";
+        this.lastLoggedRound10HybridTracingKey = "";
         this.lastLoggedTickNoOpFrameKey = "";
         this.renderThreadFrameHookObserved = false;
         this.pendingDirectLightingUpload = null;
@@ -1697,7 +1700,16 @@ public final class LucernaController {
         String uploadByteEstimate = round9NativeValue(nativeStatus, "upload_byte_estimate", "0");
         String totalUploadByteEstimate = round9NativeValue(nativeStatus, "total_upload_byte_estimate", "0");
         String generationCounter = round9NativeValue(nativeStatus, "generation_counter", "0");
-        String indirectDrawCount = round9NativeValue(nativeStatus, "indirect_draw_count_placeholder", "0");
+        String indirectDrawCount = round9NativeValue(
+                nativeStatus,
+                "indirect_draw_count",
+                round9NativeValue(nativeStatus, "indirect_draw_count_placeholder", "0")
+        );
+        String indirectDrawPlaceholder = round9NativeValue(nativeStatus, "indirect_draw_count_placeholder", "0");
+        String offscreenClusterCount = round9NativeValue(nativeStatus, "offscreen_cluster_count", culledClusterCount);
+        String cullingMode = round9NativeValue(nativeStatus, "culling_mode", "round9_cluster_culling_mode_not_recorded");
+        String cullingReason = round9NativeValue(nativeStatus, "culling_reason", "round9_cluster_culling_reason_not_recorded");
+        boolean cpuConservativeCulling = cullingMode.contains("cpu_conservative");
         String payloadSections = round9NativeValue(nativeStatus, "payload_sections", "0");
         String logKey = artifactRole
                 + "|"
@@ -1720,7 +1732,7 @@ public final class LucernaController {
 
         this.lastLoggedRound9VirtualizedGeometryKey = logKey;
         Lucerna.LOGGER.info(
-                "Lucerna Round 9 virtualized chunk geometry: artifactRole={} sceneKind={} captureMode={} owner={} clusterOverlayVisible=true cullingOverlayVisible={} cluster_count={} visible_cluster_count={} culled_cluster_count={} upload_byte_estimate={} total_upload_byte_estimate={} generation_counter={} payload_sections={} indirect_draw_count_placeholder={} {} {}.",
+                "Lucerna Round 9 virtualized chunk geometry: artifactRole={} sceneKind={} captureMode={} owner={} clusterOverlayVisible=true cullingOverlayVisible={} cluster_count={} visible_cluster_count={} culled_cluster_count={} offscreen_cluster_count={} upload_byte_estimate={} total_upload_byte_estimate={} generation_counter={} payload_sections={} indirect_draw_count={} indirect_draw_count_placeholder={} cpuConservativeCullingTelemetry={} round9.cpuConservativeCullingActive={} culling_mode={} culling_reason={} {} {}.",
                 artifactRole,
                 sceneKind,
                 captureMode,
@@ -1729,24 +1741,108 @@ public final class LucernaController {
                 clusterCount,
                 visibleClusterCount,
                 culledClusterCount,
+                offscreenClusterCount,
                 uploadByteEstimate,
                 totalUploadByteEstimate,
                 generationCounter,
                 payloadSections,
                 indirectDrawCount,
+                indirectDrawPlaceholder,
+                cpuConservativeCulling,
+                cpuConservativeCulling,
+                cullingMode,
+                cullingReason,
                 status.clusterMetadataLine(),
                 status.evidenceBoundaryLine()
         );
         Lucerna.LOGGER.info(
-                "Lucerna Round 9 chunk culling: artifactRole={} sceneKind={} visible_cluster_count={} culled_cluster_count={} offscreen_clusters=0 indirect_draw_count_placeholder={} terrainRenderingChanged=false visibleClusterCountsChanged=true {} {} {}.",
+                "Lucerna Round 9 chunk culling: artifactRole={} sceneKind={} visible_cluster_count={} culled_cluster_count={} offscreen_clusters={} indirect_draw_count={} indirect_draw_count_placeholder={} terrainRenderingChanged=false visibleClusterCountsChanged=true cpuConservativeCullingTelemetry={} round9.cpuConservativeCullingActive={} culling_mode={} culling_reason={} {} {} {}.",
                 artifactRole,
                 sceneKind,
                 visibleClusterCount,
                 culledClusterCount,
+                offscreenClusterCount,
                 indirectDrawCount,
+                indirectDrawPlaceholder,
+                cpuConservativeCulling,
+                cpuConservativeCulling,
+                cullingMode,
+                cullingReason,
                 status.visibilityCountsLine(),
                 status.cullingLine(),
                 status.indirectDrawLine()
+        );
+    }
+
+    private void logRound10HybridTracingIfChanged() {
+        LucernaStatusSnapshot snapshot = LucernaStatusSnapshot.capture(this);
+        String nativeStatus = snapshot.nativeBridge().nativeStatus();
+        String artifactRole = envValue("LUCERNA_ROUND10_ARTIFACT_ROLE", "round10-hybrid-tracing");
+        String sceneKind = envValue("LUCERNA_ROUND10_SCENE_KIND", "unspecified");
+        String captureMode = envValue("LUCERNA_ROUND10_CAPTURE_MODE", artifactRole);
+        String owner = envValue("LUCERNA_ROUND10_VISUAL_PROOF_OWNER", "controller");
+        String rayCount = round9NativeValue(nativeStatus, "ray_count", "0");
+        String hitCount = round9NativeValue(nativeStatus, "hit_count", "0");
+        String missCount = round9NativeValue(nativeStatus, "miss_count", "0");
+        String averageSteps = round9NativeValue(nativeStatus, "average_steps", "0");
+        String skippedSections = round9NativeValue(nativeStatus, "skipped_sections", "0");
+        String materialHits = round9NativeValue(nativeStatus, "material_hit_count", "0");
+        String traversalMarker = round9NativeValue(nativeStatus, "marker", "round10_voxel_traversal_not_recorded");
+        String traversalBoundary = round9NativeValue(nativeStatus, "boundary", "round10_boundary_not_recorded");
+        boolean voxelDebug = "voxel-ray-debug".equals(captureMode);
+        boolean rtDebug = "rt-entity-debug".equals(captureMode);
+        boolean hybridDebug = "hybrid-hit-debug".equals(captureMode);
+        String logKey = artifactRole
+                + "|"
+                + sceneKind
+                + "|"
+                + captureMode
+                + "|"
+                + rayCount
+                + "|"
+                + hitCount
+                + "|"
+                + missCount
+                + "|"
+                + averageSteps
+                + "|"
+                + skippedSections
+                + "|"
+                + traversalMarker;
+        if (logKey.equals(this.lastLoggedRound10HybridTracingKey)) {
+            return;
+        }
+
+        this.lastLoggedRound10HybridTracingKey = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna Round 10 voxel traversal hybrid tracing Vulkan RT entity fallback hybrid hit: round10.voxelTraversal=true round10.rtEntityDebug={} round10.rtEntities=0 round10.hybridHitDebug={} round10.hybridHits={} hybridHitCount={} artifactRole={} sceneKind={} captureMode={} owner={} voxelRayDebugVisible={} rtEntityDebugVisible={} hybridHitDebugVisible={} voxelRayCount={} voxelHitCount={} voxelMissCount={} averageTraversalSteps={} skippedSections={} round10.voxelRays={} round10.voxelHits={} round10.voxelMisses={} round10.traversalSteps={} round10.skippedSections={} materialHitCount={} BLASStatus=fallback-only TLASStatus=fallback-only hardwareRtAvailable=false rtFallbackStatus=active nonRtFallback=true hybrid_source_voxel={} hybrid_source_rt=0 hybrid_source_screen=0 hybrid_source_screenSpace=0 hybridScreenSpaceHits=0 round10.hybrid.voxelHits={} round10.hybrid.rtHits=0 round10.hybrid.screenSpaceHits=0 fallbackStatus=voxel-cpu-metadata-only round10.boundaryLabel={} tracingBoundary={} hardwareRtExecutionProven=false metadataOnlyTracing=true marker={}.",
+                rtDebug,
+                hybridDebug,
+                hitCount,
+                hitCount,
+                artifactRole,
+                sceneKind,
+                captureMode,
+                owner,
+                voxelDebug,
+                rtDebug,
+                hybridDebug,
+                rayCount,
+                hitCount,
+                missCount,
+                averageSteps,
+                skippedSections,
+                rayCount,
+                hitCount,
+                missCount,
+                averageSteps,
+                skippedSections,
+                materialHits,
+                hitCount,
+                hitCount,
+                traversalBoundary,
+                traversalBoundary,
+                traversalMarker
         );
     }
 

@@ -1,8 +1,8 @@
 param(
-    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalStable", "TemporalMoved", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay")]
+    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalStable", "TemporalMoved", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay", "VoxelRayDebug", "RtEntityDebug", "HybridHitDebug")]
     [string] $Mode,
 
-    [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round7DenoiseComposite", "Round7CompositeStability", "Round7EmissiveGiSurface", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry")]
+    [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round7DenoiseComposite", "Round7CompositeStability", "Round7EmissiveGiSurface", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry", "Round10HybridTracing")]
     [string] $ValidationProfile = "Round5Direct",
 
     [string] $WorldName = "New World",
@@ -567,6 +567,77 @@ function Get-Round9CaptureIntent {
     }
 }
 
+function Get-Round10CaptureIntent {
+    param([string] $CaptureMode)
+
+    $voxelTraversalCommonPatterns = @(
+        "(?:Lucerna Round 10 voxel traversal|round10\.voxelTraversal|round10\.voxelRayDebug)",
+        "(?:voxelRay(?:Count|s)?|voxel_ray_count|round10\.voxelRays)=([1-9][0-9]*)",
+        "(?:voxelHit(?:Count|s)?|voxel_hit_count|round10\.voxelHits)=([0-9]+)",
+        "(?:voxelMiss(?:Count|s)?|voxel_miss_count|round10\.voxelMisses)=([0-9]+)",
+        "(?:traversal(?:Step|Steps|StepCount)|averageTraversalSteps|avg_traversal_steps|round10\.traversalSteps)=([1-9][0-9]*(?:\.[0-9]+)?)",
+        "(?:skippedSection(?:Count|s)?|skipped_sections|round10\.skippedSections)=([0-9]+)"
+    )
+    $rtCommonPatterns = @(
+        "(?:Lucerna Round 10 RT entity|round10\.rtEntityDebug|round10\.rtEntities|Vulkan RT)",
+        "(?:BLAS|blas)(?:Status|Ready|Builds|BuildCount)?=",
+        "(?:TLAS|tlas)(?:Status|Ready|Builds|BuildCount)?=",
+        "(?:rtFallback(?:Status|Active)?|fallbackStatus|nonRtFallback)="
+    )
+    $hybridCommonPatterns = @(
+        "(?:Lucerna Round 10 hybrid hit|round10\.hybridHitDebug|round10\.hybridHits)",
+        "(?:hybridHit(?:Count|s)?|hybrid_hit_count|round10\.hybridHits)=([1-9][0-9]*)",
+        "(?:voxelHybridHit(?:Count|s)?|hybridVoxelHits|hybrid_source_voxel)=([0-9]+)",
+        "(?:rtHybridHit(?:Count|s)?|hybridRtHits|hybrid_source_rt)=([0-9]+)",
+        "(?:screenSpaceHybridHit(?:Count|s)?|hybridScreenSpaceHits|hybrid_source_screen)=([0-9]+)"
+    )
+
+    switch ($CaptureMode) {
+        "VoxelRayDebug" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "VOXEL_RAY_DEBUG"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "voxel-ray-debug"
+                sceneKind = "round10-tracing-debug"
+                sceneAction = "voxel-rays"
+                requiredPatterns = @($voxelTraversalCommonPatterns) + @(
+                    "(?:voxelRayDebug(?:Visible|Submitted|Enabled)?=true|round10ArtifactRole=voxel-ray-debug|artifactRole=voxel-ray-debug)"
+                )
+            }
+        }
+        "RtEntityDebug" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "RT_ENTITY_DEBUG"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "rt-entity-debug"
+                sceneKind = "round10-rt-entity-debug"
+                sceneAction = "rt-entities"
+                requiredPatterns = @($rtCommonPatterns) + @(
+                    "(?:rtEntityDebug(?:Visible|Submitted|Enabled)?=true|round10ArtifactRole=rt-entity-debug|artifactRole=rt-entity-debug)"
+                )
+            }
+        }
+        "HybridHitDebug" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "HYBRID_HIT_DEBUG"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "hybrid-hit-debug"
+                sceneKind = "round10-hybrid-hit-debug"
+                sceneAction = "hybrid-hits"
+                requiredPatterns = @($voxelTraversalCommonPatterns) + @($rtCommonPatterns) + @($hybridCommonPatterns) + @(
+                    "(?:hybridHitDebug(?:Visible|Submitted|Enabled)?=true|round10ArtifactRole=hybrid-hit-debug|artifactRole=hybrid-hit-debug)"
+                )
+            }
+        }
+        default {
+            throw "Unsupported Round 10 capture mode: $CaptureMode"
+        }
+    }
+}
+
 function Wait-LatestLogPattern {
     param(
         [string] $LogPath,
@@ -926,6 +997,47 @@ function Invoke-Round9SceneAction {
     }
 }
 
+function Invoke-Round10SceneAction {
+    param(
+        [string] $SceneAction,
+        [string] $MarkerPath
+    )
+
+    Send-MinecraftChatCommand "/gamerule sendCommandFeedback false"
+    Send-MinecraftChatCommand "/gamemode creative"
+    Send-MinecraftChatCommand "/time set 6000"
+    Send-MinecraftChatCommand "/weather clear"
+
+    if ($SetupScene) {
+        Send-MinecraftChatCommand "/kill @e[type=!player,distance=..48]"
+        Send-MinecraftChatCommand "/fill ~3 ~-1 ~-5 ~9 ~4 ~5 minecraft:smooth_stone"
+        Send-MinecraftChatCommand "/fill ~5 ~ ~-4 ~5 ~3 ~4 minecraft:air"
+        Send-MinecraftChatCommand "/fill ~6 ~ ~-3 ~6 ~2 ~-1 minecraft:deepslate"
+        Send-MinecraftChatCommand "/fill ~6 ~ ~1 ~6 ~2 ~3 minecraft:copper_block"
+        Send-MinecraftChatCommand "/setblock ~4 ~1 ~ minecraft:glowstone"
+        Send-MinecraftChatCommand "/setblock ~7 ~0 ~ minecraft:glass"
+        Send-MinecraftChatCommand "/summon minecraft:armor_stand ~5 ~ ~2 {NoGravity:1b,Invisible:0b}"
+    }
+
+    switch ($SceneAction) {
+        "voxel-rays" {
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -90 0"
+            Add-LucernaControllerMarker $MarkerPath "round10.scene=voxel-rays voxelRayDebugScene=true traversalDebugScene=true"
+        }
+        "rt-entities" {
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -80 0"
+            Add-LucernaControllerMarker $MarkerPath "round10.scene=rt-entities rtEntityDebugScene=true blasTlasDebugScene=true"
+        }
+        "hybrid-hits" {
+            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -100 2"
+            Add-LucernaControllerMarker $MarkerPath "round10.scene=hybrid-hits hybridHitDebugScene=true voxelRtScreenSpaceScene=true"
+        }
+        default {
+            throw "Unsupported Round 10 scene action: $SceneAction"
+        }
+    }
+}
+
 function Wait-NewScreenshot {
     param(
         [string] $ScreenshotDir,
@@ -1079,6 +1191,8 @@ $scenario = if ([string]::IsNullOrWhiteSpace($ScenarioName)) {
         "round8-adaptive-heatmap-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round9VirtualizedGeometry") {
         "round9-virtualized-geometry-$($Mode.ToLowerInvariant())"
+    } elseif ($ValidationProfile -eq "Round10HybridTracing") {
+        "round10-hybrid-tracing-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round5DirectSurface") {
         "round5-direct-surface-$($Mode.ToLowerInvariant())"
     } else {
@@ -1111,6 +1225,7 @@ try {
     $round7SurfaceCaptureIntent = $null
     $round8CaptureIntent = $null
     $round9CaptureIntent = $null
+    $round10CaptureIntent = $null
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
         $round7CaptureIntent = Get-Round7CaptureIntent $Mode
         Write-LucernaConfig `
@@ -1146,6 +1261,13 @@ try {
             ([bool]$round9CaptureIntent.rendererEnabled) `
             ([string]$round9CaptureIntent.debugOverlay) `
             ([string]$round9CaptureIntent.compositeMode)
+    } elseif ($ValidationProfile -eq "Round10HybridTracing") {
+        $round10CaptureIntent = Get-Round10CaptureIntent $Mode
+        Write-LucernaConfig `
+            $root `
+            ([bool]$round10CaptureIntent.rendererEnabled) `
+            ([string]$round10CaptureIntent.debugOverlay) `
+            ([string]$round10CaptureIntent.compositeMode)
     } else {
         switch ($Mode) {
             "Baseline" { Write-LucernaConfig $root $false "OFF" }
@@ -1196,7 +1318,7 @@ try {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
-    if ($ValidationProfile -eq "Round5DirectSurface" -or $ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry") {
+    if ($ValidationProfile -eq "Round5DirectSurface" -or $ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing") {
         $psi.Environment["LUCERNA_HIDE_PROOF_OVERLAYS"] = "true"
     }
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
@@ -1233,6 +1355,12 @@ try {
         $psi.Environment["LUCERNA_ROUND9_SCENE_KIND"] = [string]$round9CaptureIntent.sceneKind
         $psi.Environment["LUCERNA_ROUND9_VISUAL_PROOF_OWNER"] = "controller"
     }
+    if ($ValidationProfile -eq "Round10HybridTracing") {
+        $psi.Environment["LUCERNA_ROUND10_CAPTURE_MODE"] = [string]$round10CaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_ROUND10_ARTIFACT_ROLE"] = [string]$round10CaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_ROUND10_SCENE_KIND"] = [string]$round10CaptureIntent.sceneKind
+        $psi.Environment["LUCERNA_ROUND10_VISUAL_PROOF_OWNER"] = "controller"
+    }
     if ($ScreenshotSource -eq "InClient") {
         $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_REQUEST"] = "true"
         $screenshotDelayTicks = if ($ValidationProfile -eq "Round7CompositeStability") { "1400" } else { "180" }
@@ -1265,6 +1393,8 @@ try {
         @($round8CaptureIntent.requiredPatterns)
     } elseif ($ValidationProfile -eq "Round9VirtualizedGeometry") {
         @($round9CaptureIntent.requiredPatterns)
+    } elseif ($ValidationProfile -eq "Round10HybridTracing") {
+        @($round10CaptureIntent.requiredPatterns)
     } elseif ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker") {
         @(
             "Lucerna Round 6 lighting dispatch prepared: .*diffuse_gi=\{\{enabled=true,.*rays=[1-9][0-9]*,cache_reads=[1-9][0-9]*",
@@ -1344,6 +1474,22 @@ try {
             "cluster(?:Count|s)?=.*(?:NaN|Infinity)",
             "visibleCluster(?:Count|s)?=.*(?:NaN|Infinity)"
         )
+    } elseif ($ValidationProfile -eq "Round10HybridTracing") {
+        @(
+            "temporarySourceReady=true",
+            "using the current direct-light RGBA payload as the temporary visible source",
+            "round6-diffuse-gi-focus-window-additive",
+            "round6-gi-proof",
+            "R6 GI proof",
+            "R7 proof",
+            "R8 proof",
+            "R9 proof",
+            "proofMarkerSource=true",
+            "cpuOutputProofMarker=true",
+            "invalid(?:VoxelRay|Traversal|HybridHit|RtEntity)(?:Count|s)?=true",
+            "negative (?:voxel ray|traversal|hybrid|BLAS|TLAS)",
+            "(?:voxelRay(?:Count|s)?|hybridHit(?:Count|s)?|traversal(?:Step|Steps|StepCount)).*(?:NaN|Infinity)"
+        )
     } elseif ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker") {
         @(
             "temporarySourceReady=true",
@@ -1397,6 +1543,10 @@ try {
         Invoke-Round9SceneAction ([string]$round9CaptureIntent.sceneAction)
         Start-Sleep -Seconds 5
     }
+    if ($ValidationProfile -eq "Round10HybridTracing") {
+        Invoke-Round10SceneAction ([string]$round10CaptureIntent.sceneAction) $markerLog
+        Start-Sleep -Seconds 5
+    }
     if ($ValidationProfile -eq "Round7CompositeStability") {
         Invoke-Round7CompositeStabilitySceneAction ([string]$round7StabilityCaptureIntent.sceneAction) $markerLog
         Start-Sleep -Seconds 3
@@ -1409,7 +1559,7 @@ try {
     if ($enabledPatterns.Count -gt 0) {
         Wait-LatestLogPattern $markerLog $enabledPatterns $deadline $earlyFailureLogPaths $forbiddenPatterns
     }
-    if (($ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry") -and -not $SetupScene) {
+    if (($ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing") -and -not $SetupScene) {
         Start-Sleep -Seconds 8
     }
 
@@ -1573,6 +1723,12 @@ try {
         Write-Host "round9SceneKind=$($round9CaptureIntent.sceneKind)"
         Write-Host "round9DebugOverlay=$($round9CaptureIntent.debugOverlay)"
         Write-Host "round9CompositeMode=$($round9CaptureIntent.compositeMode)"
+    }
+    if ($round10CaptureIntent) {
+        Write-Host "round10ArtifactRole=$($round10CaptureIntent.artifactRole)"
+        Write-Host "round10SceneKind=$($round10CaptureIntent.sceneKind)"
+        Write-Host "round10DebugOverlay=$($round10CaptureIntent.debugOverlay)"
+        Write-Host "round10CompositeMode=$($round10CaptureIntent.compositeMode)"
     }
     Write-Host "latestLog=$logPath"
     Write-Host "gradleOut=$gradleOut"

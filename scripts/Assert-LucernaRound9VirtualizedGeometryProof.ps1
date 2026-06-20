@@ -84,6 +84,13 @@ param(
         "round9\.(?:culled|offscreen)Cluster(?:Count|s)=([0-9]+)"
     ),
 
+    [string[]] $HiddenClusterCountPatterns = @(
+        "hiddenCluster(?:Count|s)?=([0-9]+)",
+        "hidden_clusters=([0-9]+)",
+        "hidden_cluster_count=([0-9]+)",
+        "round9\.hiddenCluster(?:Count|s)=([0-9]+)"
+    ),
+
     [string[]] $UploadBytesPatterns = @(
         "upload(?:Bytes|_bytes)=([1-9][0-9]*)",
         "clusterUploadBytes=([1-9][0-9]*)",
@@ -107,6 +114,31 @@ param(
         "indirect_draw_count_placeholder=([0-9]+)",
         "drawList(?:Count)?=([0-9]+)",
         "round9\.indirectDraw(?:Count|s)?=([0-9]+)"
+    ),
+
+    [string[]] $RealIndirectDrawPatterns = @(
+        "indirectDraw(?:Count|s)=([1-9][0-9]*)",
+        "indirect_draw_count=([1-9][0-9]*)",
+        "realIndirectDraw(?:Count|s)=([1-9][0-9]*)",
+        "real_indirect_draw_count=([1-9][0-9]*)",
+        "drawList(?:Count)?=([1-9][0-9]*)",
+        "round9\.indirectDraw(?:Count|s)=([1-9][0-9]*)"
+    ),
+
+    [string[]] $CpuConservativeCullingTelemetryPatterns = @(
+        "cpu(?:Conservative)?Culling(?:Telemetry|Enabled|Active)?=true",
+        "conservativeCulling(?:Telemetry|Enabled|Active)?=true",
+        "round9\.cpuConservativeCulling(?:Telemetry|Enabled|Active)?=true",
+        "round9\.cullingMode=(?:cpu|conservative|cpu-conservative)",
+        "cullingTier=(?:cpu|conservative|cpu-conservative)"
+    ),
+
+    [string[]] $BoundaryLabelPatterns = @(
+        "round9\.boundary(?:Label)?=",
+        "boundaryLabel=",
+        "metadataOnly(?:Culling|Preview)?=",
+        "realGpuCulling(?:Proven|Ready)?=",
+        "cullingBoundary="
     ),
 
     [string[]] $ClusterOverlayPatterns = @(
@@ -313,9 +345,12 @@ function Measure-Round9LogProof {
     $clusterCounts = Get-CapturedNumbers $log $ClusterCountPatterns
     $visibleClusterCounts = Get-CapturedNumbers $log $VisibleClusterCountPatterns
     $culledClusterCounts = Get-CapturedNumbers $log $CulledClusterCountPatterns
+    $hiddenClusterCounts = Get-CapturedNumbers $log $HiddenClusterCountPatterns
     $uploadBytes = Get-CapturedNumbers $log $UploadBytesPatterns
     $generationCounters = Get-CapturedNumbers $log $GenerationCounterPatterns
     $indirectDrawCounts = Get-CapturedNumbers $log $IndirectDrawPatterns
+    $realIndirectDrawCounts = Get-CapturedNumbers $log $RealIndirectDrawPatterns
+    $combinedCulledHiddenCounts = @($culledClusterCounts) + @($hiddenClusterCounts)
 
     $explicitVisibleCountsChanged = Test-AnyRegex $log $VisibleCountsChangedPatterns
     $derivedVisibleCountsChanged = Test-DistinctPositiveNumbers $visibleClusterCounts
@@ -328,39 +363,53 @@ function Measure-Round9LogProof {
             visibleClusterCountPresent = Test-AnyRegex $log $VisibleClusterCountPatterns
             visibleClusterCountsChanged = $explicitVisibleCountsChanged -or $derivedVisibleCountsChanged
             culledOrOffscreenCountPresent = Test-AnyRegex $log $CulledClusterCountPatterns
+            hiddenClusterCountPresent = Test-AnyRegex $log $HiddenClusterCountPatterns
+            culledOffscreenOrHiddenCountPresent = (Test-AnyRegex $log $CulledClusterCountPatterns) -or (Test-AnyRegex $log $HiddenClusterCountPatterns)
+            cpuConservativeCullingTelemetryPresent = Test-AnyRegex $log $CpuConservativeCullingTelemetryPatterns
             uploadBytesPresent = Test-AnyRegex $log $UploadBytesPatterns
             generationCounterPresent = Test-AnyRegex $log $GenerationCounterPatterns
             indirectDrawPresent = Test-AnyRegex $log $IndirectDrawPatterns
+            realIndirectDrawPresent = Test-AnyRegex $log $RealIndirectDrawPatterns
+            boundaryLabelPresent = Test-AnyRegex $log $BoundaryLabelPatterns
             clusterOverlayPresent = Test-AnyRegex $log $ClusterOverlayPatterns
             cullingOverlayPresent = Test-AnyRegex $log $CullingOverlayPatterns
             invalidClusterValuesPresent = Test-Regex $log "invalidCluster(?:Count|s)?=true|negative cluster|cluster(?:Count|s)?=.*(?:NaN|Infinity)|visibleCluster(?:Count|s)?=.*(?:NaN|Infinity)"
             terrainCorruptionPresent = Test-Regex $log "terrain corruption|missing terrain|chunk hole|geometry corruption|invalid meshlet|cluster bounds invalid"
-            proofMarkerPresent = Test-Regex $log "proof marker|R6 GI proof|R7 proof|R8 proof|CPU output proof|focus-window-only"
-            temporaryDirectLightSourcePresent = Test-Regex $log "temporarySourceReady=true|temporary direct-light|current direct-light RGBA payload"
+            proofMarkerPresent = Test-Regex $log "round9\.(?:proofMarker|focusWindowOnly)=true|Round 9 .*proof marker|Round 9 .*focus-window-only"
+            temporaryDirectLightSourcePresent = Test-Regex $log "round9\.temporaryDirectLightSource=true|Round 9 .*temporary direct-light|Round 9 .*current direct-light RGBA payload"
             nativeErrorPresent = Test-Regex $log "invalid descriptor|VK_ERROR|Lucerna native error|native error"
         }
         counts = [ordered]@{
             clusterCounts = @($clusterCounts)
             visibleClusterCounts = @($visibleClusterCounts)
             culledClusterCounts = @($culledClusterCounts)
+            hiddenClusterCounts = @($hiddenClusterCounts)
             uploadBytes = @($uploadBytes)
             generationCounters = @($generationCounters)
             indirectDrawCounts = @($indirectDrawCounts)
+            realIndirectDrawCounts = @($realIndirectDrawCounts)
             maxClusterCount = Get-MaxNumber $clusterCounts
             maxVisibleClusterCount = Get-MaxNumber $visibleClusterCounts
             maxCulledClusterCount = Get-MaxNumber $culledClusterCounts
+            maxHiddenClusterCount = Get-MaxNumber $hiddenClusterCounts
+            maxCulledOffscreenOrHiddenCount = Get-MaxNumber $combinedCulledHiddenCounts
             maxUploadBytes = Get-MaxNumber $uploadBytes
             maxGenerationCounter = Get-MaxNumber $generationCounters
             maxIndirectDrawCount = Get-MaxNumber $indirectDrawCounts
+            maxRealIndirectDrawCount = Get-MaxNumber $realIndirectDrawCounts
         }
         patterns = [ordered]@{
             round9MarkerPatterns = @($Round9MarkerPatterns)
             clusterCountPatterns = @($ClusterCountPatterns)
             visibleClusterCountPatterns = @($VisibleClusterCountPatterns)
             culledClusterCountPatterns = @($CulledClusterCountPatterns)
+            hiddenClusterCountPatterns = @($HiddenClusterCountPatterns)
             uploadBytesPatterns = @($UploadBytesPatterns)
             generationCounterPatterns = @($GenerationCounterPatterns)
             indirectDrawPatterns = @($IndirectDrawPatterns)
+            realIndirectDrawPatterns = @($RealIndirectDrawPatterns)
+            cpuConservativeCullingTelemetryPatterns = @($CpuConservativeCullingTelemetryPatterns)
+            boundaryLabelPatterns = @($BoundaryLabelPatterns)
             clusterOverlayPatterns = @($ClusterOverlayPatterns)
             cullingOverlayPatterns = @($CullingOverlayPatterns)
         }
@@ -413,8 +462,20 @@ if ($logProof) {
     if (-not $logProof.markers.visibleClusterCountsChanged) {
         $failures.Add("Missing Round 9 visible-cluster count change marker or distinct positive visible counts.")
     }
-    if (-not $logProof.markers.culledOrOffscreenCountPresent) {
-        $failures.Add("Missing Round 9 culled/offscreen cluster count marker.")
+    if (-not $logProof.markers.culledOffscreenOrHiddenCountPresent) {
+        $failures.Add("Missing Round 9 culled/offscreen/hidden cluster count marker.")
+    }
+    if ($logProof.markers.cpuConservativeCullingTelemetryPresent) {
+        if (-not $logProof.markers.culledOffscreenOrHiddenCountPresent) {
+            $failures.Add("CPU/conservative Round 9 culling telemetry is present but no culled/offscreen/hidden count marker was found.")
+        } elseif ($null -eq $logProof.counts.maxCulledOffscreenOrHiddenCount -or [long]$logProof.counts.maxCulledOffscreenOrHiddenCount -le 0) {
+            $failures.Add("CPU/conservative Round 9 culling telemetry is present but culled/offscreen/hidden count never becomes nonzero.")
+        }
+        if (-not $logProof.markers.realIndirectDrawPresent) {
+            $failures.Add("CPU/conservative Round 9 culling telemetry is present but no real indirect_draw_count marker was found.")
+        } elseif ($null -eq $logProof.counts.maxRealIndirectDrawCount -or [long]$logProof.counts.maxRealIndirectDrawCount -le 0) {
+            $failures.Add("CPU/conservative Round 9 culling telemetry is present but real indirect_draw_count never becomes nonzero.")
+        }
     }
     if (-not $logProof.markers.uploadBytesPresent) {
         $failures.Add("Missing Round 9 cluster upload byte marker.")
@@ -509,7 +570,17 @@ $result = [ordered]@{
                 visibleClusterCountPresent = if ($logProof) { [bool]$logProof.markers.visibleClusterCountPresent } else { $null }
                 visibleClusterCountsChanged = if ($logProof) { [bool]$logProof.markers.visibleClusterCountsChanged } else { $null }
                 culledOrOffscreenCountPresent = if ($logProof) { [bool]$logProof.markers.culledOrOffscreenCountPresent } else { $null }
+                hiddenClusterCountPresent = if ($logProof) { [bool]$logProof.markers.hiddenClusterCountPresent } else { $null }
+                culledOffscreenOrHiddenCountPresent = if ($logProof) { [bool]$logProof.markers.culledOffscreenOrHiddenCountPresent } else { $null }
+                maxCulledOffscreenOrHiddenCount = if ($logProof) { $logProof.counts.maxCulledOffscreenOrHiddenCount } else { $null }
+                cpuConservativeCullingTelemetryPresent = if ($logProof) { [bool]$logProof.markers.cpuConservativeCullingTelemetryPresent } else { $null }
                 indirectDrawPresent = if ($logProof) { [bool]$logProof.markers.indirectDrawPresent } else { $null }
+                realIndirectDrawPresent = if ($logProof) { [bool]$logProof.markers.realIndirectDrawPresent } else { $null }
+                maxRealIndirectDrawCount = if ($logProof) { $logProof.counts.maxRealIndirectDrawCount } else { $null }
+            }
+            proofBoundary = [ordered]@{
+                boundaryLabelPresent = if ($logProof) { [bool]$logProof.markers.boundaryLabelPresent } else { $null }
+                classification = if ($logProof -and [bool]$logProof.markers.cpuConservativeCullingTelemetryPresent) { "cpu_conservative_culling_requires_nonzero_cull_and_real_indirect_draw" } else { "metadata_or_placeholder_culling_boundary_reported" }
             }
             overlays = [ordered]@{
                 clusterOverlayPresent = if ($logProof) { [bool]$logProof.markers.clusterOverlayPresent } else { $null }
@@ -552,9 +623,16 @@ if ($logProof) {
     Write-Host "visibleClusterCountPresent=$($logProof.markers.visibleClusterCountPresent)"
     Write-Host "visibleClusterCountsChanged=$($logProof.markers.visibleClusterCountsChanged)"
     Write-Host "culledOrOffscreenCountPresent=$($logProof.markers.culledOrOffscreenCountPresent)"
+    Write-Host "hiddenClusterCountPresent=$($logProof.markers.hiddenClusterCountPresent)"
+    Write-Host "culledOffscreenOrHiddenCountPresent=$($logProof.markers.culledOffscreenOrHiddenCountPresent)"
+    Write-Host "maxCulledOffscreenOrHiddenCount=$($logProof.counts.maxCulledOffscreenOrHiddenCount)"
+    Write-Host "cpuConservativeCullingTelemetryPresent=$($logProof.markers.cpuConservativeCullingTelemetryPresent)"
     Write-Host "uploadBytesPresent=$($logProof.markers.uploadBytesPresent)"
     Write-Host "generationCounterPresent=$($logProof.markers.generationCounterPresent)"
     Write-Host "indirectDrawPresent=$($logProof.markers.indirectDrawPresent)"
+    Write-Host "realIndirectDrawPresent=$($logProof.markers.realIndirectDrawPresent)"
+    Write-Host "maxRealIndirectDrawCount=$($logProof.counts.maxRealIndirectDrawCount)"
+    Write-Host "boundaryLabelPresent=$($logProof.markers.boundaryLabelPresent)"
     Write-Host "clusterOverlayPresent=$($logProof.markers.clusterOverlayPresent)"
     Write-Host "cullingOverlayPresent=$($logProof.markers.cullingOverlayPresent)"
     Write-Host "invalidClusterValuesPresent=$($logProof.markers.invalidClusterValuesPresent)"

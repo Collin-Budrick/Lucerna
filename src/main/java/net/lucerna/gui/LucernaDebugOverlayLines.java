@@ -2,10 +2,11 @@ package net.lucerna.gui;
 
 import net.lucerna.LucernaController;
 import net.lucerna.config.DebugOverlay;
-import net.lucerna.render.culling.Round9CullingDebugStatus;
 import net.lucerna.render.preview.FirstLightingQualityProofStatus;
 import net.lucerna.render.preview.FinalCompositeModeStatus;
 import net.lucerna.render.preview.Round8AdaptiveDebugStatus;
+import net.lucerna.render.tracing.hybrid.Round10HybridHitDebugStatus;
+import net.lucerna.render.virtualization.Round9CullingRuntimeStatus;
 import net.lucerna.telemetry.LightingDispatchStageTelemetryStatus;
 import net.lucerna.telemetry.LightingDispatchTelemetryStatus;
 import net.lucerna.telemetry.NativePassTelemetryStatus;
@@ -66,8 +67,10 @@ public final class LucernaDebugOverlayLines {
         Round8AdaptiveDebugStatus round8 = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("Round 8 adaptive debug: " + round8.summary()));
         lines.add(Component.literal("Round 8 heatmaps: " + round8.heatmapRolesLine()));
-        Round9CullingDebugStatus round9 = Round9CullingDebugStatus.fromSnapshot(snapshot);
+        Round9CullingRuntimeStatus round9 = Round9CullingRuntimeStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("Round 9 culling: " + round9.summary()));
+        Round10HybridHitDebugStatus round10 = Round10HybridHitDebugStatus.fromSnapshot(snapshot);
+        lines.add(Component.literal("Round 10 hybrid hits: " + round10.summary()));
         return lines;
     }
 
@@ -90,6 +93,9 @@ public final class LucernaDebugOverlayLines {
             case HISTORY_CONFIDENCE -> addHistoryConfidenceLines(lines, snapshot);
             case DISOCCLUSION_MASK -> addDisocclusionMaskLines(lines, snapshot);
             case CHUNK_CULLING -> addChunkCullingLines(lines, snapshot);
+            case VOXEL_RAY_DEBUG -> addRoundTenVoxelRayLines(lines, snapshot);
+            case RT_ENTITY_DEBUG -> addRoundTenRtEntityLines(lines, snapshot);
+            case HYBRID_HIT_DEBUG -> addRoundTenHybridHitLines(lines, snapshot);
             case OFF -> lines.add(statusLine(snapshot));
         }
         addCompositeModeLines(lines);
@@ -219,16 +225,26 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("round8.heatmapRoles=" + round8.heatmapRolesLine()));
         lines.add(Component.literal("round8.readiness=" + round8.readinessLine()));
         lines.add(Component.literal("round8.evidenceBoundary=" + round8.evidenceBoundaryLine()));
-        Round9CullingDebugStatus round9 = Round9CullingDebugStatus.fromSnapshot(snapshot);
+        Round9CullingRuntimeStatus round9 = Round9CullingRuntimeStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("round9.cullingSummary=" + round9.summary()));
-        lines.add(Component.literal("round9.clusterMetadata=" + round9.clusterMetadataLine()));
-        lines.add(Component.literal("round9.visibilityCounts=" + round9.visibilityCountsLine()));
-        lines.add(Component.literal("round9.culling=" + round9.cullingLine()));
-        lines.add(Component.literal("round9.indirectDrawList=" + round9.indirectDrawLine()));
+        lines.add(Component.literal("round9.clusterMetadata=" + round9.clusterCountLine()));
+        lines.add(Component.literal("round9.visibilityCounts=" + round9.visibilityCountLine()));
+        lines.add(Component.literal("round9.culling=" + round9.cullingModeLine()));
+        lines.add(Component.literal("round9.indirectDrawList=" + round9.indirectDrawCountLine()));
         lines.add(Component.literal("round9.upload=" + round9.uploadLine()));
         lines.add(Component.literal("round9.generation=" + round9.generationLine()));
+        lines.add(Component.literal("round9.terrainRendering=" + round9.terrainRenderingLine()));
+        lines.add(Component.literal("round9.valueGuard=" + round9.invalidOrZeroLine()));
         lines.add(Component.literal("round9.readiness=" + round9.readinessLine()));
         lines.add(Component.literal("round9.evidenceBoundary=" + round9.evidenceBoundaryLine()));
+        Round10HybridHitDebugStatus round10 = Round10HybridHitDebugStatus.fromSnapshot(snapshot);
+        lines.add(Component.literal("round10.hybridHitSummary=" + round10.summary()));
+        lines.add(Component.literal("round10.sourceCounts=" + round10.sourceCountsLine()));
+        lines.add(Component.literal("round10.priority=" + round10.priorityLine()));
+        lines.add(Component.literal("round10.materialConsistency=" + round10.materialConsistencyLine()));
+        lines.add(Component.literal("round10.fallback=" + round10.fallbackLine()));
+        lines.add(Component.literal("round10.readiness=" + round10.readinessLine()));
+        lines.add(Component.literal("round10.evidenceBoundary=" + round10.evidenceBoundaryLine()));
         snapshot.validationFields().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> Component.literal(entry.getKey() + "=" + entry.getValue()))
@@ -396,16 +412,47 @@ public final class LucernaDebugOverlayLines {
     }
 
     private static void addChunkCullingLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
-        Round9CullingDebugStatus status = Round9CullingDebugStatus.fromSnapshot(snapshot);
-        lines.add(Component.literal("Overlay scope: Round 9 chunk cluster/culling status."));
-        lines.add(Component.literal(status.clusterMetadataLine()));
-        lines.add(Component.literal(status.visibilityCountsLine()));
-        lines.add(Component.literal(status.cullingLine()));
-        lines.add(Component.literal(status.indirectDrawLine()));
-        lines.add(Component.literal(status.uploadLine()));
-        lines.add(Component.literal(status.generationLine()));
+        Round9CullingRuntimeStatus status = Round9CullingRuntimeStatus.fromSnapshot(snapshot);
+        lines.add(Component.literal("Overlay scope: Round 9 CPU/conservative chunk culling runtime status."));
+        lines.add(Component.literal(status.clusterCountLine()));
+        lines.add(Component.literal(status.visibilityCountLine()));
+        lines.add(Component.literal(status.cullingModeLine()));
+        lines.add(Component.literal(status.indirectDrawCountLine()));
+        lines.add(Component.literal(status.terrainRenderingLine()));
+        lines.add(Component.literal(status.invalidOrZeroLine()));
         lines.add(Component.literal(status.readinessLine()));
         lines.add(Component.literal(status.evidenceBoundaryLine()));
+    }
+
+    private static void addRoundTenVoxelRayLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        Round10HybridHitDebugStatus status = Round10HybridHitDebugStatus.fromSnapshot(snapshot);
+        lines.add(Component.literal("Overlay scope: Round 10 voxel traversal CPU metadata/debug status."));
+        lines.add(Component.literal("Voxel ray debug visible: yes | source=native round10_voxel_traversal status"));
+        lines.add(Component.literal("Round 10 hybrid hits: " + status.summary()));
+        lines.add(Component.literal("Round 10 source counts: " + status.sourceCountsLine()));
+        lines.add(Component.literal("Round 10 readiness: " + status.readinessLine()));
+        lines.add(Component.literal("Round 10 boundary: " + status.evidenceBoundaryLine()));
+    }
+
+    private static void addRoundTenRtEntityLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        Round10HybridHitDebugStatus status = Round10HybridHitDebugStatus.fromSnapshot(snapshot);
+        lines.add(Component.literal("Overlay scope: Round 10 Vulkan RT entity path status."));
+        lines.add(Component.literal("RT entity debug visible: yes | BLAS/TLAS status is fallback-safe until native RT telemetry exists."));
+        lines.add(Component.literal("Round 10 fallback: " + status.fallbackLine()));
+        lines.add(Component.literal("Round 10 priority: " + status.priorityLine()));
+        lines.add(Component.literal("Round 10 material: " + status.materialConsistencyLine()));
+        lines.add(Component.literal("Round 10 boundary: " + status.evidenceBoundaryLine()));
+    }
+
+    private static void addRoundTenHybridHitLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        Round10HybridHitDebugStatus status = Round10HybridHitDebugStatus.fromSnapshot(snapshot);
+        lines.add(Component.literal("Overlay scope: Round 10 hybrid hit resolver status."));
+        lines.add(Component.literal("Hybrid hit debug visible: yes | " + status.summary()));
+        lines.add(Component.literal("Hybrid source counts: " + status.sourceCountsLine()));
+        lines.add(Component.literal("Hybrid priority: " + status.priorityLine()));
+        lines.add(Component.literal("Hybrid material consistency: " + status.materialConsistencyLine()));
+        lines.add(Component.literal("Hybrid fallback: " + status.fallbackLine()));
+        lines.add(Component.literal("Round 10 evidence boundary: " + status.evidenceBoundaryLine()));
     }
 
     private static void addNativeQueueLines(List<Component> lines, LucernaStatusSnapshot snapshot) {

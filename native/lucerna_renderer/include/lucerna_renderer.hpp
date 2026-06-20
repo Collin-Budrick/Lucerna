@@ -311,12 +311,15 @@ struct NativeVoxelStagingTelemetry {
 struct NativeVirtualChunkGeometryTelemetry {
     std::uint64_t packets = 0;
     std::uint64_t payload_sections = 0;
+    std::uint64_t empty_section_skip_count = 0;
     std::uint64_t cluster_count = 0;
     std::uint64_t visible_cluster_count = 0;
     std::uint64_t culled_cluster_count = 0;
+    std::uint64_t offscreen_cluster_count = 0;
     std::uint64_t upload_byte_estimate = 0;
     std::uint64_t total_upload_byte_estimate = 0;
     std::uint64_t indirect_draw_count_placeholder = 0;
+    std::uint64_t indirect_draw_count = 0;
     std::uint64_t generation_counter = 0;
     std::uint64_t first_generation = 0;
     std::uint64_t last_generation = 0;
@@ -326,8 +329,28 @@ struct NativeVirtualChunkGeometryTelemetry {
     std::uint64_t emissive_voxel_count = 0;
     std::uint64_t metadata_buffer_intents = 0;
     std::uint64_t culling_evaluations = 0;
+    std::uint64_t traversal_metadata_packets = 0;
+    std::uint64_t traversal_ray_count = 0;
+    std::uint64_t traversal_hit_count = 0;
+    std::uint64_t traversal_miss_count = 0;
+    std::uint64_t traversal_step_count = 0;
+    double traversal_average_steps = 0.0;
+    std::uint64_t traversal_skipped_sections = 0;
+    std::uint64_t traversal_material_hit_count = 0;
+    std::uint64_t traversal_occupancy_mask_sections = 0;
+    std::uint64_t traversal_occupancy_mask_words = 0;
+    std::uint64_t traversal_occupancy_mask_bits = 0;
+    std::uint64_t traversal_palette_entry_count = 0;
+    std::uint64_t traversal_fallback_sections = 0;
+    std::uint64_t traversal_generation_counter = 0;
     std::string cluster_marker;
     std::string culling_marker;
+    std::string culling_mode;
+    std::string culling_reason;
+    std::string traversal_marker;
+    std::string traversal_backend;
+    std::string traversal_boundary;
+    std::string traversal_material_hit_source;
 };
 
 struct NativeGBufferStagingTelemetry {

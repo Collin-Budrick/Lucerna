@@ -129,8 +129,8 @@ public record Round9CullingDebugStatus(
                 cullingStage,
                 nativeRound9Details,
                 nativePasses,
-                "indirect_draw_count_placeholder",
                 "indirect_draw_count",
+                "indirect_draw_count_placeholder",
                 "draw_command_count",
                 "draws",
                 "indirect_draws"

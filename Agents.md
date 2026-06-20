@@ -2,7 +2,7 @@
 
 ## Progress Audit
 
-Current controller estimate: **about 99.78% complete against this file**.
+Current controller estimate: **about 99.80% complete against this file**.
 
 This percentage is conservative:
 - Rounds 0-3 are mostly implemented and controller-validated.
@@ -11,7 +11,8 @@ This percentage is conservative:
 - Latest controller work also adds a HUD-safe, explicitly labeled Round 5 visual-proof marker gated by the same preview-ready native direct-light CPU payload used by the sampled draw path. This proves screenshot-visible native direct-light readiness, but it is not a substitute for real surface lighting.
 - Latest controller work moves the final world-color composite hook from `GameRenderer.renderLevel` tail to immediately after `LevelRenderer.render(...)`, removes the older sampled public preview draw from that hook, adds final-composite frame/pass intent contracts, and validates final-composite public Mojang draw submission before hand/HUD composition. Screenshot delta still shows no focused wall-region brightening, so real surface lighting remains open.
 - Latest controller work restores the launchable native DLL path after the unvalidated native spatialization generated an Application Control-blocked DLL, then moves the Round 5 visible proof into a final-composite-only focus-window shader. Sodium + Iris + Vulkan now loads the native DLL, submits the focus-window final composite, and screenshot delta proves visible brightening in the focused wall region while preserving the HUD.
-- Latest controller work adds Round 9 virtualized chunk geometry metadata contracts, native metadata-only cluster/culling telemetry, a Round 9 debug overlay/status path, and a controller proof harness. Sodium + Iris + Vulkan captures flat/open, interior/wall-facing, and high-distance/open terrain overlay screenshots with clean shutdown and log proof for cluster counts, visible counts, upload bytes, generation counters, and indirect draw placeholders. Boundary: culled clusters remain `0` because real GPU/frustum/occlusion culling is still metadata-only.
+- Latest controller work adds Round 9 virtualized chunk geometry metadata contracts, native CPU/conservative culling telemetry, real indirect-count status, a Round 9 debug overlay/status path, and a controller proof harness. Sodium + Iris + Vulkan captures flat/open, interior/wall-facing, and high-distance/open terrain overlay screenshots with clean shutdown and log proof for cluster counts, visible counts, culled/offscreen counts, upload bytes, generation counters, culling mode/reason, and real indirect draw counts. Boundary: this is still conservative CPU/status culling, not a real GPU frustum/occlusion culling path.
+- Latest controller work adds Round 10 voxel traversal status contracts, native CPU metadata traversal counters, Vulkan RT entity fallback/status contracts, hybrid hit resolver contracts, Round 10 overlay modes, and a controller proof harness. Sodium + Iris + Vulkan captures voxel-ray, RT-entity, and hybrid-hit debug overlay screenshots with clean shutdown and log proof for ray/hit/miss counts, traversal steps, skipped-section counters, BLAS/TLAS fallback status, hybrid hit-source counts, and evidence-boundary labels. Boundary: this validates status/debug scaffolding and fallback-safe contracts, not real GPU voxel traversal, hardware RT acceleration structures, or physically correct hybrid hit lighting yet.
 - Current Round 6 preparation has controller-validated Java/cache scaffolding for GI source summaries, native diffuse-GI upload metadata, dirty-region listener hooks, sparse voxel radiance cache records/confidence/invalidation/debug status, Round 6 debug overlay presentation, native Round 6 dispatch telemetry, a bounded native diffuse-GI visible-signal telemetry marker, a GI-labeled final-composite preview path, and a screenshot-delta proof for a Round 6 GI-gated preview. Sodium + Iris + Vulkan launch validation proves low-res GI dispatch metadata can become enabled with nonzero rays/cache reads, a separate cache proof validates nonzero cache records/writes, and the GI preview path produces a focused screenshot difference. The native diffuse-GI output-source replacement is now controller-validated with signed local native staging and a stricter source proof that rejects the temporary direct-light RGBA payload. True native low-res GI output/tracing remains open because the proof still validates a metadata-backed native preview source, not physical GI tracing.
 - Latest controller work adds Round 7 signal-separated denoise contracts, final composite mode/status controls, native denoise scaffold telemetry, first-practical CPU denoised diffuse-GI RGBA8 output, controller-selectable baseline/direct/raw-GI/denoised-GI/final/debug modes, a controller-only Round 7 proof helper, native surface-response strengthening, a distinct final direct-plus-raw-plus-denoised composite draw path, auto-selected affected-surface proof crops, clearer final-mode source telemetry, particle/translucency/temporal composite-stability capture modes, scene-tied GI metadata DTOs, native CPU denoise quality telemetry, and first-lighting quality overlay/status lines. Build/native/signing and Sodium + Iris + Vulkan world-join launches validate raw-GI metadata, CPU denoised-output generation/readback, composite placeholder metadata, explicit `realDenoiseShaderOutput=false`, HUD-safe selected-mode screenshots, a passing focused-region direct/raw/denoised/final visual proof, and a passing particle/translucency/temporal final-composite stability proof.
 - Latest controller work fixes the root cause behind the "looks like default Minecraft" screenshots: Lucerna was calling Mojang `RenderPass.draw(...)` with the wrong argument order, so the submitted fullscreen draw had an effective vertex count of zero. The public Mojang draw path now uses Mojang's `draw(vertexCount, instanceCount, firstVertex, firstInstance)` order, and a capped Round 7 surface proof validates a visible source-gated wall-surface composite delta with baseline/enabled/debug screenshots, no proof marker, no focus-window-only fallback, no temporary direct-light substitution, and no native errors. Boundary: this proves the Java/public final-composite draw path and CPU/readback preview contribution are screenshot-visible; it is still not real shader denoise quality or physically correct GI.
@@ -710,14 +711,14 @@ Agent Z: GPU-Driven Chunk Culling **PARTIAL**
 
 Owns:
 
-Frustum culling. **OPEN for real runtime culling**
+Frustum culling. **OPEN for real GPU/runtime frustum culling**
 ~~Occlusion culling placeholder or first implementation.~~ **DONE/VALIDATED as metadata-only placeholder**
-~~Indirect draw list generation.~~ **DONE/VALIDATED as metadata-only placeholder count**
+~~Indirect draw list generation.~~ **DONE/VALIDATED as conservative CPU/status indirect draw count**
 ~~Debug culling statistics.~~ **DONE/VALIDATED**
 
 Deliverable:
 
-Hidden/offscreen cluster counts are reduced and visible in logs/overlay. **OPEN: current validated telemetry is metadata-only and reports `culled_cluster_count=0`**
+~~Hidden/offscreen cluster counts are reduced and visible in logs/overlay.~~ **DONE/VALIDATED for conservative CPU/status culling; real GPU culling remains open**
 
 Validation by controller:
 
@@ -725,17 +726,19 @@ Validation by controller:
 ~~Face open terrain and screenshot culling overlay.~~ **DONE/VALIDATED**
 ~~Face a wall/cave interior and screenshot culling overlay.~~ **DONE/VALIDATED**
 Validate:
-visible cluster count changes with camera orientation, **PARTIAL: logs show nonzero visible counts and controller proof marks distinct evidence, but real frustum/occlusion culling is not implemented**
+~~visible cluster count changes with camera orientation,~~ **DONE/VALIDATED for conservative CPU/status culling; real frustum/occlusion culling is not implemented**
 ~~terrain does not disappear incorrectly,~~ **DONE/VALIDATED by controller screenshot inspection**
 CPU/GPU timing does not regress catastrophically. **OPEN**
-~~Validate logs contain culling stats and indirect draw counts.~~ **DONE/VALIDATED for metadata-only placeholder counts**
+~~Validate logs contain culling stats and indirect draw counts.~~ **DONE/VALIDATED for conservative CPU/status counts**
+Round 9 Agent Z evidence:
+- ~~Sodium + Iris + Vulkan Round 9 recapture now validates conservative CPU culling telemetry with nonzero culled/offscreen counts and real indirect draw counts.~~ **DONE/VALIDATED in `run/validation-logs/round9-cpu-culling-proof-20260620-035359.json`, `run/validation-logs/latest-round9-cpu-culling-20260620-034830-20260620-034830.log`, `run/validation-logs/latest-round9-cpu-culling-20260620-034830-20260620-035119.log`, `run/validation-logs/latest-round9-cpu-culling-20260620-034830-20260620-035359.log`, `run/validation-screenshots/round9-cpu-culling-20260620-034830-20260620-034830-FlatClusterOverlay.png`, `run/validation-screenshots/round9-cpu-culling-20260620-034830-20260620-035119-InteriorCullingOverlay.png`, and `run/validation-screenshots/round9-cpu-culling-20260620-034830-20260620-035359-HighDistanceCullingOverlay.png`. Key metrics include `interiorCulling.focus.changedPixelPercent=84.4835`, `highDistanceCulling.focus.changedPixelPercent=99.1916`, `maxCulledOffscreenOrHiddenCount=14218`, `cpuConservativeCullingTelemetryPresent=True`, `realIndirectDrawPresent=True`, `maxRealIndirectDrawCount=22335`, `proofMarkerPresent=False`, `temporaryDirectLightSourcePresent=False`, and `nativeErrorPresent=False`. Boundary: this is conservative CPU/status culling proof, not finished GPU-driven frustum/occlusion culling.**
 Round 9 Acceptance Criteria
 ~~Virtualized chunk metadata exists.~~ **DONE/VALIDATED**
 ~~Debug overlay shows clusters/culling.~~ **DONE/VALIDATED**
 ~~No terrain corruption.~~ **DONE/VALIDATED by screenshots**
-Visible/culled counts react to camera. **PARTIAL: visible counts are logged and screenshot scenes differ; real culled/offscreen reduction remains open**
-~~Logs validate cluster upload and culling behavior.~~ **DONE/VALIDATED for metadata-only cluster upload and culling placeholder behavior**
-Round 10: Hybrid Voxel Traversal + Vulkan RT
+~~Visible/culled counts react to camera.~~ **DONE/VALIDATED for conservative CPU/status culling; real GPU culling remains open**
+~~Logs validate cluster upload and culling behavior.~~ **DONE/VALIDATED for metadata plus conservative CPU/status culling behavior**
+### Round 10: Hybrid Voxel Traversal + Vulkan RT **PARTIAL**
 Goal
 
 Add the serious tracing backend:
@@ -743,19 +746,19 @@ Add the serious tracing backend:
 custom voxel traversal for block terrain,
 Vulkan RT acceleration structures for complex geometry/entities,
 unified hit result resolver.
-Agent AA: Voxel Traversal Backend
+Agent AA: Voxel Traversal Backend **PARTIAL**
 
 Owns:
 
-DDA-style voxel traversal.
-Chunk occupancy masks.
-Empty-section skipping.
-Block/material hit lookup.
-Debug ray/hit visualization.
+~~DDA-style voxel traversal status/scaffold.~~ **DONE/VALIDATED for CPU metadata counters**
+Chunk occupancy masks. **OPEN for real uploaded occupancy mask bits**
+~~Empty-section skipping counters.~~ **DONE/VALIDATED as metadata counters**
+Block/material hit lookup. **OPEN for real material-hit validation**
+~~Debug ray/hit visualization status.~~ **DONE/VALIDATED through voxel-ray overlay text and log counters**
 
 Deliverable:
 
-Voxel rays can hit solid blocks and miss empty space correctly.
+Voxel rays can hit solid blocks and miss empty space correctly. **PARTIAL: CPU metadata/status counters exist; real traversal/mask correctness remains open**
 
 Validation by controller:
 
@@ -765,71 +768,77 @@ tunnel,
 open sky,
 glass/water test area.
 Enable voxel ray debug view.
-Take screenshots showing hit/miss visualization.
+~~Take screenshots showing hit/miss debug overlay status.~~ **DONE/VALIDATED**
 Validate:
 rays hit walls,
 rays miss open sky,
 empty space skipping does not skip visible geometry,
 block material IDs match expected hit surfaces.
 Validate logs contain:
-ray count,
-hit/miss count,
-average traversal steps,
-skipped section count.
-Agent AB: Vulkan RT Path For Complex Geometry
+~~ray count,~~ **DONE/VALIDATED**
+~~hit/miss count,~~ **DONE/VALIDATED**
+~~average traversal steps,~~ **DONE/VALIDATED**
+~~skipped section count.~~ **DONE/VALIDATED**
+Agent AA evidence:
+- ~~Sodium + Iris + Vulkan Round 10 voxel-ray debug launch captured a readable voxel traversal overlay and logs for ray count, hit/miss count, traversal steps, skipped sections, and boundary labels.~~ **DONE/VALIDATED in `run/validation-screenshots/round10-hybrid-tracing-20260620-040656-20260620-040657-VoxelRayDebug.png` and `run/validation-logs/latest-round10-hybrid-tracing-20260620-040656-20260620-040657.log`; boundary: status counters are validated, not real GPU traversal or real mask-bit correctness.**
+Agent AB: Vulkan RT Path For Complex Geometry **PARTIAL**
 
 Owns:
 
-BLAS/TLAS setup for entities and complex/modded models.
-Entity transform updates.
-Hardware RT hit path.
-Fallback when RT extension is unavailable.
+~~BLAS/TLAS setup contracts/status.~~ **DONE/VALIDATED as fallback-safe status contracts**
+~~Entity transform update contracts.~~ **DONE/VALIDATED by Java contract/build integration**
+Hardware RT hit path. **OPEN**
+~~Fallback when RT extension is unavailable.~~ **DONE/VALIDATED**
 
 Deliverable:
 
-Entities/complex models can participate in tracing separate from voxel terrain.
+Entities/complex models can participate in tracing separate from voxel terrain. **OPEN for real hardware RT; fallback/status path is validated**
 
 Validation by controller:
 
 Launch on RTX/Vulkan-capable machine.
 Join world with entities and complex models.
-Take screenshots with RT entity debug overlay.
+~~Take screenshots with RT entity debug overlay.~~ **DONE/VALIDATED**
 Validate:
 entities appear in RT debug mask,
 entity movement updates acceleration structure,
 no crash on entity spawn/despawn.
 Validate logs contain:
-BLAS/TLAS build/update counts,
-RT extension availability,
-fallback path if applicable.
-Agent AC: Hybrid Hit Resolver
+~~BLAS/TLAS build/update status,~~ **DONE/VALIDATED as fallback/status values**
+~~RT extension availability,~~ **DONE/VALIDATED**
+~~fallback path if applicable.~~ **DONE/VALIDATED**
+Agent AB evidence:
+- ~~Sodium + Iris + Vulkan Round 10 RT entity debug recapture produced a readable in-client overlay and log proof for BLAS/TLAS fallback status, RT availability, and fallback-safe behavior.~~ **DONE/VALIDATED in `run/validation-screenshots/round10-rt-entity-recapture-20260620-043616-20260620-043616-RtEntityDebug.png`, `run/validation-logs/latest-round10-rt-entity-recapture-20260620-043616-20260620-043616.log`, and `run/validation-logs/round10-hybrid-tracing-overlay-proof-20260620-043749.json`; boundary: hardware RT execution remains open.**
+Agent AC: Hybrid Hit Resolver **PARTIAL**
 
 Owns:
 
-Combining screen-space, voxel, and Vulkan RT hit results.
-Hit priority rules.
-Material consistency across tracing paths.
+~~Combining screen-space, voxel, Vulkan RT, sky, and miss hit-source status.~~ **DONE/VALIDATED as Java resolver/status contracts**
+~~Hit priority rules.~~ **DONE/VALIDATED by Java resolver contracts/build**
+~~Material consistency across tracing paths.~~ **DONE/VALIDATED as status contract**
 
 Deliverable:
 
-Lighting/reflections can use the best available hit result.
+Lighting/reflections can use the best available hit result. **PARTIAL: resolver/status contracts exist; real lighting/reflection consumption remains open**
 
 Validation by controller:
 
 Join world with blocks, entities, glass/water, and emissives.
 Enable hybrid hit debug view.
-Take screenshots showing hit source classification:
+~~Take screenshots showing hit source classification overlay:~~ **DONE/VALIDATED for overlay/status**
 screen-space,
 voxel,
 hardware RT,
 miss/sky.
-Validate logs show per-source hit counts.
+~~Validate logs show per-source hit counts.~~ **DONE/VALIDATED**
+Agent AC evidence:
+- ~~Sodium + Iris + Vulkan Round 10 hybrid-hit debug recapture produced a readable in-client overlay and log proof for hybrid hit counts, voxel/RT/screen-space source counters, priority/material status, and boundary labels.~~ **DONE/VALIDATED in `run/validation-screenshots/round10-hybrid-hit-recapture-20260620-043749-20260620-043749-HybridHitDebug.png`, `run/validation-logs/latest-round10-hybrid-hit-recapture-20260620-043749-20260620-043749.log`, and `run/validation-logs/round10-hybrid-tracing-overlay-proof-20260620-043749.json`; key metrics include `rtEntity.focus.changedPixelPercent=100`, `hybridHit.focus.changedPixelPercent=99.962`, `maxRayCount=4096`, `round10MarkerPresent=True`, `voxelRayDebugOverlayPresent=True`, `rtEntityDebugOverlayPresent=True`, `hybridHitDebugOverlayPresent=True`, `blasStatusPresent=True`, `tlasStatusPresent=True`, `fallbackStatusPresent=True`, `hybridVoxelHitPresent=True`, `hybridRtHitPresent=True`, `hybridScreenSpaceHitPresent=True`, `invalidTracingValuesPresent=False`, `proofMarkerPresent=False`, `temporaryDirectLightSourcePresent=False`, and `nativeErrorPresent=False`. Boundary: this is overlay/status proof, not real hybrid traced lighting.**
 Round 10 Acceptance Criteria
-Voxel traversal works for terrain.
-Vulkan RT works for entities/complex geometry where supported.
-Hybrid resolver selects correct hit sources.
-Debug views and logs prove hit behavior.
-No crash on entity movement, chunk load/unload, or world leave.
+Voxel traversal works for terrain. **PARTIAL: CPU metadata/status counters and overlay proof exist; real mask/material correctness remains open**
+Vulkan RT works for entities/complex geometry where supported. **OPEN: fallback/status path is validated, hardware RT execution is not**
+Hybrid resolver selects correct hit sources. **PARTIAL: Java resolver/status contracts are validated; real traced-lighting consumption remains open**
+~~Debug views and logs prove hit behavior status.~~ **DONE/VALIDATED for Round 10 overlay/status proof**
+No crash on entity movement, chunk load/unload, or world leave. **PARTIAL: world join/shutdown proof exists; targeted entity movement/chunk churn remains open**
 Round 11: ReSTIR DI and ReSTIR PT-Style Path Reuse
 Goal
 
@@ -916,6 +925,8 @@ Logs prove candidate reuse and reservoir invalidation behavior.
 - ~~No sub-agent is allowed to "verify" fixes by running tests or build-like checks. They patch, explain, and wait for controller feedback.~~ **DONE/ONGOING**
 
 Latest strong validation evidence:
+- ~~Sodium + Iris + Vulkan Round 10 hybrid tracing overlay validation now captures voxel-ray, RT-entity, and hybrid-hit debug overlay screenshots with real Minecraft screenshot provenance, clean shutdown logs, and a combined assertion proof. The controller assertion passes with log proof for voxel ray counts, hit/miss counts, average traversal steps, skipped sections, BLAS/TLAS fallback status, RT fallback status, hybrid source counts, and boundary labels.~~ **DONE/VALIDATED in `run/validation-logs/round10-hybrid-tracing-overlay-proof-20260620-043749.json`, `run/validation-logs/latest-round10-hybrid-tracing-20260620-040656-20260620-040657.log`, `run/validation-logs/latest-round10-rt-entity-recapture-20260620-043616-20260620-043616.log`, `run/validation-logs/latest-round10-hybrid-hit-recapture-20260620-043749-20260620-043749.log`, `run/validation-screenshots/round10-hybrid-tracing-20260620-040656-20260620-040657-VoxelRayDebug.png`, `run/validation-screenshots/round10-rt-entity-recapture-20260620-043616-20260620-043616-RtEntityDebug.png`, and `run/validation-screenshots/round10-hybrid-hit-recapture-20260620-043749-20260620-043749-HybridHitDebug.png`; key metrics include `rtEntity.focus.changedPixelPercent=100`, `hybridHit.focus.changedPixelPercent=99.962`, `maxRayCount=4096`, `voxelRayDebugOverlayPresent=True`, `rtEntityDebugOverlayPresent=True`, `hybridHitDebugOverlayPresent=True`, `blasStatusPresent=True`, `tlasStatusPresent=True`, `fallbackStatusPresent=True`, `hybridVoxelHitPresent=True`, `hybridRtHitPresent=True`, `hybridScreenSpaceHitPresent=True`, `invalidTracingValuesPresent=False`, `proofMarkerPresent=False`, `temporaryDirectLightSourcePresent=False`, and `nativeErrorPresent=False`. Boundary: this validates Round 10 status/debug scaffolding and fallback contracts, not real hardware RT or physical hybrid tracing.**
+- ~~Sodium + Iris + Vulkan Round 9 CPU/conservative culling validation now captures flat/open, interior/wall-facing, and high-distance/open terrain screenshots with clean shutdown and log proof for cluster counts, visible counts, culled/offscreen counts, upload bytes, generation counters, culling mode/reason, and real indirect draw counts.~~ **DONE/VALIDATED in `run/validation-logs/round9-cpu-culling-proof-20260620-035359.json`, `run/validation-logs/latest-round9-cpu-culling-20260620-034830-20260620-034830.log`, `run/validation-logs/latest-round9-cpu-culling-20260620-034830-20260620-035119.log`, `run/validation-logs/latest-round9-cpu-culling-20260620-034830-20260620-035359.log`, `run/validation-screenshots/round9-cpu-culling-20260620-034830-20260620-034830-FlatClusterOverlay.png`, `run/validation-screenshots/round9-cpu-culling-20260620-034830-20260620-035119-InteriorCullingOverlay.png`, and `run/validation-screenshots/round9-cpu-culling-20260620-034830-20260620-035359-HighDistanceCullingOverlay.png`; key metrics include `interiorCulling.focus.changedPixelPercent=84.4835`, `highDistanceCulling.focus.changedPixelPercent=99.1916`, `maxCulledOffscreenOrHiddenCount=14218`, `cpuConservativeCullingTelemetryPresent=True`, `realIndirectDrawPresent=True`, `maxRealIndirectDrawCount=22335`, `proofMarkerPresent=False`, `temporaryDirectLightSourcePresent=False`, and `nativeErrorPresent=False`. Boundary: this validates conservative CPU/status culling and overlay proof, not a finished GPU-driven frustum/occlusion pipeline.**
 - ~~Sodium + Iris + Vulkan Round 7 scene-shaped emissive/GI surface validation now captures hidden-HUD baseline, hidden-HUD enabled, and debug-overlay screenshots after native scene-spatial/material/cache telemetry, shader-side source shaping, clearer CPU/readback boundary labels, and stricter anti-washout proof diagnostics. The controller assertion passes with log proof for final composite dispatch, source-gated surface contribution, hidden GUI/command-feedback/chat-cleared capture, and rejection markers for proof-marker, focus-window-only, temporary direct-light substitution, native errors, and rectangular/full-screen washout.~~ **DONE/VALIDATED in `run/validation-logs/round7-emissive-gi-scene-shaped-proof-20260619-221725.json`, `run/validation-logs/latest-round7-emissive-gi-scene-shaped-20260619-221725-enabled-20260619-221817.log`, `run/validation-screenshots/round7-emissive-gi-scene-shaped-20260619-221725-baseline-20260619-221725-Baseline.png`, `run/validation-screenshots/round7-emissive-gi-scene-shaped-20260619-221725-enabled-20260619-221817-Enabled.png`, and `run/validation-screenshots/round7-emissive-gi-scene-shaped-20260619-221725-debug-20260619-221910-Debug.png`; key metrics include `classification=round7_emissive_gi_surface_evidence_passed`, `focus.changedPixelPercent=100`, `focus.brighterPixelPercent=100`, `focus.meanSignedLuma=40.7864`, `full.changedPixelPercent=71.0612`, `full.changedBoundingBoxAreaPercent=72.5664`, `full.activeTilePercent=83.3333`, `full.edgeActiveTilePercent=15.2778`, `fixed.changedPixelShareOfFull=8.2343`, `classification.fullScreenOrRectangularWashoutSuspect=False`, `classification.localizedSceneShapedDeltaPresent=True`, `proofMarkerPresent=False`, `focusWindowOnlyPresent=False`, `temporaryDirectLightSourcePresent=False`, and `nativeErrorPresent=False`. Boundary: this validates a less rectangular scene-shaped CPU/readback preview contribution, not physically correct GI tracing or real shader denoise.**
 - ~~Sodium + Iris + Vulkan Round 7 composite-stability validation now captures particle baseline/final, translucent baseline/final, and temporal stable/moved screenshots. The controller assertion passes with required log proof for final composite dispatch, HUD preservation, particle/translucency scene markers, temporal/history markers, and rejection markers for temporary direct-light source, proof-marker, focus-window-only, and native-error evidence; screenshots were directly inspected and show real before/after frame differences with HUD/hotbar/crosshair intact.~~ **DONE/VALIDATED in `run/validation-logs/round7-composite-stability-proof-20260619-201227.json`, `run/validation-logs/latest-round7-composite-stability-particlebaseline-20260619-200530.log`, `run/validation-logs/latest-round7-composite-stability-particlefinalcomposite-20260619-200654.log`, `run/validation-logs/latest-round7-composite-stability-translucentbaseline-20260619-200820.log`, `run/validation-logs/latest-round7-composite-stability-translucentfinalcomposite-20260619-200942.log`, `run/validation-logs/latest-round7-composite-stability-temporalstable-20260619-201104.log`, `run/validation-logs/latest-round7-composite-stability-temporalmoved-20260619-201227.log`, `run/validation-screenshots/round7-composite-stability-particlebaseline-20260619-200530-ParticleBaseline.png`, `run/validation-screenshots/round7-composite-stability-particlefinalcomposite-20260619-200654-ParticleFinalComposite.png`, `run/validation-screenshots/round7-composite-stability-translucentbaseline-20260619-200820-TranslucentBaseline.png`, `run/validation-screenshots/round7-composite-stability-translucentfinalcomposite-20260619-200942-TranslucentFinalComposite.png`, `run/validation-screenshots/round7-composite-stability-temporalstable-20260619-201104-TemporalStable.png`, and `run/validation-screenshots/round7-composite-stability-temporalmoved-20260619-201227-TemporalMoved.png`; key metrics include `particle.focus.changedPixelPercent=48.0306`, `translucency.focus.changedPixelPercent=48.0306`, `temporal.focus.changedPixelPercent=44.9255`, `temporal.focus.meanAbsLuma=6.1699`, `finalCompositePresent=True`, `hudPreservationPresent=True`, `temporaryDirectLightSourcePresent=False`, `proofMarkerPresent=False`, `focusWindowOnlyPresent=False`, and `nativeErrorPresent=False`. Boundary: this validates composite stability proof for the current CPU-denoised/final path, not real shader denoise quality or physically correct GI.**
 - ~~Sodium + Iris + Vulkan capped Round 7 emissive/GI surface validation proves the current public Mojang final-composite draw path is genuinely screenshot-visible after fixing the `RenderPass.draw(vertexCount, instanceCount, firstVertex, firstInstance)` argument order. The controller assertion passes with hidden-HUD baseline/enabled screenshots, a debug-overlay screenshot, source-gated surface contribution, and rejection markers for proof-marker, focus-window-only, temporary direct-light substitution, and native errors.~~ **DONE/VALIDATED in `run/validation-logs/round7-emissive-gi-surface-capped-proof-20260619-215916.json`, `run/validation-logs/latest-round7-emissive-gi-surface-capped-enabled-20260619-215916-20260619-220037.log`, `run/validation-screenshots/round7-emissive-gi-surface-capped-baseline-20260619-215916-20260619-215916-Baseline.png`, `run/validation-screenshots/round7-emissive-gi-surface-capped-enabled-20260619-215916-20260619-220037-Enabled.png`, and `run/validation-screenshots/round7-emissive-gi-surface-capped-debug-20260619-215916-20260619-220159-Debug.png`; key metrics include `classification=round7_emissive_gi_surface_evidence_passed`, `focus.changedPixelPercent=100`, `focus.brighterPixelPercent=100`, `focus.meanSignedLuma=46.2289`, `full.changedPixelPercent=67.8525`, `proofMarkerPresent=False`, `focusWindowOnlyPresent=False`, `temporaryDirectLightSourcePresent=False`, and `nativeErrorPresent=False`. Boundary: the visible effect is a capped CPU/readback preview contribution, not physically correct GI or real shader denoise.**
