@@ -359,6 +359,7 @@ public record LucernaStatusSnapshot(
         fields.put("native.lastError", this.nativeBridge.lastError());
         fields.put("native.diagnostic", this.nativeBridge.diagnosticMessage());
         fields.put("native.passStates", this.nativePassStateLabel());
+        fields.put("native.passTimingBoundary", this.nativePassStates().compactTimingBoundaryLabel());
         fields.putAll(this.nativePassStates().validationFields("native.pass"));
         fields.putAll(this.lightingDispatchStatus().validationFields("lighting.dispatch"));
         fields.put("iris.statusAvailable", Boolean.toString(this.iris.statusAvailable()));
@@ -420,6 +421,8 @@ public record LucernaStatusSnapshot(
         fields.put("frame.cpuScopeCount", Integer.toString(this.cpuScopeDurationsMillis().size()));
         fields.put("frame.gpuScopeCount", Integer.toString(this.gpuScopeDurationsMillis().size()));
         fields.put("frame.activeCpuScopeCount", Integer.toString(this.activeCpuScopeCount()));
+        fields.put("frame.timingAvailability", this.frameTimings.compactAvailabilityLine());
+        fields.put("frame.timingBoundary", this.frameTimings.measurementBoundaryLabel());
         fields.put("frame.activeCpuScopes", String.join(",", this.frameTimings.activeCpuScopeNames()));
         fields.put("frame.totalCpuMillis", Double.toString(this.frameTimings.totalCpuMillis()));
         fields.put("frame.totalGpuMillis", Double.toString(this.frameTimings.totalGpuMillis()));

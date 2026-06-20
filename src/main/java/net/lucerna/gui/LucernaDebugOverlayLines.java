@@ -62,6 +62,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Round 7 denoise: " + compositeStatus.denoiseSourcePolicy()));
         lines.add(Component.literal("Round 7 boundary: " + compositeStatus.lightingStackBoundary()));
         lines.add(Component.literal("First-light quality: " + qualityStatus.summaryLine()));
+        lines.add(Component.literal("Timing boundary: " + snapshot.frameTimings().compactAvailabilityLine()));
         Round8AdaptiveDebugStatus round8 = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("Round 8 adaptive debug: " + round8.summary()));
         lines.add(Component.literal("Round 8 heatmaps: " + round8.heatmapRolesLine()));
@@ -277,8 +278,9 @@ public final class LucernaDebugOverlayLines {
     }
 
     private static void addTimingLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
-        lines.add(Component.literal("Timing availability: CPU=" + snapshot.frameTimings().cpuTimingAvailabilityLabel()
-                + " | GPU=" + snapshot.frameTimings().gpuTimingAvailabilityLabel()));
+        lines.add(Component.literal("Timing availability: " + snapshot.frameTimings().compactAvailabilityLine()));
+        lines.add(Component.literal("Timing proof boundary: " + snapshot.frameTimings().measurementBoundaryLabel()));
+        lines.add(Component.literal("Native pass timing: " + snapshot.nativePassStates().compactTimingBoundaryLabel()));
         addLightingStageTimingSummaryLines(lines, snapshot);
         if (!snapshot.frameTimings().hasAnyTimings()) {
             lines.add(Component.literal("No completed frame timings yet."));
@@ -312,37 +314,17 @@ public final class LucernaDebugOverlayLines {
     }
 
     private static void addLightingStageTimingSummaryLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
-        lines.add(Component.literal("Stage timing GI: " + snapshot.frameTimings().compactStageTimingLine(
-                "GI",
-                "diffuse_gi",
-                "low_res_gi",
-                "low_resolution_gi",
-                "gi"
-        )));
-        lines.add(Component.literal("Stage timing denoise: " + snapshot.frameTimings().compactStageTimingLine(
-                "Denoise",
-                "denoise",
-                "diffuse_denoise",
-                "edge_aware_denoise"
-        )));
-        lines.add(Component.literal("Stage timing composite: " + snapshot.frameTimings().compactStageTimingLine(
-                "Composite",
-                "composite",
-                "final_composite"
-        )));
-        lines.add(Component.literal("Stage timing adaptive: " + snapshot.frameTimings().compactStageTimingLine(
-                "Adaptive",
-                "adaptive_sampling",
-                "ray_budget",
-                "variance",
-                "history_confidence"
-        )));
-        lines.add(Component.literal("Stage timing final: " + snapshot.frameTimings().compactStageTimingLine(
-                "Final",
-                "final_composite",
-                "present",
-                "submit"
-        )));
+        for (String timingLine : snapshot.frameTimings().compactLightingStageTimingLines()) {
+            lines.add(Component.literal("Stage timing: " + timingLine));
+        }
+        LightingDispatchTelemetryStatus lightingDispatch = snapshot.lightingDispatchStatus();
+        if (!lightingDispatch.hasStageStatuses()) {
+            lines.add(Component.literal("Native stage timing: unavailable(" + shorten(lightingDispatch.message(), 64) + ")"));
+            return;
+        }
+        for (LightingDispatchStageTelemetryStatus stage : lightingDispatch.stages().values()) {
+            lines.add(Component.literal("Native stage timing: " + stage.compactTimingBoundaryLine()));
+        }
     }
 
     private static void addAdaptiveSamplingLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
@@ -394,6 +376,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal(status.historyConfidenceHeatmapLine()));
         lines.add(Component.literal(status.historyConfidenceLine()));
         lines.add(Component.literal(status.historyCountsLine()));
+        addTemporalStageBoundaryLines(lines, snapshot);
         lines.add(Component.literal(status.varianceMapLine()));
         lines.add(Component.literal("History legend: reset=red low=yellow reusable=green missing=gray"));
         lines.add(Component.literal(status.readinessLine()));
@@ -445,6 +428,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("G-buffer staging: " + snapshot.gBufferStagingLabel()));
         lines.add(Component.literal("G-buffer staging explicit: " + snapshot.explicitGBufferStagingLabel()));
         lines.add(Component.literal("Staging payloads: " + snapshot.stagingPayloadLabel()));
+        lines.add(Component.literal("Native pass timing: " + snapshot.nativePassStates().compactTimingBoundaryLabel()));
         addNativePassStateLines(lines, snapshot);
         addLightingDispatchLines(lines, snapshot);
         addRoundSixStatusLines(lines, snapshot);
@@ -875,6 +859,39 @@ public final class LucernaDebugOverlayLines {
             lines.add(Component.literal("Stage status: " + stage.compactStageStatusLine()));
             lines.add(Component.literal("Stage work: " + stage.stageWorkStatusLine()));
             lines.add(Component.literal("Timing boundary: " + stage.explicitMeasurementBoundaryLine()));
+            lines.add(Component.literal("Temporal history: " + stage.temporalHistoryStatusLine()));
+            lines.add(Component.literal("Proof boundary: " + stage.proofBoundaryLine()));
+        }
+    }
+
+    private static void addTemporalStageBoundaryLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        LightingDispatchTelemetryStatus lightingDispatch = snapshot.lightingDispatchStatus();
+        if (!lightingDispatch.hasStageStatuses()) {
+            lines.add(Component.literal("Native temporal history: unavailable(" + shorten(lightingDispatch.message(), 64) + ")"));
+            return;
+        }
+        LightingDispatchStageTelemetryStatus denoiseStage = firstStage(
+                lightingDispatch,
+                "denoise",
+                "diffuse_gi_denoise",
+                "denoised_gi",
+                "round7_denoise"
+        );
+        LightingDispatchStageTelemetryStatus adaptiveStage = firstStage(
+                lightingDispatch,
+                "adaptive_sampling",
+                "history_confidence",
+                "variance",
+                "ray_budget"
+        );
+        if (denoiseStage != null) {
+            lines.add(Component.literal("Denoise temporal: " + denoiseStage.temporalHistoryStatusLine()));
+        }
+        if (adaptiveStage != null) {
+            lines.add(Component.literal("Adaptive temporal: " + adaptiveStage.temporalHistoryStatusLine()));
+        }
+        if (denoiseStage == null && adaptiveStage == null) {
+            lines.add(Component.literal("Native temporal history: pending(no denoise/adaptive stage details)"));
         }
     }
 

@@ -63,6 +63,22 @@ param(
 
     [int] $AutoRegionPaddingCells = 1,
 
+    [switch] $DisableTemporalMotionAutoFocusRegion,
+
+    [double] $TemporalMotionSearchLeftPercent = 4.0,
+
+    [double] $TemporalMotionSearchTopPercent = 8.0,
+
+    [double] $TemporalMotionSearchWidthPercent = 92.0,
+
+    [double] $TemporalMotionSearchHeightPercent = 56.0,
+
+    [int] $TemporalMotionRegionColumns = 16,
+
+    [int] $TemporalMotionRegionRows = 8,
+
+    [int] $TemporalMotionRegionPaddingCells = 1,
+
     [int] $ChangedPixelThreshold = 8,
 
     [int] $BrightPixelThreshold = 6,
@@ -230,7 +246,19 @@ function Invoke-DeltaHelper {
         BrightPixelThreshold = $BrightPixelThreshold
         OutputJsonPath = $tempJson
     }
-    if ($AutoFocusRegion -and -not $DisableAutoFocusRegion) {
+    $useTemporalMotionRegion = $Label -eq "temporal-motion" -and -not $DisableTemporalMotionAutoFocusRegion
+    if ($useTemporalMotionRegion) {
+        $compareArgs.AutoFocusRegion = $true
+        $compareArgs.AutoRegionSearchLeftPercent = $TemporalMotionSearchLeftPercent
+        $compareArgs.AutoRegionSearchTopPercent = $TemporalMotionSearchTopPercent
+        $compareArgs.AutoRegionSearchWidthPercent = $TemporalMotionSearchWidthPercent
+        $compareArgs.AutoRegionSearchHeightPercent = $TemporalMotionSearchHeightPercent
+        $compareArgs.AutoRegionColumns = $TemporalMotionRegionColumns
+        $compareArgs.AutoRegionRows = $TemporalMotionRegionRows
+        $compareArgs.AutoRegionPaddingCells = $TemporalMotionRegionPaddingCells
+        $compareArgs.TileColumns = $TemporalMotionRegionColumns
+        $compareArgs.TileRows = $TemporalMotionRegionRows
+    } elseif ($AutoFocusRegion -and -not $DisableAutoFocusRegion) {
         $compareArgs.AutoFocusRegion = $true
         $compareArgs.AutoRegionSearchLeftPercent = $AutoRegionSearchLeftPercent
         $compareArgs.AutoRegionSearchTopPercent = $AutoRegionSearchTopPercent
@@ -515,11 +543,15 @@ $failures = New-Object System.Collections.Generic.List[string]
 
 $regionBottomPercent = $RegionTopPercent + $RegionHeightPercent
 $autoSearchBottomPercent = $AutoRegionSearchTopPercent + $AutoRegionSearchHeightPercent
+$temporalMotionSearchBottomPercent = $TemporalMotionSearchTopPercent + $TemporalMotionSearchHeightPercent
 if ((-not $AutoFocusRegion -or $DisableAutoFocusRegion) -and $regionBottomPercent -gt $MaxRegionBottomPercent) {
     $failures.Add("Fixed proof region extends into lower HUD/hand area. bottomPercent=$regionBottomPercent max=$MaxRegionBottomPercent")
 }
 if ($AutoFocusRegion -and -not $DisableAutoFocusRegion -and $autoSearchBottomPercent -gt $MaxRegionBottomPercent) {
     $failures.Add("Auto-focus search region extends into lower HUD/hand area. bottomPercent=$autoSearchBottomPercent max=$MaxRegionBottomPercent")
+}
+if (-not $DisableTemporalMotionAutoFocusRegion -and $temporalMotionSearchBottomPercent -gt $MaxRegionBottomPercent) {
+    $failures.Add("Temporal motion auto-focus search region extends into lower HUD/hand area. bottomPercent=$temporalMotionSearchBottomPercent max=$MaxRegionBottomPercent")
 }
 
 $baselineWidth = $particleBaselineDimensions.width
@@ -569,6 +601,9 @@ if ([double]$translucentDelta.focusRegionMetrics.changedPixelPercent -lt $MinTra
 }
 if ([double]$temporalDelta.focusRegionMetrics.changedPixelPercent -lt $MinTemporalChangedPixelPercent) {
     $failures.Add("Temporal moved-camera focused-region changed pixels below threshold. actual=$($temporalDelta.focusRegionMetrics.changedPixelPercent) expected>=$MinTemporalChangedPixelPercent")
+    $autoReason = if ($temporalDelta.focusRegion.autoSelection) { [string]$temporalDelta.focusRegion.autoSelection.reason } else { "no-auto-selection-diagnostics" }
+    $temporalSelectionLabel = if (-not $DisableTemporalMotionAutoFocusRegion) { "auto-temporal-motion-upper-world-surface" } else { "generic-round7-focus-region" }
+    $failures.Add("Temporal moved-camera region did not show enough motion/disocclusion. selectionMode=$($temporalDelta.focusRegion.selectionMode) autoReason=$autoReason sourceRegion=$temporalSelectionLabel hint=check stale screenshots, static camera, blank surface, or HUD/hand-contaminated capture.")
 }
 if ([double]$temporalDelta.focusRegionMetrics.meanAbsLuma -lt $MinTemporalMeanAbsLuma) {
     $failures.Add("Temporal moved-camera focused-region mean absolute luma below threshold. actual=$($temporalDelta.focusRegionMetrics.meanAbsLuma) expected>=$MinTemporalMeanAbsLuma")
@@ -665,6 +700,18 @@ $result = [ordered]@{
         brightPixelThreshold = $BrightPixelThreshold
         maxRegionBottomPercent = $MaxRegionBottomPercent
         focusRegionSelection = if ($AutoFocusRegion -and -not $DisableAutoFocusRegion) { "auto-upper-mid-world-surface" } else { "fixed-upper-mid-world-surface" }
+        temporalMotionFocusRegionSelection = if (-not $DisableTemporalMotionAutoFocusRegion) { "auto-temporal-motion-upper-world-surface" } else { "generic-round7-focus-region" }
+        temporalMotionSearchRegion = [ordered]@{
+            leftPercent = $TemporalMotionSearchLeftPercent
+            topPercent = $TemporalMotionSearchTopPercent
+            widthPercent = $TemporalMotionSearchWidthPercent
+            heightPercent = $TemporalMotionSearchHeightPercent
+            bottomPercent = $temporalMotionSearchBottomPercent
+            columns = $TemporalMotionRegionColumns
+            rows = $TemporalMotionRegionRows
+            paddingCells = $TemporalMotionRegionPaddingCells
+            hudHandExcluded = $temporalMotionSearchBottomPercent -le $MaxRegionBottomPercent
+        }
         rejectWindowScreenshotSources = [bool]$RejectWindowScreenshotSources
         requireLogProof = [bool]$RequireLogProof
     }
@@ -696,6 +743,7 @@ $result = [ordered]@{
     proofClarity = [ordered]@{
         classification = if ($failures.Count -eq 0) { "round7_composite_stability_evidence_passed" } else { "round7_composite_stability_failed" }
         handHudExcludedByRegion = if ($AutoFocusRegion -and -not $DisableAutoFocusRegion) { $autoSearchBottomPercent -le $MaxRegionBottomPercent } else { $regionBottomPercent -le $MaxRegionBottomPercent }
+        temporalMotionHudHandExcludedByRegion = if (-not $DisableTemporalMotionAutoFocusRegion) { $temporalMotionSearchBottomPercent -le $MaxRegionBottomPercent } else { if ($AutoFocusRegion -and -not $DisableAutoFocusRegion) { $autoSearchBottomPercent -le $MaxRegionBottomPercent } else { $regionBottomPercent -le $MaxRegionBottomPercent } }
         particleCompositeEvidencePresent = ([double]$particleDelta.focusRegionMetrics.changedPixelPercent -ge $MinParticleChangedPixelPercent)
         translucencyCompositeEvidencePresent = ([double]$translucentDelta.focusRegionMetrics.changedPixelPercent -ge $MinTranslucentChangedPixelPercent)
         temporalMotionEvidencePresent = (
@@ -778,6 +826,8 @@ if ($movedTemporalFlicker) {
     Write-Host "temporal.moved.sequence.roughnessScore=$($movedTemporalFlicker.roughnessScore)"
 }
 Write-Host "focus.regionSelection=$($result.thresholds.focusRegionSelection)"
+Write-Host "temporal.focus.regionSelection=$($result.thresholds.temporalMotionFocusRegionSelection)"
+Write-Host "temporal.focus.searchBottomPercent=$($result.thresholds.temporalMotionSearchRegion.bottomPercent)"
 if ($logProof) {
     Write-Host "finalCompositePresent=$($logProof.markers.finalCompositePresent)"
     Write-Host "hudPreservationPresent=$($logProof.markers.hudPreservationPresent)"

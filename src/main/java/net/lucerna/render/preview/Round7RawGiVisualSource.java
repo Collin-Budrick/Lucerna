@@ -74,8 +74,10 @@ public record Round7RawGiVisualSource(
                 + ",evidence=" + this.evidenceLabel
                 + ",shader=" + this.shaderLabel
                 + ",sourceIdentity=" + this.sourceIdentity()
+                + ",sourceClass=" + this.sourceClassLabel()
                 + ",sourceAuthenticity=\"" + this.sourceAuthenticityBoundary() + "\""
                 + ",projectionBoundary=\"" + this.surfaceProjectionBoundary() + "\""
+                + ",qualityReadiness=\"" + this.qualityReadinessBoundary() + "\""
                 + ",focusedRegionProof=\"" + this.focusedRegionProofExpectation() + "\""
                 + ",ready=" + this.sourceReady
                 + ",reason=\"" + this.reason + "\"";
@@ -85,12 +87,22 @@ public record Round7RawGiVisualSource(
         return "native-diffuse-gi-rgba8/raw-gi";
     }
 
+    public String sourceClassLabel() {
+        return "raw-gi-cpu/readback-native-output;not-denoised;not-real-shader-denoise";
+    }
+
     public String sourceAuthenticityBoundary() {
         return "raw GI source must be native diffuse-GI RGBA8 CPU/readback output; reject metadata-only, proof-marker, focus-window-only, and temporary direct-light substitution";
     }
 
     public String surfaceProjectionBoundary() {
         return "current public shader path is scene-shaped full-target projection from GI payload cues; geometry/material-aware physical GI projection remains pending controller/native-shader work";
+    }
+
+    public String qualityReadinessBoundary() {
+        return this.sourceReady
+                ? "raw GI source identity is ready; physical GI quality, temporal stability, denoise quality, and shader output remain pending"
+                : "raw GI source identity is not ready";
     }
 
     public String focusedRegionProofExpectation() {

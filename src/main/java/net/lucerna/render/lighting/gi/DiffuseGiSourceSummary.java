@@ -137,6 +137,27 @@ public record DiffuseGiSourceSummary(
                 + this.celestialLightCount * 0.15F) / Math.max(1.0F, signals));
     }
 
+    public float celestialSourceScore() {
+        if (!this.directLightingReady || this.celestialLightCount == 0) {
+            return 0.0F;
+        }
+        float worldMaterialScore = this.hasWorldMaterialInputs() ? 1.0F : 0.0F;
+        return clampUnit((this.celestialLightCount * 0.50F)
+                / Math.max(1.0F, this.celestialLightCount + this.emissiveLightCount + this.shadowCandidateCount)
+                + (worldMaterialScore * 0.30F)
+                + (this.sectionInputAvailable ? 0.20F : 0.0F));
+    }
+
+    public float emissiveSourceScore() {
+        if (!this.directLightingReady || this.emissiveLightCount == 0) {
+            return 0.0F;
+        }
+        return clampUnit((this.emissiveLightCount * 0.45F
+                + this.budgetedShadowCandidateCount * 0.30F
+                + this.shadowCandidateCount * 0.25F)
+                / Math.max(1.0F, this.emissiveLightCount + this.budgetedShadowCandidateCount + this.shadowCandidateCount));
+    }
+
     public float sceneMutationScore() {
         int signals = this.dirtyRegionCount + this.materialUpdateCount + this.sectionSnapshotCount;
         if (signals == 0) {
@@ -149,16 +170,29 @@ public record DiffuseGiSourceSummary(
 
     public float sourceCouplingScore() {
         float worldMaterialScore = this.hasWorldMaterialInputs() ? 1.0F : 0.0F;
-        return clampUnit((this.emissiveWorkScore() * 0.45F)
-                + (worldMaterialScore * 0.35F)
-                + (this.sceneMutationScore() * 0.20F));
+        return clampUnit((this.emissiveSourceScore() * 0.28F)
+                + (this.celestialSourceScore() * 0.18F)
+                + (this.emissiveWorkScore() * 0.18F)
+                + (worldMaterialScore * 0.24F)
+                + (this.sceneMutationScore() * 0.12F));
     }
 
     public String physicalSourceLabel() {
         return "sourceCoupling=" + this.sourceCouplingScore()
                 + " emissiveWork=" + this.emissiveWorkScore()
+                + " emissiveSource=" + this.emissiveSourceScore()
+                + " sunMoonSource=" + this.celestialSourceScore()
                 + " sceneMutation=" + this.sceneMutationScore()
                 + " worldMaterialInputs=" + this.hasWorldMaterialInputs();
+    }
+
+    public String lightSourceCouplingLabel() {
+        return "emissive/sun/moon coupling emissive=" + this.emissiveSourceScore()
+                + " sunMoon=" + this.celestialSourceScore()
+                + " directReady=" + this.directLightingReady
+                + " celestialCount=" + this.celestialLightCount
+                + " emissiveCount=" + this.emissiveLightCount
+                + " shadowCandidates=" + this.shadowCandidateCount + "/" + this.budgetedShadowCandidateCount;
     }
 
     public String compactLabel() {

@@ -150,12 +150,24 @@ public record DenoisePassPlan(
         return this.shaderOutputContract.readyForControllerShaderProof();
     }
 
+    public boolean shaderDenoiseInputsCompleteForDispatch() {
+        return this.shaderOutputContract.shaderDenoiseInputsCompleteForDispatch();
+    }
+
     public String shaderDenoiseReadinessReason() {
         return this.shaderOutputContract.readinessReason();
     }
 
     public String shaderDenoiseStatusSummary() {
         return this.shaderOutputContract.statusSummary();
+    }
+
+    public String shaderDenoisePendingChecklist() {
+        return this.shaderOutputContract.pendingChecklist();
+    }
+
+    public String shaderDenoiseQualityBoundarySummary() {
+        return this.shaderOutputContract.qualityBoundarySummary();
     }
 
     public boolean edgeRejectionMetadataAvailable() {
@@ -182,6 +194,10 @@ public record DenoisePassPlan(
         return this.enabled() ? PostProcessingResourceContract.DENOISE_WRITES : List.of();
     }
 
+    public List<String> contractResources() {
+        return PostProcessingResourceContract.DENOISE_CONTRACT_RESOURCES;
+    }
+
     private static ShaderDenoiseOutputContract buildShaderOutputContract(
             boolean enabled,
             DenoiseInputContract inputs,
@@ -198,19 +214,35 @@ public record DenoisePassPlan(
                 && outputGeneration >= resolvedInputs.maxInputGeneration();
         boolean temporalInputsBound = resolvedInputs.hasHistoryInputs()
                 && resolvedHistoryRejection.temporalReuseAllowed();
+        boolean historyRejectionInputsBound = resolvedHistoryRejection.enabled()
+                && resolvedInputs.disocclusionMaskInputsAvailable()
+                && resolvedInputs.previousDepthAvailable()
+                && resolvedInputs.previousNormalRoughnessAvailable()
+                && resolvedInputs.previousLightingAvailable();
         boolean varianceInputsBound = resolvedInputs.cacheConfidenceAvailable()
                 || resolvedInputs.varianceMapInputsAvailable();
+        boolean confidenceInputsBound = resolvedInputs.cacheConfidenceAvailable()
+                && resolvedInputs.historyConfidenceMapInputsAvailable();
+        String executionBoundary = contractReady
+                ? "contract-only shader resource is declared; scheduler dispatch, descriptor binding, and writable output are still pending"
+                : "shader denoise resource contract is not schedulable yet";
+        String qualityBoundary = "raw GI, denoised GI, rejection mask, variance, and history confidence must be captured from shader-written resources before quality can be claimed";
         String pendingReason = contractReady
                 ? "shader-side denoise dispatch/output path is pending; CPU/readback denoise evidence remains separate"
                 : "shader-side denoise contract awaits enabled settings, required inputs, and fresh output generation";
         return ShaderDenoiseOutputContract.contractOnly(
                 contractReady,
                 resolvedInputs.hasEdgeAwareInputs(),
+                resolvedInputs.hasEdgeAwareInputs() && gBuffer.hasMaterialIds(),
                 temporalInputsBound,
+                historyRejectionInputsBound,
                 varianceInputsBound,
+                confidenceInputsBound,
                 outputGeneration,
                 gBuffer.width(),
                 gBuffer.height(),
+                executionBoundary,
+                qualityBoundary,
                 pendingReason
         );
     }

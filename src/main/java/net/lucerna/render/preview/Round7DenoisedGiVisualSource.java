@@ -65,9 +65,11 @@ public record Round7DenoisedGiVisualSource(
                 + ",evidence=" + this.evidenceLabel
                 + ",shader=" + this.shaderLabel
                 + ",sourceIdentity=" + this.sourceIdentity()
+                + ",sourceClass=" + this.sourceClassLabel()
                 + ",sourceAuthenticity=\"" + this.sourceAuthenticityBoundary() + "\""
                 + ",projectionBoundary=\"" + this.surfaceProjectionBoundary() + "\""
                 + ",qualityBoundary=\"" + this.qualityBoundary() + "\""
+                + ",temporalReadiness=\"" + this.temporalReadinessBoundary() + "\""
                 + ",focusedRegionProof=\"" + this.focusedRegionProofExpectation() + "\""
                 + ",ready=" + this.sourceReady
                 + ",reason=\"" + this.reason + "\"";
@@ -81,6 +83,10 @@ public record Round7DenoisedGiVisualSource(
         return "cpu-denoised-diffuse-gi-rgba8/denoised-gi";
     }
 
+    public String sourceClassLabel() {
+        return "cpu-denoised-gi/readback-output;not-raw-gi;real-shader-denoise=false";
+    }
+
     public String qualityBoundary() {
         return "CPU denoised RGBA8 source readiness is not real shader denoise quality unless realDenoiseShaderOutput=true and controller raw-vs-denoised proof improves";
     }
@@ -91,6 +97,12 @@ public record Round7DenoisedGiVisualSource(
 
     public String surfaceProjectionBoundary() {
         return "current public shader path is scene-shaped full-target projection from denoised payload cues; real geometry/material-aware shader denoise and physically correct GI projection remain pending";
+    }
+
+    public String temporalReadinessBoundary() {
+        return this.sourceReady
+                ? "CPU denoised source is drawable, but temporal stability still requires controller stable/moved screenshot sequence proof and history accept/reject telemetry"
+                : "temporal proof should not pass because denoised source is not drawable";
     }
 
     public String focusedRegionProofExpectation() {

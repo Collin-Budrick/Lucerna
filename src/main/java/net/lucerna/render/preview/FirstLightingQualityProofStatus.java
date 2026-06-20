@@ -293,14 +293,55 @@ public record FirstLightingQualityProofStatus(
                 + " temporalHistory=" + yesNo(this.temporalHistoryReady)
                 + " realShaderDenoise=" + yesNo(this.realShaderDenoiseOutput)
                 + " cpuFallback=" + yesNo(this.cpuDenoiseFallback)
+                + " denoiseClass=" + this.denoiseSourceClass()
                 + " rejectedEvidenceClean=" + yesNo(this.rejectedEvidenceClean)
                 + " geometryMaterialProjectionCandidate=" + yesNo(this.geometryMaterialProjectionCandidateReady);
+    }
+
+    public String denoiseSourceClass() {
+        if (this.realShaderDenoiseOutput) {
+            return "shader-denoised-gi";
+        }
+        if (this.cpuDenoiseFallback) {
+            return "cpu-denoised-gi";
+        }
+        return "denoised-gi-missing";
+    }
+
+    public String finalCompositeQualityBoundary() {
+        if (!this.finalCompositeStableReady) {
+            return "blocked:final-composite-not-stable";
+        }
+        if (!this.rejectedEvidenceClean) {
+            return "blocked:metadata-focus-proof-marker-direct-substitution-or-washout-evidence";
+        }
+        if (!this.geometryMaterialProjectionCandidateReady) {
+            return "candidate:source-readiness-present;geometry-material-projection-proof-pending";
+        }
+        if (!this.temporalHistoryReady) {
+            return "candidate:geometry-material-projection-present;temporal-stability-proof-pending";
+        }
+        if (!this.realShaderDenoiseOutput) {
+            return "partial:cpu-denoised-preview-quality;real-shader-denoise-pending";
+        }
+        return "ready:shader-denoised-final-composite-candidate";
+    }
+
+    public String sourceAuthenticityGate() {
+        return "denoiseClass=" + this.denoiseSourceClass()
+                + ",rejectedEvidenceClean=" + yesNo(this.rejectedEvidenceClean)
+                + ",geometryMaterialProjectionCandidate=" + yesNo(this.geometryMaterialProjectionCandidateReady)
+                + ",temporalHistoryReady=" + yesNo(this.temporalHistoryReady)
+                + ",qualityBoundary=" + this.finalCompositeQualityBoundary();
     }
 
     public Map<String, String> validationFields(String prefix) {
         String normalizedPrefix = normalize(prefix, "round7.firstLightingQuality");
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put(normalizedPrefix + ".summary", this.summaryLine());
+        fields.put(normalizedPrefix + ".sourceAuthenticityGate", this.sourceAuthenticityGate());
+        fields.put(normalizedPrefix + ".finalCompositeQualityBoundary", this.finalCompositeQualityBoundary());
+        fields.put(normalizedPrefix + ".denoiseSourceClass", this.denoiseSourceClass());
         fields.put(normalizedPrefix + ".selectedMode", this.selectedMode);
         fields.put(normalizedPrefix + ".finalCompositeStability", this.finalCompositeStability);
         fields.put(normalizedPrefix + ".particleTranslucencyPreservation", this.particleTranslucencyPreservation);

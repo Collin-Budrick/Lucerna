@@ -111,6 +111,7 @@ public record FinalCompositeModeStatus(
                 + ",visualMode=" + this.visualModeId
                 + ",round7.finalCompositeMode=" + this.visualModeId
                 + ",selectedSourcePolicy=" + this.selectedSourcePolicy()
+                + ",sourceIdentityBoundary=" + this.selectedSourceIdentityBoundary()
                 + ",baseWorldColor=" + this.baseWorldColorEnabled
                 + ",directLighting=" + this.directLightingEnabled
                 + ",diffuseGi=" + this.diffuseGiEnabled
@@ -133,6 +134,12 @@ public record FinalCompositeModeStatus(
                 + ",denoised=" + sourceState(
                 (this.denoisedGiVisualMode() || this.finalCompositeVisualMode()) && this.diffuseGiEnabled,
                 denoisedSourceReady
+        )
+                + ",identityMatrix=" + this.selectedSourceIdentityMatrix(
+                directSourceReady,
+                giSourceReady,
+                denoisedSourceReady,
+                false
         )
                 + ",selected=" + this.selectedSourceReadinessSummary(
                 directSourceReady,
@@ -294,9 +301,28 @@ public record FinalCompositeModeStatus(
             return "direct-light/native-direct-light-rgba8";
         }
         if (this.finalCompositeVisualMode()) {
-            return "final-composite/direct-emissive-plus-raw-native-gi-plus-cpu-denoised-gi/source-separated-preview";
+            return "final-composite/direct-emissive-plus-raw-native-gi-plus-cpu-denoised-gi/source-separated-preview;shader-denoised-gi=not-current";
         }
         return "custom/unspecified";
+    }
+
+    public String selectedSourceIdentityBoundary() {
+        if (this.baselineVisualMode()) {
+            return "baseline=no-lucerna-source";
+        }
+        if (this.directLightingEnabled && !this.diffuseGiEnabled) {
+            return "direct=native-direct-light-rgba8;rawGI=excluded;cpuDenoisedGI=excluded;shaderDenoisedGI=excluded";
+        }
+        if (this.rawGiVisualMode()) {
+            return "direct=excluded;rawGI=native-diffuse-gi-rgba8;cpuDenoisedGI=excluded;shaderDenoisedGI=excluded";
+        }
+        if (this.denoisedGiVisualMode()) {
+            return "direct=excluded;rawGI=excluded;cpuDenoisedGI=cpu-denoised-diffuse-gi-rgba8;shaderDenoisedGI=pending-realDenoiseShaderOutput";
+        }
+        if (this.finalCompositeVisualMode()) {
+            return "direct=native-direct-light-rgba8;rawGI=native-diffuse-gi-rgba8;cpuDenoisedGI=cpu-denoised-diffuse-gi-rgba8;shaderDenoisedGI=pending-realDenoiseShaderOutput";
+        }
+        return "custom=requires-explicit-direct/raw/cpu-denoised/shader-denoised-source-identity";
     }
 
     public String finalCompositeSubmissionPolicy() {
@@ -443,6 +469,66 @@ public record FinalCompositeModeStatus(
         return "custom:requires-explicit-quality-gate";
     }
 
+    public String selectedSourceIdentityMatrix(
+            boolean directSourceReady,
+            boolean rawGiSourceReady,
+            boolean cpuDenoisedSourceReady,
+            boolean shaderDenoisedSourceReady
+    ) {
+        return "direct=" + sourceState(this.directLightingEnabled, directSourceReady)
+                + ",rawGI=" + sourceState(this.diffuseGiEnabled || this.rawGiVisualMode(), rawGiSourceReady)
+                + ",cpuDenoisedGI=" + sourceState(
+                (this.denoisedGiVisualMode() || this.finalCompositeVisualMode()) && this.diffuseGiEnabled,
+                cpuDenoisedSourceReady
+        )
+                + ",shaderDenoisedGI=" + sourceState(
+                (this.denoisedGiVisualMode() || this.finalCompositeVisualMode()) && this.diffuseGiEnabled,
+                shaderDenoisedSourceReady
+        )
+                + ",shaderDenoiseRequiredForQualityMilestone="
+                + (this.denoisedGiVisualMode() || this.finalCompositeVisualMode());
+    }
+
+    public String finalCompositeReadinessGate(
+            boolean directSourceReady,
+            boolean rawGiSourceReady,
+            boolean cpuDenoisedSourceReady,
+            boolean shaderDenoisedSourceReady,
+            boolean temporalStabilityReady,
+            boolean geometryMaterialProjectionReady,
+            boolean rejectedEvidenceClean,
+            boolean antiWashoutClean
+    ) {
+        if (!this.finalCompositeVisualMode()) {
+            return "not-final-composite:" + this.statusKey;
+        }
+        if (!rejectedEvidenceClean) {
+            return "blocked:rejected-evidence-present";
+        }
+        if (!antiWashoutClean) {
+            return "blocked:rectangular-washout-or-focus-window-risk";
+        }
+        if (!(directSourceReady && rawGiSourceReady && cpuDenoisedSourceReady)) {
+            return "blocked:missing-source "
+                    + this.selectedSourceIdentityMatrix(
+                    directSourceReady,
+                    rawGiSourceReady,
+                    cpuDenoisedSourceReady,
+                    shaderDenoisedSourceReady
+            );
+        }
+        if (!geometryMaterialProjectionReady) {
+            return "candidate:source-separated-preview-ready;geometry-material-projection-quality=pending";
+        }
+        if (!temporalStabilityReady) {
+            return "candidate:geometry-material-projection-ready;temporal-stability=pending";
+        }
+        if (!shaderDenoisedSourceReady) {
+            return "partial:first-lighting-preview-ready;real-shader-denoise=pending";
+        }
+        return "ready:source-separated-final-composite-with-shader-denoise-candidate";
+    }
+
     public String geometryMaterialProjectionBoundary() {
         if (this.finalCompositeVisualMode()) {
             return "current=scene-shaped public Mojang full-target projection from CPU/readback payloads; pending=real geometry/material-aware shader/native projection plus physical GI quality";
@@ -457,6 +543,7 @@ public record FinalCompositeModeStatus(
         return "selectedSourcePolicy=" + this.selectedSourcePolicy()
                 + ",submissionPolicy=\"" + this.finalCompositeSubmissionPolicy() + "\""
                 + ",sourceAuthenticityPolicy=\"" + this.selectedSourceAuthenticityPolicy() + "\""
+                + ",sourceIdentityBoundary=\"" + this.selectedSourceIdentityBoundary() + "\""
                 + ",focusedRegionProof=\"" + this.focusedRegionProofExpectation() + "\""
                 + ",geometryMaterialProjectionBoundary=\"" + this.geometryMaterialProjectionBoundary() + "\""
                 + ",rejectsFocusWindowOnly=" + this.rejectsFocusWindowOnlyComposite()
@@ -472,6 +559,7 @@ public record FinalCompositeModeStatus(
                 + "\",submissionPolicy=\"" + this.finalCompositeSubmissionPolicy()
                 + "\",sourceAuthenticityPolicy=\"" + this.selectedSourceAuthenticityPolicy()
                 + "\",shaderOutputStatus=\"" + this.shaderOutputStatusSummary()
+                + "\",sourceIdentityBoundary=\"" + this.selectedSourceIdentityBoundary()
                 + "\",geometryMaterialProjectionBoundary=\"" + this.geometryMaterialProjectionBoundary()
                 + "\",focusedRegionProof=\"" + this.focusedRegionProofExpectation()
                 + "\",reason=\"" + this.modeReason

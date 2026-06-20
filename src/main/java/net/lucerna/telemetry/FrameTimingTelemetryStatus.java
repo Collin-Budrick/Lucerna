@@ -63,6 +63,33 @@ public record FrameTimingTelemetryStatus(
         return "unavailable(native/Vulkan GPU timestamps not reported)";
     }
 
+    public String compactAvailabilityLine() {
+        return "CPU=" + this.cpuTimingAvailabilityLabel()
+                + " | GPU=" + this.gpuTimingAvailabilityLabel();
+    }
+
+    public String measurementBoundaryLabel() {
+        String cpuBoundary = this.hasCpuTimings()
+                ? "CPU frame scopes measured"
+                : this.activeCpuScopeCount > 0
+                ? "CPU scopes active, completed timings pending"
+                : "CPU timings pending";
+        String gpuBoundary = this.hasGpuTimings()
+                ? "real GPU timestamp scopes measured"
+                : "GPU timestamps unavailable until native/Vulkan timing scopes are wired";
+        return cpuBoundary + "; " + gpuBoundary;
+    }
+
+    public List<String> compactLightingStageTimingLines() {
+        return List.of(
+                this.compactStageTimingLine("GI", "diffuse_gi", "low_res_gi", "low_resolution_gi", "gi"),
+                this.compactStageTimingLine("Denoise", "denoise", "diffuse_denoise", "edge_aware_denoise"),
+                this.compactStageTimingLine("Composite", "composite", "final_composite"),
+                this.compactStageTimingLine("Adaptive", "adaptive_sampling", "ray_budget", "variance", "history_confidence"),
+                this.compactStageTimingLine("Final", "final_composite", "present", "submit")
+        );
+    }
+
     public String compactStageTimingLine(String stageLabel, String... scopeAliases) {
         String label = cleanLabel(stageLabel, "stage");
         Double cpuMillis = firstMatchingDuration(this.cpuScopeDurationsMillis, scopeAliases);

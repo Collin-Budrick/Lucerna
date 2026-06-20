@@ -359,21 +359,8 @@ public record LightingDispatchStageTelemetryStatus(
     }
 
     public String stageTimingStatusLine() {
-        return "CPU=" + firstDetailOrFallback(
-                "pending(no CPU stage scope)",
-                "cpu_ms",
-                "cpu_millis",
-                "cpu_time_ms",
-                "native_cpu_ms",
-                "stage_cpu_ms"
-        ) + " GPU=" + firstDetailOrFallback(
-                "unavailable(native/Vulkan GPU timestamp not reported)",
-                "gpu_ms",
-                "gpu_millis",
-                "gpu_time_ms",
-                "native_gpu_ms",
-                "stage_gpu_ms"
-        );
+        return "CPU=" + cpuTimingValueLabel()
+                + " GPU=" + gpuTimingValueLabel();
     }
 
     public String stageWorkStatusLine() {
@@ -385,21 +372,68 @@ public record LightingDispatchStageTelemetryStatus(
     }
 
     public String explicitMeasurementBoundaryLine() {
-        String cpuBoundary = hasAnyDetail(
-                "cpu_ms",
-                "cpu_millis",
-                "cpu_time_ms",
-                "native_cpu_ms",
-                "stage_cpu_ms"
-        ) ? "stage CPU timing reported" : "CPU timing pending";
-        String gpuBoundary = hasAnyDetail(
-                "gpu_ms",
-                "gpu_millis",
-                "gpu_time_ms",
-                "native_gpu_ms",
-                "stage_gpu_ms"
-        ) ? "real GPU timing reported" : "GPU timing pending/unavailable";
+        String cpuBoundary = this.hasMeasuredCpuTiming() ? "stage CPU timing reported" : "CPU timing pending";
+        String gpuBoundary = this.hasMeasuredGpuTiming()
+                ? "real GPU timing reported"
+                : "real GPU timestamp unavailable/pending";
         return this.stageDisplayName() + ": " + cpuBoundary + ", " + gpuBoundary;
+    }
+
+    public boolean hasMeasuredCpuTiming() {
+        return hasAnyDetail("cpu_ms", "cpu_millis", "cpu_time_ms", "native_cpu_ms", "stage_cpu_ms");
+    }
+
+    public boolean hasMeasuredGpuTiming() {
+        return hasAnyDetail("gpu_ms", "gpu_millis", "gpu_time_ms", "native_gpu_ms", "stage_gpu_ms");
+    }
+
+    public String compactTimingBoundaryLine() {
+        return this.stageDisplayName() + " timing " + this.stageTimingStatusLine();
+    }
+
+    public String temporalHistoryStatusLine() {
+        String accepted = firstDetailOrFallback(
+                "?",
+                "history_accepted",
+                "history_accept_count",
+                "temporal_history_accepted",
+                "last_history_accepted"
+        );
+        String rejected = firstDetailOrFallback(
+                "?",
+                "history_rejected",
+                "history_reject_count",
+                "temporal_history_rejected",
+                "last_history_rejected"
+        );
+        String confidence = firstDetailOrFallback(
+                "?",
+                "history_confidence",
+                "avg_history_confidence",
+                "temporal_confidence",
+                "last_history_confidence"
+        );
+        String marker = firstDetailOrFallback(
+                "pending",
+                "temporal_history_marker",
+                "last_temporal_history_marker",
+                "history_marker",
+                "temporal_marker"
+        );
+        return this.stageDisplayName()
+                + " history accepted=" + accepted
+                + " rejected=" + rejected
+                + " confidence=" + confidence
+                + " marker=" + shorten(marker, 32);
+    }
+
+    public String proofBoundaryLine() {
+        return this.stageDisplayName()
+                + " proof placeholder=" + booleanOrUnknown(this.placeholder)
+                + " metadataOnly=" + booleanOrUnknown(this.metadataOnly)
+                + " cpuOutput=" + booleanOrUnknown(this.cpuOutputGenerated)
+                + " realGpuOutput=" + realGpuOutputBoundaryLabel()
+                + " reason=" + shorten(this.readinessReason, 48);
     }
 
     public Map<String, String> validationFields(String prefix) {
@@ -410,6 +444,9 @@ public record LightingDispatchStageTelemetryStatus(
         fields.put(normalizedPrefix + ".statusLine", this.compactStageStatusLine());
         fields.put(normalizedPrefix + ".workStatus", this.stageWorkStatusLine());
         fields.put(normalizedPrefix + ".timingBoundary", this.explicitMeasurementBoundaryLine());
+        fields.put(normalizedPrefix + ".compactTimingBoundary", this.compactTimingBoundaryLine());
+        fields.put(normalizedPrefix + ".temporalHistory", this.temporalHistoryStatusLine());
+        fields.put(normalizedPrefix + ".proofBoundary", this.proofBoundaryLine());
         if (this.enabled != null) {
             fields.put(normalizedPrefix + ".enabled", Boolean.toString(this.enabled));
         }
@@ -564,6 +601,46 @@ public record LightingDispatchStageTelemetryStatus(
             label.append(" checksum=").append(this.outputChecksum);
         }
         return label.toString();
+    }
+
+    private String cpuTimingValueLabel() {
+        return firstDetailOrFallback(
+                "pending(no CPU stage scope)",
+                "cpu_ms",
+                "cpu_millis",
+                "cpu_time_ms",
+                "native_cpu_ms",
+                "stage_cpu_ms"
+        );
+    }
+
+    private String gpuTimingValueLabel() {
+        return firstDetailOrFallback(
+                "unavailable(native/Vulkan GPU timestamp not reported)",
+                "gpu_ms",
+                "gpu_millis",
+                "gpu_time_ms",
+                "native_gpu_ms",
+                "stage_gpu_ms"
+        );
+    }
+
+    private String realGpuOutputBoundaryLabel() {
+        String shaderOutput = firstDetailOrFallback(
+                "",
+                "real_shader_gi_output",
+                "real_denoise_shader_output",
+                "shader_output",
+                "shader_gi_output",
+                "shader_denoise_output",
+                "gpu_output",
+                "gpu_gi_output",
+                "gpu_denoise_output"
+        );
+        if (!shaderOutput.isBlank()) {
+            return shaderOutput;
+        }
+        return this.hasMeasuredGpuTiming() ? "timed_no_output_flag" : "unavailable";
     }
 
     private String firstDetailOrFallback(String fallback, String... keys) {

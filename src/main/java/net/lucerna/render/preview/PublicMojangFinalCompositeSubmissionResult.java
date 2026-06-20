@@ -92,13 +92,28 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 || normalizedReason.contains("native direct-light surface-source");
         boolean denoisedGi = normalizedReason.contains("denoised diffuse-gi")
                 || normalizedReason.contains("cpu-denoised-diffuse-gi-rgba8");
+        boolean shaderDenoiseExplicitlyFalse = normalizedReason.contains("realdenoiseshaderoutput=false")
+                || normalizedReason.contains("real_denoise_shader_output=false")
+                || normalizedReason.contains("shaderdenoiseoutput=false")
+                || normalizedReason.contains("gpu_denoise_output=false")
+                || normalizedReason.contains("shaderdenoisedgi=pending-realdenoiseshaderoutput")
+                || normalizedReason.contains("shaderdenoisedgi=enabled-missing");
+        boolean shaderDenoiseExplicitlyTrue = normalizedReason.contains("realdenoiseshaderoutput=true")
+                || normalizedReason.contains("real_denoise_shader_output=true")
+                || normalizedReason.contains("shaderdenoiseoutput=true")
+                || normalizedReason.contains("gpu_denoise_output=true");
+        boolean shaderDenoisedGi = !shaderDenoiseExplicitlyFalse
+                && (shaderDenoiseExplicitlyTrue
+                || normalizedReason.contains("shader-denoised-diffuse-gi-rgba8"));
+        boolean cpuDenoisedGi = denoisedGi && !shaderDenoisedGi;
         boolean rawGi = normalizedReason.contains("raw native diffuse-gi source is blended")
                 || normalizedReason.contains("round 7 raw_gi native diffuse-gi source additive draw issued")
                 || normalizedReason.contains("rawdrawrepeats=1");
         StringBuilder identity = new StringBuilder();
         appendIdentity(identity, directLight, "native-direct-light-rgba8");
         appendIdentity(identity, rawGi, "native-diffuse-gi-rgba8");
-        appendIdentity(identity, denoisedGi, "cpu-denoised-diffuse-gi-rgba8");
+        appendIdentity(identity, cpuDenoisedGi, "cpu-denoised-diffuse-gi-rgba8");
+        appendIdentity(identity, shaderDenoisedGi, "shader-denoised-diffuse-gi-rgba8");
         if (identity.length() > 0) {
             return identity.toString();
         }
@@ -172,7 +187,15 @@ public record PublicMojangFinalCompositeSubmissionResult(
     }
 
     public boolean submittedDenoisedGiSource() {
-        return this.submittedSourceIdentity().contains("denoised-diffuse-gi-rgba8");
+        return this.submittedCpuDenoisedGiSource() || this.submittedShaderDenoisedGiSource();
+    }
+
+    public boolean submittedCpuDenoisedGiSource() {
+        return this.submittedSourceIdentity().contains("cpu-denoised-diffuse-gi-rgba8");
+    }
+
+    public boolean submittedShaderDenoisedGiSource() {
+        return this.submittedSourceIdentity().contains("shader-denoised-diffuse-gi-rgba8");
     }
 
     public boolean submittedRound7GiSource() {
@@ -199,7 +222,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
             return "rejected:rectangular-washout-risk";
         }
         if (this.submittedDirectLightSource() && this.submittedRawGiSource() && this.submittedDenoisedGiSource()) {
-            return "accepted:final-composite-direct-plus-raw-gi-plus-denoised-gi/source-separated";
+            return "accepted:final-composite-direct-plus-raw-gi-plus-"
+                    + this.denoiseSourceClassLabel()
+                    + "/source-separated";
         }
         if (this.submittedDirectLightSource() && this.submittedRound7GiSource()) {
             return "accepted:partial-final-composite-direct-plus-gi";
@@ -208,7 +233,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
             return "accepted:native-direct-light-surface-source";
         }
         if (this.submittedDenoisedGiSource()) {
-            return "accepted:denoised-gi-output";
+            return "accepted:" + this.denoiseSourceClassLabel() + "-output";
         }
         if (this.submittedRawGiSource()) {
             return "accepted:raw-gi-output";
@@ -341,7 +366,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
             return "not-ready:rejected-preview-evidence/" + this.sourceAuthenticityLabel();
         }
         if (this.submittedDirectLightSource() && this.submittedRawGiSource() && this.submittedDenoisedGiSource()) {
-            return "ready-for-controller-proof:source-separated-direct-raw-gi-denoised-gi;geometry-material-aware-quality=pending";
+            return "ready-for-controller-proof:source-separated-direct-raw-gi-"
+                    + this.denoiseSourceClassLabel()
+                    + ";geometry-material-aware-quality=pending;temporal-stability=pending";
         }
         if (this.submittedRound7GiSource()) {
             return "partial-ready:gi-source-present;missing-direct-or-denoised-final-stack";
@@ -360,7 +387,10 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",javaOpaqueRenderObjectsPresent=" + this.javaOpaqueRenderObjectsPresent
                 + ",targetStatus=" + this.targetStatus
                 + ",sourceIdentity=" + this.submittedSourceIdentity()
+                + ",sourceReadinessMatrix=" + this.sourceReadinessMatrix()
                 + ",sourceAuthenticity=" + this.sourceAuthenticityLabel()
+                + ",geometryMaterialProjectionReadiness=" + this.geometryMaterialProjectionReadiness()
+                + ",temporalStabilityReadiness=" + this.temporalStabilityReadiness()
                 + ",focusWindowOnly=" + this.submittedFocusWindowOnly()
                 + ",metadataOnlyPreview=" + this.submittedMetadataOnlyPreview()
                 + ",proofMarkerSource=" + this.submittedProofMarkerSource()
@@ -374,6 +404,56 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",reason=" + this.reason;
     }
 
+    public String sourceReadinessMatrix() {
+        return "direct=" + readyState(this.submittedDirectLightSource())
+                + ",rawGI=" + readyState(this.submittedRawGiSource())
+                + ",cpuDenoisedGI=" + readyState(this.submittedCpuDenoisedGiSource())
+                + ",shaderDenoisedGI=" + readyState(this.submittedShaderDenoisedGiSource())
+                + ",previewEvidenceClean=" + readyState(!this.submittedPreviewOnlyEvidence());
+    }
+
+    public String geometryMaterialProjectionReadiness() {
+        if (!this.submitted || !this.drawCallsIssued) {
+            return "not-ready:submission-missing";
+        }
+        if (this.targetStatus != TargetStatus.READY) {
+            return "not-ready:target-" + this.targetStatus.name().toLowerCase(Locale.ROOT);
+        }
+        if (this.submittedPreviewOnlyEvidence()) {
+            return "not-ready:" + this.sourceAuthenticityLabel();
+        }
+        if (this.submittedDirectLightSource() && this.submittedRawGiSource() && this.submittedDenoisedGiSource()) {
+            return "candidate:source-separated-full-target;physical-geometry-material-quality=pending-controller-proof";
+        }
+        if (this.submittedRound7GiSource()) {
+            return "partial:gi-source-submitted;final-direct-plus-denoise-stack-incomplete";
+        }
+        if (this.submittedDirectLightSource()) {
+            return "partial:direct-source-submitted;gi-denoise-stack-incomplete";
+        }
+        return "not-ready:unknown-source";
+    }
+
+    public String temporalStabilityReadiness() {
+        if (!this.submittedDenoisedGiSource()) {
+            return "not-ready:no-denoised-source";
+        }
+        if (this.submittedShaderDenoisedGiSource()) {
+            return "candidate:shader-denoised-source-present;requires stable/moved screenshot sequence proof";
+        }
+        return "partial:cpu-denoised-source-present;requires stable/moved screenshot sequence proof and must not claim shader denoise";
+    }
+
+    public String denoiseSourceClassLabel() {
+        if (this.submittedShaderDenoisedGiSource()) {
+            return "shader-denoised-gi";
+        }
+        if (this.submittedCpuDenoisedGiSource()) {
+            return "cpu-denoised-gi";
+        }
+        return "denoised-gi-missing";
+    }
+
     private static void appendIdentity(StringBuilder identity, boolean present, String label) {
         if (!present) {
             return;
@@ -382,6 +462,10 @@ public record PublicMojangFinalCompositeSubmissionResult(
             identity.append("+");
         }
         identity.append(label);
+    }
+
+    private static String readyState(boolean ready) {
+        return ready ? "ready" : "missing";
     }
 
     public enum TargetStatus {

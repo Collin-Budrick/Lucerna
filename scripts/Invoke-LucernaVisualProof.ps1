@@ -826,27 +826,35 @@ function Invoke-Round7CompositeStabilitySceneAction {
         }
         "temporal-stable" {
             if ($SetupScene) {
-                Send-MinecraftChatCommand "/fill ~2 ~-1 ~-4 ~7 ~4 ~4 minecraft:smooth_stone"
-                Send-MinecraftChatCommand "/setblock ~3 ~ ~ minecraft:glowstone"
-                Send-MinecraftChatCommand "/setblock ~4 ~ ~1 minecraft:blue_concrete"
-                Send-MinecraftChatCommand "/setblock ~4 ~ ~-1 minecraft:red_concrete"
+                Send-MinecraftChatCommand "/fill ~2 ~-1 ~-5 ~8 ~4 ~5 minecraft:smooth_stone"
+                Send-MinecraftChatCommand "/fill ~5 ~ ~-4 ~5 ~3 ~4 minecraft:air"
+                Send-MinecraftChatCommand "/fill ~6 ~ ~-4 ~6 ~3 ~-2 minecraft:blue_concrete"
+                Send-MinecraftChatCommand "/fill ~6 ~ ~2 ~6 ~3 ~4 minecraft:red_concrete"
+                Send-MinecraftChatCommand "/fill ~7 ~ ~-1 ~7 ~2 ~1 minecraft:lime_concrete"
+                Send-MinecraftChatCommand "/setblock ~3 ~1 ~ minecraft:glowstone"
+                Send-MinecraftChatCommand "/setblock ~4 ~ ~3 minecraft:sea_lantern"
+                Send-MinecraftChatCommand "/setblock ~4 ~ ~-3 minecraft:shroomlight"
             }
             Send-MinecraftChatCommand "/tp @s ~ ~ ~ -90 0"
             Start-Sleep -Seconds 5
-            Add-LucernaControllerMarker $MarkerPath "round7.stability.scene=temporal sceneState=stable temporalSceneMarker=true historyStableSceneMarker=true finalCompositeStabilityScene=true"
+            Add-LucernaControllerMarker $MarkerPath "round7.stability.scene=temporal sceneState=stable temporalSceneMarker=true historyStableSceneMarker=true finalCompositeStabilityScene=true temporalAsymmetricScene=true temporalWorldSurfaceRegion=upper-mid-no-hud"
         }
         "temporal-moved" {
             if ($SetupScene) {
-                Send-MinecraftChatCommand "/fill ~2 ~-1 ~-4 ~7 ~4 ~4 minecraft:smooth_stone"
-                Send-MinecraftChatCommand "/setblock ~3 ~ ~ minecraft:glowstone"
-                Send-MinecraftChatCommand "/setblock ~4 ~ ~1 minecraft:blue_concrete"
-                Send-MinecraftChatCommand "/setblock ~4 ~ ~-1 minecraft:red_concrete"
+                Send-MinecraftChatCommand "/fill ~2 ~-1 ~-5 ~8 ~4 ~5 minecraft:smooth_stone"
+                Send-MinecraftChatCommand "/fill ~5 ~ ~-4 ~5 ~3 ~4 minecraft:air"
+                Send-MinecraftChatCommand "/fill ~6 ~ ~-4 ~6 ~3 ~-2 minecraft:blue_concrete"
+                Send-MinecraftChatCommand "/fill ~6 ~ ~2 ~6 ~3 ~4 minecraft:red_concrete"
+                Send-MinecraftChatCommand "/fill ~7 ~ ~-1 ~7 ~2 ~1 minecraft:lime_concrete"
+                Send-MinecraftChatCommand "/setblock ~3 ~1 ~ minecraft:glowstone"
+                Send-MinecraftChatCommand "/setblock ~4 ~ ~3 minecraft:sea_lantern"
+                Send-MinecraftChatCommand "/setblock ~4 ~ ~-3 minecraft:shroomlight"
             }
-            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -70 0"
+            Send-MinecraftChatCommand "/tp @s ~-1 ~ ~1 -70 1"
             Start-Sleep -Milliseconds 750
-            Send-MinecraftChatCommand "/tp @s ~ ~ ~ -115 4"
-            Start-Sleep -Seconds 2
-            Add-LucernaControllerMarker $MarkerPath "round7.stability.scene=temporal sceneState=moved-disoccluded temporalSceneMarker=true historyMovedSceneMarker=true movedCameraTemporalPair=true finalCompositeStabilityScene=true"
+            Send-MinecraftChatCommand "/tp @s ~2 ~ ~-2 -125 7"
+            Start-Sleep -Seconds 3
+            Add-LucernaControllerMarker $MarkerPath "round7.stability.scene=temporal sceneState=moved-disoccluded temporalSceneMarker=true historyMovedSceneMarker=true movedCameraTemporalPair=true finalCompositeStabilityScene=true temporalAsymmetricScene=true temporalCameraTranslation=true temporalWorldSurfaceRegion=upper-mid-no-hud"
         }
         default {
             throw "Unsupported Round 7 composite stability scene action: $SceneAction"
@@ -923,7 +931,8 @@ function Wait-NewScreenshot {
         [string] $ScreenshotDir,
         [string[]] $ExistingNames,
         [datetime] $After,
-        [datetime] $Deadline
+        [datetime] $Deadline,
+        [switch] $RequireNewAfter
     )
 
     while ((Get-Date) -lt $Deadline) {
@@ -954,6 +963,9 @@ function Wait-NewScreenshot {
             Sort-Object LastWriteTime -Descending |
             Select-Object -First 1
     if ($null -ne $launchCandidate) {
+        if ($RequireNewAfter) {
+            throw "Timed out waiting for a screenshot created after the controller capture request. Refusing stale launch-window screenshot: $($launchCandidate.FullName)"
+        }
         return $launchCandidate
     }
     throw "Timed out waiting for a new Minecraft screenshot."
@@ -1223,7 +1235,8 @@ try {
     }
     if ($ScreenshotSource -eq "InClient") {
         $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_REQUEST"] = "true"
-        $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_DELAY_TICKS"] = "180"
+        $screenshotDelayTicks = if ($ValidationProfile -eq "Round7CompositeStability") { "1400" } else { "180" }
+        $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_DELAY_TICKS"] = $screenshotDelayTicks
     }
     $script:LucernaMinecraftLaunchStart = Get-Date
     $process = [System.Diagnostics.Process]::Start($psi)
@@ -1460,15 +1473,21 @@ try {
                 $screenshot = Save-MinecraftWindowScreenshot $captureArchivePath
                 $capturedScreenshotSource = "window"
             } elseif ($ScreenshotSource -eq "InClient") {
-                $screenshotDeadline = (Get-Date).AddSeconds(90)
-                $screenshot = Wait-NewScreenshot $screenshotDir $existingScreenshotNames $beforeScreenshot $screenshotDeadline
+                $screenshotDeadline = (Get-Date).AddSeconds(100)
+                if ($temporalRepeatEnabled -and $captureIndex -gt 0) {
+                    Send-MinecraftKeys "{F2}"
+                    $screenshot = Wait-NewScreenshot $screenshotDir $existingScreenshotNames $beforeScreenshot $screenshotDeadline -RequireNewAfter
+                    $capturedScreenshotSource = "minecraft-in-client-f2-repeat"
+                } else {
+                    $screenshot = Wait-NewScreenshot $screenshotDir $existingScreenshotNames $beforeScreenshot $screenshotDeadline
+                    $capturedScreenshotSource = "minecraft-in-client"
+                }
                 Copy-Item -LiteralPath $screenshot.FullName -Destination $captureArchivePath -Force
-                $capturedScreenshotSource = "minecraft-in-client"
             } else {
                 Send-MinecraftKeys "{F2}"
                 $screenshotDeadline = (Get-Date).AddSeconds(45)
                 try {
-                    $screenshot = Wait-NewScreenshot $screenshotDir $existingScreenshotNames $beforeScreenshot $screenshotDeadline
+                    $screenshot = Wait-NewScreenshot $screenshotDir $existingScreenshotNames $beforeScreenshot $screenshotDeadline -RequireNewAfter
                     Copy-Item -LiteralPath $screenshot.FullName -Destination $captureArchivePath -Force
                     $capturedScreenshotSource = "minecraft-f2"
                 } catch {

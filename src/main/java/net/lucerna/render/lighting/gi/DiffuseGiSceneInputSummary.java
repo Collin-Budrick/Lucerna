@@ -21,12 +21,16 @@ public record DiffuseGiSceneInputSummary(
         int verticalSurfaceCount,
         float skylightExposureRatio,
         float sealedInteriorRatio,
+        float skylightInteriorContrast,
         float downwardFacingRatio,
         float verticalSurfaceRatio,
         float orientationBalance,
         float averageNormalLength,
         float surfaceOrientationConfidence,
         float emissiveProximityScore,
+        float emissiveSourceCoupling,
+        float celestialSourceCoupling,
+        float lightSourceSceneCoupling,
         int emissiveProximitySignals,
         float dirtyRegionInfluence,
         float occlusionDirtyRegionInfluence,
@@ -41,6 +45,7 @@ public record DiffuseGiSceneInputSummary(
         float averageRadianceB,
         float radianceEnergy,
         float radianceDirectionConfidence,
+        float materialGeometryCoupling,
         float physicalGiInputScore,
         boolean emissiveProximityAvailable,
         boolean affectedSurfaceRegionAvailable,
@@ -77,12 +82,16 @@ public record DiffuseGiSceneInputSummary(
         verticalSurfaceCount = Math.max(0, verticalSurfaceCount);
         skylightExposureRatio = clampUnit(skylightExposureRatio);
         sealedInteriorRatio = clampUnit(sealedInteriorRatio);
+        skylightInteriorContrast = clampUnit(skylightInteriorContrast);
         downwardFacingRatio = clampUnit(downwardFacingRatio);
         verticalSurfaceRatio = clampUnit(verticalSurfaceRatio);
         orientationBalance = clampUnit(orientationBalance);
         averageNormalLength = clampUnit(averageNormalLength);
         surfaceOrientationConfidence = clampUnit(surfaceOrientationConfidence);
         emissiveProximityScore = clampUnit(emissiveProximityScore);
+        emissiveSourceCoupling = clampUnit(emissiveSourceCoupling);
+        celestialSourceCoupling = clampUnit(celestialSourceCoupling);
+        lightSourceSceneCoupling = clampUnit(lightSourceSceneCoupling);
         emissiveProximitySignals = Math.max(0, emissiveProximitySignals);
         dirtyRegionInfluence = clampUnit(dirtyRegionInfluence);
         occlusionDirtyRegionInfluence = clampUnit(occlusionDirtyRegionInfluence);
@@ -96,6 +105,7 @@ public record DiffuseGiSceneInputSummary(
         averageRadianceB = finiteNonNegative(averageRadianceB);
         radianceEnergy = finiteNonNegative(radianceEnergy);
         radianceDirectionConfidence = clampUnit(radianceDirectionConfidence);
+        materialGeometryCoupling = clampUnit(materialGeometryCoupling);
         physicalGiInputScore = clampUnit(physicalGiInputScore);
         if (!affectedSurfaceRegionAvailable) {
             affectedSurfaceMinBlockX = 0;
@@ -123,7 +133,11 @@ public record DiffuseGiSceneInputSummary(
                 materialColorInfluence,
                 skylightExposureRatio,
                 sealedInteriorRatio,
+                skylightInteriorContrast,
                 emissiveProximityScore,
+                emissiveSourceCoupling,
+                celestialSourceCoupling,
+                lightSourceSceneCoupling,
                 dirtyRegionInfluence,
                 occlusionDirtyRegionInfluence,
                 orientationBalance,
@@ -132,6 +146,7 @@ public record DiffuseGiSceneInputSummary(
                 cacheConfidenceInput,
                 cacheVarianceInput,
                 cachePhysicalConfidence,
+                materialGeometryCoupling,
                 physicalGiInputScore
         ));
     }
@@ -160,6 +175,10 @@ public record DiffuseGiSceneInputSummary(
                 0.0F,
                 0.0F,
                 0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
                 0,
                 0.0F,
                 0.0F,
@@ -169,6 +188,7 @@ public record DiffuseGiSceneInputSummary(
                 false,
                 0.0F,
                 0,
+                0.0F,
                 0.0F,
                 0.0F,
                 0.0F,
@@ -266,6 +286,7 @@ public record DiffuseGiSceneInputSummary(
         float averageAlbedoLuma = luma(averageAlbedoR, averageAlbedoG, averageAlbedoB);
         float skylightRatio = surfaceCount == 0 ? 0.0F : (float) skylitCount / surfaceCount;
         float sealedRatio = surfaceCount == 0 ? 0.0F : (float) sealedCount / surfaceCount;
+        float skylightInteriorContrast = clampUnit(Math.min(skylightRatio, sealedRatio) * 2.0F);
         int distinctMaterials = materialIds.size();
         float materialDiversity = surfaceCount == 0 ? 0.0F : (float) distinctMaterials / surfaceCount;
         float materialColorInfluence = clampUnit((materialDiversity * 0.35F)
@@ -278,6 +299,10 @@ public record DiffuseGiSceneInputSummary(
         float orientationBalance = surfaceCount == 0 ? 0.0F : clampUnit(1.0F - dominantOrientationRatio);
         float averageNormalLength = normalLengthTotal * inverseSurfaceCount;
         float surfaceOrientationConfidence = clampUnit(averageNormalLength * (0.65F + (orientationBalance * 0.35F)));
+        float materialGeometryCoupling = clampUnit((materialColorInfluence * 0.45F)
+                + (surfaceOrientationConfidence * 0.30F)
+                + (skylightInteriorContrast * 0.15F)
+                + (materialDiversity * 0.10F));
 
         int radianceSamples = 0;
         float radianceR = 0.0F;
@@ -320,6 +345,14 @@ public record DiffuseGiSceneInputSummary(
                 + resolvedSource.budgetedShadowCandidateCount() * 0.35F
                 + resolvedSource.shadowCandidateCount() * 0.20F
                 + resolvedSource.dirtyRegionCount() * 0.10F) / Math.max(1.0F, surfaceCount + proximitySignals));
+        float emissiveSourceCoupling = clampUnit(resolvedSource.emissiveWorkScore()
+                * emissiveProximity
+                * (0.50F + (surfaceOrientationConfidence * 0.30F) + (materialColorInfluence * 0.20F)));
+        float celestialSourceCoupling = clampUnit(resolvedSource.celestialSourceScore()
+                * (0.45F + (skylightRatio * 0.25F) + (skylightInteriorContrast * 0.20F) + (surfaceOrientationConfidence * 0.10F)));
+        float lightSourceSceneCoupling = clampUnit((emissiveSourceCoupling * 0.55F)
+                + (celestialSourceCoupling * 0.25F)
+                + (resolvedSource.sourceCouplingScore() * 0.20F));
         float dirtyInfluence = clampUnit((resolvedSource.dirtyRegionCount() + (resolvedSource.materialUpdateCount() * 0.5F))
                 / Math.max(1.0F, surfaceCount + resolvedSource.dirtyRegionCount() + resolvedSource.materialUpdateCount()));
         float occlusionDirtyInfluence = clampUnit((sealedRatio * 0.35F)
@@ -332,12 +365,14 @@ public record DiffuseGiSceneInputSummary(
                 * (1.0F - clampUnit(resolvedConfidence.variance()))
                 * (0.35F + (cacheSampleWeight * 0.65F))
                 * (resolvedConfidence.dirty() ? 0.50F : 1.0F));
-        float physicalGiInputScore = clampUnit((emissiveProximity * 0.22F)
-                + (materialColorInfluence * 0.20F)
-                + (surfaceOrientationConfidence * 0.18F)
-                + (occlusionDirtyInfluence * 0.16F)
-                + (cachePhysicalConfidence * 0.14F)
-                + (radianceDirectionConfidence * 0.10F));
+        float physicalGiInputScore = clampUnit((lightSourceSceneCoupling * 0.20F)
+                + (materialGeometryCoupling * 0.18F)
+                + (emissiveProximity * 0.14F)
+                + (skylightInteriorContrast * 0.12F)
+                + (surfaceOrientationConfidence * 0.12F)
+                + (occlusionDirtyInfluence * 0.10F)
+                + (cachePhysicalConfidence * 0.08F)
+                + (radianceDirectionConfidence * 0.06F));
         boolean hasSurfaceRegion = surfaceCount > 0;
         boolean hasEmissiveProximity = resolvedSource.emissiveLightCount() > 0
                 || resolvedSource.budgetedShadowCandidateCount() > 0
@@ -360,12 +395,16 @@ public record DiffuseGiSceneInputSummary(
                 verticalCount,
                 skylightRatio,
                 sealedRatio,
+                skylightInteriorContrast,
                 downwardRatio,
                 verticalRatio,
                 orientationBalance,
                 averageNormalLength,
                 surfaceOrientationConfidence,
                 emissiveProximity,
+                emissiveSourceCoupling,
+                celestialSourceCoupling,
+                lightSourceSceneCoupling,
                 proximitySignals,
                 dirtyInfluence,
                 occlusionDirtyInfluence,
@@ -380,6 +419,7 @@ public record DiffuseGiSceneInputSummary(
                 averageRadianceB,
                 radianceEnergy,
                 radianceDirectionConfidence,
+                materialGeometryCoupling,
                 physicalGiInputScore,
                 hasEmissiveProximity,
                 hasSurfaceRegion,
@@ -421,18 +461,36 @@ public record DiffuseGiSceneInputSummary(
                 && this.affectedSurfaceRegionAvailable
                 && this.surfaceOrientationConfidence >= 0.35F
                 && this.materialColorInfluence > 0.03F
-                && this.physicalGiInputScore >= 0.18F
-                && (this.emissiveProximityAvailable || this.radianceEnergy > 0.0F || this.cachePhysicalConfidence > 0.05F);
+                && this.materialGeometryCoupling >= 0.10F
+                && this.physicalGiInputScore >= 0.20F
+                && (this.lightSourceSceneCoupling >= 0.05F || this.radianceEnergy > 0.0F || this.cachePhysicalConfidence > 0.05F);
     }
 
     public String physicalReadinessLabel() {
         return "physicalEvidence=" + this.hasPhysicalGiEvidence()
                 + " score=" + this.physicalGiInputScore
                 + " emissiveProximity=" + this.emissiveProximityScore
+                + " emissiveCoupling=" + this.emissiveSourceCoupling
+                + " celestialCoupling=" + this.celestialSourceCoupling
+                + " lightSceneCoupling=" + this.lightSourceSceneCoupling
                 + " materialColor=" + this.materialColorInfluence
+                + " materialGeometry=" + this.materialGeometryCoupling
                 + " orientationConfidence=" + this.surfaceOrientationConfidence
+                + " skylightInteriorContrast=" + this.skylightInteriorContrast
                 + " occlusionDirty=" + this.occlusionDirtyRegionInfluence
                 + " cachePhysical=" + this.cachePhysicalConfidence;
+    }
+
+    public String physicalEvidenceRejectionLabel() {
+        if (this.hasPhysicalGiEvidence()) {
+            return "physical GI evidence is scene-linked; artifact-only evidence is still insufficient without controller screenshots";
+        }
+        return "reject metadata-only=true"
+                + " proof-marker=true"
+                + " focus-window-only=true"
+                + " temporary-direct-light-substitution=true"
+                + " full-screen-washout=true"
+                + " because " + this.physicalReadinessLabel();
     }
 
     public String compactLabel() {
@@ -442,12 +500,16 @@ public record DiffuseGiSceneInputSummary(
                 + "/colorInfluence:" + this.materialColorInfluence
                 + " skylight=" + this.skylitSurfaceCount + "/" + this.skylightExposureRatio
                 + " sealed=" + this.sealedInteriorSurfaceCount + "/" + this.sealedInteriorRatio
+                + "/contrast:" + this.skylightInteriorContrast
                 + " orientation=down:" + this.downwardFacingRatio
                 + "/vertical:" + this.verticalSurfaceRatio
                 + "/balance:" + this.orientationBalance
                 + "/normalConfidence:" + this.averageNormalLength
                 + "/surfaceConfidence:" + this.surfaceOrientationConfidence
                 + " emissiveProximity=" + this.emissiveProximitySignals + "/" + this.emissiveProximityScore
+                + "/emissiveCoupling:" + this.emissiveSourceCoupling
+                + "/celestialCoupling:" + this.celestialSourceCoupling
+                + "/lightSceneCoupling:" + this.lightSourceSceneCoupling
                 + " dirtyInfluence=" + this.dirtyRegionInfluence
                 + "/occlusionDirty:" + this.occlusionDirtyRegionInfluence
                 + "/available:" + this.emissiveProximityAvailable
@@ -457,6 +519,7 @@ public record DiffuseGiSceneInputSummary(
                 + "/physical:" + this.cachePhysicalConfidence
                 + " radianceEnergy=" + this.radianceEnergy
                 + " radianceDirectionConfidence=" + this.radianceDirectionConfidence
+                + " materialGeometryCoupling=" + this.materialGeometryCoupling
                 + " " + this.physicalReadinessLabel();
     }
 
@@ -501,7 +564,11 @@ public record DiffuseGiSceneInputSummary(
             float materialColorInfluence,
             float skylightExposureRatio,
             float sealedInteriorRatio,
+            float skylightInteriorContrast,
             float emissiveProximityScore,
+            float emissiveSourceCoupling,
+            float celestialSourceCoupling,
+            float lightSourceCoupling,
             float dirtyRegionInfluence,
             float occlusionDirtyRegionInfluence,
             float orientationBalance,
@@ -510,6 +577,7 @@ public record DiffuseGiSceneInputSummary(
             float cacheConfidenceInput,
             float cacheVarianceInput,
             float cachePhysicalConfidence,
+            float materialGeometryCoupling,
             float physicalGiInputScore
     ) {
         return "surfaces=" + surfaceSampleCount
@@ -518,7 +586,11 @@ public record DiffuseGiSceneInputSummary(
                 + "/colorInfluence:" + materialColorInfluence
                 + " skylightRatio=" + skylightExposureRatio
                 + " sealedRatio=" + sealedInteriorRatio
+                + " skylightInteriorContrast=" + skylightInteriorContrast
                 + " emissiveProximity=" + emissiveProximityScore
+                + " emissiveCoupling=" + emissiveSourceCoupling
+                + " celestialCoupling=" + celestialSourceCoupling
+                + " lightSceneCoupling=" + lightSourceCoupling
                 + " dirtyInfluence=" + dirtyRegionInfluence
                 + "/occlusionDirty:" + occlusionDirtyRegionInfluence
                 + " orientationBalance=" + orientationBalance
@@ -526,6 +598,7 @@ public record DiffuseGiSceneInputSummary(
                 + " radianceDirectionConfidence=" + radianceDirectionConfidence
                 + " cache=" + cacheConfidenceInput + "/" + cacheVarianceInput
                 + "/physical:" + cachePhysicalConfidence
+                + " materialGeometryCoupling=" + materialGeometryCoupling
                 + " physicalGiInputScore=" + physicalGiInputScore;
     }
 

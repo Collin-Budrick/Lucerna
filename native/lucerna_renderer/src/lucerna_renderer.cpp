@@ -845,10 +845,21 @@ void append_round6_execution_status(
         << ",cpu_output_spatial_lobe_pixels=" << execution.last_cpu_output_spatial_lobe_pixel_count
         << ",cpu_output_cache_modulated_pixels=" << execution.last_cpu_output_cache_modulated_pixel_count
         << ",cpu_output_material_modulated_pixels=" << execution.last_cpu_output_material_modulated_pixel_count
+        << ",scene_linked_samples=" << execution.last_scene_linked_sample_count
+        << ",material_color_modulated_samples=" << execution.last_material_color_modulated_sample_count
+        << ",surface_normal_confident_samples=" << execution.last_surface_normal_confident_sample_count
+        << ",occlusion_dirty_modulated_samples=" << execution.last_occlusion_dirty_modulated_sample_count
         << ",visible_signal_energy=" << execution.last_visible_signal_energy
         << ",visible_signal_min_sample=" << execution.last_visible_signal_min_sample
         << ",visible_signal_max_sample=" << execution.last_visible_signal_max_sample
         << ",cpu_output_energy=" << execution.last_cpu_output_energy
+        << ",scene_linked_energy=" << execution.last_scene_linked_energy
+        << ",material_color_influence=" << execution.last_material_color_influence
+        << ",surface_normal_confidence=" << execution.last_surface_normal_confidence
+        << ",emissive_contribution_energy=" << execution.last_emissive_contribution_energy
+        << ",sun_contribution_energy=" << execution.last_sun_contribution_energy
+        << ",occlusion_dirty_influence=" << execution.last_occlusion_dirty_influence
+        << ",output_write_energy=" << execution.last_output_write_energy
         << ",cpu_output_cache_response=" << execution.last_cpu_output_cache_response
         << ",cpu_output_material_response=" << execution.last_cpu_output_material_response
         << ",visible_signal_cache_factor=" << execution.last_visible_signal_cache_factor
@@ -856,6 +867,7 @@ void append_round6_execution_status(
         << ",physical_scene_link_score=" << execution.last_physical_scene_link_score
         << ",visible_signal_checksum=" << execution.last_visible_signal_checksum
         << ",cpu_output_checksum=" << execution.last_cpu_output_checksum
+        << ",physical_output_checksum=" << execution.last_physical_output_checksum
         << ",scene_inputs={recorded=" << execution.last_scene_inputs_recorded
         << ",dimension=\"" << execution.last_scene_dimension_id
         << "\""
@@ -899,6 +911,11 @@ void append_round6_execution_status(
         << ",cpu_output_emissive_driven=" << execution.last_cpu_output_emissive_driven
         << ",cpu_output_spatially_graded=" << execution.last_cpu_output_spatially_graded
         << ",cpu_output_material_driven=" << execution.last_cpu_output_material_driven
+        << ",scene_linked_samples_recorded=" << execution.last_scene_linked_samples_recorded
+        << ",material_color_influence_recorded=" << execution.last_material_color_influence_recorded
+        << ",surface_normal_confidence_recorded=" << execution.last_surface_normal_confidence_recorded
+        << ",occlusion_dirty_influence_recorded=" << execution.last_occlusion_dirty_influence_recorded
+        << ",output_write_energy_recorded=" << execution.last_output_write_energy_recorded
         << ",physical_scene_linked=" << execution.last_physical_scene_linked
         << ",metadata_only_proof_rejected=" << execution.last_metadata_only_proof_rejected
         << ",focus_window_capture_rejected=" << execution.last_focus_window_capture_rejected
@@ -914,6 +931,8 @@ void append_round6_execution_status(
         << ",cache_marker=\"" << execution.last_cache_marker
         << "\""
         << ",physical_scene_marker=\"" << execution.last_physical_scene_marker
+        << "\""
+        << ",physical_output_marker=\"" << execution.last_physical_output_marker
         << "\""
         << ",proof_boundary_marker=\"" << execution.last_proof_boundary_marker
         << "\""
@@ -2495,11 +2514,8 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
             const auto pixel = (y * width) + x;
             const auto offset = static_cast<std::size_t>(pixel * 4);
             const auto center_luma = luma_at(x, y);
-            const float u = static_cast<float>(x) / static_cast<float>(std::max<std::uint64_t>(width - 1, 1));
-            const float v = static_cast<float>(y) / static_cast<float>(std::max<std::uint64_t>(height - 1, 1));
-            const float view_surface_response = broad_surface_response(u, v);
             const float raw_luma = static_cast<float>(center_luma) / 256.0F;
-            const float denoise_surface_lift = view_surface_response * std::clamp(
+            const float denoise_surface_lift = std::clamp(
                     10.0F
                             + (raw_luma * 0.030F)
                             + (denoise_execution.last_raw_gi_cache_reads != 0 ? 4.0F : 0.0F)
@@ -2559,7 +2575,7 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
             for (std::size_t channel = 0; channel < 3; channel++) {
                 const auto smoothed = channel_sum[channel] / weight_sum;
                 const auto raw = static_cast<std::uint32_t>(raw_rgba8[offset + channel]);
-                const auto blended = ((raw * 3U) + smoothed + 2U) / 4U;
+                const auto blended = ((raw * 2U) + (smoothed * 3U) + 2U) / 5U;
                 const float channel_weight = channel == 0 ? 0.82F : (channel == 1 ? 1.0F : 0.58F);
                 const auto lifted = static_cast<std::uint32_t>(std::round(std::clamp(
                         static_cast<float>(blended) + (denoise_surface_lift * channel_weight),
@@ -4237,7 +4253,12 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_cpu_output_spatial_lobe_pixel_count = 0;
     execution.last_cpu_output_cache_modulated_pixel_count = 0;
     execution.last_cpu_output_material_modulated_pixel_count = 0;
+    execution.last_scene_linked_sample_count = 0;
+    execution.last_material_color_modulated_sample_count = 0;
+    execution.last_surface_normal_confident_sample_count = 0;
+    execution.last_occlusion_dirty_modulated_sample_count = 0;
     execution.last_cpu_output_checksum = 0;
+    execution.last_physical_output_checksum = 0;
     execution.last_scene_payload_generation = 0;
     execution.last_scene_celestial_generation = 0;
     execution.last_scene_emissive_generation = 0;
@@ -4257,6 +4278,13 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_scene_emissive_light_energy = 0.0F;
     execution.last_cpu_output_cache_response = 0.0F;
     execution.last_cpu_output_material_response = 0.0F;
+    execution.last_scene_linked_energy = 0.0F;
+    execution.last_material_color_influence = 0.0F;
+    execution.last_surface_normal_confidence = 0.0F;
+    execution.last_emissive_contribution_energy = 0.0F;
+    execution.last_sun_contribution_energy = 0.0F;
+    execution.last_occlusion_dirty_influence = 0.0F;
+    execution.last_output_write_energy = 0.0F;
     execution.last_visible_signal_cache_factor = 0.0F;
     execution.last_visible_signal_ray_factor = 0.0F;
     execution.last_physical_scene_link_score = 0;
@@ -4271,6 +4299,11 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_cpu_output_emissive_driven = false;
     execution.last_cpu_output_spatially_graded = false;
     execution.last_cpu_output_material_driven = false;
+    execution.last_scene_linked_samples_recorded = false;
+    execution.last_material_color_influence_recorded = false;
+    execution.last_surface_normal_confidence_recorded = false;
+    execution.last_occlusion_dirty_influence_recorded = false;
+    execution.last_output_write_energy_recorded = false;
     execution.last_scene_inputs_recorded = false;
     execution.last_physical_scene_linked = false;
     execution.last_metadata_only_proof_rejected = true;
@@ -4283,6 +4316,7 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_cpu_output_marker.clear();
     execution.last_cache_marker.clear();
     execution.last_physical_scene_marker.clear();
+    execution.last_physical_output_marker.clear();
     execution.last_proof_boundary_marker =
             std::string(to_string(dispatch_stage)) + "_requires_native_scene_linked_output_not_capture_artifact";
     execution.last_scene_dimension_id.clear();
@@ -4767,6 +4801,18 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                     std::uint64_t spatial_lobe_pixels = 0;
                     std::uint64_t cache_modulated_pixels = 0;
                     std::uint64_t material_modulated_pixels = 0;
+                    std::uint64_t scene_linked_samples = 0;
+                    std::uint64_t material_color_samples = 0;
+                    std::uint64_t surface_normal_samples = 0;
+                    std::uint64_t occlusion_dirty_samples = 0;
+                    float scene_linked_energy = 0.0F;
+                    float material_color_influence_sum = 0.0F;
+                    float surface_normal_confidence_sum = 0.0F;
+                    float emissive_contribution_energy = 0.0F;
+                    float sun_contribution_energy = 0.0F;
+                    float occlusion_dirty_influence_sum = 0.0F;
+                    float output_write_energy = 0.0F;
+                    std::uint64_t physical_output_checksum = 1469598103934665603ULL;
                     execution.last_cpu_output_cache_response = cache_response;
                     execution.last_cpu_output_material_response = material_response;
                     for (std::uint64_t pixel = 0; pixel < preview_pixel_count; pixel++) {
@@ -5140,6 +5186,39 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                         const bool writes_scene_driven_pixel = writes_surface_pixel && scene_driven_output;
                         const bool writes_emissive_driven_pixel = writes_surface_pixel && emissive_driven_output
                                 && (emissive_signal > 0.0F || world_surface_lift > 0.0F);
+                        const float physical_emissive_energy = physical_emissive_red
+                                + physical_emissive_green
+                                + physical_emissive_blue;
+                        const float pixel_output_energy = red + green + blue;
+                        const bool sample_scene_linked = writes_scene_driven_pixel
+                                && (physical_emissive_energy > 0.01F
+                                        || physical_sky > 0.01F
+                                        || physical_surface > 0.01F
+                                        || section_lobe > 0.01F
+                                        || spatial_lobe > 0.01F);
+                        const bool material_color_sample = sample_scene_linked
+                                && material_response > 0.10F
+                                && (physical_emissive_energy > 0.01F
+                                        || section_lobe > 0.01F
+                                        || palette_diversity > 0.01F);
+                        const bool surface_normal_sample = writes_surface_pixel
+                                && world_surface_mask >= 0.35F
+                                && (surface_projection > 0.20F
+                                        || candidate_surface_signal > 0.01F
+                                        || section_lobe > 0.01F);
+                        const float occlusion_dirty_sample_influence = std::clamp(
+                                (opaque_ratio * 0.58F)
+                                        + (dirty_activity * 0.36F)
+                                        + (translucent_ratio * 0.10F)
+                                        + (section_lobe * 0.24F)
+                                        + (candidate_surface_signal * 0.18F),
+                                0.0F,
+                                1.0F);
+                        const bool occlusion_dirty_sample = sample_scene_linked
+                                && occlusion_dirty_sample_influence > 0.08F
+                                && (total_section_occupied_voxels != 0
+                                        || dirty_activity > 0.0F
+                                        || execution.last_cache_write_count != 0);
                         if (writes_surface_pixel) {
                             surface_pixels_written++;
                         }
@@ -5158,6 +5237,49 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                         if (material_response > 0.10F && section_lobe > 0.01F) {
                             material_modulated_pixels++;
                         }
+                        if (sample_scene_linked) {
+                            scene_linked_samples++;
+                            scene_linked_energy += pixel_output_energy;
+                        }
+                        if (material_color_sample) {
+                            material_color_samples++;
+                            material_color_influence_sum += std::clamp(
+                                    material_response
+                                            * (0.48F + palette_diversity * 0.24F)
+                                            * (0.70F + (physical_emissive_energy > 0.0F ? 0.30F : 0.0F)),
+                                    0.0F,
+                                    1.0F);
+                        }
+                        if (surface_normal_sample) {
+                            surface_normal_samples++;
+                            surface_normal_confidence_sum += std::clamp(
+                                    (world_surface_mask * 0.62F)
+                                            + (surface_projection * 0.20F)
+                                            + (section_lobe * 0.14F)
+                                            + (candidate_surface_signal * 0.12F),
+                                    0.0F,
+                                    1.0F);
+                        }
+                        if (occlusion_dirty_sample) {
+                            occlusion_dirty_samples++;
+                            occlusion_dirty_influence_sum += occlusion_dirty_sample_influence;
+                        }
+                        emissive_contribution_energy += physical_emissive_energy;
+                        sun_contribution_energy += physical_sky * 3.0F;
+                        output_write_energy += pixel_output_energy;
+                        mix_checksum(
+                                physical_output_checksum,
+                                static_cast<std::uint64_t>(pixel_output_energy * 1000.0F));
+                        mix_checksum(
+                                physical_output_checksum,
+                                static_cast<std::uint64_t>(material_response * 1000.0F));
+                        mix_checksum(
+                                physical_output_checksum,
+                                static_cast<std::uint64_t>(world_surface_mask * 1000.0F));
+                        mix_checksum(
+                                physical_output_checksum,
+                                static_cast<std::uint64_t>(occlusion_dirty_sample_influence * 1000.0F));
+                        mix_checksum(physical_output_checksum, sample_scene_linked ? 1ULL : 0ULL);
                         const float alpha = std::clamp(
                                 0.72F + (surface_projection * 0.10F) + (cache_tint * 0.20F) + (ray_tint * 0.16F)
                                         + (dirty_activity * 0.08F)
@@ -5186,6 +5308,24 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                     execution.last_cpu_output_material_modulated_pixel_count = material_modulated_pixels;
                     execution.last_cpu_output_energy = preview_energy;
                     execution.last_cpu_output_checksum = preview_checksum;
+                    execution.last_physical_output_checksum = physical_output_checksum;
+                    execution.last_scene_linked_sample_count = scene_linked_samples;
+                    execution.last_material_color_modulated_sample_count = material_color_samples;
+                    execution.last_surface_normal_confident_sample_count = surface_normal_samples;
+                    execution.last_occlusion_dirty_modulated_sample_count = occlusion_dirty_samples;
+                    execution.last_scene_linked_energy = scene_linked_energy;
+                    execution.last_material_color_influence = material_color_samples == 0
+                            ? 0.0F
+                            : material_color_influence_sum / static_cast<float>(material_color_samples);
+                    execution.last_surface_normal_confidence = surface_normal_samples == 0
+                            ? 0.0F
+                            : surface_normal_confidence_sum / static_cast<float>(surface_normal_samples);
+                    execution.last_emissive_contribution_energy = emissive_contribution_energy;
+                    execution.last_sun_contribution_energy = sun_contribution_energy;
+                    execution.last_occlusion_dirty_influence = occlusion_dirty_samples == 0
+                            ? 0.0F
+                            : occlusion_dirty_influence_sum / static_cast<float>(occlusion_dirty_samples);
+                    execution.last_output_write_energy = output_write_energy;
                     execution.last_cpu_output_generated = true;
                     execution.last_cpu_output_energy_nonzero = preview_energy > 0.0F;
                     execution.last_cpu_output_checksum_nonzero = preview_checksum != 0;
@@ -5198,6 +5338,18 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                             emissive_driven_output && emissive_driven_pixels != 0;
                     execution.last_cpu_output_spatially_graded = spatial_lobe_pixels != 0;
                     execution.last_cpu_output_material_driven = material_modulated_pixels != 0;
+                    execution.last_scene_linked_samples_recorded = scene_linked_samples != 0;
+                    execution.last_material_color_influence_recorded =
+                            material_color_samples != 0 && execution.last_material_color_influence > 0.0F;
+                    execution.last_surface_normal_confidence_recorded =
+                            surface_normal_samples != 0 && execution.last_surface_normal_confidence > 0.0F;
+                    execution.last_occlusion_dirty_influence_recorded =
+                            occlusion_dirty_samples != 0 && execution.last_occlusion_dirty_influence > 0.0F;
+                    execution.last_output_write_energy_recorded =
+                            output_write_energy > 0.0F && physical_output_checksum != 0;
+                    execution.last_physical_output_marker = execution.last_output_write_energy_recorded
+                            ? "native_diffuse_gi_cpu_preview_physical_output_energy_checksum_recorded"
+                            : "native_diffuse_gi_cpu_preview_physical_output_energy_missing";
                     execution.last_cpu_output_marker = execution.last_cpu_output_nonzero
                             ? (execution.last_cpu_output_spatially_graded
                                     ? "diffuse_gi_scene_spatial_source_lobes_cpu_output_generated_nonzero"
@@ -5286,6 +5438,14 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
         const bool emissive_output_recorded = execution.last_cpu_output_emissive_driven;
         const bool spatial_output_recorded = execution.last_cpu_output_spatially_graded;
         const bool material_output_recorded = execution.last_cpu_output_material_driven;
+        const bool native_scene_linked_samples_recorded = execution.last_scene_linked_samples_recorded;
+        const bool material_color_influence_recorded = execution.last_material_color_influence_recorded;
+        const bool surface_normal_confidence_recorded = execution.last_surface_normal_confidence_recorded;
+        const bool occlusion_dirty_influence_recorded = execution.last_occlusion_dirty_influence_recorded;
+        const bool output_energy_checksum_recorded = execution.last_output_write_energy_recorded;
+        const bool light_energy_contributions_recorded =
+                execution.last_emissive_contribution_energy > 0.0F
+                || execution.last_sun_contribution_energy > 0.0F;
         execution.last_physical_scene_link_score =
                 (execution.last_cpu_output_nonzero ? 1ULL : 0ULL)
                 + (execution.last_scene_inputs_recorded ? 1ULL : 0ULL)
@@ -5295,27 +5455,41 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                 + (surface_output_recorded ? 1ULL : 0ULL)
                 + (emissive_output_recorded ? 1ULL : 0ULL)
                 + (spatial_output_recorded ? 1ULL : 0ULL)
-                + (material_output_recorded ? 1ULL : 0ULL);
-        execution.last_physical_scene_linked = execution.last_physical_scene_link_score >= 7;
+                + (material_output_recorded ? 1ULL : 0ULL)
+                + (native_scene_linked_samples_recorded ? 1ULL : 0ULL)
+                + (material_color_influence_recorded ? 1ULL : 0ULL)
+                + (surface_normal_confidence_recorded ? 1ULL : 0ULL)
+                + (occlusion_dirty_influence_recorded ? 1ULL : 0ULL)
+                + (output_energy_checksum_recorded ? 1ULL : 0ULL)
+                + (light_energy_contributions_recorded ? 1ULL : 0ULL);
+        execution.last_physical_scene_linked = execution.last_physical_scene_link_score >= 12
+                && native_scene_linked_samples_recorded
+                && material_color_influence_recorded
+                && surface_normal_confidence_recorded
+                && output_energy_checksum_recorded;
         execution.last_metadata_only_proof_rejected =
                 !execution.last_physical_scene_linked || !execution.last_cpu_output_nonzero;
         execution.last_focus_window_capture_rejected = execution.last_cpu_output_surface_pixel_count != 0
                 && execution.last_cpu_output_surface_pixel_count < execution.last_cpu_output_pixel_count;
         execution.last_proof_marker_evidence_rejected = execution.last_cpu_output_nonzero
-                && execution.last_scene_inputs_recorded;
+                && execution.last_scene_inputs_recorded
+                && native_scene_linked_samples_recorded;
         execution.last_temporary_direct_substitution_rejected = execution.last_cpu_output_emissive_driven
                 && execution.last_cpu_output_scene_driven
-                && (execution.last_cache_read_count != 0 || execution.last_cache_write_count != 0);
+                && (execution.last_cache_read_count != 0 || execution.last_cache_write_count != 0)
+                && (surface_normal_confidence_recorded || occlusion_dirty_influence_recorded);
         execution.last_rectangular_washout_rejected =
                 execution.last_cpu_output_spatially_graded
                 && execution.last_cpu_output_material_driven
-                && execution.last_cpu_output_cache_modulated_pixel_count != 0;
+                && execution.last_cpu_output_cache_modulated_pixel_count != 0
+                && native_scene_linked_samples_recorded
+                && output_energy_checksum_recorded;
         execution.last_physical_scene_marker = execution.last_physical_scene_linked
-                ? "native_diffuse_gi_scene_linked_cpu_output_physical_inputs_present"
+                ? "native_diffuse_gi_scene_linked_cpu_output_physical_metrics_present"
                 : "native_diffuse_gi_scene_link_incomplete_do_not_treat_as_physical_gi";
         execution.last_proof_boundary_marker =
                 execution.last_physical_scene_linked
-                ? "native_gi_cpu_preview_scene_linked_requires_controller_screenshot_proof"
+                ? "native_gi_cpu_preview_scene_linked_metrics_require_controller_screenshot_proof_not_completion"
                 : "native_gi_metadata_or_partial_preview_rejected_for_visual_gi_completion";
         if (execution.last_cpu_output_nonzero
                 && execution.last_scene_inputs_recorded
@@ -5325,9 +5499,19 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                 && surface_output_recorded
                 && emissive_output_recorded
                 && spatial_output_recorded
-                && material_output_recorded) {
+                && material_output_recorded
+                && native_scene_linked_samples_recorded
+                && material_color_influence_recorded
+                && surface_normal_confidence_recorded
+                && output_energy_checksum_recorded) {
             execution.last_readiness_reason =
-                    "diffuse_gi_scene_spatial_material_cpu_output_generated_nonzero_cache_surface_inputs_recorded";
+                    "diffuse_gi_scene_spatial_material_cpu_output_generated_nonzero_native_physical_metrics_recorded";
+        } else if (execution.last_cpu_output_nonzero
+                && execution.last_scene_inputs_recorded
+                && native_scene_linked_samples_recorded
+                && output_energy_checksum_recorded) {
+            execution.last_readiness_reason =
+                    "diffuse_gi_scene_linked_cpu_output_generated_nonzero_physical_metrics_partial";
         } else if (execution.last_cpu_output_nonzero
                 && execution.last_scene_inputs_recorded
                 && spatial_output_recorded

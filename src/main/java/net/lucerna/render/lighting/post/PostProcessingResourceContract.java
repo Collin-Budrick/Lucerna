@@ -21,12 +21,16 @@ public final class PostProcessingResourceContract {
     public static final String WORLD_COLOR = "lucerna.composite.worldColor";
     public static final String DEBUG_OVERLAY = "lucerna.debug.overlay";
     public static final String DENOISE_SHADER_RESOURCE = "lucerna:denoise/diffuse_edge_aware_contract";
+    public static final String DENOISE_HISTORY_VARIANCE_SHADER_RESOURCE =
+            "lucerna:denoise/history_variance_quality_contract";
 
     public static final String PREVIOUS_DEPTH = "PreviousDepth";
     public static final String PREVIOUS_NORMAL_ROUGHNESS = "PreviousNormalRoughness";
     public static final String PREVIOUS_LIGHTING = "PreviousLighting";
     public static final String MOTION_HISTORY = "MotionHistory";
     public static final String VARIANCE_CONFIDENCE = "VarianceConfidence";
+    public static final String HISTORY_REJECTION_MASK = "lucerna.denoise.historyRejectionMask";
+    public static final String RAW_VS_DENOISED_QUALITY = "lucerna.denoise.rawVsDenoisedQuality";
 
     public static final List<String> DENOISE_READS = List.of(
             GBufferTargetContract.DEPTH,
@@ -47,6 +51,23 @@ public final class PostProcessingResourceContract {
     public static final List<String> DENOISE_WRITES = List.of(
             DENOISED_DIFFUSE,
             REJECTION_MASK
+    );
+
+    public static final List<String> DENOISE_CONTRACT_OUTPUTS = List.of(
+            DENOISED_DIFFUSE,
+            REJECTION_MASK,
+            HISTORY_REJECTION_MASK,
+            RAW_VS_DENOISED_QUALITY
+    );
+
+    public static final List<String> DENOISE_CONTRACT_RESOURCES = List.of(
+            DENOISE_SHADER_RESOURCE,
+            DENOISE_HISTORY_VARIANCE_SHADER_RESOURCE,
+            DENOISED_DIFFUSE,
+            REJECTION_MASK,
+            HISTORY_REJECTION_MASK,
+            VARIANCE_CONFIDENCE,
+            RAW_VS_DENOISED_QUALITY
     );
 
     public static final List<String> COMPOSITE_READS = List.of(

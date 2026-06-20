@@ -291,7 +291,7 @@ public final class LowResDiffuseGiPlanner {
             findings.add(DiffuseGiValidationFinding.info(
                     "GI_PHYSICAL_EVIDENCE_PENDING",
                     "$.sceneInputs.physicalReadiness",
-                    "Reject metadata-only, proof-marker, and focus-window evidence as physical GI; " + sceneInputs.physicalReadinessLabel()
+                    sceneInputs.physicalEvidenceRejectionLabel()
             ));
             return;
         }
@@ -316,6 +316,13 @@ public final class LowResDiffuseGiPlanner {
                     "Diffuse GI has weak material/color input; do not claim colored bounce response from proof-only evidence"
             ));
         }
+        if (sceneInputs.surfaceSampleCount() > 0 && sceneInputs.materialGeometryCoupling() < 0.12F) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_MATERIAL_GEOMETRY_COUPLING_LOW",
+                    "$.sceneInputs.materialGeometryCoupling",
+                    "Material color response is not yet tied strongly enough to surface normals/skylight/interior geometry"
+            ));
+        }
         if (sceneInputs.surfaceSampleCount() > 0 && sceneInputs.averageNormalLength() < 0.5F) {
             findings.add(DiffuseGiValidationFinding.warning(
                     "GI_SURFACE_NORMAL_CONFIDENCE_LOW",
@@ -330,11 +337,39 @@ public final class LowResDiffuseGiPlanner {
                     "Surface orientation input is too weak to distinguish physically linked bounce lighting from screen-space proof shaping"
             ));
         }
+        if (sceneInputs.surfaceSampleCount() >= 4 && sceneInputs.skylightInteriorContrast() < 0.08F) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_SKYLIGHT_INTERIOR_CONTRAST_LOW",
+                    "$.sceneInputs.skylightInteriorContrast",
+                    "Scene inputs do not yet distinguish skylit surfaces from sealed/interior surfaces strongly enough for low-res GI proof"
+            ));
+        }
         if (sceneInputs.surfaceSampleCount() >= 4 && sceneInputs.orientationBalance() < 0.12F) {
             findings.add(DiffuseGiValidationFinding.info(
                     "GI_ORIENTATION_DISTRIBUTION_NARROW",
                     "$.sceneInputs.orientationBalance",
                     "Surface samples are dominated by one orientation, so bounce-light evidence may be scene-specific"
+            ));
+        }
+        if (sourceSummary.directLightingReady() && sceneInputs.lightSourceSceneCoupling() < 0.05F) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_LIGHT_SOURCE_SCENE_COUPLING_LOW",
+                    "$.sceneInputs.lightSourceSceneCoupling",
+                    "Direct light metadata exists, but emissive/sun/moon sources are not yet coupled to sampled scene geometry; " + sourceSummary.lightSourceCouplingLabel()
+            ));
+        }
+        if (sourceSummary.emissiveLightCount() > 0 && sceneInputs.emissiveSourceCoupling() < 0.04F) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_EMISSIVE_SOURCE_COUPLING_LOW",
+                    "$.sceneInputs.emissiveSourceCoupling",
+                    "Emissive source data exists but has weak proximity/material/normal linkage to affected surfaces"
+            ));
+        }
+        if (sourceSummary.celestialLightCount() > 0 && sceneInputs.celestialSourceCoupling() < 0.04F) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_SUN_MOON_SOURCE_COUPLING_LOW",
+                    "$.sceneInputs.celestialSourceCoupling",
+                    "Sun/moon source data exists but has weak skylight/interior/surface-normal linkage"
             ));
         }
         if (sceneInputs.radianceSampleCount() > 0 && sceneInputs.radianceDirectionConfidence() < 0.35F) {
@@ -369,7 +404,7 @@ public final class LowResDiffuseGiPlanner {
             findings.add(DiffuseGiValidationFinding.info(
                     "GI_PHYSICAL_EVIDENCE_PENDING",
                     "$.sceneInputs.physicalReadiness",
-                    "Reject metadata-only, proof-marker, and focus-window evidence as physical GI; " + sceneInputs.physicalReadinessLabel()
+                    sceneInputs.physicalEvidenceRejectionLabel()
             ));
         }
     }

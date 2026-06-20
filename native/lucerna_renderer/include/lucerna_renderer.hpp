@@ -590,7 +590,12 @@ struct NativeRound6DispatchExecutionTelemetry {
     std::uint64_t last_cpu_output_spatial_lobe_pixel_count = 0;
     std::uint64_t last_cpu_output_cache_modulated_pixel_count = 0;
     std::uint64_t last_cpu_output_material_modulated_pixel_count = 0;
+    std::uint64_t last_scene_linked_sample_count = 0;
+    std::uint64_t last_material_color_modulated_sample_count = 0;
+    std::uint64_t last_surface_normal_confident_sample_count = 0;
+    std::uint64_t last_occlusion_dirty_modulated_sample_count = 0;
     std::uint64_t last_cpu_output_checksum = 0;
+    std::uint64_t last_physical_output_checksum = 0;
     std::uint64_t last_scene_payload_generation = 0;
     std::uint64_t last_scene_celestial_generation = 0;
     std::uint64_t last_scene_emissive_generation = 0;
@@ -610,6 +615,13 @@ struct NativeRound6DispatchExecutionTelemetry {
     float last_scene_emissive_light_energy = 0.0F;
     float last_cpu_output_cache_response = 0.0F;
     float last_cpu_output_material_response = 0.0F;
+    float last_scene_linked_energy = 0.0F;
+    float last_material_color_influence = 0.0F;
+    float last_surface_normal_confidence = 0.0F;
+    float last_emissive_contribution_energy = 0.0F;
+    float last_sun_contribution_energy = 0.0F;
+    float last_occlusion_dirty_influence = 0.0F;
+    float last_output_write_energy = 0.0F;
     float last_visible_signal_cache_factor = 0.0F;
     float last_visible_signal_ray_factor = 0.0F;
     std::uint64_t last_physical_scene_link_score = 0;
@@ -639,6 +651,11 @@ struct NativeRound6DispatchExecutionTelemetry {
     bool last_cpu_output_emissive_driven = false;
     bool last_cpu_output_spatially_graded = false;
     bool last_cpu_output_material_driven = false;
+    bool last_scene_linked_samples_recorded = false;
+    bool last_material_color_influence_recorded = false;
+    bool last_surface_normal_confidence_recorded = false;
+    bool last_occlusion_dirty_influence_recorded = false;
+    bool last_output_write_energy_recorded = false;
     bool last_scene_inputs_recorded = false;
     bool last_physical_scene_linked = false;
     bool last_metadata_only_proof_rejected = true;
@@ -651,6 +668,7 @@ struct NativeRound6DispatchExecutionTelemetry {
     std::string last_cpu_output_marker;
     std::string last_cache_marker;
     std::string last_physical_scene_marker;
+    std::string last_physical_output_marker;
     std::string last_proof_boundary_marker;
     std::string last_readiness_reason;
     std::string last_scene_dimension_id;

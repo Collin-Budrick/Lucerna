@@ -50,11 +50,27 @@ public record PostProcessingPipelinePlan(
         return this.denoisePlan.shaderDenoiseContractReady();
     }
 
+    public boolean shaderDenoiseInputsCompleteForDispatch() {
+        return this.denoisePlan.shaderDenoiseInputsCompleteForDispatch();
+    }
+
     public boolean realDenoiseShaderOutput() {
         return this.denoisePlan.realDenoiseShaderOutput();
     }
 
     public String shaderDenoiseStatusSummary() {
         return this.denoisePlan.shaderDenoiseStatusSummary();
+    }
+
+    public String shaderDenoisePendingChecklist() {
+        return this.denoisePlan.shaderDenoisePendingChecklist();
+    }
+
+    public String shaderDenoiseQualityBoundarySummary() {
+        return this.denoisePlan.shaderDenoiseQualityBoundarySummary();
+    }
+
+    public String shaderDenoiseContractResourcesSummary() {
+        return String.join(",", this.denoisePlan.contractResources());
     }
 }

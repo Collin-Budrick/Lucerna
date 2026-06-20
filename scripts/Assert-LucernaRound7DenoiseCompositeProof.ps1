@@ -380,7 +380,7 @@ function Measure-Round7LogProof {
     param([string] $ResolvedLogPath)
 
     $log = Get-Content -Raw -LiteralPath $ResolvedLogPath
-    $acceptedFinalCompositePresent = Test-Regex $log "sourceIdentity=native-direct-light-rgba8\+native-diffuse-gi-rgba8\+cpu-denoised-diffuse-gi-rgba8.*sourceAuthenticity=accepted:final-composite-direct-plus-raw-gi-plus-denoised-gi.*evidence=round7\.composite\.final\.direct_raw_denoised.*finalBlendComplete=true.*metadataOnly=false"
+    $acceptedFinalCompositePresent = Test-Regex $log "sourceIdentity=native-direct-light-rgba8\+native-diffuse-gi-rgba8\+cpu-denoised-diffuse-gi-rgba8.*sourceAuthenticity=accepted:final-composite-direct-plus-raw-gi-plus-(?:cpu-)?denoised-gi.*evidence=round7\.composite\.final\.direct_raw_denoised.*finalBlendComplete=true.*metadataOnly=false"
     $directSourcePresent = Test-AnyRegex $log $DirectSourcePatterns
     $nativeGiSourcePresent = Test-AnyRegex $log $NativeGiSourcePatterns
     $rawGiSourcePresent = Test-AnyRegex $log $RawGiSourcePatterns

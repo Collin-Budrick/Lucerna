@@ -26,6 +26,11 @@
 // Expected writable outputs once implemented:
 // - lucerna.denoise.diffuse, full-resolution linear diffuse radiance
 // - lucerna.denoise.rejectionMask, full-resolution temporal/edge rejection mask
+// - lucerna.denoise.historyRejectionMask, optional debug mask explaining why
+//   history was rejected at depth/normal/material/motion boundaries
+// - lucerna.denoise.rawVsDenoisedQuality, optional debug target used only for
+//   controller proof that raw GI and shader-denoised GI differ for the right
+//   reasons
 //
 // Evidence boundary:
 // - realDenoiseShaderOutput=false while this resource remains contract-only.
@@ -33,6 +38,9 @@
 // - A future implementation must write the outputs from shader execution, then
 //   controller validation can compare raw-GI, shader-denoised, final, and debug
 //   screenshots/logs without relying on preview draw substitution.
+// - Quality proof must include edge-preservation, history rejection,
+//   variance/confidence, and raw-vs-denoised comparisons. A full-screen blur or
+//   rectangular preview wash is explicitly insufficient.
 //
 // Placeholder policy: no storage writes, image writes, atomics, barriers,
 // discard, color output, or depth output.

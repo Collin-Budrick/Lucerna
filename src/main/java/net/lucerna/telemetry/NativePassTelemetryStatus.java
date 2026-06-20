@@ -87,11 +87,24 @@ public record NativePassTelemetryStatus(
         return label.toString();
     }
 
+    public String compactTimingBoundaryLabel() {
+        if (!this.hasPassStates()) {
+            return "native pass timing unavailable(" + this.message + ")";
+        }
+
+        boolean cpuTimingReported = hasAnyDetailFragment("cpu_ms", "cpu_millis", "cpu_time_ms", "native_cpu_ms");
+        boolean gpuTimingReported = hasAnyDetailFragment("gpu_ms", "gpu_millis", "gpu_time_ms", "native_gpu_ms");
+        String cpu = cpuTimingReported ? "CPU=reported" : "CPU=pending";
+        String gpu = gpuTimingReported ? "GPU=reported(real timestamps)" : "GPU=unavailable/pending";
+        return cpu + " | " + gpu + " | states=" + this.passStates.size();
+    }
+
     public Map<String, String> validationFields(String prefix) {
         String normalizedPrefix = clean(prefix, "native.pass");
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put(normalizedPrefix + ".available", Boolean.toString(this.hasPassStates()));
         fields.put(normalizedPrefix + ".summary", this.compactLabel());
+        fields.put(normalizedPrefix + ".timingBoundary", this.compactTimingBoundaryLabel());
         for (Map.Entry<String, String> entry : this.passStates.entrySet()) {
             fields.put(normalizedPrefix + "." + sanitizeKey(entry.getKey()) + ".state", entry.getValue());
         }
@@ -99,6 +112,21 @@ public record NativePassTelemetryStatus(
             fields.put(normalizedPrefix + "." + sanitizeKey(entry.getKey()), entry.getValue());
         }
         return Collections.unmodifiableMap(fields);
+    }
+
+    private boolean hasAnyDetailFragment(String... fragments) {
+        if (fragments == null || this.passDetails.isEmpty()) {
+            return false;
+        }
+        for (String key : this.passDetails.keySet()) {
+            String normalizedKey = key.toLowerCase(Locale.ROOT).replace('-', '_').replace('.', '_');
+            for (String fragment : fragments) {
+                if (normalizedKey.contains(fragment)) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private static void parsePassBlocks(

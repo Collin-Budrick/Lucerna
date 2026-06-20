@@ -34,6 +34,7 @@ public final class PublicMojangPreviewDrawScaffolds {
             "sourceBoundary=full-target-scene-shaped-surface-projection,"
                     + "metadataOnly=false,proofMarker=false,focusWindowOnly=false,"
                     + "temporaryDirectLightSubstitution=false,rectangularWashoutRejected=true,"
+                    + "cpuDenoisedSource=true,realDenoiseShaderOutput=false,"
                     + "geometryMaterialAwareProjection=pending-shader/native-quality";
     private static final String DIRECT_LIGHT_FINAL_COMPOSITE_SHADER =
             "lucerna:core/round6_native_diffuse_gi_surface";
@@ -480,7 +481,9 @@ public final class PublicMojangPreviewDrawScaffolds {
                         + ROUND7_DENOISED_GI_VISUAL_SHADER
                         + "," + DENOISED_GI_SOURCE_IDENTITY
                         + ",surfaceProjection=scene-shaped-full-target"
-                        + ",metadataOnly=false,temporaryDirectLightSubstitution=false"
+                        + ",metadataOnly=false,proofMarker=false,focusWindowOnly=false"
+                        + ",temporaryDirectLightSubstitution=false,rectangularWashout=false"
+                        + ",cpuDenoisedSource=true,realDenoiseShaderOutput=false"
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
                         + ",javaOpaqueFallbackDrawRepeats=" + ROUND7_DENOISED_GI_DRAW_REPEATS
         );
@@ -541,7 +544,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FIRST_INSTANCE,
                 "public Mojang Round 7 FINAL_COMPOSITE full-target additive draw issued from "
                         + (rawSourceBound ? "raw native diffuse-GI plus " : "")
-                        + "denoised diffuse-GI sources; shader="
+                        + "CPU denoised diffuse-GI sources; shader="
                         + ROUND7_DENOISED_GI_VISUAL_SHADER
                         + "," + (rawSourceBound ? RAW_GI_SOURCE_IDENTITY + "," : "")
                         + DENOISED_GI_SOURCE_IDENTITY
