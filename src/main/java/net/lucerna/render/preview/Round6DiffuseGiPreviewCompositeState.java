@@ -18,6 +18,15 @@ public record Round6DiffuseGiPreviewCompositeState(
         int dirtyRegionCount,
         int surfaceRecordCount,
         int radianceRecordCount,
+        boolean emissiveProximityAvailable,
+        boolean affectedSurfaceRegionAvailable,
+        String affectedSurfaceRegionLabel,
+        boolean handHudExcludedProofHint,
+        boolean surfaceOnlyProofEligible,
+        boolean giOutputAuthenticNativeCpu,
+        boolean realShaderGiOutput,
+        boolean cpuDenoiseScaffoldOutput,
+        boolean realDenoiseShaderOutput,
         boolean cacheUsable,
         boolean sourceDirectLightingReady,
         String sourceDebugLabel,
@@ -35,6 +44,13 @@ public record Round6DiffuseGiPreviewCompositeState(
         dirtyRegionCount = Math.max(0, dirtyRegionCount);
         surfaceRecordCount = Math.max(0, surfaceRecordCount);
         radianceRecordCount = Math.max(0, radianceRecordCount);
+        if (affectedSurfaceRegionLabel == null || affectedSurfaceRegionLabel.isBlank()) {
+            affectedSurfaceRegionLabel = affectedSurfaceRegionAvailable
+                    ? "affected surface region available"
+                    : "affected surface region unavailable";
+        } else {
+            affectedSurfaceRegionLabel = affectedSurfaceRegionLabel.trim();
+        }
         if (sourceDebugLabel == null || sourceDebugLabel.isBlank()) {
             sourceDebugLabel = "Round 6 GI source summary unavailable";
         } else {
@@ -74,6 +90,15 @@ public record Round6DiffuseGiPreviewCompositeState(
                 0,
                 false,
                 false,
+                "affected surface region unavailable",
+                false,
+                false,
+                false,
+                false,
+                true,
+                false,
+                false,
+                false,
                 "Round 6 GI source summary unavailable",
                 reason
         );
@@ -96,6 +121,8 @@ public record Round6DiffuseGiPreviewCompositeState(
         boolean resolvedCacheEnabled = cacheEnabled
                 && cacheRecordCount > 0
                 && (upload.cacheUsable() || upload.surfaceRecordCount() > 0 || upload.radianceRecordCount() > 0);
+        boolean[] proofFlags = proofFlags(plan);
+        boolean[] denoiseFlags = denoiseFlags(plan);
         String reason = previewReason(
                 resolvedDiffuseGiEnabled,
                 resolvedCacheEnabled,
@@ -121,6 +148,15 @@ public record Round6DiffuseGiPreviewCompositeState(
                 upload.dirtyRegionCount(),
                 upload.surfaceRecordCount(),
                 upload.radianceRecordCount(),
+                proofFlags[NativeDiffuseGiPlanUpload.PROOF_EMISSIVE_PROXIMITY_AVAILABLE_OFFSET],
+                proofFlags[NativeDiffuseGiPlanUpload.PROOF_AFFECTED_SURFACE_REGION_AVAILABLE_OFFSET],
+                plan.sceneAffectedSurfaceRegionLabel(),
+                proofFlags[NativeDiffuseGiPlanUpload.PROOF_HAND_HUD_EXCLUDED_OFFSET],
+                proofFlags[NativeDiffuseGiPlanUpload.PROOF_SURFACE_ONLY_ELIGIBLE_OFFSET],
+                proofFlags[NativeDiffuseGiPlanUpload.PROOF_GI_OUTPUT_AUTHENTIC_NATIVE_CPU_OFFSET],
+                proofFlags[NativeDiffuseGiPlanUpload.PROOF_GI_OUTPUT_REAL_SHADER_OFFSET],
+                denoiseFlags[NativeDiffuseGiPlanUpload.DENOISE_OUTPUT_CPU_SCAFFOLD_OFFSET],
+                denoiseFlags[NativeDiffuseGiPlanUpload.DENOISE_OUTPUT_REAL_SHADER_OFFSET],
                 upload.cacheUsable(),
                 plan.sourceDirectLightingReady(),
                 plan.sourceDebugLabel(),
@@ -135,6 +171,16 @@ public record Round6DiffuseGiPreviewCompositeState(
                 && this.samplesPerCell > 0
                 && this.rayCount > 0
                 && this.sourceDirectLightingReady;
+    }
+
+    public boolean readyForRealSurfaceOnlyProof() {
+        return readyForRound6PreviewSource()
+                && this.emissiveProximityAvailable
+                && this.affectedSurfaceRegionAvailable
+                && this.handHudExcludedProofHint
+                && this.surfaceOnlyProofEligible
+                && this.giOutputAuthenticNativeCpu
+                && !this.realShaderGiOutput;
     }
 
     public boolean readyForRound7RawGiSource() {
@@ -200,10 +246,35 @@ public record Round6DiffuseGiPreviewCompositeState(
                 + ",dirtyRegions=" + this.dirtyRegionCount
                 + ",surfaceRecords=" + this.surfaceRecordCount
                 + ",radianceRecords=" + this.radianceRecordCount
+                + ",emissiveProximityAvailable=" + this.emissiveProximityAvailable
+                + ",affectedSurfaceRegion=\"" + this.affectedSurfaceRegionLabel + "\""
+                + ",handHudExcludedProofHint=" + this.handHudExcludedProofHint
+                + ",surfaceOnlyProofEligible=" + this.surfaceOnlyProofEligible
+                + ",realSurfaceOnlyProofReady=" + this.readyForRealSurfaceOnlyProof()
+                + ",giOutputAuthenticNativeCpu=" + this.giOutputAuthenticNativeCpu
+                + ",realShaderGiOutput=" + this.realShaderGiOutput
+                + ",cpuDenoiseScaffoldOutput=" + this.cpuDenoiseScaffoldOutput
+                + ",realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
                 + ",cacheUsable=" + this.cacheUsable
                 + ",sourceDirectInputReady=" + this.sourceDirectLightingReady
                 + ",source=\"" + this.sourceDebugLabel + "\""
                 + ",reason=\"" + this.reason + "\"";
+    }
+
+    public String surfaceProofSummary() {
+        return "emissiveProximityAvailable=" + this.emissiveProximityAvailable
+                + ",affectedSurfaceRegionAvailable=" + this.affectedSurfaceRegionAvailable
+                + ",affectedSurfaceRegion=\"" + this.affectedSurfaceRegionLabel + "\""
+                + ",handHudExcludedProofHint=" + this.handHudExcludedProofHint
+                + ",surfaceOnlyProofEligible=" + this.surfaceOnlyProofEligible
+                + ",realSurfaceOnlyProofReady=" + this.readyForRealSurfaceOnlyProof();
+    }
+
+    public String outputAuthenticitySummary() {
+        return "giOutputAuthenticNativeCpu=" + this.giOutputAuthenticNativeCpu
+                + ",realShaderGiOutput=" + this.realShaderGiOutput
+                + ",cpuDenoiseScaffoldOutput=" + this.cpuDenoiseScaffoldOutput
+                + ",realDenoiseShaderOutput=" + this.realDenoiseShaderOutput;
     }
 
     private static String previewReason(
@@ -233,5 +304,23 @@ public record Round6DiffuseGiPreviewCompositeState(
             return "Round 6 diffuse GI metadata is preview-ready with nonzero grid, rays, and source-input readiness; sparse cache record/write proof remains separate";
         }
         return "Round 6 diffuse GI/cache metadata is enabled with nonzero grid, rays, sparse cache records, and source-input readiness";
+    }
+
+    private static boolean[] proofFlags(NativeDiffuseGiPlanUpload plan) {
+        int[] flags = plan.proofFlags();
+        boolean[] result = new boolean[NativeDiffuseGiPlanUpload.PROOF_FLAG_STRIDE];
+        for (int index = 0; index < result.length && index < flags.length; index++) {
+            result[index] = flags[index] != 0;
+        }
+        return result;
+    }
+
+    private static boolean[] denoiseFlags(NativeDiffuseGiPlanUpload plan) {
+        int[] flags = plan.denoiseOutputFlags();
+        boolean[] result = new boolean[NativeDiffuseGiPlanUpload.DENOISE_OUTPUT_FLAG_STRIDE];
+        for (int index = 0; index < result.length && index < flags.length; index++) {
+            result[index] = flags[index] != 0;
+        }
+        return result;
     }
 }

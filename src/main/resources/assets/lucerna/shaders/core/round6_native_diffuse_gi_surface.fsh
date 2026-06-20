@@ -6,9 +6,10 @@ in vec2 texCoord;
 
 out vec4 fragColor;
 
-const float FINAL_COMPOSITE_GAIN = 18.0;
-const float SURFACE_PROJECTION_GAIN = 8192.0;
-const float FOCUSED_WALL_VISIBILITY_GAIN = 42.0;
+const float FINAL_COMPOSITE_GAIN = 0.08;
+const float SURFACE_PROJECTION_GAIN = 0.28;
+const float FOCUSED_WALL_VISIBILITY_GAIN = 0.08;
+const vec3 MAX_ADDITIVE_PER_DRAW = vec3(0.08, 0.06, 0.028);
 const vec3 MIN_SURFACE_RADIANCE = vec3(0.62, 0.48, 0.22);
 const vec3 LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
 
@@ -70,9 +71,10 @@ void main() {
     float projection = max(centralWorldSurfaceMask(texCoord), focusedWallRegionMask(texCoord));
     float focusedWallProjection = focusedWallRegionMask(texCoord);
     vec3 sourceTint = max(max(frameLighting.rgb, vec3(0.0)), MIN_SURFACE_RADIANCE * signal);
-    vec3 localLight = max(nativeLighting.rgb, vec3(0.0)) * FINAL_COMPOSITE_GAIN * signal;
+    vec3 localLight = max(nativeLighting.rgb, vec3(0.0)) * FINAL_COMPOSITE_GAIN * signal * projection;
     vec3 projectedLight = sourceTint * SURFACE_PROJECTION_GAIN * signal * projection;
-    vec3 focusedWallLight = MIN_SURFACE_RADIANCE * FOCUSED_WALL_VISIBILITY_GAIN * focusedWallProjection;
-    vec3 additiveLight = localLight + projectedLight + focusedWallLight;
+    vec3 focusedWallLight = MIN_SURFACE_RADIANCE * FOCUSED_WALL_VISIBILITY_GAIN * signal * focusedWallProjection;
+
+    vec3 additiveLight = min(localLight + projectedLight + focusedWallLight, MAX_ADDITIVE_PER_DRAW);
     fragColor = vec4(additiveLight, 1.0);
 }

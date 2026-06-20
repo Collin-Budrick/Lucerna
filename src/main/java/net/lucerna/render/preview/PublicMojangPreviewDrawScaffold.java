@@ -125,13 +125,13 @@ public record PublicMojangPreviewDrawScaffold(
                 + ",pipeline=" + this.pipelineLocation
                 + ",textureBinding=" + this.requiredTextureBinding
                 + ",mode=" + this.drawMode
-                + ",draw=RenderPass.draw("
-                + this.firstVertex
-                + ","
+                + ",draw=RenderPass.draw(vertexCount="
                 + this.vertexCount
-                + ","
+                + ",instanceCount="
                 + this.instanceCount
-                + ","
+                + ",firstVertex="
+                + this.firstVertex
+                + ",firstInstance="
                 + this.firstInstance
                 + "),reason="
                 + this.reason;

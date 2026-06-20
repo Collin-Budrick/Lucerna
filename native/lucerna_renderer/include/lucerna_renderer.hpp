@@ -584,6 +584,9 @@ struct NativeRound6DispatchExecutionTelemetry {
     std::uint64_t last_cpu_output_width = 0;
     std::uint64_t last_cpu_output_height = 0;
     std::uint64_t last_cpu_output_pixel_count = 0;
+    std::uint64_t last_cpu_output_surface_pixel_count = 0;
+    std::uint64_t last_cpu_output_scene_driven_pixel_count = 0;
+    std::uint64_t last_cpu_output_emissive_driven_pixel_count = 0;
     std::uint64_t last_cpu_output_checksum = 0;
     std::uint64_t last_scene_payload_generation = 0;
     std::uint64_t last_scene_celestial_generation = 0;
@@ -626,6 +629,8 @@ struct NativeRound6DispatchExecutionTelemetry {
     bool last_cpu_output_checksum_nonzero = false;
     bool last_cpu_output_nonzero = false;
     bool last_cpu_output_marker_recorded = false;
+    bool last_cpu_output_scene_driven = false;
+    bool last_cpu_output_emissive_driven = false;
     bool last_scene_inputs_recorded = false;
     std::string last_marker;
     std::string last_output_marker;

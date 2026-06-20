@@ -778,6 +778,9 @@ void append_round6_execution_status(
         << ",total_visible_signal_nonzero_pixels=" << execution.total_visible_signal_nonzero_pixels
         << ",cpu_output_size=" << execution.last_cpu_output_width << "x" << execution.last_cpu_output_height
         << ",cpu_output_pixels=" << execution.last_cpu_output_pixel_count
+        << ",cpu_output_surface_pixels=" << execution.last_cpu_output_surface_pixel_count
+        << ",cpu_output_scene_driven_pixels=" << execution.last_cpu_output_scene_driven_pixel_count
+        << ",cpu_output_emissive_driven_pixels=" << execution.last_cpu_output_emissive_driven_pixel_count
         << ",visible_signal_energy=" << execution.last_visible_signal_energy
         << ",visible_signal_min_sample=" << execution.last_visible_signal_min_sample
         << ",visible_signal_max_sample=" << execution.last_visible_signal_max_sample
@@ -825,6 +828,8 @@ void append_round6_execution_status(
         << ",cpu_output_checksum_nonzero=" << execution.last_cpu_output_checksum_nonzero
         << ",cpu_output_nonzero=" << execution.last_cpu_output_nonzero
         << ",cpu_output_marker_recorded=" << execution.last_cpu_output_marker_recorded
+        << ",cpu_output_scene_driven=" << execution.last_cpu_output_scene_driven
+        << ",cpu_output_emissive_driven=" << execution.last_cpu_output_emissive_driven
         << ",marker=\"" << execution.last_marker
         << "\""
         << ",output_marker=\"" << execution.last_output_marker
@@ -4135,6 +4140,9 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_cpu_output_width = 0;
     execution.last_cpu_output_height = 0;
     execution.last_cpu_output_pixel_count = 0;
+    execution.last_cpu_output_surface_pixel_count = 0;
+    execution.last_cpu_output_scene_driven_pixel_count = 0;
+    execution.last_cpu_output_emissive_driven_pixel_count = 0;
     execution.last_cpu_output_checksum = 0;
     execution.last_scene_payload_generation = 0;
     execution.last_scene_celestial_generation = 0;
@@ -4162,6 +4170,8 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_cpu_output_checksum_nonzero = false;
     execution.last_cpu_output_nonzero = false;
     execution.last_cpu_output_marker_recorded = false;
+    execution.last_cpu_output_scene_driven = false;
+    execution.last_cpu_output_emissive_driven = false;
     execution.last_scene_inputs_recorded = false;
     execution.last_marker.clear();
     execution.last_output_marker.clear();
@@ -4490,6 +4500,17 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                     + (dirty_activity * 4.0F),
                             0.01F,
                             92.0F);
+                    const bool scene_driven_output = execution.last_scene_inputs_recorded
+                            && (execution.last_ray_count != 0
+                                    || execution.last_sample_count != 0
+                                    || execution.last_cache_read_count != 0
+                                    || execution.last_cache_write_count != 0);
+                    const bool emissive_driven_output = emissive_count != 0
+                            || emissive_signal > 0.0F
+                            || execution.last_scene_emissive_light_energy > 0.0F;
+                    std::uint64_t surface_pixels_written = 0;
+                    std::uint64_t scene_driven_pixels = 0;
+                    std::uint64_t emissive_driven_pixels = 0;
                     for (std::uint64_t pixel = 0; pixel < preview_pixel_count; pixel++) {
                         const auto offset = static_cast<std::size_t>(pixel * 4);
                         const auto pixel_x = pixel % preview_width;
@@ -4549,6 +4570,7 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                     * (0.08F + dirty_activity * 0.12F + cache_tint * 0.10F);
                         }
                         const auto candidate_limit = std::min<std::size_t>(shadow_count, 24);
+                        float candidate_surface_signal = 0.0F;
                         for (std::size_t candidate_index = 0; candidate_index < candidate_limit; candidate_index++) {
                             const float origin_x = strided_float_or_zero(
                                     last_direct_lighting_payload_packet_.shadow_candidate_rays,
@@ -4580,12 +4602,27 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                             const float radius = 0.18F + std::clamp(weight * 0.04F, 0.0F, 0.22F)
                                     + dirty_activity * 0.04F;
                             const float falloff = std::max(0.0F, 1.0F - distance / radius);
-                            surface_projection += falloff * falloff * (0.26F + ray_tint * 0.36F);
+                            const float candidate_bounce = falloff * falloff * (0.26F + ray_tint * 0.36F);
+                            candidate_surface_signal += candidate_bounce;
+                            surface_projection += candidate_bounce;
                         }
                         surface_projection += view_surface_response
                                 * (0.42F + (cache_tint * 0.28F) + (ray_tint * 0.26F)
                                         + (emissive_count == 0 ? 0.0F : 0.24F));
                         surface_projection = std::clamp(surface_projection, 0.0F, 1.85F);
+                        const float lower_wall_surface = smooth_unit_response(
+                                1.0F - (std::abs(v - 0.62F) / 0.34F));
+                        const float ground_surface = smooth_unit_response(
+                                1.0F - (std::abs(v - 0.78F) / 0.24F));
+                        const float side_surface_balance = smooth_unit_response(
+                                1.0F - (std::abs(u - 0.56F) / 0.58F));
+                        const float world_surface_mask = std::clamp(
+                                std::max(view_surface_response, lower_wall_surface * 0.94F)
+                                        + (ground_surface * 0.46F)
+                                        + (side_surface_balance * 0.12F)
+                                        + std::clamp(candidate_surface_signal, 0.0F, 0.42F),
+                                0.0F,
+                                1.0F);
                         const float broad_projection_signal = std::clamp(
                                 (preview_base * (0.62F + surface_projection * 0.52F))
                                         + (emissive_signal * (0.58F + surface_projection * 0.42F))
@@ -4594,6 +4631,17 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                         + (dirty_activity * 5.0F * surface_projection),
                                 4.0F,
                                 96.0F);
+                        const float scene_surface_signal = std::clamp(
+                                (preview_base * 0.38F)
+                                        + (emissive_signal * (0.72F + world_surface_mask * 0.70F))
+                                        + (cache_signal * (0.42F + cache_tint * 0.35F))
+                                        + (ray_tint * 26.0F)
+                                        + (candidate_surface_signal * 38.0F)
+                                        + (dirty_activity * 6.0F),
+                                0.0F,
+                                118.0F);
+                        const float world_surface_lift = scene_surface_signal
+                                * (0.42F + world_surface_mask * 0.92F);
                         float red = (preview_base * (0.34F + cache_gradient * 0.20F))
                                 + (sky_signal * (0.15F + sky_gradient * 0.14F))
                                 + (broad_projection_signal * (0.36F + emissive_red * 0.52F));
@@ -4616,6 +4664,9 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                         red += scene_surface_lift * (0.58F + emissive_red * 0.46F);
                         green += scene_surface_lift * (0.64F + emissive_green * 0.44F);
                         blue += scene_surface_lift * (0.34F + emissive_blue * 0.36F);
+                        red += world_surface_lift * (0.66F + emissive_red * 0.56F);
+                        green += world_surface_lift * (0.72F + emissive_green * 0.52F);
+                        blue += world_surface_lift * (0.44F + emissive_blue * 0.42F);
                         for (std::size_t light_index = 0; light_index < emissive_count; light_index++) {
                             const auto block_x = strided_int_or_zero(
                                     last_direct_lighting_payload_packet_.emissive_light_metadata,
@@ -4642,13 +4693,14 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                             light_index,
                                             kDirectEmissiveLightDataStride,
                                             kDirectEmissiveInfluenceRadiusOffset) / 32.0F,
-                                    0.24F,
-                                    0.82F);
+                                    0.34F,
+                                    0.96F);
                             const float distance = std::sqrt(delta_u * delta_u + delta_v * delta_v);
                             const float falloff = std::max(0.0F, 1.0F - (distance / radius));
-                            const float shoulder = std::max(0.0F, 1.0F - (distance / (radius * 1.75F)));
+                            const float shoulder = std::max(0.0F, 1.0F - (distance / (radius * 2.35F)));
                             const float bounce = ((falloff * falloff) + (shoulder * 0.42F))
-                                    * (0.70F + cache_tint * 0.30F);
+                                    * (0.70F + cache_tint * 0.30F)
+                                    * (0.72F + world_surface_mask * 0.58F);
                             if (bounce <= 0.0F) {
                                 continue;
                             }
@@ -4681,9 +4733,24 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                         red = std::min(192.0F, red * low_frequency_noise * cache_band * 1.72F);
                         green = std::min(192.0F, green * low_frequency_noise * cache_band * 1.72F);
                         blue = std::min(192.0F, blue * low_frequency_noise * cache_band * 1.72F);
+                        const bool writes_surface_pixel = world_surface_mask >= 0.18F
+                                && (red + green + blue) > 8.0F;
+                        const bool writes_scene_driven_pixel = writes_surface_pixel && scene_driven_output;
+                        const bool writes_emissive_driven_pixel = writes_surface_pixel && emissive_driven_output
+                                && (emissive_signal > 0.0F || world_surface_lift > 0.0F);
+                        if (writes_surface_pixel) {
+                            surface_pixels_written++;
+                        }
+                        if (writes_scene_driven_pixel) {
+                            scene_driven_pixels++;
+                        }
+                        if (writes_emissive_driven_pixel) {
+                            emissive_driven_pixels++;
+                        }
                         const float alpha = std::clamp(
                                 0.72F + (surface_projection * 0.10F) + (cache_tint * 0.20F) + (ray_tint * 0.16F)
                                         + (dirty_activity * 0.08F)
+                                        + (world_surface_mask * 0.18F)
                                         + (emissive_count == 0 ? 0.0F : 0.20F),
                                 0.0F,
                                 1.0F);
@@ -4700,6 +4767,9 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                     execution.last_cpu_output_width = preview_width;
                     execution.last_cpu_output_height = preview_height;
                     execution.last_cpu_output_pixel_count = preview_pixel_count;
+                    execution.last_cpu_output_surface_pixel_count = surface_pixels_written;
+                    execution.last_cpu_output_scene_driven_pixel_count = scene_driven_pixels;
+                    execution.last_cpu_output_emissive_driven_pixel_count = emissive_driven_pixels;
                     execution.last_cpu_output_energy = preview_energy;
                     execution.last_cpu_output_checksum = preview_checksum;
                     execution.last_cpu_output_generated = true;
@@ -4709,8 +4779,13 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                             execution.last_cpu_output_energy_nonzero
                             && execution.last_cpu_output_checksum_nonzero;
                     execution.last_cpu_output_marker_recorded = execution.last_cpu_output_nonzero;
+                    execution.last_cpu_output_scene_driven = scene_driven_output && scene_driven_pixels != 0;
+                    execution.last_cpu_output_emissive_driven =
+                            emissive_driven_output && emissive_driven_pixels != 0;
                     execution.last_cpu_output_marker = execution.last_cpu_output_nonzero
-                            ? "diffuse_gi_scene_tied_low_res_cpu_output_generated_nonzero"
+                            ? (execution.last_cpu_output_emissive_driven
+                                    ? "diffuse_gi_scene_emissive_surface_cpu_output_generated_nonzero"
+                                    : "diffuse_gi_scene_tied_low_res_cpu_output_generated_nonzero")
                             : "diffuse_gi_scene_tied_low_res_cpu_output_generated_zero_signal";
                 }
 
@@ -4789,13 +4864,22 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                 || execution.last_scene_celestial_light_energy > 0.0F;
         const bool surface_inputs_recorded = execution.last_scene_shadow_candidate_count != 0
                 || execution.last_scene_section_snapshot_count != 0;
+        const bool surface_output_recorded = execution.last_cpu_output_surface_pixel_count != 0;
+        const bool emissive_output_recorded = execution.last_cpu_output_emissive_driven;
         if (execution.last_cpu_output_nonzero
                 && execution.last_scene_inputs_recorded
                 && cache_inputs_recorded
                 && lighting_inputs_recorded
-                && surface_inputs_recorded) {
+                && surface_inputs_recorded
+                && surface_output_recorded
+                && emissive_output_recorded) {
             execution.last_readiness_reason =
-                    "diffuse_gi_scene_tied_low_res_cpu_output_generated_nonzero_emissive_cache_surface_inputs_recorded";
+                    "diffuse_gi_scene_emissive_surface_cpu_output_generated_nonzero_cache_surface_inputs_recorded";
+        } else if (execution.last_cpu_output_nonzero
+                && execution.last_scene_inputs_recorded
+                && surface_output_recorded) {
+            execution.last_readiness_reason =
+                    "diffuse_gi_scene_tied_low_res_cpu_output_generated_nonzero_surface_pixels_recorded";
         } else if (execution.last_cpu_output_nonzero && execution.last_scene_inputs_recorded) {
             execution.last_readiness_reason =
                     "diffuse_gi_scene_tied_low_res_cpu_output_generated_nonzero_partial_scene_inputs_recorded";

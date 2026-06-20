@@ -509,6 +509,15 @@ public final class LucernaDebugOverlayLines {
             lines.add(Component.literal("Low-res GI evidence: energy=" + evidenceValueLabel(diffuseGiStage.outputEnergy())
                     + " checksum=" + evidenceValueLabel(diffuseGiStage.outputChecksum())
                     + " temporaryDirectSource=" + giTemporaryDirectSourceLabel(diffuseGiStage)));
+            lines.add(Component.literal("Low-res GI proof hints: emissiveProximity="
+                    + giEmissiveProximityLabel(diffuseGiStage)
+                    + " surfaceRegion=" + giAffectedSurfaceRegionLabel(diffuseGiStage)
+                    + " handHudExcluded=" + giHandHudExcludedLabel(diffuseGiStage)
+                    + " surfaceOnlyEligible=" + giSurfaceOnlyProofEligibleLabel(diffuseGiStage)));
+            lines.add(Component.literal("Low-res GI authenticity: cpuScaffold="
+                    + giCpuScaffoldOutputLabel(diffuseGiStage)
+                    + " realShaderGI=" + realGiShaderLabel(diffuseGiStage)
+                    + " sourceAuthentic=" + giAuthenticOutputLabel(diffuseGiStage)));
             lines.add(Component.literal("Diffuse GI readiness reason: " + readinessReason(diffuseGiStage)));
         }
 
@@ -523,6 +532,9 @@ public final class LucernaDebugOverlayLines {
                     + " size=" + valueOrUnknown(denoiseStage.outputDimensions())
                     + " energy=" + evidenceValueLabel(denoiseStage.outputEnergy())
                     + " checksum=" + evidenceValueLabel(denoiseStage.outputChecksum())));
+            lines.add(Component.literal("Denoised GI shader boundary: cpuScaffold="
+                    + cpuDenoiseFallbackLabel(denoiseStage)
+                    + " realShader=" + realDenoiseShaderLabel(denoiseStage)));
         }
 
         if (cacheStage == null) {
@@ -627,6 +639,83 @@ public final class LucernaDebugOverlayLines {
                 "uses_direct_light_payload",
                 "using_direct_light_payload",
                 "direct_light_payload_source"
+        );
+    }
+
+    private static String giEmissiveProximityLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "emissive_proximity_available",
+                "scene_emissive_proximity_available",
+                "emissiveProximityAvailable",
+                "sceneEmissiveProximityAvailable"
+        );
+    }
+
+    private static String giAffectedSurfaceRegionLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "affected_surface_region",
+                "affected_surface_region_label",
+                "scene_affected_surface_region",
+                "scene_affected_surface_region_label",
+                "surface_proof_region",
+                "surfaceProofRegion"
+        );
+    }
+
+    private static String giHandHudExcludedLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "hand_hud_excluded",
+                "handHudExcluded",
+                "proof_hand_hud_excluded",
+                "proofHandHudExcluded",
+                "before_hud_and_hand",
+                "beforeHudAndHand"
+        );
+    }
+
+    private static String giSurfaceOnlyProofEligibleLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "surface_only_proof_eligible",
+                "surfaceOnlyProofEligible",
+                "real_surface_only_proof_ready",
+                "realSurfaceOnlyProofReady"
+        );
+    }
+
+    private static String giAuthenticOutputLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "gi_output_authentic_native_cpu",
+                "giOutputAuthenticNativeCpu",
+                "native_gi_output_authentic",
+                "nativeGiOutputAuthentic",
+                "authentic_native_gi_output"
+        );
+    }
+
+    private static String giCpuScaffoldOutputLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "cpu_gi_scaffold_output",
+                "cpuGiScaffoldOutput",
+                "gi_output_cpu_scaffold",
+                "giOutputCpuScaffold",
+                "native_cpu_scaffold_output"
+        );
+    }
+
+    private static String realGiShaderLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "real_shader_gi_output",
+                "realShaderGiOutput",
+                "shader_gi_output",
+                "shaderGiOutput",
+                "gpu_gi_output"
         );
     }
 

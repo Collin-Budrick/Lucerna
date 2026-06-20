@@ -25,6 +25,15 @@ public record DiffuseGiSceneInputSummary(
         float averageRadianceG,
         float averageRadianceB,
         float radianceEnergy,
+        boolean emissiveProximityAvailable,
+        boolean affectedSurfaceRegionAvailable,
+        int affectedSurfaceMinBlockX,
+        int affectedSurfaceMinBlockY,
+        int affectedSurfaceMinBlockZ,
+        int affectedSurfaceMaxBlockX,
+        int affectedSurfaceMaxBlockY,
+        int affectedSurfaceMaxBlockZ,
+        String affectedSurfaceRegionLabel,
         String debugLabel
 ) {
     private static final float SKYWARD_NORMAL_Y = 0.55F;
@@ -55,6 +64,23 @@ public record DiffuseGiSceneInputSummary(
         averageRadianceG = finiteNonNegative(averageRadianceG);
         averageRadianceB = finiteNonNegative(averageRadianceB);
         radianceEnergy = finiteNonNegative(radianceEnergy);
+        if (!affectedSurfaceRegionAvailable) {
+            affectedSurfaceMinBlockX = 0;
+            affectedSurfaceMinBlockY = 0;
+            affectedSurfaceMinBlockZ = 0;
+            affectedSurfaceMaxBlockX = 0;
+            affectedSurfaceMaxBlockY = 0;
+            affectedSurfaceMaxBlockZ = 0;
+        }
+        affectedSurfaceRegionLabel = clean(affectedSurfaceRegionLabel, defaultSurfaceRegionLabel(
+                affectedSurfaceRegionAvailable,
+                affectedSurfaceMinBlockX,
+                affectedSurfaceMinBlockY,
+                affectedSurfaceMinBlockZ,
+                affectedSurfaceMaxBlockX,
+                affectedSurfaceMaxBlockY,
+                affectedSurfaceMaxBlockZ
+        ));
         debugLabel = clean(debugLabel, defaultLabel(
                 surfaceSampleCount,
                 coloredSurfaceSampleCount,
@@ -91,6 +117,15 @@ public record DiffuseGiSceneInputSummary(
                 0.0F,
                 0.0F,
                 0.0F,
+                false,
+                false,
+                0,
+                0,
+                0,
+                0,
+                0,
+                0,
+                "affected surface region unavailable",
                 "GI scene inputs unavailable"
         );
     }
@@ -116,8 +151,24 @@ public record DiffuseGiSceneInputSummary(
         int coloredCount = 0;
         int skylitCount = 0;
         int sealedCount = 0;
+        int minBlockX = Integer.MAX_VALUE;
+        int minBlockY = Integer.MAX_VALUE;
+        int minBlockZ = Integer.MAX_VALUE;
+        int maxBlockX = Integer.MIN_VALUE;
+        int maxBlockY = Integer.MIN_VALUE;
+        int maxBlockZ = Integer.MIN_VALUE;
 
         for (SurfaceCacheRecord surface : resolvedCache.surfaceRecords()) {
+            SurfaceCacheKey key = surface.key();
+            int blockX = blockCoordinate(key.sectionX(), key.localX());
+            int blockY = blockCoordinate(key.sectionY(), key.localY());
+            int blockZ = blockCoordinate(key.sectionZ(), key.localZ());
+            minBlockX = Math.min(minBlockX, blockX);
+            minBlockY = Math.min(minBlockY, blockY);
+            minBlockZ = Math.min(minBlockZ, blockZ);
+            maxBlockX = Math.max(maxBlockX, blockX);
+            maxBlockY = Math.max(maxBlockY, blockY);
+            maxBlockZ = Math.max(maxBlockZ, blockZ);
             albedoR += surface.albedoR();
             albedoG += surface.albedoG();
             albedoB += surface.albedoB();
@@ -174,6 +225,10 @@ public record DiffuseGiSceneInputSummary(
                 + resolvedSource.budgetedShadowCandidateCount() * 0.35F
                 + resolvedSource.shadowCandidateCount() * 0.20F
                 + resolvedSource.dirtyRegionCount() * 0.10F) / Math.max(1.0F, surfaceCount + proximitySignals));
+        boolean hasSurfaceRegion = surfaceCount > 0;
+        boolean hasEmissiveProximity = resolvedSource.emissiveLightCount() > 0
+                || resolvedSource.budgetedShadowCandidateCount() > 0
+                || emissiveProximity > 0.0F;
 
         return new DiffuseGiSceneInputSummary(
                 surfaceCount,
@@ -198,6 +253,23 @@ public record DiffuseGiSceneInputSummary(
                 averageRadianceG,
                 averageRadianceB,
                 radianceEnergy,
+                hasEmissiveProximity,
+                hasSurfaceRegion,
+                hasSurfaceRegion ? minBlockX : 0,
+                hasSurfaceRegion ? minBlockY : 0,
+                hasSurfaceRegion ? minBlockZ : 0,
+                hasSurfaceRegion ? maxBlockX : 0,
+                hasSurfaceRegion ? maxBlockY : 0,
+                hasSurfaceRegion ? maxBlockZ : 0,
+                defaultSurfaceRegionLabel(
+                        hasSurfaceRegion,
+                        hasSurfaceRegion ? minBlockX : 0,
+                        hasSurfaceRegion ? minBlockY : 0,
+                        hasSurfaceRegion ? minBlockZ : 0,
+                        hasSurfaceRegion ? maxBlockX : 0,
+                        hasSurfaceRegion ? maxBlockY : 0,
+                        hasSurfaceRegion ? maxBlockZ : 0
+                ),
                 ""
         );
     }
@@ -209,12 +281,21 @@ public record DiffuseGiSceneInputSummary(
                 || this.cacheSampleCountInput > 0;
     }
 
+    public boolean readyForSurfaceOnlyProof() {
+        return this.surfaceSampleCount > 0
+                && this.affectedSurfaceRegionAvailable
+                && (this.emissiveProximityAvailable || this.radianceSampleCount > 0 || this.cacheSampleCountInput > 0);
+    }
+
     public String compactLabel() {
         return "surfaces=" + this.surfaceSampleCount
                 + " colored=" + this.coloredSurfaceSampleCount + "/" + this.coloredBounceInfluence
                 + " skylight=" + this.skylitSurfaceCount + "/" + this.skylightExposureRatio
                 + " sealed=" + this.sealedInteriorSurfaceCount + "/" + this.sealedInteriorRatio
                 + " emissiveProximity=" + this.emissiveProximitySignals + "/" + this.emissiveProximityScore
+                + "/available:" + this.emissiveProximityAvailable
+                + " affectedSurfaceRegion=\"" + this.affectedSurfaceRegionLabel + "\""
+                + " surfaceOnlyProofReady=" + this.readyForSurfaceOnlyProof()
                 + " cacheInput=" + this.cacheConfidenceInput + "/" + this.cacheVarianceInput
                 + " radianceEnergy=" + this.radianceEnergy;
     }
@@ -227,6 +308,10 @@ public record DiffuseGiSceneInputSummary(
 
     private static float luma(float red, float green, float blue) {
         return red * 0.2126F + green * 0.7152F + blue * 0.0722F;
+    }
+
+    private static int blockCoordinate(int sectionCoordinate, int localCoordinate) {
+        return (sectionCoordinate << 4) + localCoordinate;
     }
 
     private static float clampUnit(float value) {
@@ -259,6 +344,22 @@ public record DiffuseGiSceneInputSummary(
                 + " sealedRatio=" + sealedInteriorRatio
                 + " emissiveProximity=" + emissiveProximityScore
                 + " cache=" + cacheConfidenceInput + "/" + cacheVarianceInput;
+    }
+
+    private static String defaultSurfaceRegionLabel(
+            boolean available,
+            int minBlockX,
+            int minBlockY,
+            int minBlockZ,
+            int maxBlockX,
+            int maxBlockY,
+            int maxBlockZ
+    ) {
+        if (!available) {
+            return "affected surface region unavailable";
+        }
+        return "blocks=[" + minBlockX + "," + minBlockY + "," + minBlockZ + " -> "
+                + maxBlockX + "," + maxBlockY + "," + maxBlockZ + "]";
     }
 
     private static String clean(String value, String fallback) {

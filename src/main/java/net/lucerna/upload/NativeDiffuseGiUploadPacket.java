@@ -178,6 +178,18 @@ public final class NativeDiffuseGiUploadPacket {
         return this.planUpload.sceneInputFloats();
     }
 
+    public int[] sceneSurfaceRegionBounds() {
+        return this.planUpload.sceneSurfaceRegionBounds();
+    }
+
+    public int[] proofFlags() {
+        return this.planUpload.proofFlags();
+    }
+
+    public int[] denoiseOutputFlags() {
+        return this.planUpload.denoiseOutputFlags();
+    }
+
     public String[] debugLabels() {
         return this.planUpload.debugLabels();
     }

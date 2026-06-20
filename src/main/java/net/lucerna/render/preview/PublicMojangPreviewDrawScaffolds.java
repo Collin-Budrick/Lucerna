@@ -37,11 +37,11 @@ public final class PublicMojangPreviewDrawScaffolds {
     private static final int FULLSCREEN_TRIANGLE_VERTEX_COUNT = 3;
     private static final int SINGLE_INSTANCE_COUNT = 1;
     private static final int FIRST_INSTANCE = 0;
-    private static final int ROUND6_PUBLIC_FALLBACK_DRAW_REPEATS = 3;
-    private static final int ROUND7_RAW_GI_DRAW_REPEATS = 4;
-    private static final int ROUND7_DENOISED_GI_DRAW_REPEATS = 7;
-    private static final int ROUND7_FINAL_RAW_GI_DRAW_REPEATS = 3;
-    private static final int ROUND7_FINAL_DENOISED_GI_DRAW_REPEATS = 6;
+    private static final int ROUND6_PUBLIC_FALLBACK_DRAW_REPEATS = 1;
+    private static final int ROUND7_RAW_GI_DRAW_REPEATS = 1;
+    private static final int ROUND7_DENOISED_GI_DRAW_REPEATS = 1;
+    private static final int ROUND7_FINAL_RAW_GI_DRAW_REPEATS = 1;
+    private static final int ROUND7_FINAL_DENOISED_GI_DRAW_REPEATS = 1;
     private static final RenderPipeline DIAGNOSTIC_DIRECT_LIGHT_PREVIEW_PIPELINE = RenderPipelines.register(
             RenderPipeline.builder()
                     .withLocation(Identifier.fromNamespaceAndPath(
@@ -200,9 +200,9 @@ public final class PublicMojangPreviewDrawScaffolds {
         RenderSystem.bindDefaultUniforms(renderPass);
         renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, directLightSourceView, directLightSourceSampler);
         renderPass.draw(
-                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
                 FIRST_INSTANCE
         );
         return PublicMojangPreviewDrawScaffold.issued(
@@ -278,9 +278,9 @@ public final class PublicMojangPreviewDrawScaffolds {
         RenderSystem.bindDefaultUniforms(renderPass);
         renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, directLightSourceView, directLightSourceSampler);
         renderPass.draw(
-                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
                 FIRST_INSTANCE
         );
         return PublicMojangPreviewDrawScaffold.issued(
@@ -359,9 +359,9 @@ public final class PublicMojangPreviewDrawScaffolds {
         renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, sourceView, sourceSampler);
         for (int drawIndex = 0; drawIndex < ROUND7_RAW_GI_DRAW_REPEATS; drawIndex++) {
             renderPass.draw(
-                    FULLSCREEN_TRIANGLE_FIRST_VERTEX,
                     FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                     SINGLE_INSTANCE_COUNT,
+                    FULLSCREEN_TRIANGLE_FIRST_VERTEX,
                     FIRST_INSTANCE
             );
         }
@@ -442,9 +442,9 @@ public final class PublicMojangPreviewDrawScaffolds {
         renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, sourceView, sourceSampler);
         for (int drawIndex = 0; drawIndex < ROUND7_DENOISED_GI_DRAW_REPEATS; drawIndex++) {
             renderPass.draw(
-                    FULLSCREEN_TRIANGLE_FIRST_VERTEX,
                     FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                     SINGLE_INSTANCE_COUNT,
+                    FULLSCREEN_TRIANGLE_FIRST_VERTEX,
                     FIRST_INSTANCE
             );
         }
@@ -488,9 +488,9 @@ public final class PublicMojangPreviewDrawScaffolds {
             renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, rawGiSourceView, rawGiSourceSampler);
             for (int drawIndex = 0; drawIndex < ROUND7_FINAL_RAW_GI_DRAW_REPEATS; drawIndex++) {
                 renderPass.draw(
-                        FULLSCREEN_TRIANGLE_FIRST_VERTEX,
                         FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                         SINGLE_INSTANCE_COUNT,
+                        FULLSCREEN_TRIANGLE_FIRST_VERTEX,
                         FIRST_INSTANCE
                 );
             }
@@ -501,9 +501,9 @@ public final class PublicMojangPreviewDrawScaffolds {
         renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, denoisedGiSourceView, denoisedGiSourceSampler);
         for (int drawIndex = 0; drawIndex < ROUND7_FINAL_DENOISED_GI_DRAW_REPEATS; drawIndex++) {
             renderPass.draw(
-                    FULLSCREEN_TRIANGLE_FIRST_VERTEX,
                     FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                     SINGLE_INSTANCE_COUNT,
+                    FULLSCREEN_TRIANGLE_FIRST_VERTEX,
                     FIRST_INSTANCE
             );
         }
@@ -552,9 +552,9 @@ public final class PublicMojangPreviewDrawScaffolds {
 
         renderPass.setPipeline(DIAGNOSTIC_DIRECT_LIGHT_PREVIEW_PIPELINE);
         renderPass.draw(
-                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
-                    FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
                 FIRST_INSTANCE
         );
         return PublicMojangPreviewDrawScaffold.issued(
@@ -566,6 +566,43 @@ public final class PublicMojangPreviewDrawScaffolds {
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
                 "public Mojang diagnostic direct-light preview draw issued"
+        );
+    }
+
+    public static PublicMojangPreviewDrawScaffold issueTracyBlitDiagnosticDraw(
+            RenderPass renderPass,
+            GpuTextureView sourceView,
+            GpuSampler sourceSampler
+    ) {
+        if (renderPass == null) {
+            return PublicMojangPreviewDrawScaffold.unavailable(
+                    "public Mojang Tracy blit diagnostic skipped because no render pass is open"
+            );
+        }
+        if (sourceView == null || sourceSampler == null) {
+            return PublicMojangPreviewDrawScaffold.unavailable(
+                    "public Mojang Tracy blit diagnostic skipped because no source texture is available"
+            );
+        }
+
+        renderPass.setPipeline(RenderPipelines.TRACY_BLIT);
+        RenderSystem.bindDefaultUniforms(renderPass);
+        renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, sourceView, sourceSampler);
+        renderPass.draw(
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FIRST_INSTANCE
+        );
+        return PublicMojangPreviewDrawScaffold.issued(
+                RenderPipelines.TRACY_BLIT,
+                DIRECT_LIGHT_SOURCE_BINDING,
+                "diagnostic-tracy-blit-fullscreen-replace",
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FIRST_INSTANCE,
+                "public Mojang Tracy blit diagnostic draw issued against final composite target"
         );
     }
 }

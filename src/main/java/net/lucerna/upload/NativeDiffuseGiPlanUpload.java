@@ -113,6 +113,20 @@ public record NativeDiffuseGiPlanUpload(
         float sceneAverageRadianceG,
         float sceneAverageRadianceB,
         float sceneRadianceEnergy,
+        boolean sceneEmissiveProximityAvailable,
+        boolean sceneAffectedSurfaceRegionAvailable,
+        int sceneAffectedSurfaceMinBlockX,
+        int sceneAffectedSurfaceMinBlockY,
+        int sceneAffectedSurfaceMinBlockZ,
+        int sceneAffectedSurfaceMaxBlockX,
+        int sceneAffectedSurfaceMaxBlockY,
+        int sceneAffectedSurfaceMaxBlockZ,
+        boolean proofHandHudExcluded,
+        boolean proofSurfaceOnlyEligible,
+        boolean giOutputAuthenticNativeCpu,
+        boolean giOutputRealShader,
+        boolean denoiseOutputCpuScaffold,
+        boolean denoiseOutputRealShader,
         int validationFindingCount,
         int validationErrorCount,
         int validationWarningCount,
@@ -120,6 +134,8 @@ public record NativeDiffuseGiPlanUpload(
         String rayBudgetDebugLabel,
         String cacheConfidenceDebugLabel,
         String sourceDebugLabel,
+        String sceneAffectedSurfaceRegionLabel,
+        String proofAuthenticityLabel,
         String compactLabel
 ) {
     public static final int GRID_DIMENSION_STRIDE = 5;
@@ -230,6 +246,23 @@ public record NativeDiffuseGiPlanUpload(
     public static final int SCENE_AVERAGE_RADIANCE_G_OFFSET = 11;
     public static final int SCENE_AVERAGE_RADIANCE_B_OFFSET = 12;
     public static final int SCENE_RADIANCE_ENERGY_OFFSET = 13;
+    public static final int SCENE_SURFACE_REGION_BOUNDS_STRIDE = 6;
+    public static final int SCENE_SURFACE_REGION_MIN_BLOCK_X_OFFSET = 0;
+    public static final int SCENE_SURFACE_REGION_MIN_BLOCK_Y_OFFSET = 1;
+    public static final int SCENE_SURFACE_REGION_MIN_BLOCK_Z_OFFSET = 2;
+    public static final int SCENE_SURFACE_REGION_MAX_BLOCK_X_OFFSET = 3;
+    public static final int SCENE_SURFACE_REGION_MAX_BLOCK_Y_OFFSET = 4;
+    public static final int SCENE_SURFACE_REGION_MAX_BLOCK_Z_OFFSET = 5;
+    public static final int PROOF_FLAG_STRIDE = 6;
+    public static final int PROOF_EMISSIVE_PROXIMITY_AVAILABLE_OFFSET = 0;
+    public static final int PROOF_AFFECTED_SURFACE_REGION_AVAILABLE_OFFSET = 1;
+    public static final int PROOF_HAND_HUD_EXCLUDED_OFFSET = 2;
+    public static final int PROOF_SURFACE_ONLY_ELIGIBLE_OFFSET = 3;
+    public static final int PROOF_GI_OUTPUT_AUTHENTIC_NATIVE_CPU_OFFSET = 4;
+    public static final int PROOF_GI_OUTPUT_REAL_SHADER_OFFSET = 5;
+    public static final int DENOISE_OUTPUT_FLAG_STRIDE = 2;
+    public static final int DENOISE_OUTPUT_CPU_SCAFFOLD_OFFSET = 0;
+    public static final int DENOISE_OUTPUT_REAL_SHADER_OFFSET = 1;
 
     public NativeDiffuseGiPlanUpload {
         requireNonNegative(generation, "generation");
@@ -348,6 +381,30 @@ public record NativeDiffuseGiPlanUpload(
         requireFiniteNonNegative(sceneAverageRadianceG, "sceneAverageRadianceG");
         requireFiniteNonNegative(sceneAverageRadianceB, "sceneAverageRadianceB");
         requireFiniteNonNegative(sceneRadianceEnergy, "sceneRadianceEnergy");
+        if (!sceneAffectedSurfaceRegionAvailable) {
+            requireZero(sceneAffectedSurfaceMinBlockX, "sceneAffectedSurfaceMinBlockX");
+            requireZero(sceneAffectedSurfaceMinBlockY, "sceneAffectedSurfaceMinBlockY");
+            requireZero(sceneAffectedSurfaceMinBlockZ, "sceneAffectedSurfaceMinBlockZ");
+            requireZero(sceneAffectedSurfaceMaxBlockX, "sceneAffectedSurfaceMaxBlockX");
+            requireZero(sceneAffectedSurfaceMaxBlockY, "sceneAffectedSurfaceMaxBlockY");
+            requireZero(sceneAffectedSurfaceMaxBlockZ, "sceneAffectedSurfaceMaxBlockZ");
+        } else if (sceneAffectedSurfaceMinBlockX > sceneAffectedSurfaceMaxBlockX
+                || sceneAffectedSurfaceMinBlockY > sceneAffectedSurfaceMaxBlockY
+                || sceneAffectedSurfaceMinBlockZ > sceneAffectedSurfaceMaxBlockZ) {
+            throw new IllegalArgumentException("affected surface min bounds must be <= max bounds");
+        }
+        if (proofSurfaceOnlyEligible && !sceneAffectedSurfaceRegionAvailable) {
+            throw new IllegalArgumentException("surface-only proof eligibility requires an affected surface region");
+        }
+        if (proofSurfaceOnlyEligible && !proofHandHudExcluded) {
+            throw new IllegalArgumentException("surface-only proof eligibility requires hand/HUD-excluded capture hints");
+        }
+        if (giOutputRealShader && giOutputAuthenticNativeCpu) {
+            throw new IllegalArgumentException("GI output cannot be both real shader and CPU scaffold");
+        }
+        if (denoiseOutputRealShader && denoiseOutputCpuScaffold) {
+            throw new IllegalArgumentException("denoise output cannot be both real shader and CPU scaffold");
+        }
         requireNonNegative(validationFindingCount, "validationFindingCount");
         requireNonNegative(validationErrorCount, "validationErrorCount");
         requireNonNegative(validationWarningCount, "validationWarningCount");
@@ -358,6 +415,8 @@ public record NativeDiffuseGiPlanUpload(
         rayBudgetDebugLabel = requireText(rayBudgetDebugLabel, "rayBudgetDebugLabel");
         cacheConfidenceDebugLabel = requireText(cacheConfidenceDebugLabel, "cacheConfidenceDebugLabel");
         sourceDebugLabel = requireText(sourceDebugLabel, "sourceDebugLabel");
+        sceneAffectedSurfaceRegionLabel = requireText(sceneAffectedSurfaceRegionLabel, "sceneAffectedSurfaceRegionLabel");
+        proofAuthenticityLabel = requireText(proofAuthenticityLabel, "proofAuthenticityLabel");
         compactLabel = requireText(compactLabel, "compactLabel");
     }
 
@@ -483,6 +542,20 @@ public record NativeDiffuseGiPlanUpload(
                 sceneInputs.averageRadianceG(),
                 sceneInputs.averageRadianceB(),
                 sceneInputs.radianceEnergy(),
+                sceneInputs.emissiveProximityAvailable(),
+                sceneInputs.affectedSurfaceRegionAvailable(),
+                sceneInputs.affectedSurfaceMinBlockX(),
+                sceneInputs.affectedSurfaceMinBlockY(),
+                sceneInputs.affectedSurfaceMinBlockZ(),
+                sceneInputs.affectedSurfaceMaxBlockX(),
+                sceneInputs.affectedSurfaceMaxBlockY(),
+                sceneInputs.affectedSurfaceMaxBlockZ(),
+                true,
+                sceneInputs.readyForSurfaceOnlyProof(),
+                plan.readyForScheduling() && plan.requiresTracing(),
+                false,
+                true,
+                false,
                 validationReport.findings().size(),
                 validationReport.errorCount(),
                 validationReport.warningCount(),
@@ -490,6 +563,8 @@ public record NativeDiffuseGiPlanUpload(
                 plan.rayBudgetDebugLabel(),
                 plan.cacheConfidenceDebugLabel(),
                 plan.sourceDebugLabel(),
+                sceneInputs.affectedSurfaceRegionLabel(),
+                proofAuthenticityLabel(sceneInputs, plan),
                 plan.compactLabel()
         );
     }
@@ -664,12 +739,43 @@ public record NativeDiffuseGiPlanUpload(
         };
     }
 
+    public int[] sceneSurfaceRegionBounds() {
+        return new int[]{
+                this.sceneAffectedSurfaceMinBlockX,
+                this.sceneAffectedSurfaceMinBlockY,
+                this.sceneAffectedSurfaceMinBlockZ,
+                this.sceneAffectedSurfaceMaxBlockX,
+                this.sceneAffectedSurfaceMaxBlockY,
+                this.sceneAffectedSurfaceMaxBlockZ
+        };
+    }
+
+    public int[] proofFlags() {
+        return new int[]{
+                this.sceneEmissiveProximityAvailable ? 1 : 0,
+                this.sceneAffectedSurfaceRegionAvailable ? 1 : 0,
+                this.proofHandHudExcluded ? 1 : 0,
+                this.proofSurfaceOnlyEligible ? 1 : 0,
+                this.giOutputAuthenticNativeCpu ? 1 : 0,
+                this.giOutputRealShader ? 1 : 0
+        };
+    }
+
+    public int[] denoiseOutputFlags() {
+        return new int[]{
+                this.denoiseOutputCpuScaffold ? 1 : 0,
+                this.denoiseOutputRealShader ? 1 : 0
+        };
+    }
+
     public String[] debugLabels() {
         return new String[]{
                 this.gridDebugLabel,
                 this.rayBudgetDebugLabel,
                 this.cacheConfidenceDebugLabel,
                 this.sourceDebugLabel,
+                this.sceneAffectedSurfaceRegionLabel,
+                this.proofAuthenticityLabel,
                 this.compactLabel
         };
     }
@@ -723,6 +829,12 @@ public record NativeDiffuseGiPlanUpload(
         }
     }
 
+    private static void requireZero(int value, String name) {
+        if (value != 0) {
+            throw new IllegalArgumentException(name + " must be zero when affected surface region is unavailable");
+        }
+    }
+
     private static void requireUnit(float value, String name) {
         requireFinite(value, name);
         if (value < 0.0F || value > 1.0F) {
@@ -741,5 +853,18 @@ public record NativeDiffuseGiPlanUpload(
         if (!Float.isFinite(value)) {
             throw new IllegalArgumentException(name + " must be finite");
         }
+    }
+
+    private static String proofAuthenticityLabel(DiffuseGiSceneInputSummary sceneInputs, LowResDiffuseGiPlan plan) {
+        return "surfaceOnlyEligible=" + sceneInputs.readyForSurfaceOnlyProof()
+                + " handHudExcludedHint=true"
+                + " affectedSurfaceRegion=\"" + sceneInputs.affectedSurfaceRegionLabel() + "\""
+                + " emissiveProximityAvailable=" + sceneInputs.emissiveProximityAvailable()
+                + " giOutputSource=native-cpu-scaffold"
+                + " realShaderGiOutput=false"
+                + " denoiseOutput=cpu-scaffold"
+                + " realDenoiseShaderOutput=false"
+                + " requiresTracing=" + plan.requiresTracing()
+                + " readyForScheduling=" + plan.readyForScheduling();
     }
 }

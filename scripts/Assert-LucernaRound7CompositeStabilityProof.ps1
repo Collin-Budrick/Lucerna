@@ -33,21 +33,23 @@ param(
 
     [double] $RegionLeftPercent = 10.0,
 
-    [double] $RegionTopPercent = 10.0,
+    [double] $RegionTopPercent = 12.0,
 
     [double] $RegionWidthPercent = 80.0,
 
-    [double] $RegionHeightPercent = 75.0,
+    [double] $RegionHeightPercent = 58.0,
 
     [switch] $DisableAutoFocusRegion,
 
+    [switch] $AutoFocusRegion,
+
     [double] $AutoRegionSearchLeftPercent = 5.0,
 
-    [double] $AutoRegionSearchTopPercent = 8.0,
+    [double] $AutoRegionSearchTopPercent = 10.0,
 
     [double] $AutoRegionSearchWidthPercent = 90.0,
 
-    [double] $AutoRegionSearchHeightPercent = 80.0,
+    [double] $AutoRegionSearchHeightPercent = 60.0,
 
     [int] $AutoRegionColumns = 12,
 
@@ -68,6 +70,8 @@ param(
     [double] $MinTemporalMeanAbsLuma = 0.5,
 
     [double] $MinSceneColorVariance = 8.0,
+
+    [double] $MaxRegionBottomPercent = 72.0,
 
     [switch] $RequireLogProof,
 
@@ -171,7 +175,7 @@ function Invoke-DeltaHelper {
         BrightPixelThreshold = $BrightPixelThreshold
         OutputJsonPath = $tempJson
     }
-    if (-not $DisableAutoFocusRegion) {
+    if ($AutoFocusRegion -and -not $DisableAutoFocusRegion) {
         $compareArgs.AutoFocusRegion = $true
         $compareArgs.AutoRegionSearchLeftPercent = $AutoRegionSearchLeftPercent
         $compareArgs.AutoRegionSearchTopPercent = $AutoRegionSearchTopPercent
@@ -338,6 +342,15 @@ $sceneVariance = [ordered]@{
 $logProof = if ($logResolved.Count -eq 0) { $null } else { Measure-Round7CompositeStabilityLogProof $logResolved }
 $failures = New-Object System.Collections.Generic.List[string]
 
+$regionBottomPercent = $RegionTopPercent + $RegionHeightPercent
+$autoSearchBottomPercent = $AutoRegionSearchTopPercent + $AutoRegionSearchHeightPercent
+if ((-not $AutoFocusRegion -or $DisableAutoFocusRegion) -and $regionBottomPercent -gt $MaxRegionBottomPercent) {
+    $failures.Add("Fixed proof region extends into lower HUD/hand area. bottomPercent=$regionBottomPercent max=$MaxRegionBottomPercent")
+}
+if ($AutoFocusRegion -and -not $DisableAutoFocusRegion -and $autoSearchBottomPercent -gt $MaxRegionBottomPercent) {
+    $failures.Add("Auto-focus search region extends into lower HUD/hand area. bottomPercent=$autoSearchBottomPercent max=$MaxRegionBottomPercent")
+}
+
 $baselineWidth = $particleBaselineDimensions.width
 $baselineHeight = $particleBaselineDimensions.height
 foreach ($entry in @(
@@ -425,7 +438,8 @@ $result = [ordered]@{
         minSceneColorVariance = $MinSceneColorVariance
         changedPixelThreshold = $ChangedPixelThreshold
         brightPixelThreshold = $BrightPixelThreshold
-        focusRegionSelection = if ($DisableAutoFocusRegion) { "fixed" } else { "auto" }
+        maxRegionBottomPercent = $MaxRegionBottomPercent
+        focusRegionSelection = if ($AutoFocusRegion -and -not $DisableAutoFocusRegion) { "auto-upper-mid-world-surface" } else { "fixed-upper-mid-world-surface" }
         requireLogProof = [bool]$RequireLogProof
     }
     screenshots = [ordered]@{
@@ -450,6 +464,7 @@ $result = [ordered]@{
     logProof = $logProof
     proofClarity = [ordered]@{
         classification = if ($failures.Count -eq 0) { "round7_composite_stability_evidence_passed" } else { "round7_composite_stability_failed" }
+        handHudExcludedByRegion = if ($AutoFocusRegion -and -not $DisableAutoFocusRegion) { $autoSearchBottomPercent -le $MaxRegionBottomPercent } else { $regionBottomPercent -le $MaxRegionBottomPercent }
         particleCompositeEvidencePresent = ([double]$particleDelta.focusRegionMetrics.changedPixelPercent -ge $MinParticleChangedPixelPercent)
         translucencyCompositeEvidencePresent = ([double]$translucentDelta.focusRegionMetrics.changedPixelPercent -ge $MinTranslucentChangedPixelPercent)
         temporalMotionEvidencePresent = (
@@ -494,6 +509,7 @@ Write-Host "particle.focus.changedPixelPercent=$($particleDelta.focusRegionMetri
 Write-Host "translucency.focus.changedPixelPercent=$($translucentDelta.focusRegionMetrics.changedPixelPercent)"
 Write-Host "temporal.focus.changedPixelPercent=$($temporalDelta.focusRegionMetrics.changedPixelPercent)"
 Write-Host "temporal.focus.meanAbsLuma=$($temporalDelta.focusRegionMetrics.meanAbsLuma)"
+Write-Host "focus.regionSelection=$($result.thresholds.focusRegionSelection)"
 if ($logProof) {
     Write-Host "finalCompositePresent=$($logProof.markers.finalCompositePresent)"
     Write-Host "hudPreservationPresent=$($logProof.markers.hudPreservationPresent)"

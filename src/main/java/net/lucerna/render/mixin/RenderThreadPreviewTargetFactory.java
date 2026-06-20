@@ -26,6 +26,7 @@ import net.lucerna.render.pass.LucernaJavaOpaqueRenderObjects;
 import net.lucerna.render.pass.LucernaFramePassPhase;
 import net.lucerna.render.pass.LucernaFramePassTarget;
 import net.minecraft.client.renderer.GameRenderer;
+import org.joml.Vector4f;
 
 import java.lang.ref.Reference;
 import java.nio.ByteBuffer;
@@ -54,6 +55,7 @@ public final class RenderThreadPreviewTargetFactory {
                     "lucerna_round7_denoised_gi_cpu_output_rgba",
                     "Round 7 DENOISED_GI denoised diffuse-GI CPU output"
             );
+    private static GpuTexture lastWorldColorTexture;
 
     private RenderThreadPreviewTargetFactory() {
     }
@@ -84,6 +86,7 @@ public final class RenderThreadPreviewTargetFactory {
 
         GpuTextureView colorView = renderTarget.getColorTextureView();
         GpuTexture colorTexture = renderTarget.getColorTexture();
+        lastWorldColorTexture = colorTexture;
         GpuTextureView depthView = renderTarget.getDepthTextureView();
         GpuTexture depthTexture = renderTarget.getDepthTexture();
         GpuDevice device = RenderSystem.tryGetDevice();
@@ -834,8 +837,13 @@ public final class RenderThreadPreviewTargetFactory {
 
         boolean rawUploadAvailable = rawUpload != null && rawUpload.availableForDraw();
         boolean directUploadAvailable = directUpload != null && directUpload.availableForDraw();
+        boolean diagnosticVisibleDrawEnabled = finalCompositeDiagnosticDrawEnabled();
+        boolean diagnosticClearEnabled = finalCompositeDiagnosticClearEnabled();
+        boolean diagnosticTracyBlitEnabled = finalCompositeDiagnosticTracyBlitEnabled();
         PublicMojangPreviewDrawScaffold drawScaffold;
         PublicMojangPreviewDrawScaffold directDrawScaffold = null;
+        PublicMojangPreviewDrawScaffold diagnosticDrawScaffold = null;
+        PublicMojangPreviewDrawScaffold diagnosticTracyBlitScaffold = null;
         try (RenderPass renderPass = createFullTargetRenderPass(
                 commandEncoder,
                 () -> "lucerna public Round 7 FINAL_COMPOSITE direct plus raw plus denoised visual draw pass",
@@ -857,6 +865,21 @@ public final class RenderThreadPreviewTargetFactory {
                         directUpload.sampler()
                 );
             }
+            if (diagnosticVisibleDrawEnabled) {
+                diagnosticDrawScaffold = PublicMojangPreviewDrawScaffolds.issueDiagnosticDirectLightPreviewDraw(renderPass);
+            }
+            if (diagnosticTracyBlitEnabled) {
+                diagnosticTracyBlitScaffold = PublicMojangPreviewDrawScaffolds.issueTracyBlitDiagnosticDraw(
+                        renderPass,
+                        denoisedUpload.textureView(),
+                        denoisedUpload.sampler()
+                );
+            }
+        }
+        boolean diagnosticClearSubmitted = false;
+        if (diagnosticClearEnabled && lastWorldColorTexture != null) {
+            commandEncoder.clearColorTexture(lastWorldColorTexture, new Vector4f(0.95F, 0.18F, 0.04F, 1.0F));
+            diagnosticClearSubmitted = true;
         }
         commandEncoder.submit();
         Reference.reachabilityFence(rawSourceBuffer);
@@ -864,7 +887,10 @@ public final class RenderThreadPreviewTargetFactory {
         Reference.reachabilityFence(denoisedSourceBuffer);
         boolean finalBlendComplete = directUploadAvailable && rawUploadAvailable;
         return PublicMojangFinalCompositeSubmissionResult.submitted(
-                drawScaffold.drawCallsIssued() || (directDrawScaffold != null && directDrawScaffold.drawCallsIssued()),
+                drawScaffold.drawCallsIssued()
+                        || (directDrawScaffold != null && directDrawScaffold.drawCallsIssued())
+                        || (diagnosticDrawScaffold != null && diagnosticDrawScaffold.drawCallsIssued())
+                        || (diagnosticTracyBlitScaffold != null && diagnosticTracyBlitScaffold.drawCallsIssued()),
                 target.attachmentMetadata().javaOpaque(),
                 PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
                 "public Mojang Round 7 FINAL_COMPOSITE visual render pass submitted; "
@@ -901,7 +927,43 @@ public final class RenderThreadPreviewTargetFactory {
                         + drawScaffold.summary()
                         + "; direct draw scaffold: "
                         + (directDrawScaffold == null ? "not-attempted" : directDrawScaffold.summary())
+                        + "; diagnostic visible draw: "
+                        + (diagnosticDrawScaffold == null
+                        ? "disabled; set LUCERNA_ROUND7_SURFACE_DRAW_DIAGNOSTIC=1 for controller draw-target diagnosis"
+                        : diagnosticDrawScaffold.summary())
+                        + "; diagnostic Tracy blit: "
+                        + (diagnosticTracyBlitScaffold == null
+                        ? "disabled; set LUCERNA_ROUND7_SURFACE_TRACY_BLIT_DIAGNOSTIC=1 for built-in blit diagnosis"
+                        : diagnosticTracyBlitScaffold.summary())
+                        + "; diagnostic clear: "
+                        + (diagnosticClearSubmitted
+                        ? "submitted; LUCERNA_ROUND7_SURFACE_CLEAR_DIAGNOSTIC=1 cleared cached main world color texture"
+                        : "disabled; set LUCERNA_ROUND7_SURFACE_CLEAR_DIAGNOSTIC=1 for controller target diagnosis")
         );
+    }
+
+    private static boolean finalCompositeDiagnosticDrawEnabled() {
+        String value = System.getenv("LUCERNA_ROUND7_SURFACE_DRAW_DIAGNOSTIC");
+        return value != null
+                && ("1".equals(value.trim())
+                || "true".equalsIgnoreCase(value.trim())
+                || "yes".equalsIgnoreCase(value.trim()));
+    }
+
+    private static boolean finalCompositeDiagnosticTracyBlitEnabled() {
+        String value = System.getenv("LUCERNA_ROUND7_SURFACE_TRACY_BLIT_DIAGNOSTIC");
+        return value != null
+                && ("1".equals(value.trim())
+                || "true".equalsIgnoreCase(value.trim())
+                || "yes".equalsIgnoreCase(value.trim()));
+    }
+
+    private static boolean finalCompositeDiagnosticClearEnabled() {
+        String value = System.getenv("LUCERNA_ROUND7_SURFACE_CLEAR_DIAGNOSTIC");
+        return value != null
+                && ("1".equals(value.trim())
+                || "true".equalsIgnoreCase(value.trim())
+                || "yes".equalsIgnoreCase(value.trim()));
     }
 
     private static DirectLightingCpuOutputPayload resolveNativeDirectLightCandidatePayload() {

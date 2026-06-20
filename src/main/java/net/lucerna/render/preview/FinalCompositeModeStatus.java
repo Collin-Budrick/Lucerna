@@ -145,7 +145,8 @@ public record FinalCompositeModeStatus(
         return "direct=" + sourcePolicyState(this.directLightingEnabled, "native-direct")
                 + ",rawGI=" + sourcePolicyState(this.diffuseGiEnabled || this.rawGiVisualMode(), "native-raw")
                 + ",denoisedGI=" + denoisedPolicyState()
-                + ",final=" + (this.finalLucernaComposite ? "direct+rawGI+denoisedGI/real-sources" : "isolated");
+                + ",final=" + (this.finalLucernaComposite ? "direct+rawGI+denoisedGI/real-sources" : "isolated")
+                + "," + this.shaderOutputStatusSummary();
     }
 
     public String denoiseSourcePolicy() {
@@ -162,6 +163,14 @@ public record FinalCompositeModeStatus(
             return "prefer real shader; current acceptable fallback=CPU denoised RGBA8 with explicit realShader=false";
         }
         return "mode-specific; require explicit shader-vs-CPU source label";
+    }
+
+    public String shaderOutputStatusSummary() {
+        return "realShaderGiOutput=false"
+                + ",cpuGiScaffoldOutput=" + (!this.baselineVisualMode() && (this.diffuseGiEnabled || this.rawGiVisualMode()))
+                + ",realDenoiseShaderOutput=false"
+                + ",cpuDenoiseScaffoldOutput=" + (this.denoisedGiVisualMode() || this.finalCompositeVisualMode())
+                + ",shaderQualityGate=open";
     }
 
     public String compactAuthenticityPolicy() {
@@ -381,6 +390,7 @@ public record FinalCompositeModeStatus(
                 + "\",selectedSourcePolicy=\"" + this.selectedSourcePolicy()
                 + "\",submissionPolicy=\"" + this.finalCompositeSubmissionPolicy()
                 + "\",sourceAuthenticityPolicy=\"" + this.selectedSourceAuthenticityPolicy()
+                + "\",shaderOutputStatus=\"" + this.shaderOutputStatusSummary()
                 + "\",focusedRegionProof=\"" + this.focusedRegionProofExpectation()
                 + "\",reason=\"" + this.modeReason
                 + "\",expectedEvidence=\"" + this.expectedEvidence + "\"";
