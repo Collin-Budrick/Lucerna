@@ -64,6 +64,7 @@ public record DenoiseExecutionSnapshot(
         boolean shaderDenoiseOutputImageCandidateNonGpu,
         boolean shaderDenoiseOutputMaterialReady,
         boolean shaderDenoiseShaderGeneratedOutput,
+        boolean shaderDenoiseCpuReadbackFallbackReported,
         boolean temporalReady,
         boolean temporalGhostingRisk,
         boolean cpuFallbackQualityMetrics,
@@ -217,6 +218,7 @@ public record DenoiseExecutionSnapshot(
                 true, // shaderDenoiseOutputImageCandidateNonGpu
                 false, // shaderDenoiseOutputMaterialReady
                 false, // shaderDenoiseShaderGeneratedOutput
+                false, // shaderDenoiseCpuReadbackFallbackReported
                 false, // temporalReady
                 false, // temporalGhostingRisk
                 false, // cpuFallbackQualityMetrics
@@ -344,18 +346,52 @@ public record DenoiseExecutionSnapshot(
                 parseBoolean(extractField(denoiseExecution, "denoised_output_intent")),
                 parseBoolean(extractField(denoiseExecution, "denoised_cpu_output_generated")),
                 parseBoolean(extractField(denoiseExecution, "denoised_output_differs_from_raw")),
-                parseBoolean(extractField(denoiseExecution, "real_denoise_shader_output")),
+                parseBooleanField(
+                        denoiseExecution,
+                        "real_denoise_shader_output",
+                        "real_shader_denoise_output",
+                        "real_shader_denoise_output_proven"
+                ),
                 parseBoolean(extractField(denoiseExecution, "raw_gi_input_ready")),
                 parseBoolean(extractField(denoiseExecution, "cpu_denoised_readback_ready")),
                 parseBoolean(extractField(denoiseExecution, "shader_denoise_dispatch_prepared")),
                 parseBoolean(extractField(denoiseExecution, "shader_denoise_input_ready")),
                 parseBoolean(extractField(denoiseExecution, "shader_denoise_output_ready")),
                 parseBoolean(extractField(denoiseExecution, "shader_denoise_output_image_ready")),
-                parseBoolean(extractField(denoiseExecution, "shader_denoise_output_image_candidate_ready")),
-                parseBoolean(extractField(denoiseExecution, "shader_denoise_output_image_candidate_cpu_staged")),
-                parseBoolean(extractField(denoiseExecution, "shader_denoise_output_image_candidate_non_gpu")),
-                parseBoolean(extractField(denoiseExecution, "shader_denoise_output_material_ready")),
-                parseBoolean(extractField(denoiseExecution, "shader_denoise_output_shader_generated")),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_denoise_output_image_candidate_ready",
+                        "shader_output_image_candidate_ready",
+                        "shader_output_image_candidate_present"
+                ),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_denoise_output_image_candidate_cpu_staged",
+                        "shader_output_image_candidate_cpu_staged"
+                ),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_denoise_output_image_candidate_non_gpu",
+                        "shader_output_image_candidate_non_gpu"
+                ),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_denoise_output_material_ready",
+                        "shader_output_material_ready"
+                ),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_denoise_output_shader_generated",
+                        "shader_generated_output",
+                        "shader_denoise_generated_output"
+                ),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_denoise_cpu_readback_fallback",
+                        "cpu_readback_fallback",
+                        "cpu_readback_fallback_used",
+                        "denoise_cpu_readback_fallback"
+                ),
                 parseBooleanField(
                         denoiseExecution,
                         "temporal_ready",
@@ -395,8 +431,19 @@ public record DenoiseExecutionSnapshot(
                         "temporal_ghosting_risk_marker",
                         "denoise_ghosting_risk_marker"
                 ),
-                extractField(denoiseExecution, "shader_denoise_output_image_candidate_marker"),
-                extractField(denoiseExecution, "shader_denoise_output_image_blocker"),
+                extractFieldOrDefault(
+                        denoiseExecution,
+                        "shader_denoise_output_image_candidate_marker",
+                        "shader_output_image_candidate_marker",
+                        "shader_output_image_candidate_source"
+                ),
+                extractFieldOrDefault(
+                        denoiseExecution,
+                        "shader_denoise_output_image_blocker",
+                        "shader_output_blocker_reason",
+                        "shader_output_image_candidate_blocker",
+                        "shader_denoise_output_blocker_reason"
+                ),
                 extractField(denoiseExecution, "composite_marker"),
                 extractField(denoiseExecution, "readiness_reason")
         );
@@ -440,12 +487,40 @@ public record DenoiseExecutionSnapshot(
     }
 
     public boolean shaderDenoiseCpuReadbackFallbackActive() {
+        return this.shaderDenoiseCpuReadbackFallbackReported || this.shaderDenoiseCpuReadbackFallbackDerived();
+    }
+
+    public boolean shaderDenoiseCpuReadbackFallbackDerived() {
         return this.hasExecutionTelemetry()
                 && this.cpuDenoisedOutputReadbackReady()
                 && (!this.realDenoiseShaderOutput
                 || !this.shaderDenoiseShaderGeneratedOutput
                 || !this.shaderDenoiseOutputReady
                 || !this.shaderDenoiseOutputImageReady);
+    }
+
+    public boolean shaderDenoiseNoOverclaimStatus() {
+        return !this.realShaderDenoiseOutputReady();
+    }
+
+    public String shaderDenoiseOutputPrerequisitesSummary() {
+        return "shaderDenoiseOutputPrerequisites"
+                + " dispatchPrepared=" + this.shaderDenoiseDispatchPrepared
+                + " inputReady=" + this.shaderDenoiseInputReady
+                + " outputReady=" + this.shaderDenoiseOutputReady
+                + " imageReady=" + this.shaderDenoiseOutputImageReady
+                + " materialReady=" + this.shaderDenoiseOutputMaterialReady
+                + " shaderGenerated=" + this.shaderDenoiseShaderGeneratedOutput
+                + " realShaderFlag=" + this.realDenoiseShaderOutput
+                + " realShaderDenoiseOutputReady=" + this.realShaderDenoiseOutputReady()
+                + " cpuReadbackFallback=" + this.shaderDenoiseCpuReadbackFallbackActive()
+                + " cpuReadbackFallbackReported=" + this.shaderDenoiseCpuReadbackFallbackReported
+                + " cpuReadbackFallbackDerived=" + this.shaderDenoiseCpuReadbackFallbackDerived()
+                + " candidateOnly=" + this.shaderDenoiseOutputImageCandidatePresent()
+                + " candidateCpuStaged=" + this.shaderDenoiseOutputImageCandidateCpuStaged
+                + " candidateNonGpu=" + this.shaderDenoiseOutputImageCandidateNonGpu
+                + " blocker=" + this.shaderDenoiseOutputBlockerReason()
+                + " noOverclaim=" + this.shaderDenoiseNoOverclaimStatus();
     }
 
     public boolean realShaderDenoiseOutputReady() {
@@ -592,8 +667,12 @@ public record DenoiseExecutionSnapshot(
                 + " shaderDenoiseOutputImageCandidateNonGpu=" + this.shaderDenoiseOutputImageCandidateNonGpu
                 + " realShaderDenoiseOutputReady=" + this.realShaderDenoiseOutputReady()
                 + " shaderDenoiseCpuReadbackFallbackActive=" + this.shaderDenoiseCpuReadbackFallbackActive()
+                + " shaderDenoiseCpuReadbackFallbackReported=" + this.shaderDenoiseCpuReadbackFallbackReported
+                + " shaderDenoiseCpuReadbackFallbackDerived=" + this.shaderDenoiseCpuReadbackFallbackDerived()
                 + " shaderDenoiseOutputReadinessLabel=" + this.shaderDenoiseOutputReadinessLabel()
                 + " shaderDenoiseOutputBlockerReason=" + this.shaderDenoiseOutputBlockerReason()
+                + " shaderDenoiseNoOverclaimStatus=" + this.shaderDenoiseNoOverclaimStatus()
+                + " shaderDenoiseOutputPrerequisites=\"" + this.shaderDenoiseOutputPrerequisitesSummary() + "\""
                 + " shaderDenoiseOutputImageCandidateSize=" + this.shaderDenoiseOutputImageCandidateWidth
                 + "x" + this.shaderDenoiseOutputImageCandidateHeight
                 + " shaderDenoiseOutputImageCandidatePixels=" + this.shaderDenoiseOutputImageCandidatePixels

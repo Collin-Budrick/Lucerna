@@ -420,18 +420,26 @@ public record LightingDispatchTelemetryStatus(
         copyMissing(target, executionFields, "shader_denoise_output_image_ready", "shader_output_image_ready");
         copyMissing(target, executionFields, "shader_denoise_output_image_candidate_ready", "shader_output_image_candidate");
         copyMissing(target, executionFields, "shader_denoise_output_image_candidate_ready", "shader_output_image_candidate_present");
+        copyMissing(target, executionFields, "shader_denoise_output_image_candidate_ready", "shader_output_image_candidate_ready");
         copyMissing(target, executionFields, "shader_denoise_output_image_candidate_cpu_staged", "shader_output_image_candidate_cpu_staged");
         copyMissing(target, executionFields, "shader_denoise_output_image_candidate_non_gpu", "shader_output_image_candidate_non_gpu");
         copyMissing(target, executionFields, "shader_denoise_output_image_candidate_size", "shader_output_image_candidate_dimensions");
         copyMissing(target, executionFields, "shader_denoise_output_image_candidate_width", "shader_output_image_candidate_width");
         copyMissing(target, executionFields, "shader_denoise_output_image_candidate_height", "shader_output_image_candidate_height");
+        copyMissing(target, executionFields, "shader_denoise_output_image_candidate_pixels", "shader_output_image_candidate_pixels");
+        copyMissing(target, executionFields, "shader_denoise_output_image_candidate_bytes", "shader_output_image_candidate_bytes");
         copyMissing(target, executionFields, "shader_denoise_output_image_candidate_checksum", "shader_output_image_candidate_checksum");
+        copyMissing(target, executionFields, "shader_denoise_output_image_candidate_marker", "shader_output_image_candidate_marker");
         copyMissing(target, executionFields, "shader_denoise_output_image_candidate_marker", "shader_output_image_candidate_source");
         copyMissing(target, executionFields, "shader_denoise_output_image_blocker", "shader_output_image_candidate_blocker");
         copyMissing(target, executionFields, "shader_denoise_output_image_blocker", "shader_output_image_candidate_boundary");
+        copyMissing(target, executionFields, "shader_denoise_output_image_blocker", "shader_output_blocker_reason");
         copyMissing(target, executionFields, "shader_denoise_output_material_ready", "shader_output_material_ready");
         copyMissing(target, executionFields, "shader_denoise_output_shader_generated", "shader_generated_output");
+        copyMissing(target, executionFields, "real_denoise_shader_output", "real_shader_denoise_output");
+        copyMissing(target, executionFields, "real_shader_denoise_output_ready", "real_shader_denoise_output_ready");
         copyMissing(target, executionFields, "cpu_fallback_quality_metrics", "cpu_readback_fallback");
+        copyMissing(target, executionFields, "shader_denoise_cpu_readback_fallback", "cpu_readback_fallback");
         copyMissing(target, executionFields, "denoised_cpu_output_generated", "cpu_output_generated");
         copyMissing(target, executionFields, "denoised_output_pixels", "output_pixels");
         copyMissing(target, executionFields, "denoised_output_checksum", "output_checksum");
@@ -452,6 +460,9 @@ public record LightingDispatchTelemetryStatus(
         copyMissing(target, executionFields, "temporal_stability_ready", "temporal_ready");
         copyMissing(target, executionFields, "temporal_stability_readiness_marker", "temporal_readiness_marker");
         copyMissing(target, executionFields, "shader_denoise_output_readiness_marker", "shader_denoise_blockers");
+        copyMissing(target, executionFields, "shader_denoise_output_readiness_marker", "shader_output_readiness_label");
+        copyMissing(target, executionFields, "shader_denoise_output_readiness_label", "shader_output_readiness_label");
+        copyMissing(target, executionFields, "shader_denoise_output_blocker_reason", "shader_output_blocker_reason");
     }
 
     private static void mergeDirectPayloadSummaryFields(String nativeStatus, Map<String, Map<String, String>> stageFields) {
@@ -898,9 +909,26 @@ public record LightingDispatchTelemetryStatus(
             case "shader_denoise_intent", "shader_denoise_planned", "shader_denoise_enabled",
                     "shader_denoise_contract_ready", "denoise_shader_intended",
                     "denoise_shader_planned" -> "shader_denoise_intended";
-            case "shader_denoise_output_ready", "real_denoise_shader_output", "real_shader_denoise_output",
-                    "real_shader_gi_output", "gpu_denoise_output_ready", "gpu_denoise_output",
+            case "shader_denoise_output_ready", "real_shader_gi_output", "gpu_denoise_output_ready", "gpu_denoise_output",
                     "shader_denoise_ready" -> "shader_output_ready";
+            case "real_denoise_shader_output", "real_shader_denoise_output",
+                    "real_shader_denoise_output_proven" -> "real_shader_denoise_output";
+            case "shader_denoise_output_image_candidate_ready", "shader_output_image_candidate",
+                    "shader_output_image_candidate_present" -> "shader_output_image_candidate_ready";
+            case "shader_denoise_output_image_candidate_cpu_staged" -> "shader_output_image_candidate_cpu_staged";
+            case "shader_denoise_output_image_candidate_non_gpu" -> "shader_output_image_candidate_non_gpu";
+            case "shader_denoise_output_image_candidate_size",
+                    "shader_output_image_candidate_size" -> "shader_output_image_candidate_dimensions";
+            case "shader_denoise_output_image_candidate_pixels" -> "shader_output_image_candidate_pixels";
+            case "shader_denoise_output_image_candidate_bytes" -> "shader_output_image_candidate_bytes";
+            case "shader_denoise_output_image_candidate_checksum" -> "shader_output_image_candidate_checksum";
+            case "shader_denoise_output_image_candidate_marker",
+                    "shader_output_image_candidate_source" -> "shader_output_image_candidate_marker";
+            case "shader_denoise_output_image_blocker", "shader_output_image_candidate_blocker",
+                    "shader_output_image_candidate_boundary",
+                    "shader_denoise_output_blocker_reason" -> "shader_output_blocker_reason";
+            case "shader_denoise_output_readiness_marker",
+                    "shader_denoise_output_readiness_label" -> "shader_output_readiness_label";
             case "shader_denoise_dispatch_prepared", "denoise_shader_dispatch_prepared",
                     "real_shader_denoise_dispatch_prepared", "gpu_denoise_dispatch_prepared" -> "shader_dispatch_prepared";
             case "shader_denoise_output_image_ready", "real_shader_output_image_ready",

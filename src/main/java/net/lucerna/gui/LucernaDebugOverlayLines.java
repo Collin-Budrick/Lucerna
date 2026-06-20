@@ -233,8 +233,10 @@ public final class LucernaDebugOverlayLines {
         if (!lightingDispatch.hasLightingDispatchStatus()) {
             lines.add(Component.literal("Denoise telemetry: unavailable(" + shorten(lightingDispatch.message(), 64) + ")"));
             lines.add(Component.literal("Sources: raw=? cpu=? shaderIntent=? shaderOut=?"));
+            lines.add(Component.literal("Shader output attempt: attempted=? generation=? realReady=false noOverclaim=true"));
             lines.add(Component.literal("Shader output prerequisites: dispatch=? image=? material=? generated=? realReady=?"));
             lines.add(Component.literal("Shader output candidate: present=? dims=missing checksum=missing"));
+            lines.add(Component.literal("Candidate source: source=? marker=? boundary=telemetry-unavailable"));
             lines.add(Component.literal("Candidate boundary: blocker=telemetry-unavailable notRealShaderOut=true"));
             lines.add(Component.literal("CPU fallback boundary: active=? cpuReady=? cpuGenerated=? candidateOnly=? source=?"));
             lines.add(Component.literal("Denoise output: source=? generated=? energy=missing checksum=missing"));
@@ -254,16 +256,23 @@ public final class LucernaDebugOverlayLines {
                 + " image=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderOutputImageReady())
                 + " material=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderOutputMaterialReady())
                 + " generated=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderGeneratedOutput())));
+        lines.add(Component.literal("Shader output attempt: attempted=" + shaderDenoiseOutputAttemptedLabel(denoiseStage)
+                + " generation=" + valueOrUnknown(denoiseStage == null ? null : denoiseStage.generation())
+                + " realReady=" + realShaderDenoiseOutputReadyLabel(denoiseStage)
+                + " noOverclaim=" + shaderDenoiseNoOverclaimLabel(denoiseStage)));
         lines.add(Component.literal("Shader output prerequisites: " + shaderOutputPrerequisitesLabel(denoiseStage)));
         lines.add(Component.literal("Shader output candidate: present=" + shaderOutputImageCandidateReadinessLabel(denoiseStage)
                 + " dims=" + shaderOutputImageCandidateDimensionsLabel(denoiseStage)
                 + " checksum=" + shaderOutputImageCandidateChecksumLabel(denoiseStage)));
-        lines.add(Component.literal("Candidate source: " + shaderOutputImageCandidateSourceLabel(denoiseStage)));
+        lines.add(Component.literal("Candidate source: source=" + shaderOutputImageCandidateSourceLabel(denoiseStage)
+                + " marker=" + shaderOutputImageCandidateMarkerLabel(denoiseStage)
+                + " boundary=" + shaderOutputImageCandidateBlockerLabel(denoiseStage)));
         lines.add(Component.literal("Candidate boundary: blocker=" + shaderOutputImageCandidateBlockerLabel(denoiseStage)
                 + " notRealShaderOut=" + yesNo(!Boolean.TRUE.equals(denoiseStage == null ? null : denoiseStage.shaderGeneratedOutput()))));
         lines.add(Component.literal("Fallback/blockers: cpuFallback=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.cpuReadbackFallback())
                 + " blockers=" + shorten(denoiseStage == null ? "" : denoiseStage.shaderDenoiseBlockers(), 78)));
         lines.add(Component.literal("CPU fallback boundary: " + shaderDenoiseCpuFallbackBoundaryLabel(denoiseStage)));
+        lines.add(Component.literal("Shader no-overclaim boundary: " + shaderDenoiseOutputBoundaryLine(denoiseStage)));
         lines.add(Component.literal("Denoise output: source=" + denoiseSourceIdentityLabel(denoiseStage)
                 + " generated=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.cpuOutputGenerated())
                 + " energy=" + stageOutputEnergyLabel(denoiseStage)
@@ -2505,6 +2514,18 @@ public final class LucernaDebugOverlayLines {
         return "?";
     }
 
+    private static String shaderOutputImageCandidateMarkerLabel(LightingDispatchStageTelemetryStatus stage) {
+        return shorten(firstDetailOrUnknown(
+                stage,
+                "shader_output_image_candidate_marker",
+                "shaderOutputImageCandidateMarker",
+                "shader_output_candidate_marker",
+                "shaderOutputCandidateMarker",
+                "shader_denoise_output_candidate_marker",
+                "shaderDenoiseOutputCandidateMarker"
+        ), 48);
+    }
+
     private static String shaderOutputImageCandidateBlockerLabel(LightingDispatchStageTelemetryStatus stage) {
         String explicit = firstDetailOrUnknown(
                 stage,
@@ -2527,6 +2548,39 @@ public final class LucernaDebugOverlayLines {
             return "candidate-only:not-real-shader-generated-denoised-output";
         }
         return "?";
+    }
+
+    private static String shaderDenoiseOutputAttemptedLabel(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null) {
+            return "?";
+        }
+        boolean attempted = Boolean.TRUE.equals(stage.shaderDispatchPrepared())
+                || Boolean.TRUE.equals(stage.shaderOutputReady())
+                || Boolean.TRUE.equals(stage.shaderOutputImageReady())
+                || Boolean.TRUE.equals(stage.shaderOutputImageCandidateReady())
+                || Boolean.TRUE.equals(stage.shaderOutputMaterialReady());
+        return yesNo(attempted);
+    }
+
+    private static String realShaderDenoiseOutputReadyLabel(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null || stage.realShaderDenoiseOutputReady() == null) {
+            return "false";
+        }
+        return yesNo(stage.realShaderDenoiseOutputReady());
+    }
+
+    private static String shaderDenoiseNoOverclaimLabel(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null || stage.realShaderDenoiseOutputReady() == null) {
+            return "true";
+        }
+        return yesNo(!Boolean.TRUE.equals(stage.realShaderDenoiseOutputReady()));
+    }
+
+    private static String shaderDenoiseOutputBoundaryLine(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null) {
+            return "realShaderDenoiseOutputReady=false noOverclaim=true cpuReadbackFallback=? blocker=stage-not-reported";
+        }
+        return shorten(stage.shaderDenoiseOutputBoundaryLine(), 160);
     }
 
     private static String shaderOutputPrerequisitesLabel(LightingDispatchStageTelemetryStatus stage) {

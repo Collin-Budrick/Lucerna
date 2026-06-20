@@ -18,6 +18,9 @@ public record FinalCompositeHandoff(
         boolean usesDirectLighting,
         boolean usesRawDiffuseGi,
         boolean usesDenoisedDiffuse,
+        String denoisedSourceIdentity,
+        String shaderDenoiseOutputSource,
+        String shaderDenoiseOutputBlocker,
         boolean debugOverlayAvailable,
         List<String> readResources,
         List<String> writeResources
@@ -29,6 +32,9 @@ public record FinalCompositeHandoff(
         width = Math.max(0, width);
         height = Math.max(0, height);
         sourceGeneration = Math.max(0L, sourceGeneration);
+        denoisedSourceIdentity = normalizeDescription(denoisedSourceIdentity);
+        shaderDenoiseOutputSource = normalizeDescription(shaderDenoiseOutputSource);
+        shaderDenoiseOutputBlocker = normalizeDescription(shaderDenoiseOutputBlocker);
         Objects.requireNonNull(readResources, "readResources");
         Objects.requireNonNull(writeResources, "writeResources");
         readResources = List.copyOf(readResources);
@@ -62,6 +68,9 @@ public record FinalCompositeHandoff(
                 denoisePlan.readyForScheduling() && denoisePlan.inputs().directLightingAvailable(),
                 denoisePlan.readyForScheduling() && denoisePlan.rawDiffuseGiInputAvailable(),
                 denoisePlan.readyForScheduling() && denoisePlan.writesDiffuseOutput(),
+                denoisedSourceIdentity(denoisePlan),
+                shaderDenoiseOutputSource(denoisePlan),
+                shaderDenoiseOutputBlocker(denoisePlan),
                 debugOverlayAvailable,
                 debugOverlayAvailable
                         ? PostProcessingResourceContract.COMPOSITE_READS
@@ -94,8 +103,11 @@ public record FinalCompositeHandoff(
         return "direct=" + sourceState(this.usesDirectLighting)
                 + ",rawGi=" + sourceState(this.usesRawDiffuseGi)
                 + ",denoisedGi=" + sourceState(this.usesDenoisedDiffuse)
+                + ",denoisedSourceIdentity=" + this.denoisedSourceIdentity
+                + ",shaderDenoiseOutputSource=" + this.shaderDenoiseOutputSource
+                + ",shaderDenoiseOutputBlocker=" + this.shaderDenoiseOutputBlocker
                 + ",finalBlend=" + sourceState(this.blendsDirectRawAndDenoisedSources())
-                + ",boundary=planning-only; runtime CPU/readback and visual-quality evidence must come from native status and controller screenshots";
+                + ",boundary=planning-only; CPU/readback denoised GI, visual shader denoise, candidate image telemetry, and true shader-generated output must remain source-separated until native status and controller screenshots prove them";
     }
 
     public boolean readyForWorldColorHandoff() {
@@ -127,10 +139,25 @@ public record FinalCompositeHandoff(
         return "direct=" + sourceState(ready && denoisePlan.inputs().directLightingAvailable())
                 + ",rawGi=" + sourceState(ready && denoisePlan.rawDiffuseGiInputAvailable())
                 + ",denoisedGi=" + sourceState(ready && denoisePlan.writesDiffuseOutput())
-                + ",qualityBoundary=denoise-plan-ready-is-not-proof-of-CPU-output-readback-or-denoise-quality";
+                + ",denoisedSourceIdentity=" + denoisedSourceIdentity(denoisePlan)
+                + ",shaderDenoiseOutputSource=" + shaderDenoiseOutputSource(denoisePlan)
+                + ",shaderDenoiseOutputBlocker=" + shaderDenoiseOutputBlocker(denoisePlan)
+                + ",qualityBoundary=denoise-plan-ready-is-not-proof-of-CPU-output-readback-real-shader-output-or-denoise-quality";
     }
 
     private static String sourceState(boolean available) {
         return available ? "intended-ready" : "excluded-or-not-ready";
+    }
+
+    private static String denoisedSourceIdentity(DenoisePassPlan denoisePlan) {
+        return denoisePlan.denoisedSourceIdentityForFinalComposite();
+    }
+
+    private static String shaderDenoiseOutputSource(DenoisePassPlan denoisePlan) {
+        return denoisePlan.shaderDenoiseOutputSourceForFinalComposite();
+    }
+
+    private static String shaderDenoiseOutputBlocker(DenoisePassPlan denoisePlan) {
+        return denoisePlan.shaderDenoiseOutputBlockerForFinalComposite();
     }
 }

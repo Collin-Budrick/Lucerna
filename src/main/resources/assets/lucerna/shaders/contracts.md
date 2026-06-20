@@ -89,6 +89,17 @@ The debug overlay contract reserves Lucerna-owned inputs for direct-light valida
 
 Overlay text or visualization must remain readable with the vanilla HUD and must identify when visible direct output is still pending controller validation.
 
+## Round 7 Shader Denoise Output Boundary
+
+Round 7 currently has two separate shader-resource concepts that must not be collapsed:
+
+- `denoise/diffuse_edge_aware_contract.glsl` and `denoise/history_variance_quality_contract.glsl` describe the future real shader denoise dispatch. That path must read raw GI, cache confidence, variance, ray-budget, current G-buffer, previous-frame history, and motion resources, then write `lucerna.denoise.diffuse` plus `lucerna.denoise.rejectionMask` from shader execution.
+- `core/round7_denoised_gi_visual.fsh` is only the public Mojang visual-shaping draw path for an already supplied payload. It has one `InSampler`, no depth/normal/material/motion/history/variance bindings, no storage-image writes, and no rejection-mask output.
+
+Candidate output images are boundary evidence only. `shaderDenoiseOutputImageCandidateReady` may report a CPU-staged or non-GPU candidate image, but `shaderDenoiseOutputImageReady`, `shaderDenoiseShaderGeneratedOutput`, `realDenoiseShaderOutput`, and `realShaderDenoiseOutputReady` must remain false until a shader dispatch writes the declared denoise output image and the controller validates raw-GI, shader-denoised, final-composite, rejection/debug, and no-overclaim evidence.
+
+Required no-overclaim markers for the current visual path are: CPU/readback or candidate source identity preserved, `shaderDenoiseOutputImageCandidateBoundaryOnly=true` when a candidate image is present, `realShaderDenoiseOutputProven=false`, no proof marker, no focus-window-only fallback, no rectangular full-screen wash, and no substitution of temporary direct-light payloads for denoised GI.
+
 ## Phase 5 Telemetry Names
 
 `phase5Telemetry.debugTargetNames` in `layout.json` is the canonical list for overlay labels and controller validation. The stable keys are:

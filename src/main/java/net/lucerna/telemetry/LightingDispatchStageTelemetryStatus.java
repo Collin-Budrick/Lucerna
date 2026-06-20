@@ -52,6 +52,18 @@ public record LightingDispatchStageTelemetryStatus(
         Boolean shaderOutputMaterialReady,
         Boolean shaderGeneratedOutput,
         Boolean cpuReadbackFallback,
+        Boolean realShaderDenoiseOutput,
+        Boolean realShaderDenoiseOutputReady,
+        Boolean shaderOutputImageCandidateReady,
+        Boolean shaderOutputImageCandidateCpuStaged,
+        Boolean shaderOutputImageCandidateNonGpu,
+        String shaderOutputImageCandidateDimensions,
+        Long shaderOutputImageCandidatePixels,
+        Long shaderOutputImageCandidateBytes,
+        Long shaderOutputImageCandidateChecksum,
+        String shaderOutputImageCandidateMarker,
+        String shaderOutputReadinessLabel,
+        String shaderOutputBlockerReason,
         String shaderDenoiseBlockers,
         Long edgeRejectionCount,
         Long historyRejectionCount,
@@ -103,6 +115,10 @@ public record LightingDispatchStageTelemetryStatus(
         physicalSceneMarker = blankToEmpty(stripQuotes(physicalSceneMarker));
         physicalOutputMarker = blankToEmpty(stripQuotes(physicalOutputMarker));
         proofBoundaryMarker = blankToEmpty(stripQuotes(proofBoundaryMarker));
+        shaderOutputImageCandidateDimensions = blankToEmpty(stripQuotes(shaderOutputImageCandidateDimensions));
+        shaderOutputImageCandidateMarker = blankToEmpty(stripQuotes(shaderOutputImageCandidateMarker));
+        shaderOutputReadinessLabel = blankToEmpty(stripQuotes(shaderOutputReadinessLabel));
+        shaderOutputBlockerReason = blankToEmpty(stripQuotes(shaderOutputBlockerReason));
         details = immutable(details);
     }
 
@@ -417,6 +433,91 @@ public record LightingDispatchStageTelemetryStatus(
                 "shader_denoise_cpu_readback_fallback",
                 "denoise_cpu_readback_fallback"
         ));
+        Boolean realShaderDenoiseOutput = parseBoolean(firstPresent(
+                normalizedFields,
+                "real_denoise_shader_output",
+                "real_shader_denoise_output",
+                "real_shader_denoise_output_proven"
+        ));
+        Boolean shaderOutputImageCandidateReady = parseBoolean(firstPresent(
+                normalizedFields,
+                "shader_output_image_candidate_ready",
+                "shader_output_image_candidate_present",
+                "shader_denoise_output_image_candidate_ready"
+        ));
+        Boolean shaderOutputImageCandidateCpuStaged = parseBoolean(firstPresent(
+                normalizedFields,
+                "shader_output_image_candidate_cpu_staged",
+                "shader_denoise_output_image_candidate_cpu_staged"
+        ));
+        Boolean shaderOutputImageCandidateNonGpu = parseBoolean(firstPresent(
+                normalizedFields,
+                "shader_output_image_candidate_non_gpu",
+                "shader_denoise_output_image_candidate_non_gpu"
+        ));
+        String shaderOutputImageCandidateDimensions = firstPresent(
+                normalizedFields,
+                "shader_output_image_candidate_dimensions",
+                "shader_output_image_candidate_size",
+                "shader_denoise_output_image_candidate_size"
+        );
+        if (shaderOutputImageCandidateDimensions.isBlank()) {
+            shaderOutputImageCandidateDimensions = xyLabel(
+                    firstPresent(
+                            normalizedFields,
+                            "shader_output_image_candidate_width",
+                            "shader_denoise_output_image_candidate_width"
+                    ),
+                    firstPresent(
+                            normalizedFields,
+                            "shader_output_image_candidate_height",
+                            "shader_denoise_output_image_candidate_height"
+                    )
+            );
+        }
+        Long shaderOutputImageCandidatePixels = parseLong(firstPresent(
+                normalizedFields,
+                "shader_output_image_candidate_pixels",
+                "shader_denoise_output_image_candidate_pixels"
+        ));
+        Long shaderOutputImageCandidateBytes = parseLong(firstPresent(
+                normalizedFields,
+                "shader_output_image_candidate_bytes",
+                "shader_denoise_output_image_candidate_bytes"
+        ));
+        Long shaderOutputImageCandidateChecksum = parseLong(firstPresent(
+                normalizedFields,
+                "shader_output_image_candidate_checksum",
+                "shader_denoise_output_image_candidate_checksum"
+        ));
+        String shaderOutputImageCandidateMarker = firstPresent(
+                normalizedFields,
+                "shader_output_image_candidate_marker",
+                "shader_output_image_candidate_source",
+                "shader_denoise_output_image_candidate_marker"
+        );
+        String shaderOutputReadinessLabel = firstPresent(
+                normalizedFields,
+                "shader_output_readiness_label",
+                "shader_denoise_output_readiness_label",
+                "shader_denoise_output_readiness_marker"
+        );
+        String shaderOutputBlockerReason = firstPresent(
+                normalizedFields,
+                "shader_output_blocker_reason",
+                "shader_output_image_candidate_blocker",
+                "shader_output_image_blocker",
+                "shader_denoise_output_blocker_reason",
+                "shader_denoise_output_image_blocker"
+        );
+        Boolean realShaderDenoiseOutputReady = Boolean.TRUE.equals(realShaderDenoiseOutput)
+                && Boolean.TRUE.equals(shaderOutputReady)
+                && Boolean.TRUE.equals(shaderOutputImageReady)
+                && Boolean.TRUE.equals(shaderOutputMaterialReady)
+                && Boolean.TRUE.equals(shaderGeneratedOutput)
+                && !Boolean.TRUE.equals(cpuReadbackFallback)
+                && !Boolean.TRUE.equals(shaderOutputImageCandidateCpuStaged)
+                && !Boolean.TRUE.equals(shaderOutputImageCandidateNonGpu);
         String shaderDenoiseBlockers = firstPresent(
                 normalizedFields,
                 "shader_denoise_blockers",
@@ -698,6 +799,18 @@ public record LightingDispatchStageTelemetryStatus(
                 shaderOutputMaterialReady,
                 shaderGeneratedOutput,
                 cpuReadbackFallback,
+                realShaderDenoiseOutput,
+                realShaderDenoiseOutputReady,
+                shaderOutputImageCandidateReady,
+                shaderOutputImageCandidateCpuStaged,
+                shaderOutputImageCandidateNonGpu,
+                shaderOutputImageCandidateDimensions,
+                shaderOutputImageCandidatePixels,
+                shaderOutputImageCandidateBytes,
+                shaderOutputImageCandidateChecksum,
+                shaderOutputImageCandidateMarker,
+                shaderOutputReadinessLabel,
+                shaderOutputBlockerReason,
                 shaderDenoiseBlockers,
                 edgeRejectionCount,
                 historyRejectionCount,
@@ -755,7 +868,9 @@ public record LightingDispatchStageTelemetryStatus(
             fieldCount += append(label, "shaderImage", this.shaderOutputImageReady == null ? "" : Boolean.toString(this.shaderOutputImageReady));
             fieldCount += append(label, "shaderMaterial", this.shaderOutputMaterialReady == null ? "" : Boolean.toString(this.shaderOutputMaterialReady));
             fieldCount += append(label, "shaderGenerated", this.shaderGeneratedOutput == null ? "" : Boolean.toString(this.shaderGeneratedOutput));
+            fieldCount += append(label, "realShaderOutput", this.realShaderDenoiseOutputReady == null ? "" : Boolean.toString(this.realShaderDenoiseOutputReady));
             fieldCount += append(label, "cpuFallback", this.cpuReadbackFallback == null ? "" : Boolean.toString(this.cpuReadbackFallback));
+            fieldCount += append(label, "candidateOnly", this.shaderOutputImageCandidateReady == null ? "" : Boolean.toString(this.shaderOutputImageCandidateReady));
             fieldCount += append(label, "temporalReady", this.temporalReady == null ? "" : Boolean.toString(this.temporalReady));
             fieldCount += append(label, "flicker", this.flickerScore);
         }
@@ -882,6 +997,7 @@ public record LightingDispatchStageTelemetryStatus(
                 + " shaderIntent=" + booleanOrUnknown(this.shaderDenoiseIntended)
                 + " shaderOutput=" + booleanOrUnknown(this.shaderOutputReady)
                 + " shaderGenerated=" + booleanOrUnknown(this.shaderGeneratedOutput)
+                + " realShaderOutput=" + booleanOrUnknown(this.realShaderDenoiseOutputReady)
                 + " cpuFallback=" + booleanOrUnknown(this.cpuReadbackFallback)
                 + " edgeRejects=" + valueOrUnknown(this.edgeRejectionCount)
                 + " historyRejects=" + valueOrUnknown(this.historyRejectionCount)
@@ -894,18 +1010,21 @@ public record LightingDispatchStageTelemetryStatus(
                 + " outputImage=" + booleanOrUnknown(this.shaderOutputImageReady)
                 + " outputMaterial=" + booleanOrUnknown(this.shaderOutputMaterialReady)
                 + " generatedOutput=" + booleanOrUnknown(this.shaderGeneratedOutput)
+                + " realShaderOutput=" + booleanOrUnknown(this.realShaderDenoiseOutputReady)
                 + " cpuReadbackFallback=" + booleanOrUnknown(this.cpuReadbackFallback)
+                + " readiness=" + valueOrUnknown(this.shaderOutputReadinessLabel)
+                + " blocker=" + shorten(this.shaderOutputBlockerReason, 56)
                 + " blockers=" + shorten(this.shaderDenoiseBlockers, 56);
     }
 
     public String shaderDenoiseOutputBoundaryLine() {
-        boolean realShaderOutputReady = Boolean.TRUE.equals(this.shaderOutputReady)
-                && Boolean.TRUE.equals(this.shaderGeneratedOutput)
-                && Boolean.TRUE.equals(this.shaderOutputImageReady)
-                && Boolean.TRUE.equals(this.shaderOutputMaterialReady);
+        boolean realShaderOutputReady = Boolean.TRUE.equals(this.realShaderDenoiseOutputReady);
         String blocker = this.shaderDenoiseBlockers.isBlank()
                 ? "unreported"
                 : shorten(this.shaderDenoiseBlockers, 64);
+        if (!this.shaderOutputBlockerReason.isBlank()) {
+            blocker = shorten(this.shaderOutputBlockerReason, 64);
+        }
         String source = this.sourceIdentity.isBlank()
                 ? "unreported"
                 : shorten(this.sourceIdentity, 48);
@@ -916,9 +1035,16 @@ public record LightingDispatchStageTelemetryStatus(
                 + " outputImage=" + booleanOrUnknown(this.shaderOutputImageReady)
                 + " outputMaterial=" + booleanOrUnknown(this.shaderOutputMaterialReady)
                 + " cpuReadbackFallback=" + booleanOrUnknown(this.cpuReadbackFallback)
+                + " candidateOnly=" + booleanOrUnknown(this.shaderOutputImageCandidateReady)
+                + " candidateCpuStaged=" + booleanOrUnknown(this.shaderOutputImageCandidateCpuStaged)
+                + " candidateNonGpu=" + booleanOrUnknown(this.shaderOutputImageCandidateNonGpu)
+                + " candidateSize=" + valueOrUnknown(this.shaderOutputImageCandidateDimensions)
+                + " candidateChecksum=" + valueOrUnknown(this.shaderOutputImageCandidateChecksum)
+                + " readiness=" + valueOrUnknown(this.shaderOutputReadinessLabel)
                 + " sourceIdentity=" + source
                 + " blockers=" + blocker
-                + " boundary=\"CPU/readback visual shaping is not real shader-generated denoise output\"";
+                + " noOverclaim=" + Boolean.toString(!realShaderOutputReady)
+                + " boundary=\"" + shaderDenoiseOutputBoundaryText(realShaderOutputReady) + "\"";
     }
 
     public String denoiseEvidenceBoundaryLine() {
@@ -1105,6 +1231,43 @@ public record LightingDispatchStageTelemetryStatus(
         if (this.cpuReadbackFallback != null) {
             fields.put(normalizedPrefix + ".cpuReadbackFallback", Boolean.toString(this.cpuReadbackFallback));
         }
+        if (this.realShaderDenoiseOutput != null) {
+            fields.put(normalizedPrefix + ".realShaderDenoiseOutput", Boolean.toString(this.realShaderDenoiseOutput));
+        }
+        if (this.realShaderDenoiseOutputReady != null) {
+            fields.put(normalizedPrefix + ".realShaderDenoiseOutputReady", Boolean.toString(this.realShaderDenoiseOutputReady));
+            fields.put(normalizedPrefix + ".shaderDenoiseNoOverclaim", Boolean.toString(!this.realShaderDenoiseOutputReady));
+        }
+        if (this.shaderOutputImageCandidateReady != null) {
+            fields.put(normalizedPrefix + ".shaderOutputImageCandidateReady", Boolean.toString(this.shaderOutputImageCandidateReady));
+        }
+        if (this.shaderOutputImageCandidateCpuStaged != null) {
+            fields.put(normalizedPrefix + ".shaderOutputImageCandidateCpuStaged", Boolean.toString(this.shaderOutputImageCandidateCpuStaged));
+        }
+        if (this.shaderOutputImageCandidateNonGpu != null) {
+            fields.put(normalizedPrefix + ".shaderOutputImageCandidateNonGpu", Boolean.toString(this.shaderOutputImageCandidateNonGpu));
+        }
+        if (!this.shaderOutputImageCandidateDimensions.isBlank()) {
+            fields.put(normalizedPrefix + ".shaderOutputImageCandidateDimensions", this.shaderOutputImageCandidateDimensions);
+        }
+        if (this.shaderOutputImageCandidatePixels != null) {
+            fields.put(normalizedPrefix + ".shaderOutputImageCandidatePixels", Long.toString(this.shaderOutputImageCandidatePixels));
+        }
+        if (this.shaderOutputImageCandidateBytes != null) {
+            fields.put(normalizedPrefix + ".shaderOutputImageCandidateBytes", Long.toString(this.shaderOutputImageCandidateBytes));
+        }
+        if (this.shaderOutputImageCandidateChecksum != null) {
+            fields.put(normalizedPrefix + ".shaderOutputImageCandidateChecksum", Long.toString(this.shaderOutputImageCandidateChecksum));
+        }
+        if (!this.shaderOutputImageCandidateMarker.isBlank()) {
+            fields.put(normalizedPrefix + ".shaderOutputImageCandidateMarker", this.shaderOutputImageCandidateMarker);
+        }
+        if (!this.shaderOutputReadinessLabel.isBlank()) {
+            fields.put(normalizedPrefix + ".shaderOutputReadinessLabel", this.shaderOutputReadinessLabel);
+        }
+        if (!this.shaderOutputBlockerReason.isBlank()) {
+            fields.put(normalizedPrefix + ".shaderOutputBlockerReason", this.shaderOutputBlockerReason);
+        }
         if (!this.shaderDenoiseBlockers.isBlank()) {
             fields.put(normalizedPrefix + ".shaderDenoiseBlockers", this.shaderDenoiseBlockers);
         }
@@ -1260,6 +1423,9 @@ public record LightingDispatchStageTelemetryStatus(
     }
 
     private String realGpuOutputBoundaryLabel() {
+        if (this.realShaderDenoiseOutputReady != null) {
+            return Boolean.toString(this.realShaderDenoiseOutputReady);
+        }
         if (this.shaderGeneratedOutput != null) {
             return Boolean.toString(this.shaderGeneratedOutput);
         }
@@ -1307,6 +1473,18 @@ public record LightingDispatchStageTelemetryStatus(
                 || this.shaderOutputMaterialReady != null
                 || this.shaderGeneratedOutput != null
                 || this.cpuReadbackFallback != null
+                || this.realShaderDenoiseOutput != null
+                || this.realShaderDenoiseOutputReady != null
+                || this.shaderOutputImageCandidateReady != null
+                || this.shaderOutputImageCandidateCpuStaged != null
+                || this.shaderOutputImageCandidateNonGpu != null
+                || !this.shaderOutputImageCandidateDimensions.isBlank()
+                || this.shaderOutputImageCandidatePixels != null
+                || this.shaderOutputImageCandidateBytes != null
+                || this.shaderOutputImageCandidateChecksum != null
+                || !this.shaderOutputImageCandidateMarker.isBlank()
+                || !this.shaderOutputReadinessLabel.isBlank()
+                || !this.shaderOutputBlockerReason.isBlank()
                 || !this.shaderDenoiseBlockers.isBlank()
                 || this.edgeRejectionCount != null
                 || this.historyRejectionCount != null
@@ -1398,6 +1576,12 @@ public record LightingDispatchStageTelemetryStatus(
             return value == null || value.isBlank() ? "unreported" : value;
         }
         return value.substring(0, Math.max(0, maxLength - 3)) + "...";
+    }
+
+    private static String shaderDenoiseOutputBoundaryText(boolean realShaderOutputReady) {
+        return realShaderOutputReady
+                ? "real shader-generated denoise output is explicitly reported ready"
+                : "CPU/readback fallback or candidate-only image must not be treated as real shader-generated denoise output";
     }
 
     private static Map<String, String> normalizeFields(Map<String, String> fields) {

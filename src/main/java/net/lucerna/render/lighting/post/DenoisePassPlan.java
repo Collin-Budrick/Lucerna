@@ -194,6 +194,51 @@ public record DenoisePassPlan(
         return this.shaderOutputContract.qualityBoundarySummary();
     }
 
+    public String denoisedSourceIdentityForFinalComposite() {
+        if (this.realDenoiseShaderOutput()
+                && this.shaderDenoiseOutputImageReady()
+                && this.shaderDenoiseGeneratedOutput()) {
+            return this.writesDiffuseOutput()
+                    ? "mixed-cpu-readback-plus-true-shader-generated-output"
+                    : "true-shader-generated-output";
+        }
+        if (this.writesDiffuseOutput()) {
+            return "cpu-readback-denoised-gi";
+        }
+        return "denoised-source-missing";
+    }
+
+    public String shaderDenoiseOutputSourceForFinalComposite() {
+        if (this.realDenoiseShaderOutput()
+                && this.shaderDenoiseOutputImageReady()
+                && this.shaderDenoiseGeneratedOutput()) {
+            return "true-shader-generated-denoised-gi";
+        }
+        if (this.shaderDenoiseOutputImageReady()) {
+            return "shader-output-image-ready-without-real-generated-output";
+        }
+        if (this.shaderDenoiseDispatchPrepared()) {
+            return "shader-dispatch-prepared-no-output-image";
+        }
+        if (this.writesDiffuseOutput()) {
+            return "cpu-readback-denoised-gi-fallback";
+        }
+        return "none";
+    }
+
+    public String shaderDenoiseOutputBlockerForFinalComposite() {
+        if (this.realDenoiseShaderOutput()
+                && this.shaderDenoiseOutputImageReady()
+                && this.shaderDenoiseGeneratedOutput()) {
+            return "none:true-shader-generated-output-ready";
+        }
+        String readiness = this.shaderDenoiseReadinessReason();
+        if (readiness != null && !readiness.isBlank()) {
+            return readiness;
+        }
+        return "real shader-generated denoise output has not been proven";
+    }
+
     public boolean edgeRejectionMetadataAvailable() {
         return this.signalContract.edgeRejectionMetadataAvailable();
     }

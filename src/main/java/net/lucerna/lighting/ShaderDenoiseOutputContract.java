@@ -28,7 +28,11 @@ public record ShaderDenoiseOutputContract(
         String outputExecutionBoundary,
         String rawVsDenoisedQualityBoundary,
         String pendingReason,
-        String readinessReason
+        String readinessReason,
+        boolean shaderOutputImageCandidateReady,
+        boolean shaderOutputImageCandidateCpuStaged,
+        boolean shaderOutputImageCandidateNonGpu,
+        String shaderOutputBlockerReason
 ) {
     public static final String DEFAULT_SHADER_RESOURCE = "lucerna:denoise/diffuse_edge_aware_contract";
     public static final String DEFAULT_HISTORY_VARIANCE_RESOURCE = "lucerna:denoise/history_variance_quality_contract";
@@ -86,6 +90,7 @@ public record ShaderDenoiseOutputContract(
                 cpuReadbackFallbackActive,
                 realDenoiseShaderOutput
         ));
+        shaderOutputBlockerReason = normalizeText(shaderOutputBlockerReason, pendingReason);
     }
 
     public static ShaderDenoiseOutputContract disabled(String reason) {
@@ -117,6 +122,10 @@ public record ShaderDenoiseOutputContract(
                 "shader denoise execution is disabled",
                 "raw-vs-denoised quality cannot be compared while denoise is disabled",
                 reason,
+                reason,
+                false,
+                false,
+                false,
                 reason
         );
     }
@@ -166,7 +175,60 @@ public record ShaderDenoiseOutputContract(
                 pendingReason,
                 contractReady
                         ? "shader denoise resource contract is ready; dispatch/output path remains pending"
-                        : "shader denoise resource contract is not ready"
+                        : "shader denoise resource contract is not ready",
+                false,
+                false,
+                false,
+                pendingReason
+        );
+    }
+
+    public static ShaderDenoiseOutputContract fromDenoiseExecutionSnapshot(
+            net.lucerna.nativebridge.DenoiseExecutionSnapshot snapshot
+    ) {
+        if (snapshot == null || !snapshot.hasExecutionTelemetry()) {
+            return disabled("native denoise execution telemetry is unavailable");
+        }
+        boolean candidateOnly = snapshot.shaderDenoiseOutputImageCandidatePresent();
+        return new ShaderDenoiseOutputContract(
+                snapshot.hasExecutionTelemetry(),
+                snapshot.shaderDenoiseDispatchPrepared(),
+                snapshot.shaderDenoiseOutputImageReady()
+                        && !snapshot.shaderDenoiseOutputImageCandidateCpuStaged()
+                        && !snapshot.shaderDenoiseOutputImageCandidateNonGpu(),
+                snapshot.shaderDenoiseDispatchPrepared(),
+                snapshot.shaderDenoiseOutputImageReady(),
+                snapshot.shaderDenoiseOutputMaterialReady(),
+                snapshot.shaderDenoiseShaderGeneratedOutput(),
+                snapshot.shaderDenoiseCpuReadbackFallbackActive(),
+                snapshot.realShaderDenoiseOutputReady(),
+                snapshot.rawGiInputReady(),
+                snapshot.edgeInputsAvailable(),
+                snapshot.temporalHistory(),
+                snapshot.hasHistoryCounters(),
+                snapshot.historyConfidenceAvailable(),
+                snapshot.historyConfidenceAvailable(),
+                snapshot.dispatchGeneration(),
+                snapshot.width(),
+                snapshot.height(),
+                DEFAULT_SHADER_RESOURCE,
+                DEFAULT_DENOISED_DIFFUSE_RESOURCE,
+                DEFAULT_REJECTION_MASK_RESOURCE,
+                DEFAULT_HISTORY_VARIANCE_RESOURCE,
+                DEFAULT_VARIANCE_CONFIDENCE_RESOURCE,
+                snapshot.realShaderDenoiseOutputReady()
+                        ? "shader_denoise_real_shader_output"
+                        : candidateOnly
+                                ? "shader_denoise_candidate_image_only"
+                                : "shader_denoise_cpu_readback_boundary",
+                snapshot.shaderDenoiseOutputImageCandidateBoundary(),
+                snapshot.denoiseReadinessBoundary(),
+                snapshot.shaderDenoiseOutputBlockerReason(),
+                snapshot.shaderDenoiseOutputReadinessLabel(),
+                candidateOnly,
+                snapshot.shaderDenoiseOutputImageCandidateCpuStaged(),
+                snapshot.shaderDenoiseOutputImageCandidateNonGpu(),
+                snapshot.shaderDenoiseOutputBlockerReason()
         );
     }
 
@@ -180,6 +242,9 @@ public record ShaderDenoiseOutputContract(
                 && this.shaderGeneratedOutput
                 && !this.cpuReadbackFallbackActive
                 && this.realDenoiseShaderOutput
+                && !this.shaderOutputImageCandidateReady
+                && !this.shaderOutputImageCandidateCpuStaged
+                && !this.shaderOutputImageCandidateNonGpu
                 && this.width > 0
                 && this.height > 0;
     }
@@ -194,6 +259,9 @@ public record ShaderDenoiseOutputContract(
                 + " shaderGeneratedOutput=" + this.shaderGeneratedOutput
                 + " cpuReadbackFallbackActive=" + this.cpuReadbackFallbackActive
                 + " realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
+                + " candidateOnly=" + this.shaderOutputImageCandidateReady
+                + " candidateCpuStaged=" + this.shaderOutputImageCandidateCpuStaged
+                + " candidateNonGpu=" + this.shaderOutputImageCandidateNonGpu
                 + " geometryInputs=" + this.geometryAwareInputsBound
                 + " edgePreservationInputs=" + this.edgePreservationInputsBound
                 + " temporalInputs=" + this.temporalInputsBound
@@ -207,6 +275,7 @@ public record ShaderDenoiseOutputContract(
                 + " varianceConfidence=" + this.varianceConfidenceResource
                 + " executionBoundary=" + this.outputExecutionBoundary
                 + " qualityBoundary=" + this.rawVsDenoisedQualityBoundary
+                + " blocker=" + this.shaderOutputBlockerReason
                 + " reason=" + this.readinessReason;
     }
 
@@ -233,6 +302,9 @@ public record ShaderDenoiseOutputContract(
                 + " shaderGeneratedOutput=" + this.shaderGeneratedOutput
                 + " cpuReadbackFallbackActive=" + this.cpuReadbackFallbackActive
                 + " realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
+                + " candidateOnly=" + this.shaderOutputImageCandidateReady
+                + " candidateCpuStaged=" + this.shaderOutputImageCandidateCpuStaged
+                + " candidateNonGpu=" + this.shaderOutputImageCandidateNonGpu
                 + " pending=" + this.pendingReason;
     }
 
@@ -244,7 +316,11 @@ public record ShaderDenoiseOutputContract(
                 + " shaderGenerated=" + this.shaderGeneratedOutput
                 + " cpuFallback=" + this.cpuReadbackFallbackActive
                 + " realShaderOutput=" + this.realDenoiseShaderOutput
+                + " candidateOnly=" + this.shaderOutputImageCandidateReady
+                + " candidateCpuStaged=" + this.shaderOutputImageCandidateCpuStaged
+                + " candidateNonGpu=" + this.shaderOutputImageCandidateNonGpu
                 + " readyForProof=" + this.readyForControllerShaderProof()
+                + " blocker=" + this.shaderOutputBlockerReason
                 + " reason=" + this.readinessReason;
     }
 

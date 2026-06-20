@@ -8,7 +8,7 @@
 // dispatch path is still pending.
 //
 // Required future inputs:
-// - lucerna.denoise.diffuse raw shader output candidate
+// - lucerna.denoise.diffuse shader-written output from the current frame
 // - lucerna.lighting.diffuseGi raw low-resolution GI
 // - lucerna.lighting.variance
 // - VarianceConfidence
@@ -24,6 +24,18 @@
 // - lucerna.denoise.historyRejectionMask
 // - lucerna.denoise.rawVsDenoisedQuality
 //
+// Input/output texture expectations:
+// - Raw GI, cache confidence, current-frame variance, and ray-budget textures are
+//   half-resolution unless layout.json says otherwise; denoise must upsample to
+//   full-resolution lucerna.denoise.diffuse.
+// - Depth, normal/roughness, material id, motion/history, and previous-frame
+//   resources are full-resolution or explicitly reprojected before rejection.
+// - Rejection/debug outputs must not be synthesized from the public Mojang
+//   core/round7_denoised_gi_visual.fsh preview path.
+// - A candidate output image can be logged for readiness only; it is not the
+//   shader-written lucerna.denoise.diffuse contract until shader dispatch writes
+//   the declared attachment and the controller validates the result.
+//
 // Quality boundary:
 // - realDenoiseShaderOutput must stay false until shader execution writes a
 //   denoised target and controller validation proves that denoise quality is
@@ -31,5 +43,9 @@
 //   rectangular full-screen wash.
 // - Controller proof should compare raw GI, shader-denoised GI, final
 //   composite, rejection mask, variance/confidence, and debug overlay evidence.
+// - Boundary/status markers should preserve the distinction between
+//   shaderDenoiseOutputImageCandidateReady,
+//   shaderDenoiseOutputImageCandidateNonGpu,
+//   shaderDenoiseOutputImageReady, and realShaderDenoiseOutputReady.
 void main() {
 }

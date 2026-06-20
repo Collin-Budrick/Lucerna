@@ -138,15 +138,14 @@ public record PublicMojangFinalCompositeSubmissionResult(
     }
 
     public String submittedSourceIdentity() {
-        String normalizedReason = this.reason.toLowerCase(Locale.ROOT);
+        String normalizedReason = this.normalizedReason();
         if (!this.submitted) {
             return "not-submitted";
         }
         boolean directLight = normalizedReason.contains("native direct-light emissive source is blended")
                 || normalizedReason.contains("native direct-light surface-source");
-        boolean denoisedGi = normalizedReason.contains("denoised diffuse-gi")
-                || normalizedReason.contains("cpu-denoised-diffuse-gi-rgba8")
-                || normalizedReason.contains("shader-denoised-diffuse-gi-rgba8");
+        boolean genericDenoisedGi = normalizedReason.contains("denoised diffuse-gi")
+                && !normalizedReason.contains("shader-denoised-diffuse-gi-rgba8");
         boolean cpuDenoiseExplicitlyTrue = normalizedReason.contains("cpudenoisedsourceready=true")
                 || normalizedReason.contains("cpu_denoised_source_ready=true")
                 || normalizedReason.contains("cpudenoisedgi=enabled-ready")
@@ -154,38 +153,11 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 || normalizedReason.contains("cpudenoisedreadback=ready")
                 || normalizedReason.contains("sourcekind=cpu-denoised-readback")
                 || normalizedReason.contains("sourcekind=cpu_denoised_readback");
-        boolean shaderDenoiseExplicitlyFalse = normalizedReason.contains("realdenoiseshaderoutput=false")
-                || normalizedReason.contains("real_denoise_shader_output=false")
-                || normalizedReason.contains("shaderdenoiseoutput=false")
-                || normalizedReason.contains("gpu_denoise_output=false")
-                || this.submittedShaderOutputImageCandidate()
-                || normalizedReason.contains("shaderdenoisedgi=pending-realdenoiseshaderoutput")
-                || normalizedReason.contains("shaderdenoisedgi=enabled-missing")
-                || normalizedReason.contains("shaderdenoisedgi=candidate")
-                || normalizedReason.contains("shadergenerateddenoisedgi=missing")
-                || normalizedReason.contains("shadergenerateddenoisedgi=candidate")
-                || normalizedReason.contains("sourcekind=shader-output-image-candidate")
-                || normalizedReason.contains("sourcekind=shader_output_image_candidate")
-                || normalizedReason.contains("sourcekind=cpu-denoised-readback")
-                || normalizedReason.contains("sourcekind=cpu_denoised_readback");
-        boolean shaderDenoiseExplicitlyTrue = normalizedReason.contains("realdenoiseshaderoutput=true")
-                || normalizedReason.contains("real_denoise_shader_output=true")
-                || normalizedReason.contains("shaderdenoiseoutput=true")
-                || normalizedReason.contains("gpu_denoise_output=true")
-                || normalizedReason.contains("realshaderdenoiseoutputready=ready")
-                || normalizedReason.contains("realshaderdenoiseoutputready=true")
-                || normalizedReason.contains("shaderdenoisedgi=enabled-ready")
-                || normalizedReason.contains("shaderdenoisedgi=ready")
-                || normalizedReason.contains("shadergenerateddenoisedgi=ready")
-                || normalizedReason.contains("sourcekind=shader-generated-denoised-gi")
-                || normalizedReason.contains("sourcekind=shader_generated_denoised_gi");
-        boolean shaderDenoisedGi = !shaderDenoiseExplicitlyFalse
-                && (shaderDenoiseExplicitlyTrue
-                || normalizedReason.contains("shader-denoised-diffuse-gi-rgba8"));
+        boolean shaderDenoisedGi = this.submittedRealShaderDenoiseOutputReady();
         boolean cpuDenoisedGi = !shaderDenoisedGi
                 && (cpuDenoiseExplicitlyTrue
                 || normalizedReason.contains("cpu-denoised-diffuse-gi-rgba8")
-                || denoisedGi);
+                || genericDenoisedGi);
         boolean rawGi = normalizedReason.contains("raw native diffuse-gi source is blended")
                 || normalizedReason.contains("round 7 raw_gi native diffuse-gi source additive draw issued")
                 || normalizedReason.contains("rawdrawrepeats=1");
@@ -201,7 +173,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
     }
 
     public boolean submittedFocusWindowOnly() {
-        String normalizedReason = this.reason.toLowerCase(Locale.ROOT);
+        String normalizedReason = this.normalizedReason();
         return this.submitted
                 && (normalizedReason.contains("focuswindowonly=true")
                 || normalizedReason.contains("focus_window_only=true")
@@ -210,7 +182,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
     }
 
     public boolean submittedMetadataOnlyPreview() {
-        String normalizedReason = this.reason.toLowerCase(Locale.ROOT);
+        String normalizedReason = this.normalizedReason();
         return this.submitted
                 && (this.targetStatus == TargetStatus.METADATA_ONLY
                 || normalizedReason.contains("metadataonly=true")
@@ -220,7 +192,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
     }
 
     public boolean submittedProofMarkerSource() {
-        String normalizedReason = this.reason.toLowerCase(Locale.ROOT);
+        String normalizedReason = this.normalizedReason();
         return this.submitted
                 && (normalizedReason.contains("proofmarker=true")
                 || normalizedReason.contains("proof_marker=true")
@@ -229,7 +201,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
     }
 
     public boolean submittedTemporaryDirectLightSubstitution() {
-        String normalizedReason = this.reason.toLowerCase(Locale.ROOT);
+        String normalizedReason = this.normalizedReason();
         return this.submitted
                 && (normalizedReason.contains("temporarydirectlightsubstitution=true")
                 || normalizedReason.contains("temporary_direct_light_substitution=true")
@@ -241,7 +213,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
     }
 
     public boolean submittedRectangularWashoutRisk() {
-        String normalizedReason = this.reason.toLowerCase(Locale.ROOT);
+        String normalizedReason = this.normalizedReason();
         return this.submitted
                 && (normalizedReason.contains("rectangularwashout=true")
                 || normalizedReason.contains("rectangular_washout=true")
@@ -259,7 +231,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
     }
 
     public boolean submittedSourceGatedSurfaceProjection() {
-        String normalizedReason = this.reason.toLowerCase(Locale.ROOT);
+        String normalizedReason = this.normalizedReason();
         return this.submitted
                 && (normalizedReason.contains("source-gated")
                 || normalizedReason.contains("source_gated")
@@ -308,24 +280,12 @@ public record PublicMojangFinalCompositeSubmissionResult(
     }
 
     public boolean submittedShaderDenoiseOverclaim() {
-        String normalizedReason = this.reason.toLowerCase(Locale.ROOT);
-        boolean explicitRealShaderOutputClaim = normalizedReason.contains("realdenoiseshaderoutput=true")
-                || normalizedReason.contains("real_denoise_shader_output=true")
-                || normalizedReason.contains("shaderdenoiseoutput=true")
-                || normalizedReason.contains("gpu_denoise_output=true")
-                || normalizedReason.contains("realshaderdenoiseoutputready=ready")
-                || normalizedReason.contains("realshaderdenoiseoutputready=true")
-                || normalizedReason.contains("shaderdenoisedgi=enabled-ready")
-                || normalizedReason.contains("shaderdenoisedgi=ready")
-                || normalizedReason.contains("shadergenerateddenoisedgi=ready")
-                || normalizedReason.contains("sourcekind=shader-generated-denoised-gi")
-                || normalizedReason.contains("sourcekind=shader_generated_denoised_gi");
-        return explicitRealShaderOutputClaim
+        return this.submittedShaderDenoiseOutputClaimPresent()
                 && !this.submittedRealShaderDenoiseOutputReady();
     }
 
     public boolean submittedShaderDenoiseVisualShaderIntent() {
-        String normalizedReason = this.reason.toLowerCase(Locale.ROOT);
+        String normalizedReason = this.normalizedReason();
         return this.submitted
                 && (normalizedReason.contains("round 7 denoised_gi visual")
                 || normalizedReason.contains("round 7 final_composite visual")
@@ -336,15 +296,39 @@ public record PublicMojangFinalCompositeSubmissionResult(
     }
 
     public boolean submittedRealShaderDenoiseDispatchReady() {
-        return this.submittedShaderDenoisedGiSource();
+        String normalizedReason = this.normalizedReason();
+        return this.submitted
+                && (normalizedReason.contains("shaderdenoisedispatchprepared=true")
+                || normalizedReason.contains("shader_denoise_dispatch_prepared=true")
+                || normalizedReason.contains("round7.shaderdenoise.dispatchprepared=true"))
+                && (normalizedReason.contains("shaderdenoiseinputready=true")
+                || normalizedReason.contains("shader_denoise_input_ready=true")
+                || normalizedReason.contains("shaderdenoiseinputscompletefordispatch=true"));
     }
 
     public boolean submittedRealShaderDenoiseOutputReady() {
-        return this.submittedShaderDenoisedGiSource();
+        String normalizedReason = this.normalizedReason();
+        boolean outputImageReady = normalizedReason.contains("shaderdenoiseoutputimageready=true")
+                || normalizedReason.contains("shader_denoise_output_image_ready=true")
+                || normalizedReason.contains("round7.shaderdenoise.outputimageready=true");
+        boolean shaderGeneratedOutput = normalizedReason.contains("shaderdenoiseshadergeneratedoutput=true")
+                || normalizedReason.contains("shader_denoise_shader_generated_output=true")
+                || normalizedReason.contains("shadergenerateddenoisedgi=ready")
+                || normalizedReason.contains("round7.shaderdenoise.shadergeneratedoutput=true");
+        boolean realOutputReady = normalizedReason.contains("realshaderdenoiseoutputready=true")
+                || normalizedReason.contains("realshaderdenoiseoutputready=ready")
+                || normalizedReason.contains("real_denoise_shader_output=true")
+                || normalizedReason.contains("realdenoiseshaderoutput=true");
+        return this.submitted
+                && outputImageReady
+                && shaderGeneratedOutput
+                && realOutputReady
+                && !this.submittedShaderOutputImageCandidate()
+                && !this.submittedExplicitShaderDenoiseOutputFalse();
     }
 
     public boolean submittedShaderOutputImageCandidate() {
-        String normalizedReason = this.reason.toLowerCase(Locale.ROOT);
+        String normalizedReason = this.normalizedReason();
         return this.submitted
                 && (this.shaderOutputImageCandidate.candidatePresent()
                 || normalizedReason.contains("shaderoutputimagecandidate=true")
@@ -360,6 +344,8 @@ public record PublicMojangFinalCompositeSubmissionResult(
     public String denoiseEvidenceBoundarySummary() {
         return "cpuDenoisedOutput=" + readyState(this.submittedCpuDenoisedGiSource())
                 + ",denoisedSourceIdentity=" + this.submittedDenoisedGiSourceIdentity().stableLabel()
+                + ",shaderDenoiseSourceClassification=" + this.shaderDenoiseSourceClassification()
+                + ",shaderDenoiseOutputClaimPresent=" + this.submittedShaderDenoiseOutputClaimPresent()
                 + ",shaderOutputImageCandidate=" + readyState(this.submittedShaderOutputImageCandidate())
                 + ",shaderOutputImageCandidateBoundary=" + this.shaderOutputImageCandidate.boundarySummary()
                 + ",shaderOutputImageCandidateOnly="
@@ -379,10 +365,13 @@ public record PublicMojangFinalCompositeSubmissionResult(
     public String finalCompositeDenoisedSourceIdentityBoundary() {
         return "submittedDenoisedIdentity=" + this.submittedDenoisedGiSourceIdentity().stableLabel()
                 + ",cpuReadbackVisualShaping=" + this.submittedCpuDenoisedGiSource()
+                + ",visualShaderIntent=" + this.submittedShaderDenoiseVisualShaderIntent()
+                + ",shaderDenoiseSourceClassification=" + this.shaderDenoiseSourceClassification()
                 + ",shaderGeneratedDenoisedOutput=" + this.submittedShaderDenoisedGiSource()
                 + ",realShaderDenoiseOutputReady=" + this.submittedRealShaderDenoiseOutputReady()
                 + ",shaderOutputImageCandidate=" + this.submittedShaderOutputImageCandidate()
                 + ",shaderOutputBlocker=\"" + this.shaderOutputImageCandidate.blocker() + "\""
+                + ",shaderOutputBlockerSource=\"" + this.shaderDenoiseOutputBlockerSource() + "\""
                 + ",boundary=\""
                 + (this.submittedRealShaderDenoiseOutputReady()
                 ? "final composite source identity reports shader-generated denoised GI output"
@@ -624,6 +613,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",shaderDenoisedGI=" + readyState(this.submittedShaderDenoisedGiSource())
                 + ",shaderOutputImageCandidate=" + readyState(this.submittedShaderOutputImageCandidate())
                 + ",denoisedSourceIdentity=" + this.submittedDenoisedGiSourceIdentity().stableLabel()
+                + ",shaderDenoiseSourceClassification=" + this.shaderDenoiseSourceClassification()
                 + ",shaderDenoiseVisualShaderIntent=" + readyState(this.submittedShaderDenoiseVisualShaderIntent())
                 + ",realShaderDenoiseDispatchReady=" + readyState(this.submittedRealShaderDenoiseDispatchReady())
                 + ",realShaderDenoiseOutputReady=" + readyState(this.submittedRealShaderDenoiseOutputReady())
@@ -679,6 +669,56 @@ public record PublicMojangFinalCompositeSubmissionResult(
         return "denoised-gi-missing";
     }
 
+    public boolean submittedShaderDenoiseOutputClaimPresent() {
+        String normalizedReason = this.normalizedReason();
+        return this.submitted
+                && (normalizedReason.contains("realdenoiseshaderoutput=true")
+                || normalizedReason.contains("real_denoise_shader_output=true")
+                || normalizedReason.contains("shaderdenoiseoutput=true")
+                || normalizedReason.contains("gpu_denoise_output=true")
+                || normalizedReason.contains("realshaderdenoiseoutputready=ready")
+                || normalizedReason.contains("realshaderdenoiseoutputready=true")
+                || normalizedReason.contains("shaderdenoisedgi=enabled-ready")
+                || normalizedReason.contains("shaderdenoisedgi=ready")
+                || normalizedReason.contains("shadergenerateddenoisedgi=ready")
+                || normalizedReason.contains("sourcekind=shader-generated-denoised-gi")
+                || normalizedReason.contains("sourcekind=shader_generated_denoised_gi"));
+    }
+
+    public String shaderDenoiseSourceClassification() {
+        if (this.submittedRealShaderDenoiseOutputReady()) {
+            return "true-shader-generated-output";
+        }
+        if (this.submittedShaderOutputImageCandidate()) {
+            return "shader-output-image-candidate-only";
+        }
+        if (this.submittedShaderDenoiseVisualShaderIntent()) {
+            return this.submittedCpuDenoisedGiSource()
+                    ? "visual-shader-over-cpu-readback-denoised-gi"
+                    : "visual-shader-intent-without-denoised-source";
+        }
+        if (this.submittedCpuDenoisedGiSource()) {
+            return "cpu-readback-denoised-gi";
+        }
+        return "denoised-source-missing";
+    }
+
+    public String shaderDenoiseOutputBlockerSource() {
+        if (this.submittedRealShaderDenoiseOutputReady()) {
+            return "none:true-shader-generated-output-ready";
+        }
+        if (this.submittedShaderOutputImageCandidate()) {
+            return this.shaderOutputImageCandidate.blocker();
+        }
+        if (this.submittedExplicitShaderDenoiseOutputFalse()) {
+            return "explicit-status:false-real-shader-denoise-output";
+        }
+        if (this.submittedShaderDenoiseVisualShaderIntent()) {
+            return "visual-shader-intent-only:uses-cpu-readback-or-unproven-source";
+        }
+        return "missing:true-shader-output-readiness-markers";
+    }
+
     public String surfaceProjectionEvidenceLabel() {
         if (!this.submitted) {
             return "not-submitted";
@@ -704,6 +744,28 @@ public record PublicMojangFinalCompositeSubmissionResult(
 
     private static String readyState(boolean ready) {
         return ready ? "ready" : "missing";
+    }
+
+    private String normalizedReason() {
+        return this.reason.toLowerCase(Locale.ROOT);
+    }
+
+    private boolean submittedExplicitShaderDenoiseOutputFalse() {
+        String normalizedReason = this.normalizedReason();
+        return normalizedReason.contains("realdenoiseshaderoutput=false")
+                || normalizedReason.contains("real_denoise_shader_output=false")
+                || normalizedReason.contains("shaderdenoiseoutput=false")
+                || normalizedReason.contains("gpu_denoise_output=false")
+                || normalizedReason.contains("realshaderdenoiseoutputready=false")
+                || normalizedReason.contains("shaderdenoisedgi=pending-realdenoiseshaderoutput")
+                || normalizedReason.contains("shaderdenoisedgi=enabled-missing")
+                || normalizedReason.contains("shaderdenoisedgi=candidate")
+                || normalizedReason.contains("shadergenerateddenoisedgi=missing")
+                || normalizedReason.contains("shadergenerateddenoisedgi=candidate")
+                || normalizedReason.contains("sourcekind=shader-output-image-candidate")
+                || normalizedReason.contains("sourcekind=shader_output_image_candidate")
+                || normalizedReason.contains("sourcekind=cpu-denoised-readback")
+                || normalizedReason.contains("sourcekind=cpu_denoised_readback");
     }
 
     public enum TargetStatus {

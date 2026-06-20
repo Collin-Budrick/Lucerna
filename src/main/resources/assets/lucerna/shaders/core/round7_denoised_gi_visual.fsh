@@ -6,7 +6,7 @@ in vec2 texCoord;
 
 out vec4 fragColor;
 
-// Round 7 shader-side denoise shaping resource.
+// Round 7 shader-side denoise visual-shaping resource.
 //
 // This resource deliberately preserves the existing public Mojang preview
 // contract: one color sampler named InSampler plus texCoord. Because this path
@@ -14,6 +14,15 @@ out vec4 fragColor;
 // inputs, edge awareness is inferred only from local luminance/chroma gradients
 // in the supplied lighting texture. Controller validation is still required
 // before this resource can be treated as a real denoise milestone.
+//
+// Boundary markers for telemetry/docs:
+// - This shader samples a CPU/readback or candidate visual payload and writes
+//   only the current public draw output.
+// - It does not create lucerna.denoise.diffuse, lucerna.denoise.rejectionMask,
+//   a shader output image, or a history/variance quality target.
+// - Keep realShaderDenoiseOutputReady=false and
+//   shaderDenoiseOutputImageCandidateBoundaryOnly=true unless a separate
+//   shader dispatch writes the declared denoise attachment.
 
 const vec3 LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
 const float CENTER_WEIGHT = 0.50;
@@ -28,6 +37,8 @@ const float NEIGHBOR_MIN_WEIGHT = 0.035;
 const float EDGE_CENTER_RESTORE = 0.88;
 const float DETAIL_RESTORE_GAIN = 0.46;
 const float DIRECTIONAL_EDGE_SUPPRESSION = 0.72;
+const float EDGE_OUTPUT_DAMPING = 0.58;
+const float HALO_REJECT_STRENGTH = 0.46;
 const vec3 MAX_ADDITIVE_PER_DRAW = vec3(0.023, 0.021, 0.014);
 
 vec2 safeTexelSize() {
@@ -97,6 +108,30 @@ float localMaterialStructure(vec2 uv, vec4 center) {
             length(max(verticalA.rgb, vec3(0.0)) - max(verticalB.rgb, vec3(0.0))));
     float confidenceStructure = localSignalGradient(uv) + diagonalSignalGradient(uv) * 0.50;
     return clamp(chromaSpan(center.rgb) * 0.75 + lumaStructure * 2.0 + chromaStructure * 0.55 + confidenceStructure, 0.0, 1.0);
+}
+
+float edgeAwareOutputGate(vec2 uv, vec4 center, vec4 denoised) {
+    float gradient = localSignalGradient(uv) + diagonalSignalGradient(uv) * 0.42;
+    float outputDelta = sampleDissimilarity(center, denoised);
+    float structure = localMaterialStructure(uv, center);
+    float confidence = max(signalConfidence(center), signalConfidence(denoised));
+    float edgeDamping = mix(1.0, EDGE_OUTPUT_DAMPING, smoothstep(0.035, 0.18, gradient + outputDelta));
+    float structureRecovery = mix(0.82, 1.0, smoothstep(0.040, 0.24, structure + chromaSpan(center.rgb)));
+    return clamp(mix(edgeDamping, structureRecovery, confidence * 0.45), 0.38, 1.0);
+}
+
+vec3 suppressCandidateHalo(vec2 uv, vec4 center, vec4 denoised, vec3 shaped) {
+    vec2 texel = safeTexelSize();
+    float centerConfidence = signalConfidence(center);
+    float nearConfidence = max(
+            max(signalConfidence(sourceSample(uv + vec2(texel.x, 0.0))),
+                    signalConfidence(sourceSample(uv + vec2(-texel.x, 0.0)))),
+            max(signalConfidence(sourceSample(uv + vec2(0.0, texel.y))),
+                    signalConfidence(sourceSample(uv + vec2(0.0, -texel.y)))));
+    float unsupportedLift = smoothstep(0.018, 0.16, signalConfidence(denoised) - max(centerConfidence, nearConfidence * 0.82));
+    float structure = localMaterialStructure(uv, center);
+    float haloReject = unsupportedLift * (1.0 - smoothstep(0.060, 0.26, structure + chromaSpan(center.rgb)));
+    return mix(shaped, shaped * (1.0 - HALO_REJECT_STRENGTH), haloReject);
 }
 
 float guidedNeighborWeight(vec4 center, vec4 neighbor, float baseWeight) {
@@ -227,6 +262,8 @@ void main() {
     vec3 shaped = denoised.rgb;
     shaped = max(shaped, vec3(SIGNAL_FLOOR) * confidence);
     shaped *= SIGNAL_GAIN * confidence * surfaceMask * structureMask;
+    shaped *= edgeAwareOutputGate(texCoord, center, denoised);
+    shaped = suppressCandidateHalo(texCoord, center, denoised, shaped);
 
     fragColor = vec4(min(max(shaped, vec3(0.0)), MAX_ADDITIVE_PER_DRAW), 1.0);
 }

@@ -1453,23 +1453,46 @@ public final class LucernaController {
             return;
         }
 
+        var snapshot = payload.snapshot();
+        boolean shaderOutputAttempted = snapshot.shaderDispatchPrepared()
+                || snapshot.shaderInputReady()
+                || snapshot.shaderOutputReady()
+                || snapshot.shaderOutputImageReady()
+                || snapshot.shaderOutputMaterialReady()
+                || snapshot.shaderOutputImageCandidateReady();
+        boolean realShaderDenoiseOutputReady = snapshot.realShaderDenoiseOutputReady();
+        String shaderOutputCandidateSource = snapshot.shaderOutputImageCandidateReady()
+                ? (snapshot.shaderOutputImageCandidateCpuStaged()
+                ? "cpu-staged"
+                : (snapshot.shaderOutputImageCandidateNonGpu() ? "non-gpu" : "gpu-or-unspecified"))
+                : "none";
         String logKey = payload.available()
                 + "|"
                 + payload.readyForPreviewDraw()
                 + "|"
-                + payload.snapshot().dispatchGeneration()
+                + snapshot.dispatchGeneration()
                 + "|"
-                + payload.snapshot().nativeOutputPixels()
+                + snapshot.nativeOutputPixels()
                 + "|"
-                + payload.snapshot().nativeOutputChecksum()
+                + snapshot.nativeOutputChecksum()
                 + "|"
-                + payload.snapshot().nativeOutputChangedPixels()
+                + snapshot.nativeOutputChangedPixels()
                 + "|"
-                + payload.snapshot().nativeOutputMeanAbsDelta()
+                + snapshot.nativeOutputMeanAbsDelta()
                 + "|"
-                + payload.snapshot().outputEvidenceMarker()
+                + snapshot.outputEvidenceMarker()
                 + "|"
-                + payload.snapshot().realDenoiseShaderOutput()
+                + snapshot.realDenoiseShaderOutput()
+                + "|"
+                + shaderOutputAttempted
+                + "|"
+                + realShaderDenoiseOutputReady
+                + "|"
+                + snapshot.shaderOutputBlockerReason()
+                + "|"
+                + shaderOutputCandidateSource
+                + "|"
+                + snapshot.cpuReadbackFallbackActive()
                 + "|"
                 + payload.previewReadinessReason();
         if (logKey.equals(this.lastLoggedRound7DenoisedGiCpuOutputKey)) {
@@ -1478,25 +1501,36 @@ public final class LucernaController {
 
         this.lastLoggedRound7DenoisedGiCpuOutputKey = logKey;
         Lucerna.LOGGER.info(
-                "Lucerna Round 7 denoised GI CPU output: denoisedPayloadReady={} readyForPreviewDraw={} denoisedPayloadEvidence={} size={}x{} pixels={} bytes={} displayablePixels={} peakChannel={} denoisedCpuOutputGenerated={} denoised_cpu_output_generated={} denoisedOutputDiffersFromRaw={} denoisedOutputChangedPixels={} denoisedOutputMeanAbsDelta={} denoisedOutputChecksum={} realDenoiseShaderOutput={} marker={} denoisedOutputMarker={} reason={}.",
+                "Lucerna Round 7 denoised GI CPU output: denoisedPayloadReady={} readyForPreviewDraw={} denoisedPayloadEvidence={} size={}x{} pixels={} bytes={} displayablePixels={} peakChannel={} denoisedCpuOutputGenerated={} denoised_cpu_output_generated={} denoisedOutputDiffersFromRaw={} denoisedOutputChangedPixels={} denoisedOutputMeanAbsDelta={} denoisedOutputChecksum={} realDenoiseShaderOutput={} marker={} denoisedOutputMarker={} shaderDenoiseOutputAttempted={} shaderDenoiseOutputAttemptGeneration={} shaderDenoiseOutputReadinessLabel={} shaderDenoiseOutputBlockerReason={} shaderDenoiseOutputCandidateReady={} shaderDenoiseOutputCandidateSource={} shaderDenoiseOutputCandidateMarker={} shaderDenoiseOutputCandidateBoundary=\"{}\" realShaderDenoiseOutputReady={} shaderDenoiseNoOverclaim={} cpuReadbackDenoiseFallbackActive={} reason={}.",
                 payload.available(),
                 payload.readyForPreviewDraw(),
-                payload.snapshot().outputEvidenceMarker(),
+                snapshot.outputEvidenceMarker(),
                 payload.width(),
                 payload.height(),
                 payload.pixelCount(),
                 payload.byteCount(),
                 payload.displayablePixelCount(),
                 payload.peakChannel(),
-                payload.snapshot().denoisedCpuOutputGenerated(),
-                payload.snapshot().denoisedCpuOutputGenerated(),
-                payload.snapshot().denoisedOutputDiffersFromRaw(),
-                payload.snapshot().nativeOutputChangedPixels(),
-                payload.snapshot().nativeOutputMeanAbsDelta(),
-                payload.snapshot().nativeOutputChecksum(),
-                payload.snapshot().realDenoiseShaderOutput(),
-                payload.snapshot().outputMarker(),
-                payload.snapshot().denoisedOutputMarker(),
+                snapshot.denoisedCpuOutputGenerated(),
+                snapshot.denoisedCpuOutputGenerated(),
+                snapshot.denoisedOutputDiffersFromRaw(),
+                snapshot.nativeOutputChangedPixels(),
+                snapshot.nativeOutputMeanAbsDelta(),
+                snapshot.nativeOutputChecksum(),
+                snapshot.realDenoiseShaderOutput(),
+                snapshot.outputMarker(),
+                snapshot.denoisedOutputMarker(),
+                shaderOutputAttempted,
+                snapshot.dispatchGeneration(),
+                snapshot.shaderOutputReadinessLabel(),
+                snapshot.shaderOutputBlockerReason(),
+                snapshot.shaderOutputImageCandidateReady(),
+                shaderOutputCandidateSource,
+                snapshot.shaderOutputImageCandidateMarker(),
+                snapshot.shaderOutputImageCandidateBoundary(),
+                realShaderDenoiseOutputReady,
+                !realShaderDenoiseOutputReady,
+                snapshot.cpuReadbackFallbackActive(),
                 payload.previewReadinessReason()
         );
     }

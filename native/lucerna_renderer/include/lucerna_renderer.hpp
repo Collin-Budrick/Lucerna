@@ -797,6 +797,7 @@ struct NativeDenoiseExecutionTelemetry {
     std::uint64_t last_shader_denoise_output_image_candidate_pixels = 0;
     std::uint64_t last_shader_denoise_output_image_candidate_bytes = 0;
     std::uint64_t last_shader_denoise_output_image_candidate_checksum = 0;
+    std::uint64_t last_shader_denoise_output_attempt_generation = 0;
     std::uint64_t last_shader_denoise_output_missing_prerequisite_count = 0;
     std::uint64_t last_temporal_stable_pixels = 0;
     std::uint64_t last_temporal_unstable_pixels = 0;
@@ -836,6 +837,7 @@ struct NativeDenoiseExecutionTelemetry {
     bool last_shader_denoise_dispatch_intent = false;
     bool last_shader_denoise_dispatch_prepared = false;
     bool last_shader_denoise_input_ready = false;
+    bool last_shader_denoise_output_attempted = false;
     bool last_shader_denoise_output_ready = false;
     bool last_shader_denoise_output_image_ready = false;
     bool last_shader_denoise_output_image_candidate_ready = false;
@@ -851,7 +853,9 @@ struct NativeDenoiseExecutionTelemetry {
     bool last_shader_denoise_output_prerequisites_ready = false;
     bool last_metadata_only_path = true;
     bool last_real_denoise_shader_output = false;
+    bool last_real_shader_denoise_output_ready = false;
     bool last_shader_denoise_output_shader_generated = false;
+    bool last_shader_denoise_no_overclaim = true;
     bool last_cpu_fallback_quality_metrics = false;
     bool last_composite_stage_recorded = false;
     bool last_composite_enabled = false;
@@ -880,6 +884,9 @@ struct NativeDenoiseExecutionTelemetry {
     std::string last_shader_denoise_output_prerequisite_marker;
     std::string last_shader_denoise_output_missing_prerequisites;
     std::string last_shader_denoise_output_image_blocker;
+    std::string last_shader_denoise_output_blocker_reason;
+    std::string last_shader_denoise_output_attempt_marker;
+    std::string last_shader_denoise_no_overclaim_marker;
     std::string last_shader_denoise_generation_marker;
     std::string last_composite_marker;
     std::string last_history_acceptance_reason;
