@@ -18,6 +18,8 @@ These shader files are placeholders for the Sodium Vulkan integration milestones
 
 `core/round6_native_diffuse_gi_surface.fsh` samples the native diffuse-GI RGBA8 CPU/readback payload through the same public Mojang `InSampler` binding and projects only source-gated signal into the borrowed world color target. The projection is bounded by soft world-surface falloff and shaped by local payload luminance/chroma/gradient cues so it is less dependent on rectangular proof regions, but it is still CPU/readback preview output. It must not be reported as physical GI tracing, real shader denoise, or production final-composite quality.
 
+`core/round7_denoised_gi_visual.fsh` is the first shader-side Round 7 denoise shaping resource for the existing public Mojang draw contract. It preserves the single `InSampler` binding and uses only local luminance, chroma, alpha/confidence, and small-radius neighborhood samples to reduce speckle while avoiding obvious smearing across signal edges. This is not a full denoiser yet: the current public resource path does not provide depth, normals, material id, motion vectors, variance, or history, so it cannot perform geometry-aware rejection, temporal stability, or NRD-style disocclusion handling. It requires controller build/render validation before any AGENTS strike-through or milestone claim.
+
 `composite/final_composite.frag.glsl` is the distinct final composite shader resource for `lucerna.composite.final`. It is not a preview shader and does not replace either `core/direct_light_preview_*.fsh` resource. Its semantics are bounded: negative radiance is clamped away, direct and diffuse contributions are capped before composition, and final RGB is clamped to the borrowed world-color target range.
 
 ## Phase 5 Order

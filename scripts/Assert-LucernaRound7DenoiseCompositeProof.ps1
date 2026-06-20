@@ -46,6 +46,8 @@ param(
 
     [double] $AutoRegionSearchHeightPercent = 80.0,
 
+    [double] $DenoiseAutoRegionSearchHeightPercent = 55.0,
+
     [int] $AutoRegionColumns = 12,
 
     [int] $AutoRegionRows = 8,
@@ -297,7 +299,8 @@ function Invoke-DeltaHelper {
     param(
         [string] $BaselinePath,
         [string] $EnabledPath,
-        [string] $Label
+        [string] $Label,
+        [double] $SearchHeightPercent = $AutoRegionSearchHeightPercent
     )
 
     $compareScript = Join-Path $PSScriptRoot "Compare-LucernaVisualProofImages.ps1"
@@ -322,7 +325,7 @@ function Invoke-DeltaHelper {
                     -AutoRegionSearchLeftPercent $AutoRegionSearchLeftPercent `
                     -AutoRegionSearchTopPercent $AutoRegionSearchTopPercent `
                     -AutoRegionSearchWidthPercent $AutoRegionSearchWidthPercent `
-                    -AutoRegionSearchHeightPercent $AutoRegionSearchHeightPercent `
+                    -AutoRegionSearchHeightPercent $SearchHeightPercent `
                     -AutoRegionColumns $AutoRegionColumns `
                     -AutoRegionRows $AutoRegionRows `
                     -AutoRegionPaddingCells $AutoRegionPaddingCells | Out-Host
@@ -446,7 +449,7 @@ $debugDimensions = if ([string]::IsNullOrWhiteSpace($debugResolved)) { $null } e
 
 $directDelta = if ([string]::IsNullOrWhiteSpace($directResolved)) { $null } else { Invoke-DeltaHelper $baselineResolved $directResolved "direct" }
 $rawDelta = Invoke-DeltaHelper $baselineResolved $rawResolved "raw"
-$denoiseDelta = Invoke-DeltaHelper $rawResolved $denoisedResolved "denoised"
+$denoiseDelta = Invoke-DeltaHelper $rawResolved $denoisedResolved "denoised" $DenoiseAutoRegionSearchHeightPercent
 $finalDelta = Invoke-DeltaHelper $baselineResolved $finalResolved "final"
 $rawRoughnessInDenoiseRegion = Measure-ImageRoughness $rawResolved $denoiseDelta.focusRegion
 $denoisedRoughnessInDenoiseRegion = Measure-ImageRoughness $denoisedResolved $denoiseDelta.focusRegion
@@ -570,6 +573,7 @@ $result = [ordered]@{
             searchTopPercent = $AutoRegionSearchTopPercent
             searchWidthPercent = $AutoRegionSearchWidthPercent
             searchHeightPercent = $AutoRegionSearchHeightPercent
+            denoiseSearchHeightPercent = $DenoiseAutoRegionSearchHeightPercent
             columns = $AutoRegionColumns
             rows = $AutoRegionRows
             paddingCells = $AutoRegionPaddingCells

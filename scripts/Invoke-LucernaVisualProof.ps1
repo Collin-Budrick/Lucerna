@@ -47,7 +47,15 @@ param(
 
     [int] $TimeoutSeconds = 240,
 
-    [ValidateSet("MinecraftF2", "Window")]
+    [ValidateRange(1, 60)]
+    [int] $TemporalCaptureCount = 1,
+
+    [ValidateRange(0, 120)]
+    [int] $TemporalCaptureIntervalSeconds = 0,
+
+    [string] $TemporalCaptureLabel = "",
+
+    [ValidateSet("MinecraftF2", "Window", "InClient")]
     [string] $ScreenshotSource = "MinecraftF2"
 )
 
@@ -620,9 +628,47 @@ function Wait-LatestLogPattern {
     throw "Timed out waiting for required log markers: $($RequiredPatterns -join '; ')"
 }
 
+function Get-JavaProcessCommandLine {
+    param([int] $ProcessId)
+
+    try {
+        $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction Stop
+        if ($processInfo -and $processInfo.CommandLine) {
+            return [string]$processInfo.CommandLine
+        }
+    } catch {
+        return ""
+    }
+    return ""
+}
+
+function Test-MinecraftClientWindowProcess {
+    param([System.Diagnostics.Process] $Process)
+
+    if ($null -eq $Process -or $Process.MainWindowHandle -eq 0) {
+        return $false
+    }
+    if ($script:LucernaMinecraftLaunchStart) {
+        try {
+            if ($Process.StartTime -lt $script:LucernaMinecraftLaunchStart.AddSeconds(-5)) {
+                return $false
+            }
+        } catch {
+            return $false
+        }
+    }
+
+    $title = [string]$Process.MainWindowTitle
+    $commandLine = Get-JavaProcessCommandLine $Process.Id
+    $titleLooksMinecraft = $title -like "*Minecraft*" -and $title -notmatch "(?i)(serena|codex)"
+    $commandLooksMinecraft = $commandLine -match "(?i)(net\.fabricmc|devlaunchinjector|fabric-loader|com\.mojang)"
+
+    return $titleLooksMinecraft -and $commandLooksMinecraft
+}
+
 function Get-MinecraftWindowProcess {
     Get-Process java,javaw -ErrorAction SilentlyContinue | Where-Object {
-        $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -like "*Minecraft*"
+        Test-MinecraftClientWindowProcess $_
     } | Sort-Object @{ Expression = {
                 try {
                     $_.StartTime
@@ -638,6 +684,25 @@ function Focus-MinecraftWindow {
         throw "Could not find a Minecraft/java window to focus."
     }
 
+    if (-not ("LucernaVisualProof.WindowFocus" -as [type])) {
+        Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+namespace LucernaVisualProof {
+    public static class WindowFocus {
+        [DllImport("user32.dll")]
+        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("user32.dll")]
+        public static extern bool SetForegroundWindow(IntPtr hWnd);
+    }
+}
+"@
+    }
+
+    [void] [LucernaVisualProof.WindowFocus]::ShowWindow($windowProcess.MainWindowHandle, 9)
+    [void] [LucernaVisualProof.WindowFocus]::SetForegroundWindow($windowProcess.MainWindowHandle)
     $shell = New-Object -ComObject WScript.Shell
     [void] $shell.AppActivate($windowProcess.Id)
     Start-Sleep -Milliseconds 500
@@ -876,7 +941,7 @@ function Save-MinecraftWindowScreenshot {
         [string] $DestinationPath
     )
 
-    $windowProcess = Get-MinecraftWindowProcess
+    $windowProcess = Focus-MinecraftWindow
     if ($null -eq $windowProcess) {
         throw "Could not find a Minecraft/java window for fallback screenshot capture."
     }
@@ -1108,6 +1173,11 @@ try {
         $psi.Environment["LUCERNA_ROUND7_STABILITY_SCENE"] = [string]$round7StabilityCaptureIntent.sceneKind
         $psi.Environment["LUCERNA_ROUND7_STABILITY_SCENE_STATE"] = [string]$round7StabilityCaptureIntent.sceneState
         $psi.Environment["LUCERNA_ROUND7_STABILITY_PROOF_OWNER"] = "controller"
+        $psi.Environment["LUCERNA_ROUND7_STABILITY_TEMPORAL_CAPTURE_COUNT"] = [string]$TemporalCaptureCount
+        $psi.Environment["LUCERNA_ROUND7_STABILITY_TEMPORAL_CAPTURE_INTERVAL_SECONDS"] = [string]$TemporalCaptureIntervalSeconds
+        if (-not [string]::IsNullOrWhiteSpace($TemporalCaptureLabel)) {
+            $psi.Environment["LUCERNA_ROUND7_STABILITY_TEMPORAL_CAPTURE_LABEL"] = $TemporalCaptureLabel
+        }
     }
     if ($ValidationProfile -eq "Round7EmissiveGiSurface") {
         $psi.Environment["LUCERNA_ROUND7_CAPTURE_MODE"] = [string]$round7SurfaceCaptureIntent.artifactRole
@@ -1128,6 +1198,11 @@ try {
         $psi.Environment["LUCERNA_ROUND9_SCENE_KIND"] = [string]$round9CaptureIntent.sceneKind
         $psi.Environment["LUCERNA_ROUND9_VISUAL_PROOF_OWNER"] = "controller"
     }
+    if ($ScreenshotSource -eq "InClient") {
+        $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_REQUEST"] = "true"
+        $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_DELAY_TICKS"] = "180"
+    }
+    $script:LucernaMinecraftLaunchStart = Get-Date
     $process = [System.Diagnostics.Process]::Start($psi)
     $process.BeginOutputReadLine()
     $process.BeginErrorReadLine()
@@ -1302,9 +1377,6 @@ try {
 
     $archiveName = "$scenario-$stamp-$Mode.png"
     $archivePath = Join-Path $screenshotArchiveDir $archiveName
-    $existingScreenshotNames = @(Get-ChildItem -LiteralPath $screenshotDir -Filter "*.png" -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty Name)
-    $beforeScreenshot = Get-Date
     if ($ValidationProfile -eq "Round7CompositeStability") {
         Invoke-Round7CompositeStabilityPreScreenshotAction ([string]$round7StabilityCaptureIntent.preScreenshotAction) $markerLog
     }
@@ -1322,21 +1394,65 @@ try {
     } elseif ($ValidationProfile -eq "Round7EmissiveGiSurface") {
         Add-LucernaControllerMarker $markerLog "round7.emissiveGiSurface.captureRole=$($round7SurfaceCaptureIntent.artifactRole) hideGuiBeforeScreenshot=false fixedWorldSurfaceRegion=true commandFeedback=false chatCleared=true"
     }
+    $temporalRepeatEnabled = (
+        $ValidationProfile -eq "Round7CompositeStability" -and
+        $round7StabilityCaptureIntent -and
+        [string]$round7StabilityCaptureIntent.sceneKind -eq "temporal" -and
+        $TemporalCaptureCount -gt 1
+    )
+    $effectiveCaptureCount = if ($temporalRepeatEnabled) { $TemporalCaptureCount } else { 1 }
+    if ($TemporalCaptureCount -gt 1 -and -not $temporalRepeatEnabled) {
+        Add-LucernaControllerMarker $markerLog "round7.stability.temporal.repeatIgnored=true requestedCount=$TemporalCaptureCount reason=non-temporal-capture"
+    }
+    $captureLabelBase = if ([string]::IsNullOrWhiteSpace($TemporalCaptureLabel)) {
+        [string]$Mode
+    } else {
+        $TemporalCaptureLabel
+    }
+    $captureLabelSafe = [regex]::Replace($captureLabelBase, "[^A-Za-z0-9_.-]+", "-").Trim("-")
+    if ([string]::IsNullOrWhiteSpace($captureLabelSafe)) {
+        $captureLabelSafe = [string]$Mode
+    }
+    $capturedScreenshotPaths = New-Object System.Collections.Generic.List[string]
+    $capturedScreenshotSources = New-Object System.Collections.Generic.List[string]
     try {
-        if ($ScreenshotSource -eq "Window") {
-            $screenshot = Save-MinecraftWindowScreenshot $archivePath
-            $capturedScreenshotSource = "window"
-        } else {
-            Send-MinecraftKeys "{F2}"
-            $screenshotDeadline = (Get-Date).AddSeconds(45)
-            try {
-                $screenshot = Wait-NewScreenshot $screenshotDir $existingScreenshotNames $beforeScreenshot $screenshotDeadline
-                Copy-Item -LiteralPath $screenshot.FullName -Destination $archivePath -Force
-                $capturedScreenshotSource = "minecraft-f2"
-            } catch {
-                $screenshot = Save-MinecraftWindowScreenshot $archivePath
-                $capturedScreenshotSource = "window-fallback"
+        for ($captureIndex = 0; $captureIndex -lt $effectiveCaptureCount; $captureIndex++) {
+            if ($captureIndex -gt 0 -and $TemporalCaptureIntervalSeconds -gt 0) {
+                Start-Sleep -Seconds $TemporalCaptureIntervalSeconds
             }
+            $captureArchivePath = if ($captureIndex -eq 0) {
+                $archivePath
+            } else {
+                Join-Path $screenshotArchiveDir ("$scenario-$stamp-$Mode-$captureLabelSafe-repeat{0:D2}.png" -f ($captureIndex + 1))
+            }
+            if ($temporalRepeatEnabled) {
+                Add-LucernaControllerMarker $markerLog "round7.stability.temporal.repeatCapture index=$($captureIndex + 1) count=$effectiveCaptureCount label=$captureLabelSafe intervalSeconds=$TemporalCaptureIntervalSeconds sceneState=$($round7StabilityCaptureIntent.sceneState)"
+            }
+            $existingScreenshotNames = @(Get-ChildItem -LiteralPath $screenshotDir -Filter "*.png" -ErrorAction SilentlyContinue |
+                    Select-Object -ExpandProperty Name)
+            $beforeScreenshot = Get-Date
+            if ($ScreenshotSource -eq "Window") {
+                $screenshot = Save-MinecraftWindowScreenshot $captureArchivePath
+                $capturedScreenshotSource = "window"
+            } elseif ($ScreenshotSource -eq "InClient") {
+                $screenshotDeadline = (Get-Date).AddSeconds(90)
+                $screenshot = Wait-NewScreenshot $screenshotDir @() $script:LucernaMinecraftLaunchStart $screenshotDeadline
+                Copy-Item -LiteralPath $screenshot.FullName -Destination $captureArchivePath -Force
+                $capturedScreenshotSource = "minecraft-in-client"
+            } else {
+                Send-MinecraftKeys "{F2}"
+                $screenshotDeadline = (Get-Date).AddSeconds(45)
+                try {
+                    $screenshot = Wait-NewScreenshot $screenshotDir $existingScreenshotNames $beforeScreenshot $screenshotDeadline
+                    Copy-Item -LiteralPath $screenshot.FullName -Destination $captureArchivePath -Force
+                    $capturedScreenshotSource = "minecraft-f2"
+                } catch {
+                    $screenshot = Save-MinecraftWindowScreenshot $captureArchivePath
+                    $capturedScreenshotSource = "window-fallback"
+                }
+            }
+            $capturedScreenshotPaths.Add($captureArchivePath) | Out-Null
+            $capturedScreenshotSources.Add($capturedScreenshotSource) | Out-Null
         }
     } finally {
         if ($hudHiddenForScreenshot) {
@@ -1347,7 +1463,14 @@ try {
 
     $logPath = Copy-FreshLatestLog $root $validationDir $scenario $stamp $markerLog
     Write-Host "screenshot=$archivePath"
-    Write-Host "screenshotSource=$capturedScreenshotSource"
+    Write-Host "screenshotSource=$($capturedScreenshotSources[0])"
+    if ($temporalRepeatEnabled) {
+        Write-Host "temporalCaptureCount=$effectiveCaptureCount"
+        Write-Host "temporalCaptureIntervalSeconds=$TemporalCaptureIntervalSeconds"
+        Write-Host "temporalCaptureLabel=$captureLabelSafe"
+        Write-Host "temporalCaptureScreenshots=$($capturedScreenshotPaths -join ';')"
+        Write-Host "temporalCaptureSources=$($capturedScreenshotSources -join ';')"
+    }
     if ($round7CaptureIntent) {
         Write-Host "round7ArtifactRole=$($round7CaptureIntent.artifactRole)"
         Write-Host "round7CompositeMode=$($round7CaptureIntent.compositeMode)"

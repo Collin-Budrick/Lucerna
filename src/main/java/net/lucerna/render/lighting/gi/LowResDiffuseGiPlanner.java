@@ -288,6 +288,49 @@ public final class LowResDiffuseGiPlanner {
                     "$.sceneInputs",
                     "Scene-tied GI metadata will be populated from cache surface/radiance records when available"
             ));
+            return;
+        }
+        if (sceneInputs.surfaceSampleCount() == 0) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_SURFACE_INPUTS_PENDING",
+                    "$.sceneInputs.surfaceSampleCount",
+                    "Diffuse GI cannot claim geometry/material-aware behavior until surface cache samples are available"
+            ));
+        }
+        if (sceneInputs.surfaceSampleCount() > 0 && sceneInputs.distinctMaterialCount() <= 1) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_MATERIAL_DIVERSITY_LIMITED",
+                    "$.sceneInputs.materialDiversityRatio",
+                    "Surface inputs currently represent one material; treat GI response as weakly material-tied"
+            ));
+        }
+        if (sceneInputs.surfaceSampleCount() > 0 && sceneInputs.averageNormalLength() < 0.5F) {
+            findings.add(DiffuseGiValidationFinding.warning(
+                    "GI_SURFACE_NORMAL_CONFIDENCE_LOW",
+                    "$.sceneInputs.averageNormalLength",
+                    "Surface normal vectors are weak; physical GI direction/orientation claims should be withheld"
+            ));
+        }
+        if (sceneInputs.surfaceSampleCount() >= 4 && sceneInputs.orientationBalance() < 0.12F) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_ORIENTATION_DISTRIBUTION_NARROW",
+                    "$.sceneInputs.orientationBalance",
+                    "Surface samples are dominated by one orientation, so bounce-light evidence may be scene-specific"
+            ));
+        }
+        if (sceneInputs.radianceSampleCount() > 0 && sceneInputs.radianceDirectionConfidence() < 0.35F) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_RADIANCE_DIRECTION_CONFIDENCE_LOW",
+                    "$.sceneInputs.radianceDirectionConfidence",
+                    "Radiance cache direction data is noisy or underdefined; do not overclaim directional GI yet"
+            ));
+        }
+        if (sceneInputs.dirtyRegionInfluence() > 0.35F) {
+            findings.add(DiffuseGiValidationFinding.warning(
+                    "GI_DIRTY_REGION_INFLUENCE_HIGH",
+                    "$.sceneInputs.dirtyRegionInfluence",
+                    "Dirty regions dominate current GI inputs; cache-backed physical claims need fresh controller proof"
+            ));
         }
     }
 

@@ -30,6 +30,8 @@ public final class PublicMojangPreviewDrawScaffolds {
             "lucerna:core/round6_native_diffuse_gi_surface";
     private static final String ROUND6_DIFFUSE_GI_SURFACE_SHADER =
             "lucerna:core/round6_native_diffuse_gi_surface";
+    private static final String ROUND7_DENOISED_GI_VISUAL_SHADER =
+            "lucerna:core/round7_denoised_gi_visual";
     private static final String ADDITIVE_RGBA8_COLOR_TARGET_STATE =
             "blend=ADDITIVE,colorTargetFormat=RGBA8_UNORM,colorWriteMask=WRITE_COLOR";
     private static final String DIAGNOSTIC_FULLSCREEN_MODE = "diagnostic-fullscreen-warm-additive";
@@ -86,7 +88,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                     .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
                     .withFragmentShader(Identifier.fromNamespaceAndPath(
                             "lucerna",
-                            "core/round6_native_diffuse_gi_surface"
+                            "core/round7_denoised_gi_visual"
                     ))
                     .withBindGroupLayout(BindGroupLayouts.IN_SAMPLER)
                     .withColorTargetState(new ColorTargetState(
@@ -411,7 +413,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
                 "public Mojang Round 7 DENOISED_GI visual mode can bind the denoised diffuse-GI RGBA8 CPU source texture and issue a stronger full-target denoised-source additive draw; shader="
-                        + ROUND6_DIFFUSE_GI_SURFACE_SHADER
+                        + ROUND7_DENOISED_GI_VISUAL_SHADER
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
         );
     }
@@ -457,7 +459,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
                 "public Mojang Round 7 DENOISED_GI denoised diffuse-GI CPU output additive draw issued; shader="
-                        + ROUND6_DIFFUSE_GI_SURFACE_SHADER
+                        + ROUND7_DENOISED_GI_VISUAL_SHADER
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
                         + ",javaOpaqueFallbackDrawRepeats=" + ROUND7_DENOISED_GI_DRAW_REPEATS
         );
@@ -519,7 +521,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 "public Mojang Round 7 FINAL_COMPOSITE full-target additive draw issued from "
                         + (rawSourceBound ? "raw native diffuse-GI plus " : "")
                         + "denoised diffuse-GI sources; shader="
-                        + ROUND6_DIFFUSE_GI_SURFACE_SHADER
+                        + ROUND7_DENOISED_GI_VISUAL_SHADER
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
                         + ",rawDrawRepeats=" + (rawSourceBound ? ROUND7_FINAL_RAW_GI_DRAW_REPEATS : 0)
                         + ",denoisedDrawRepeats=" + ROUND7_FINAL_DENOISED_GI_DRAW_REPEATS

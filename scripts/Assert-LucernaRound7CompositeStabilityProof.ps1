@@ -27,6 +27,12 @@ param(
     [Parameter(Mandatory = $true)]
     [string] $TemporalMovedImagePath,
 
+    [string[]] $TemporalStableSequenceImagePath = @(),
+
+    [string[]] $TemporalMovedSequenceImagePath = @(),
+
+    [string[]] $TemporalCaptureLabels = @(),
+
     [string[]] $LogPath = @(),
 
     [string] $OutputJsonPath = "",
@@ -68,6 +74,14 @@ param(
     [double] $MinTemporalChangedPixelPercent = 0.5,
 
     [double] $MinTemporalMeanAbsLuma = 0.5,
+
+    [double] $MaxStableTemporalDriftChangedPixelPercent = 5.0,
+
+    [double] $MaxStableTemporalDriftMeanAbsLuma = 1.5,
+
+    [double] $MaxMovedTemporalFlickerChangedPixelPercent = 35.0,
+
+    [double] $MaxMovedTemporalFlickerMeanAbsLuma = 8.0,
 
     [double] $MinSceneColorVariance = 8.0,
 
@@ -151,6 +165,37 @@ function Resolve-OptionalFiles {
     return $resolved.ToArray()
 }
 
+function Resolve-TemporalSequenceFiles {
+    param(
+        [string[]] $Paths,
+        [string] $FirstPath,
+        [string] $Label
+    )
+
+    $resolved = New-Object System.Collections.Generic.List[string]
+    if ($Paths.Count -gt 0) {
+        foreach ($path in $Paths) {
+            if ([string]::IsNullOrWhiteSpace($path)) {
+                continue
+            }
+            $resolved.Add((Resolve-ExistingFile $path $Label)) | Out-Null
+        }
+    }
+    if ($resolved.Count -eq 0) {
+        $resolved.Add($FirstPath) | Out-Null
+    } elseif ($resolved[0] -ne $FirstPath) {
+        $withFirst = New-Object System.Collections.Generic.List[string]
+        $withFirst.Add($FirstPath) | Out-Null
+        foreach ($path in $resolved) {
+            if ($path -ne $FirstPath) {
+                $withFirst.Add($path) | Out-Null
+            }
+        }
+        $resolved = $withFirst
+    }
+    return $resolved.ToArray()
+}
+
 function Invoke-DeltaHelper {
     param(
         [string] $BaselinePath,
@@ -191,6 +236,58 @@ function Invoke-DeltaHelper {
         return Get-Content -Raw -LiteralPath $tempJson | ConvertFrom-Json
     } finally {
         Remove-Item -LiteralPath $tempJson -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-TemporalCaptureLabel {
+    param(
+        [int] $Index,
+        [string] $FallbackPrefix
+    )
+
+    if ($Index -lt $TemporalCaptureLabels.Count -and -not [string]::IsNullOrWhiteSpace($TemporalCaptureLabels[$Index])) {
+        return $TemporalCaptureLabels[$Index]
+    }
+    return ("{0}-{1:D2}" -f $FallbackPrefix, ($Index + 1))
+}
+
+function Measure-TemporalSequenceDrift {
+    param(
+        [string[]] $Paths,
+        [string] $LabelPrefix
+    )
+
+    $comparisons = New-Object System.Collections.Generic.List[object]
+    $maxChangedPixelPercent = 0.0
+    $maxMeanAbsLuma = 0.0
+    $maxRmseLuma = 0.0
+
+    for ($index = 1; $index -lt $Paths.Count; $index++) {
+        $previousLabel = Get-TemporalCaptureLabel ($index - 1) $LabelPrefix
+        $currentLabel = Get-TemporalCaptureLabel $index $LabelPrefix
+        $delta = Invoke-DeltaHelper $Paths[$index - 1] $Paths[$index] ("$LabelPrefix-$index")
+        $metrics = $delta.focusRegionMetrics
+        $maxChangedPixelPercent = [Math]::Max($maxChangedPixelPercent, [double]$metrics.changedPixelPercent)
+        $maxMeanAbsLuma = [Math]::Max($maxMeanAbsLuma, [double]$metrics.meanAbsLuma)
+        $maxRmseLuma = [Math]::Max($maxRmseLuma, [double]$metrics.rmseLuma)
+        $comparisons.Add([ordered]@{
+            fromLabel = $previousLabel
+            toLabel = $currentLabel
+            fromImage = $Paths[$index - 1]
+            toImage = $Paths[$index]
+            delta = $delta
+        }) | Out-Null
+    }
+
+    return [ordered]@{
+        captureCount = $Paths.Count
+        labels = @(for ($index = 0; $index -lt $Paths.Count; $index++) { Get-TemporalCaptureLabel $index $LabelPrefix })
+        imagePaths = @($Paths)
+        pairCount = $comparisons.Count
+        maxChangedPixelPercent = [Math]::Round($maxChangedPixelPercent, 4)
+        maxMeanAbsLuma = [Math]::Round($maxMeanAbsLuma, 4)
+        maxRmseLuma = [Math]::Round($maxRmseLuma, 4)
+        consecutiveComparisons = @($comparisons)
     }
 }
 
@@ -317,6 +414,8 @@ $translucentBaselineResolved = Resolve-ExistingFile $TranslucentBaselineImagePat
 $translucentFinalResolved = Resolve-ExistingFile $TranslucentFinalCompositeImagePath "Translucent final-composite image"
 $temporalStableResolved = Resolve-ExistingFile $TemporalStableImagePath "Temporal stable image"
 $temporalMovedResolved = Resolve-ExistingFile $TemporalMovedImagePath "Temporal moved image"
+$temporalStableSequenceResolved = Resolve-TemporalSequenceFiles $TemporalStableSequenceImagePath $temporalStableResolved "Temporal stable sequence image"
+$temporalMovedSequenceResolved = Resolve-TemporalSequenceFiles $TemporalMovedSequenceImagePath $temporalMovedResolved "Temporal moved sequence image"
 $logResolved = Resolve-OptionalFiles $LogPath "Log"
 
 $particleBaselineDimensions = Get-ImageDimensions $particleBaselineResolved
@@ -329,6 +428,8 @@ $temporalMovedDimensions = Get-ImageDimensions $temporalMovedResolved
 $particleDelta = Invoke-DeltaHelper $particleBaselineResolved $particleFinalResolved "particles"
 $translucentDelta = Invoke-DeltaHelper $translucentBaselineResolved $translucentFinalResolved "translucency"
 $temporalDelta = Invoke-DeltaHelper $temporalStableResolved $temporalMovedResolved "temporal-motion"
+$stableTemporalDrift = if ($temporalStableSequenceResolved.Count -ge 2) { Measure-TemporalSequenceDrift $temporalStableSequenceResolved "temporal-stable" } else { $null }
+$movedTemporalFlicker = if ($temporalMovedSequenceResolved.Count -ge 2) { Measure-TemporalSequenceDrift $temporalMovedSequenceResolved "temporal-moved" } else { $null }
 
 $sceneVariance = [ordered]@{
     particleBaseline = Measure-SceneColorVariance $particleBaselineResolved
@@ -364,6 +465,12 @@ foreach ($entry in @(
         $failures.Add("$($entry.label) image dimensions differ from particle baseline. baseline=${baselineWidth}x${baselineHeight} actual=$($entry.dimensions.width)x$($entry.dimensions.height)")
     }
 }
+foreach ($path in @($temporalStableSequenceResolved + $temporalMovedSequenceResolved)) {
+    $dimensions = Get-ImageDimensions $path
+    if (($dimensions.width -ne $baselineWidth) -or ($dimensions.height -ne $baselineHeight)) {
+        $failures.Add("Temporal sequence image dimensions differ from particle baseline. image=$path baseline=${baselineWidth}x${baselineHeight} actual=$($dimensions.width)x$($dimensions.height)")
+    }
+}
 
 foreach ($entry in $sceneVariance.GetEnumerator()) {
     if ([double]$entry.Value.stdDevLuma -lt $MinSceneColorVariance) {
@@ -382,6 +489,22 @@ if ([double]$temporalDelta.focusRegionMetrics.changedPixelPercent -lt $MinTempor
 }
 if ([double]$temporalDelta.focusRegionMetrics.meanAbsLuma -lt $MinTemporalMeanAbsLuma) {
     $failures.Add("Temporal moved-camera focused-region mean absolute luma below threshold. actual=$($temporalDelta.focusRegionMetrics.meanAbsLuma) expected>=$MinTemporalMeanAbsLuma")
+}
+if ($stableTemporalDrift) {
+    if ([double]$stableTemporalDrift.maxChangedPixelPercent -gt $MaxStableTemporalDriftChangedPixelPercent) {
+        $failures.Add("Stable temporal repeated-capture changed pixels exceed flicker threshold. actual=$($stableTemporalDrift.maxChangedPixelPercent) expected<=$MaxStableTemporalDriftChangedPixelPercent")
+    }
+    if ([double]$stableTemporalDrift.maxMeanAbsLuma -gt $MaxStableTemporalDriftMeanAbsLuma) {
+        $failures.Add("Stable temporal repeated-capture mean absolute luma exceeds flicker threshold. actual=$($stableTemporalDrift.maxMeanAbsLuma) expected<=$MaxStableTemporalDriftMeanAbsLuma")
+    }
+}
+if ($movedTemporalFlicker) {
+    if ([double]$movedTemporalFlicker.maxChangedPixelPercent -gt $MaxMovedTemporalFlickerChangedPixelPercent) {
+        $failures.Add("Moved temporal repeated-capture changed pixels exceed flicker threshold. actual=$($movedTemporalFlicker.maxChangedPixelPercent) expected<=$MaxMovedTemporalFlickerChangedPixelPercent")
+    }
+    if ([double]$movedTemporalFlicker.maxMeanAbsLuma -gt $MaxMovedTemporalFlickerMeanAbsLuma) {
+        $failures.Add("Moved temporal repeated-capture mean absolute luma exceeds flicker threshold. actual=$($movedTemporalFlicker.maxMeanAbsLuma) expected<=$MaxMovedTemporalFlickerMeanAbsLuma")
+    }
 }
 if ($RequireLogProof -and $logResolved.Count -eq 0) {
     $failures.Add("Log proof was required but no -LogPath was provided.")
@@ -429,12 +552,18 @@ $result = [ordered]@{
     translucentFinalCompositeImage = $translucentFinalResolved
     temporalStableImage = $temporalStableResolved
     temporalMovedImage = $temporalMovedResolved
+    temporalStableSequenceImages = @($temporalStableSequenceResolved)
+    temporalMovedSequenceImages = @($temporalMovedSequenceResolved)
     logPaths = @($logResolved)
     thresholds = [ordered]@{
         minParticleChangedPixelPercent = $MinParticleChangedPixelPercent
         minTranslucentChangedPixelPercent = $MinTranslucentChangedPixelPercent
         minTemporalChangedPixelPercent = $MinTemporalChangedPixelPercent
         minTemporalMeanAbsLuma = $MinTemporalMeanAbsLuma
+        maxStableTemporalDriftChangedPixelPercent = $MaxStableTemporalDriftChangedPixelPercent
+        maxStableTemporalDriftMeanAbsLuma = $MaxStableTemporalDriftMeanAbsLuma
+        maxMovedTemporalFlickerChangedPixelPercent = $MaxMovedTemporalFlickerChangedPixelPercent
+        maxMovedTemporalFlickerMeanAbsLuma = $MaxMovedTemporalFlickerMeanAbsLuma
         minSceneColorVariance = $MinSceneColorVariance
         changedPixelThreshold = $ChangedPixelThreshold
         brightPixelThreshold = $BrightPixelThreshold
@@ -455,11 +584,15 @@ $result = [ordered]@{
         particleBaselineToFinalComposite = $particleDelta
         translucentBaselineToFinalComposite = $translucentDelta
         temporalStableToMoved = $temporalDelta
+        temporalStableRepeatedDrift = $stableTemporalDrift
+        temporalMovedRepeatedFlicker = $movedTemporalFlicker
     }
     selectedFocusRegions = [ordered]@{
         particleBaselineToFinalComposite = $particleDelta.focusRegion
         translucentBaselineToFinalComposite = $translucentDelta.focusRegion
         temporalStableToMoved = $temporalDelta.focusRegion
+        temporalStableRepeatedDrift = if ($stableTemporalDrift -and $stableTemporalDrift.consecutiveComparisons.Count -gt 0) { $stableTemporalDrift.consecutiveComparisons[0].delta.focusRegion } else { $null }
+        temporalMovedRepeatedFlicker = if ($movedTemporalFlicker -and $movedTemporalFlicker.consecutiveComparisons.Count -gt 0) { $movedTemporalFlicker.consecutiveComparisons[0].delta.focusRegion } else { $null }
     }
     logProof = $logProof
     proofClarity = [ordered]@{
@@ -471,6 +604,18 @@ $result = [ordered]@{
             ([double]$temporalDelta.focusRegionMetrics.changedPixelPercent -ge $MinTemporalChangedPixelPercent) -and
             ([double]$temporalDelta.focusRegionMetrics.meanAbsLuma -ge $MinTemporalMeanAbsLuma)
         )
+        stableTemporalDriftEvidencePresent = if ($stableTemporalDrift) {
+            ([double]$stableTemporalDrift.maxChangedPixelPercent -le $MaxStableTemporalDriftChangedPixelPercent) -and
+            ([double]$stableTemporalDrift.maxMeanAbsLuma -le $MaxStableTemporalDriftMeanAbsLuma)
+        } else {
+            $null
+        }
+        movedTemporalFlickerEvidencePresent = if ($movedTemporalFlicker) {
+            ([double]$movedTemporalFlicker.maxChangedPixelPercent -le $MaxMovedTemporalFlickerChangedPixelPercent) -and
+            ([double]$movedTemporalFlicker.maxMeanAbsLuma -le $MaxMovedTemporalFlickerMeanAbsLuma)
+        } else {
+            $null
+        }
         logTracks = [ordered]@{
             finalCompositePresent = if ($logProof) { [bool]$logProof.markers.finalCompositePresent } else { $null }
             hudPreservationPresent = if ($logProof) { [bool]$logProof.markers.hudPreservationPresent } else { $null }
@@ -504,11 +649,23 @@ Write-Host "translucentBaselineImage=$($result.translucentBaselineImage)"
 Write-Host "translucentFinalCompositeImage=$($result.translucentFinalCompositeImage)"
 Write-Host "temporalStableImage=$($result.temporalStableImage)"
 Write-Host "temporalMovedImage=$($result.temporalMovedImage)"
+Write-Host "temporalStableSequenceImages=$(@($result.temporalStableSequenceImages) -join ';')"
+Write-Host "temporalMovedSequenceImages=$(@($result.temporalMovedSequenceImages) -join ';')"
 Write-Host "logPaths=$(@($result.logPaths) -join ';')"
 Write-Host "particle.focus.changedPixelPercent=$($particleDelta.focusRegionMetrics.changedPixelPercent)"
 Write-Host "translucency.focus.changedPixelPercent=$($translucentDelta.focusRegionMetrics.changedPixelPercent)"
 Write-Host "temporal.focus.changedPixelPercent=$($temporalDelta.focusRegionMetrics.changedPixelPercent)"
 Write-Host "temporal.focus.meanAbsLuma=$($temporalDelta.focusRegionMetrics.meanAbsLuma)"
+if ($stableTemporalDrift) {
+    Write-Host "temporal.stable.sequence.captureCount=$($stableTemporalDrift.captureCount)"
+    Write-Host "temporal.stable.sequence.maxChangedPixelPercent=$($stableTemporalDrift.maxChangedPixelPercent)"
+    Write-Host "temporal.stable.sequence.maxMeanAbsLuma=$($stableTemporalDrift.maxMeanAbsLuma)"
+}
+if ($movedTemporalFlicker) {
+    Write-Host "temporal.moved.sequence.captureCount=$($movedTemporalFlicker.captureCount)"
+    Write-Host "temporal.moved.sequence.maxChangedPixelPercent=$($movedTemporalFlicker.maxChangedPixelPercent)"
+    Write-Host "temporal.moved.sequence.maxMeanAbsLuma=$($movedTemporalFlicker.maxMeanAbsLuma)"
+}
 Write-Host "focus.regionSelection=$($result.thresholds.focusRegionSelection)"
 if ($logProof) {
     Write-Host "finalCompositePresent=$($logProof.markers.finalCompositePresent)"
