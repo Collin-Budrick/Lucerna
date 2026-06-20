@@ -224,11 +224,28 @@ public record LightingDispatchTelemetryStatus(
         return label.length() == 0 ? this.message : label.toString();
     }
 
+    public String shaderDenoiseOutputBoundarySummary() {
+        if (!this.hasLightingDispatchStatus()) {
+            return "unavailable:" + this.message;
+        }
+
+        LightingDispatchStageTelemetryStatus denoiseStage = this.stages.get("denoise");
+        if (denoiseStage == null) {
+            denoiseStage = firstDenoiseLikeStage();
+        }
+        if (denoiseStage == null) {
+            return "unreported:no-denoise-stage";
+        }
+
+        return denoiseStage.shaderDenoiseOutputBoundaryLine();
+    }
+
     public Map<String, String> validationFields(String prefix) {
         String normalizedPrefix = clean(prefix, "lighting.dispatch");
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put(normalizedPrefix + ".available", Boolean.toString(this.hasLightingDispatchStatus()));
         fields.put(normalizedPrefix + ".summary", this.compactLabel());
+        fields.put(normalizedPrefix + ".shaderDenoiseOutputBoundary", this.shaderDenoiseOutputBoundarySummary());
         if (this.generation != null) {
             fields.put(normalizedPrefix + ".generation", Long.toString(this.generation));
         }
@@ -252,6 +269,18 @@ public record LightingDispatchTelemetryStatus(
             fields.putAll(stage.validationFields(normalizedPrefix + ".stage." + sanitizeKey(stage.stageId())));
         }
         return Collections.unmodifiableMap(fields);
+    }
+
+    private LightingDispatchStageTelemetryStatus firstDenoiseLikeStage() {
+        for (LightingDispatchStageTelemetryStatus stage : this.stages.values()) {
+            String stageId = stage.stageId();
+            if ("shader_denoise".equals(stageId)
+                    || "edge_aware_denoise".equals(stageId)
+                    || "diffuse_gi_denoise".equals(stageId)) {
+                return stage;
+            }
+        }
+        return null;
     }
 
     private static Map<String, LightingDispatchStageTelemetryStatus> parseStages(String nativeStatus) {

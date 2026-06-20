@@ -233,8 +233,10 @@ public final class LucernaDebugOverlayLines {
         if (!lightingDispatch.hasLightingDispatchStatus()) {
             lines.add(Component.literal("Denoise telemetry: unavailable(" + shorten(lightingDispatch.message(), 64) + ")"));
             lines.add(Component.literal("Sources: raw=? cpu=? shaderIntent=? shaderOut=?"));
+            lines.add(Component.literal("Shader output prerequisites: dispatch=? image=? material=? generated=? realReady=?"));
             lines.add(Component.literal("Shader output candidate: present=? dims=missing checksum=missing"));
             lines.add(Component.literal("Candidate boundary: blocker=telemetry-unavailable notRealShaderOut=true"));
+            lines.add(Component.literal("CPU fallback boundary: active=? cpuReady=? cpuGenerated=? candidateOnly=? source=?"));
             lines.add(Component.literal("Denoise output: source=? generated=? energy=missing checksum=missing"));
             lines.add(Component.literal("Edge/history: edgeReject=? edgeKeep=? histReject=?"));
             lines.add(Component.literal("Temporal pixels: stable=? unstable=? f2fDelta=?"));
@@ -252,6 +254,7 @@ public final class LucernaDebugOverlayLines {
                 + " image=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderOutputImageReady())
                 + " material=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderOutputMaterialReady())
                 + " generated=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderGeneratedOutput())));
+        lines.add(Component.literal("Shader output prerequisites: " + shaderOutputPrerequisitesLabel(denoiseStage)));
         lines.add(Component.literal("Shader output candidate: present=" + shaderOutputImageCandidateReadinessLabel(denoiseStage)
                 + " dims=" + shaderOutputImageCandidateDimensionsLabel(denoiseStage)
                 + " checksum=" + shaderOutputImageCandidateChecksumLabel(denoiseStage)));
@@ -260,6 +263,7 @@ public final class LucernaDebugOverlayLines {
                 + " notRealShaderOut=" + yesNo(!Boolean.TRUE.equals(denoiseStage == null ? null : denoiseStage.shaderGeneratedOutput()))));
         lines.add(Component.literal("Fallback/blockers: cpuFallback=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.cpuReadbackFallback())
                 + " blockers=" + shorten(denoiseStage == null ? "" : denoiseStage.shaderDenoiseBlockers(), 78)));
+        lines.add(Component.literal("CPU fallback boundary: " + shaderDenoiseCpuFallbackBoundaryLabel(denoiseStage)));
         lines.add(Component.literal("Denoise output: source=" + denoiseSourceIdentityLabel(denoiseStage)
                 + " generated=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.cpuOutputGenerated())
                 + " energy=" + stageOutputEnergyLabel(denoiseStage)
@@ -2053,6 +2057,30 @@ public final class LucernaDebugOverlayLines {
             return "candidate-only:not-real-shader-generated-denoised-output";
         }
         return "?";
+    }
+
+    private static String shaderOutputPrerequisitesLabel(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null) {
+            return "dispatch=? image=? material=? generated=? realReady=?";
+        }
+        return "dispatch=" + yesNoUnknown(stage.shaderDispatchPrepared())
+                + " image=" + yesNoUnknown(stage.shaderOutputImageReady())
+                + " material=" + yesNoUnknown(stage.shaderOutputMaterialReady())
+                + " generated=" + yesNoUnknown(stage.shaderGeneratedOutput())
+                + " realReady=" + shaderOutputReadinessLabel(stage);
+    }
+
+    private static String shaderDenoiseCpuFallbackBoundaryLabel(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null) {
+            return "active=? cpuReady=? cpuGenerated=? candidateOnly=? source=?";
+        }
+        boolean candidateOnly = "true".equalsIgnoreCase(shaderOutputImageCandidateReadinessLabel(stage))
+                && !Boolean.TRUE.equals(stage.shaderGeneratedOutput());
+        return "active=" + yesNoUnknown(stage.cpuReadbackFallback())
+                + " cpuReady=" + yesNoUnknown(stage.cpuDenoiseReady())
+                + " cpuGenerated=" + yesNoUnknown(stage.cpuOutputGenerated())
+                + " candidateOnly=" + yesNo(candidateOnly)
+                + " source=" + shorten(denoiseSourceIdentityLabel(stage), 42);
     }
 
     private static boolean containsShaderOutputImageCandidate(String value) {

@@ -40,10 +40,16 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
         boolean denoisedCpuOutputGenerated,
         boolean denoisedOutputDiffersFromRaw,
         boolean realDenoiseShaderOutput,
+        boolean shaderDispatchPrepared,
+        boolean shaderInputReady,
+        boolean shaderOutputReady,
+        boolean shaderOutputImageReady,
+        boolean shaderOutputMaterialReady,
         boolean shaderOutputImageCandidateReady,
         boolean shaderOutputImageCandidateCpuStaged,
         boolean shaderOutputImageCandidateNonGpu,
         boolean shaderDenoiseShaderGeneratedOutput,
+        boolean cpuReadbackFallbackActive,
         boolean temporalReady,
         boolean temporalGhostingRisk,
         boolean edgeInputsAvailable,
@@ -151,10 +157,16 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
                 false, // denoisedCpuOutputGenerated
                 false, // denoisedOutputDiffersFromRaw
                 false, // realDenoiseShaderOutput
+                false, // shaderDispatchPrepared
+                false, // shaderInputReady
+                false, // shaderOutputReady
+                false, // shaderOutputImageReady
+                false, // shaderOutputMaterialReady
                 false, // shaderOutputImageCandidateReady
                 false, // shaderOutputImageCandidateCpuStaged
                 false, // shaderOutputImageCandidateNonGpu
                 false, // shaderDenoiseShaderGeneratedOutput
+                false, // cpuReadbackFallbackActive
                 false, // temporalReady
                 false, // temporalGhostingRisk
                 false, // edgeInputsAvailable
@@ -225,10 +237,16 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
                 denoise.denoisedCpuOutputGenerated(),
                 denoise.denoisedOutputDiffersFromRaw(),
                 denoise.realDenoiseShaderOutput(),
+                denoise.shaderDenoiseDispatchPrepared(),
+                denoise.shaderDenoiseInputReady(),
+                denoise.shaderDenoiseOutputReady(),
+                denoise.shaderDenoiseOutputImageReady(),
+                denoise.shaderDenoiseOutputMaterialReady(),
                 denoise.shaderDenoiseOutputImageCandidateReady(),
                 denoise.shaderDenoiseOutputImageCandidateCpuStaged(),
                 denoise.shaderDenoiseOutputImageCandidateNonGpu(),
                 denoise.shaderDenoiseShaderGeneratedOutput(),
+                denoise.shaderDenoiseCpuReadbackFallbackActive(),
                 denoise.temporalReady(),
                 denoise.temporalGhostingRisk(),
                 denoise.edgeInputsAvailable(),
@@ -295,6 +313,64 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
                 && this.shaderOutputImageCandidateChecksum > 0L;
     }
 
+    public boolean realShaderDenoiseOutputReady() {
+        return this.hasExecutionTelemetry()
+                && this.realDenoiseShaderOutput
+                && this.shaderDenoiseShaderGeneratedOutput
+                && this.shaderOutputReady
+                && this.shaderOutputImageReady
+                && this.shaderOutputMaterialReady
+                && !this.shaderOutputImageCandidateCpuStaged
+                && !this.shaderOutputImageCandidateNonGpu;
+    }
+
+    public String shaderOutputBlockerReason() {
+        if (!this.hasExecutionTelemetry()) {
+            return this.readinessReason;
+        }
+        if (this.realShaderDenoiseOutputReady()) {
+            return "none";
+        }
+        if (!this.shaderDispatchPrepared) {
+            return "shader-denoise-dispatch-not-prepared";
+        }
+        if (!this.shaderInputReady) {
+            return "shader-denoise-input-not-ready";
+        }
+        if (!this.shaderOutputImageReady) {
+            return this.shaderOutputImageBlocker;
+        }
+        if (!this.shaderOutputMaterialReady) {
+            return "shader-denoise-output-material-handoff-not-ready";
+        }
+        if (!this.shaderDenoiseShaderGeneratedOutput) {
+            return "shader-denoise-output-is-not-shader-generated";
+        }
+        if (!this.realDenoiseShaderOutput) {
+            return "real-denoise-shader-output-flag-false";
+        }
+        if (this.shaderOutputImageCandidateCpuStaged || this.shaderOutputImageCandidateNonGpu) {
+            return "shader-denoise-output-candidate-is-cpu-staged-or-non-gpu";
+        }
+        return this.shaderOutputImageBlocker;
+    }
+
+    public String shaderOutputReadinessLabel() {
+        if (this.realShaderDenoiseOutputReady()) {
+            return "real-shader-output-ready";
+        }
+        if (this.cpuReadbackFallbackActive) {
+            return "cpu-readback-fallback-active";
+        }
+        if (this.shaderOutputImageCandidatePresent()) {
+            return "candidate-image-only";
+        }
+        if (this.shaderDispatchPrepared || this.shaderInputReady) {
+            return "shader-output-blocked";
+        }
+        return "shader-output-unavailable";
+    }
+
     public String shaderOutputImageCandidateBoundary() {
         if (!this.hasExecutionTelemetry()) {
             return this.readinessReason;
@@ -334,7 +410,7 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
     }
 
     public String outputEvidenceMarker() {
-        if (this.realDenoiseShaderOutput) {
+        if (this.realShaderDenoiseOutputReady()) {
             return "denoised_diffuse_gi_rgba8_real_shader_output";
         }
         if (this.denoisedCpuOutputGenerated) {
@@ -347,13 +423,13 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
     }
 
     public String outputReadinessBoundary() {
-        if (!this.cpuOutputReadbackReady()) {
-            return "denoised diffuse GI CPU output/readback is not ready";
-        }
-        if (this.realDenoiseShaderOutput) {
+        if (this.realShaderDenoiseOutputReady()) {
             return this.denoiseQualityEvidenceReady()
                     ? "real shader denoise output is ready with edge/history quality evidence"
                     : "real shader denoise output is present but quality evidence is incomplete";
+        }
+        if (!this.cpuOutputReadbackReady()) {
+            return "denoised diffuse GI CPU output/readback is not ready";
         }
         if (this.denoiseQualityEvidenceReady()) {
             return "CPU denoised diffuse GI RGBA8 readback is ready and differs from raw GI; real shader denoise remains false";
@@ -390,6 +466,15 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
                 + " temporalGhostingRisk=" + this.temporalGhostingRisk
                 + " temporalReadinessMarker=" + this.temporalReadinessMarker
                 + " temporalGhostingRiskMarker=" + this.temporalGhostingRiskMarker
+                + " shaderDispatchPrepared=" + this.shaderDispatchPrepared
+                + " shaderInputReady=" + this.shaderInputReady
+                + " shaderOutputReady=" + this.shaderOutputReady
+                + " shaderOutputImageReady=" + this.shaderOutputImageReady
+                + " shaderOutputMaterialReady=" + this.shaderOutputMaterialReady
+                + " realShaderDenoiseOutputReady=" + this.realShaderDenoiseOutputReady()
+                + " cpuReadbackFallbackActive=" + this.cpuReadbackFallbackActive
+                + " shaderOutputReadinessLabel=" + this.shaderOutputReadinessLabel()
+                + " shaderOutputBlockerReason=" + this.shaderOutputBlockerReason()
                 + " shaderOutputImageCandidateReady=" + this.shaderOutputImageCandidateReady
                 + " shaderOutputImageCandidateCpuStaged=" + this.shaderOutputImageCandidateCpuStaged
                 + " shaderOutputImageCandidateNonGpu=" + this.shaderOutputImageCandidateNonGpu

@@ -761,6 +761,7 @@ struct NativeDenoiseExecutionTelemetry {
     std::uint64_t last_shader_denoise_output_image_candidate_pixels = 0;
     std::uint64_t last_shader_denoise_output_image_candidate_bytes = 0;
     std::uint64_t last_shader_denoise_output_image_candidate_checksum = 0;
+    std::uint64_t last_shader_denoise_output_missing_prerequisite_count = 0;
     std::uint64_t last_temporal_stable_pixels = 0;
     std::uint64_t last_temporal_unstable_pixels = 0;
     std::uint64_t last_temporal_mean_abs_delta = 0;
@@ -804,7 +805,14 @@ struct NativeDenoiseExecutionTelemetry {
     bool last_shader_denoise_output_image_candidate_ready = false;
     bool last_shader_denoise_output_image_candidate_cpu_staged = false;
     bool last_shader_denoise_output_image_candidate_non_gpu = true;
+    bool last_shader_denoise_output_image_candidate_concrete = false;
+    bool last_shader_denoise_output_candidate_source_cpu_readback = false;
+    bool last_shader_denoise_output_native_image_ready = false;
+    bool last_shader_denoise_output_native_image_writable = false;
+    bool last_shader_denoise_output_native_image_shader_written = false;
     bool last_shader_denoise_output_material_ready = false;
+    bool last_shader_denoise_output_native_material_ready = false;
+    bool last_shader_denoise_output_prerequisites_ready = false;
     bool last_metadata_only_path = true;
     bool last_real_denoise_shader_output = false;
     bool last_shader_denoise_output_shader_generated = false;
@@ -832,6 +840,9 @@ struct NativeDenoiseExecutionTelemetry {
     std::string last_shader_denoise_handoff_marker;
     std::string last_shader_denoise_output_readiness_marker;
     std::string last_shader_denoise_output_image_candidate_marker;
+    std::string last_shader_denoise_output_candidate_source_marker;
+    std::string last_shader_denoise_output_prerequisite_marker;
+    std::string last_shader_denoise_output_missing_prerequisites;
     std::string last_shader_denoise_output_image_blocker;
     std::string last_shader_denoise_generation_marker;
     std::string last_composite_marker;

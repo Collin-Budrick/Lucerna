@@ -16,16 +16,18 @@ out vec4 fragColor;
 // before this resource can be treated as a real denoise milestone.
 
 const vec3 LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
-const float CENTER_WEIGHT = 0.42;
-const float NEAR_WEIGHT = 0.105;
-const float DIAGONAL_WEIGHT = 0.040;
-const float WIDE_WEIGHT = 0.018;
-const float SIGNAL_GAIN = 0.38;
+const float CENTER_WEIGHT = 0.50;
+const float NEAR_WEIGHT = 0.092;
+const float DIAGONAL_WEIGHT = 0.030;
+const float WIDE_WEIGHT = 0.010;
+const float SIGNAL_GAIN = 0.39;
 const float SIGNAL_FLOOR = 0.0025;
-const float EDGE_REJECT_BASE = 0.0075;
-const float EDGE_REJECT_SIGNAL_SCALE = 0.044;
-const float NEIGHBOR_MIN_WEIGHT = 0.060;
-const float EDGE_CENTER_RESTORE = 0.78;
+const float EDGE_REJECT_BASE = 0.0060;
+const float EDGE_REJECT_SIGNAL_SCALE = 0.036;
+const float NEIGHBOR_MIN_WEIGHT = 0.035;
+const float EDGE_CENTER_RESTORE = 0.88;
+const float DETAIL_RESTORE_GAIN = 0.46;
+const float DIRECTIONAL_EDGE_SUPPRESSION = 0.72;
 const vec3 MAX_ADDITIVE_PER_DRAW = vec3(0.023, 0.021, 0.014);
 
 vec2 safeTexelSize() {
@@ -61,13 +63,16 @@ float sampleDissimilarity(vec4 center, vec4 neighbor) {
     return lumDelta + chromaDelta * 0.62 + confidenceDelta * 0.34;
 }
 
+float offsetSignalGradient(vec2 uv, vec2 axisOffset) {
+    float negativeSide = signalConfidence(sourceSample(uv - axisOffset));
+    float positiveSide = signalConfidence(sourceSample(uv + axisOffset));
+    return abs(positiveSide - negativeSide);
+}
+
 float localSignalGradient(vec2 uv) {
     vec2 texel = safeTexelSize();
-    float left = signalConfidence(sourceSample(uv + vec2(-texel.x, 0.0)));
-    float right = signalConfidence(sourceSample(uv + vec2(texel.x, 0.0)));
-    float up = signalConfidence(sourceSample(uv + vec2(0.0, -texel.y)));
-    float down = signalConfidence(sourceSample(uv + vec2(0.0, texel.y)));
-    return abs(right - left) + abs(down - up);
+    return offsetSignalGradient(uv, vec2(texel.x, 0.0))
+            + offsetSignalGradient(uv, vec2(0.0, texel.y));
 }
 
 float diagonalSignalGradient(vec2 uv) {
@@ -106,11 +111,50 @@ float guidedNeighborWeight(vec4 center, vec4 neighbor, float baseWeight) {
     return baseWeight * edgeReject * supportWeight * mix(0.24, 1.0, confidenceAgreement * lumaAgreement);
 }
 
-void accumulateGuidedSample(inout vec4 colorSum, inout float weightSum, vec4 center, vec2 uv, float baseWeight) {
-    vec4 neighbor = sourceSample(uv);
-    float guidedWeight = guidedNeighborWeight(center, neighbor, baseWeight);
+float directionalSupport(vec2 uv, vec2 offset) {
+    vec2 texel = safeTexelSize();
+    vec2 axis = abs(offset);
+    float cardinalGradient = 0.0;
+    if (axis.x > axis.y) {
+        cardinalGradient = offsetSignalGradient(uv, vec2(texel.x, 0.0));
+    } else if (axis.y > axis.x) {
+        cardinalGradient = offsetSignalGradient(uv, vec2(0.0, texel.y));
+    } else {
+        cardinalGradient = diagonalSignalGradient(uv) * 0.50;
+    }
+    return mix(1.0, DIRECTIONAL_EDGE_SUPPRESSION, smoothstep(0.020, 0.16, cardinalGradient));
+}
+
+void accumulateGuidedSample(inout vec4 colorSum, inout float weightSum, vec4 center, vec2 centerUv, vec2 sampleUv, vec2 offset, float baseWeight) {
+    vec4 neighbor = sourceSample(sampleUv);
+    float guidedWeight = guidedNeighborWeight(center, neighbor, baseWeight) * directionalSupport(centerUv, offset);
     colorSum += neighbor * guidedWeight;
     weightSum += guidedWeight;
+}
+
+vec4 restoreLocalDetail(vec2 uv, vec4 center, vec4 filtered) {
+    vec2 texel = safeTexelSize();
+    vec4 axisAverage = (
+            sourceSample(uv + vec2(texel.x, 0.0))
+            + sourceSample(uv + vec2(-texel.x, 0.0))
+            + sourceSample(uv + vec2(0.0, texel.y))
+            + sourceSample(uv + vec2(0.0, -texel.y))) * 0.25;
+    vec4 localDetail = center - axisAverage;
+    float detailGate = smoothstep(0.010, 0.090, sampleDissimilarity(center, axisAverage));
+    float confidenceGate = smoothstep(0.018, 0.18, signalConfidence(center));
+    return filtered + localDetail * (DETAIL_RESTORE_GAIN * detailGate * confidenceGate);
+}
+
+vec4 preserveCenterEnergy(vec4 center, vec4 shaped) {
+    float centerLum = luminance(center.rgb);
+    float shapedLum = luminance(shaped.rgb);
+    float confidence = signalConfidence(center);
+    float floorLum = centerLum * mix(0.70, 0.93, confidence);
+    float ceilingLum = max(centerLum * 1.18 + 0.002, shapedLum);
+    float targetLum = clamp(shapedLum, floorLum, ceilingLum);
+    float lumaScale = targetLum / max(shapedLum, 0.0001);
+    shaped.rgb *= mix(1.0, lumaScale, smoothstep(0.004, 0.080, centerLum));
+    return shaped;
 }
 
 vec4 denoisedSample(vec2 uv) {
@@ -119,27 +163,28 @@ vec4 denoisedSample(vec2 uv) {
     vec4 colorSum = center * CENTER_WEIGHT;
     float weightSum = CENTER_WEIGHT;
 
-    accumulateGuidedSample(colorSum, weightSum, center, uv + vec2(texel.x, 0.0), NEAR_WEIGHT);
-    accumulateGuidedSample(colorSum, weightSum, center, uv + vec2(-texel.x, 0.0), NEAR_WEIGHT);
-    accumulateGuidedSample(colorSum, weightSum, center, uv + vec2(0.0, texel.y), NEAR_WEIGHT);
-    accumulateGuidedSample(colorSum, weightSum, center, uv + vec2(0.0, -texel.y), NEAR_WEIGHT);
+    accumulateGuidedSample(colorSum, weightSum, center, uv, uv + vec2(texel.x, 0.0), vec2(texel.x, 0.0), NEAR_WEIGHT);
+    accumulateGuidedSample(colorSum, weightSum, center, uv, uv + vec2(-texel.x, 0.0), vec2(-texel.x, 0.0), NEAR_WEIGHT);
+    accumulateGuidedSample(colorSum, weightSum, center, uv, uv + vec2(0.0, texel.y), vec2(0.0, texel.y), NEAR_WEIGHT);
+    accumulateGuidedSample(colorSum, weightSum, center, uv, uv + vec2(0.0, -texel.y), vec2(0.0, -texel.y), NEAR_WEIGHT);
 
-    accumulateGuidedSample(colorSum, weightSum, center, uv + texel * vec2(1.0, 1.0), DIAGONAL_WEIGHT);
-    accumulateGuidedSample(colorSum, weightSum, center, uv + texel * vec2(-1.0, 1.0), DIAGONAL_WEIGHT);
-    accumulateGuidedSample(colorSum, weightSum, center, uv + texel * vec2(1.0, -1.0), DIAGONAL_WEIGHT);
-    accumulateGuidedSample(colorSum, weightSum, center, uv + texel * vec2(-1.0, -1.0), DIAGONAL_WEIGHT);
+    accumulateGuidedSample(colorSum, weightSum, center, uv, uv + texel * vec2(1.0, 1.0), texel * vec2(1.0, 1.0), DIAGONAL_WEIGHT);
+    accumulateGuidedSample(colorSum, weightSum, center, uv, uv + texel * vec2(-1.0, 1.0), texel * vec2(-1.0, 1.0), DIAGONAL_WEIGHT);
+    accumulateGuidedSample(colorSum, weightSum, center, uv, uv + texel * vec2(1.0, -1.0), texel * vec2(1.0, -1.0), DIAGONAL_WEIGHT);
+    accumulateGuidedSample(colorSum, weightSum, center, uv, uv + texel * vec2(-1.0, -1.0), texel * vec2(-1.0, -1.0), DIAGONAL_WEIGHT);
 
-    accumulateGuidedSample(colorSum, weightSum, center, uv + vec2(texel.x * 2.0, 0.0), WIDE_WEIGHT);
-    accumulateGuidedSample(colorSum, weightSum, center, uv + vec2(-texel.x * 2.0, 0.0), WIDE_WEIGHT);
-    accumulateGuidedSample(colorSum, weightSum, center, uv + vec2(0.0, texel.y * 2.0), WIDE_WEIGHT);
-    accumulateGuidedSample(colorSum, weightSum, center, uv + vec2(0.0, -texel.y * 2.0), WIDE_WEIGHT);
+    accumulateGuidedSample(colorSum, weightSum, center, uv, uv + vec2(texel.x * 2.0, 0.0), vec2(texel.x * 2.0, 0.0), WIDE_WEIGHT);
+    accumulateGuidedSample(colorSum, weightSum, center, uv, uv + vec2(-texel.x * 2.0, 0.0), vec2(-texel.x * 2.0, 0.0), WIDE_WEIGHT);
+    accumulateGuidedSample(colorSum, weightSum, center, uv, uv + vec2(0.0, texel.y * 2.0), vec2(0.0, texel.y * 2.0), WIDE_WEIGHT);
+    accumulateGuidedSample(colorSum, weightSum, center, uv, uv + vec2(0.0, -texel.y * 2.0), vec2(0.0, -texel.y * 2.0), WIDE_WEIGHT);
 
     vec4 filtered = colorSum / max(weightSum, 0.0001);
     float edgeEnergy = smoothstep(0.014, 0.095, sampleDissimilarity(center, filtered));
     float structureEnergy = smoothstep(0.025, 0.18, localSignalGradient(uv) + diagonalSignalGradient(uv) * 0.45);
     float materialStructure = smoothstep(0.020, 0.18, localMaterialStructure(uv, center));
-    float restoreCenter = clamp(max(edgeEnergy * EDGE_CENTER_RESTORE, max(structureEnergy * 0.84, materialStructure * 0.70)), 0.0, 0.94);
-    vec4 shaped = mix(filtered, center, restoreCenter);
+    float restoreCenter = clamp(max(edgeEnergy * EDGE_CENTER_RESTORE, max(structureEnergy * 0.90, materialStructure * 0.78)), 0.0, 0.97);
+    vec4 shaped = restoreLocalDetail(uv, center, mix(filtered, center, restoreCenter));
+    shaped = preserveCenterEnergy(center, shaped);
     return mix(center, shaped, smoothstep(0.010, 0.090, weightSum - CENTER_WEIGHT));
 }
 
@@ -156,19 +201,20 @@ float sourceSurfaceMask(vec2 uv, vec4 center, vec4 denoised) {
     float localStructure = localSignalGradient(uv) + diagonalSignalGradient(uv) * 0.55 + xGradient + yGradient;
     float chromaCue = max(chromaSpan(center.rgb), chromaSpan(denoised.rgb));
     float materialStructure = localMaterialStructure(uv, center);
+    float edgePreserve = 1.0 - smoothstep(0.050, 0.22, sampleDissimilarity(center, denoised));
     float sourceSupport = smoothstep(
             0.014,
             0.23,
             max(centerConfidence, neighborSupport * 0.68) + chromaCue * 0.42 + localStructure * 0.26 + materialStructure * 0.22);
     float flatWashoutReject = mix(
-            0.44,
+            0.32,
             1.0,
             smoothstep(0.012, 0.095, chromaCue + localStructure + materialStructure + abs(centerConfidence - neighborSupport)));
     float softEdgeGuard = smoothstep(0.004, 0.040, uv.x)
             * smoothstep(0.004, 0.040, uv.y)
             * (1.0 - smoothstep(0.960, 0.996, uv.x))
             * (1.0 - smoothstep(0.960, 0.996, uv.y));
-    return clamp(sourceSupport * flatWashoutReject * softEdgeGuard, 0.0, 1.0);
+    return clamp(sourceSupport * flatWashoutReject * mix(0.70, 1.0, edgePreserve) * softEdgeGuard, 0.0, 1.0);
 }
 
 void main() {

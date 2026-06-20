@@ -376,6 +376,20 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + "\"";
     }
 
+    public String finalCompositeDenoisedSourceIdentityBoundary() {
+        return "submittedDenoisedIdentity=" + this.submittedDenoisedGiSourceIdentity().stableLabel()
+                + ",cpuReadbackVisualShaping=" + this.submittedCpuDenoisedGiSource()
+                + ",shaderGeneratedDenoisedOutput=" + this.submittedShaderDenoisedGiSource()
+                + ",realShaderDenoiseOutputReady=" + this.submittedRealShaderDenoiseOutputReady()
+                + ",shaderOutputImageCandidate=" + this.submittedShaderOutputImageCandidate()
+                + ",shaderOutputBlocker=\"" + this.shaderOutputImageCandidate.blocker() + "\""
+                + ",boundary=\""
+                + (this.submittedRealShaderDenoiseOutputReady()
+                ? "final composite source identity reports shader-generated denoised GI output"
+                : "final composite source identity is CPU/readback visual shaping or missing shader output; do not count it as real shader-generated denoise")
+                + "\"";
+    }
+
     public String authenticityGuardsSummary() {
         return "metadataOnlyPreview=" + this.submittedMetadataOnlyPreview()
                 + ",focusWindowOnly=" + this.submittedFocusWindowOnly()
@@ -582,6 +596,8 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",sourceReadinessMatrix=" + this.sourceReadinessMatrix()
                 + ",shaderOutputImageCandidate=\"" + this.shaderOutputImageCandidate.boundarySummary() + "\""
                 + ",denoiseEvidenceBoundary=" + this.denoiseEvidenceBoundarySummary()
+                + ",finalCompositeDenoisedSourceIdentityBoundary="
+                + this.finalCompositeDenoisedSourceIdentityBoundary()
                 + ",sourceAuthenticity=" + this.sourceAuthenticityLabel()
                 + ",authenticityGuards=" + this.authenticityGuardsSummary()
                 + ",surfaceProjectionEvidence=" + this.surfaceProjectionEvidenceLabel()

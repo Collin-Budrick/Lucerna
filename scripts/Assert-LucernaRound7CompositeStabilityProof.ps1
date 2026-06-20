@@ -117,6 +117,8 @@ param(
 
     [switch] $RequireLogProof,
 
+    [switch] $RequireShaderDenoiseBoundaryEvidence,
+
     [string[]] $FinalCompositePatterns = @(
         "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true",
         "public Mojang Round 7 FINAL_COMPOSITE visual render pass submitted; .*mode=FINAL_LUCERNA_COMPOSITE.*finalBlendComplete=true",
@@ -472,6 +474,121 @@ function Get-FirstRegexValue {
     return $null
 }
 
+function Get-LastRegexValue {
+    param(
+        [string] $Text,
+        [string] $Pattern,
+        [string] $GroupName
+    )
+
+    $matches = [regex]::Matches($Text, $Pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+    if ($matches.Count -le 0) {
+        return $null
+    }
+    $match = $matches[$matches.Count - 1]
+    if (-not [string]::IsNullOrWhiteSpace($GroupName) -and $match.Groups[$GroupName].Success) {
+        return $match.Groups[$GroupName].Value
+    }
+    if ($match.Groups.Count -gt 1) {
+        return $match.Groups[1].Value
+    }
+    return $match.Value
+}
+
+function Test-AnyShaderDenoiseBoundaryMarker {
+    param([string] $Log)
+
+    return Test-Regex $Log "(?:round7\.shaderDenoise|shaderDenoise|shader_denoise|realShaderDenoiseOutput|real_shader_denoise_output|Lucerna native shader denoise output image candidate)"
+}
+
+function Get-Round7ShaderDenoiseBoundaryEvidence {
+    param([string] $Log)
+
+    $intent = Test-Regex $Log "(?:shaderDenoiseIntent|shader_denoise_intent|denoiseShaderIntent|denoise_shader_intent|shaderDenoiseVisualShaderIntent)=true"
+    $inputReady = Test-Regex $Log "(?:shaderDenoiseInputReady|shader_denoise_input_ready|shaderDenoiseRawInputReady|shader_denoise_raw_input_ready|rawGiInputReady|raw_gi_input_ready)=true|(?:rawGI|cpuDenoisedGI)=(?:enabled-)?ready"
+    $dispatchPrepared = Test-Regex $Log "(?:round7\.shaderDenoise\.dispatchPrepared|shaderDenoiseDispatchPrepared|shader_denoise_dispatch_prepared)=true"
+    $outputImageReady = Test-Regex $Log "(?:round7\.shaderDenoise\.outputImageReady|shaderDenoiseOutputImageReady|shader_denoise_output_image_ready)=true|Lucerna native shader denoise output image candidate: ready=true"
+    $outputImageNotReady = Test-Regex $Log "(?:round7\.shaderDenoise\.outputImageReady|shaderDenoiseOutputImageReady|shader_denoise_output_image_ready)=false|Lucerna native shader denoise output image candidate: ready=false"
+    $outputMaterialReady = Test-Regex $Log "(?:round7\.shaderDenoise\.outputMaterialReady|shaderDenoiseOutputMaterialReady|shader_denoise_output_material_ready)=true"
+    $outputMaterialNotReady = Test-Regex $Log "(?:round7\.shaderDenoise\.outputMaterialReady|shaderDenoiseOutputMaterialReady|shader_denoise_output_material_ready)=false"
+    $shaderGeneratedTrue = Test-Regex $Log "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=true|Lucerna native shader denoise output image candidate: .*realShaderGenerated=true"
+    $shaderGeneratedFalse = Test-Regex $Log "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=false|Lucerna native shader denoise output image candidate: .*realShaderGenerated=false"
+    $cpuFallbackActive = Test-Regex $Log "(?:round7\.shaderDenoise\.cpuReadbackFallbackActive|shaderDenoiseCpuReadbackFallbackActive|cpuReadbackDenoiseFallbackActive|cpu_readback_denoise_fallback_active)=true|Lucerna native shader denoise output image candidate: .*(?:cpuStaged|nonGpu)=true"
+    $cpuFallbackInactive = Test-Regex $Log "(?:round7\.shaderDenoise\.cpuReadbackFallbackActive|shaderDenoiseCpuReadbackFallbackActive|cpuReadbackDenoiseFallbackActive|cpu_readback_denoise_fallback_active)=false"
+    $realOutputReady = Test-Regex $Log "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=true|Lucerna native shader denoise output image candidate: .*realOutput=true"
+    $realOutputNotReady = Test-Regex $Log "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=false|realDenoiseShaderOutput=false|Lucerna native shader denoise output image candidate: .*realOutput=false"
+    $candidatePresent = Test-Regex $Log "Lucerna native shader denoise output image candidate:|(?:shaderOutputImageCandidateBoundary|round7\.shaderOutputImageCandidate|shaderOutputImageCandidate|shaderOutputCandidate)="
+    $cpuReadbackSource = Test-Regex $Log "(?:cpuReadbackDenoiseSource|cpu_readback_denoise_source|cpuDenoisedSource|cpu_denoised_source)=true|sourceIdentity=.*cpu-denoised-diffuse-gi-rgba8|denoisedPayloadEvidence=.*(?:cpu|readback)"
+    $sourceClaim = Test-Regex $Log "sourceIdentity=.*shader-denoised-diffuse-gi-rgba8|(?:accepted:|sourceAuthenticity=accepted:).*shader-denoised"
+    $realProven = $dispatchPrepared -and $outputImageReady -and $outputMaterialReady -and $shaderGeneratedTrue -and $realOutputReady -and -not $cpuFallbackActive
+    $overclaim = ($sourceClaim -and -not $realProven) -or ($realOutputReady -and ($cpuFallbackActive -or -not $shaderGeneratedTrue -or -not $outputImageReady -or -not $outputMaterialReady))
+
+    $explicitState = ($outputImageReady -or $outputImageNotReady) -and ($outputMaterialReady -or $outputMaterialNotReady) -and ($shaderGeneratedTrue -or $shaderGeneratedFalse) -and ($cpuFallbackActive -or $cpuFallbackInactive) -and ($realOutputReady -or $realOutputNotReady)
+    $blocker = Get-LastRegexValue $Log "(?:shaderDenoiseBlockerReason|shader_denoise_blocker_reason|shaderDenoiseBlocker|shader_denoise_blocker)=`"?(?<blocker>[A-Za-z0-9_.-]+)" "blocker"
+    if ([string]::IsNullOrWhiteSpace($blocker)) {
+        $blocker = if ($realProven) {
+            "none"
+        } elseif (-not $dispatchPrepared) {
+            "shader_denoise_dispatch_not_prepared"
+        } elseif (-not ($outputImageReady -or $outputImageNotReady)) {
+            "shader_output_image_state_missing"
+        } elseif ($outputImageNotReady) {
+            "shader_output_image_not_ready"
+        } elseif (-not ($outputMaterialReady -or $outputMaterialNotReady)) {
+            "shader_output_material_state_missing"
+        } elseif ($outputMaterialNotReady) {
+            "shader_output_material_not_ready"
+        } elseif ($shaderGeneratedFalse) {
+            "shader_generated_output_false"
+        } elseif ($cpuFallbackActive) {
+            "cpu_readback_fallback_active"
+        } elseif ($realOutputNotReady) {
+            "real_shader_output_not_ready"
+        } else {
+            "real_shader_output_unproven"
+        }
+    }
+
+    $sourceIdentity = Get-LastRegexValue $Log "(?:sourceIdentity|source_identity)=`"?(?<source>[^,;`" `r`n]+)" "source"
+    $sourceKind = if ($realProven) {
+        "real-shader-denoised-output"
+    } elseif ($cpuFallbackActive -or $cpuReadbackSource) {
+        "cpu-readback-denoised-output"
+    } elseif ($candidatePresent) {
+        "shader-output-image-candidate-boundary"
+    } elseif (-not [string]::IsNullOrWhiteSpace($sourceIdentity)) {
+        "declared-source-identity"
+    } else {
+        "unknown"
+    }
+
+    return [ordered]@{
+        present = Test-AnyShaderDenoiseBoundaryMarker $Log
+        explicitStatePresent = $explicitState
+        sourceIdentity = $sourceIdentity
+        sourceKind = $sourceKind
+        blockerReason = $blocker
+        realOutputProven = $realProven
+        overclaimPresent = $overclaim
+        honestNonOverclaimPresent = -not $overclaim -and ($realProven -or $cpuFallbackActive -or $cpuReadbackSource -or $candidatePresent -or $blocker -ne "none")
+        prerequisites = [ordered]@{
+            intent = $intent
+            inputReady = $inputReady
+            dispatchPrepared = $dispatchPrepared
+            outputImageReady = $outputImageReady
+            outputImageStateExplicit = $outputImageReady -or $outputImageNotReady
+            outputMaterialReady = $outputMaterialReady
+            outputMaterialStateExplicit = $outputMaterialReady -or $outputMaterialNotReady
+            shaderGeneratedOutput = $shaderGeneratedTrue
+            shaderGeneratedOutputStateExplicit = $shaderGeneratedTrue -or $shaderGeneratedFalse
+            cpuReadbackFallbackActive = $cpuFallbackActive
+            cpuReadbackFallbackStateExplicit = $cpuFallbackActive -or $cpuFallbackInactive
+            realOutputReady = $realOutputReady
+            realOutputStateExplicit = $realOutputReady -or $realOutputNotReady
+        }
+    }
+}
+
 function Get-TemporalTelemetryFields {
     param([string] $Log)
 
@@ -545,6 +662,7 @@ function Measure-Round7CompositeStabilityLogProof {
     $wrongWindowScreenshotPresent = Test-Regex $log "screenshotSource=(?:window|window-fallback)|temporalCaptureSources=[^`r`n]*(?:window|window-fallback)"
     $nativeErrorPresent = Test-Regex $log "invalid descriptor|VK_ERROR|VK_[A-Z_]*ERROR|Lucerna native error|native error|Vulkan error"
     $temporalTelemetry = Get-TemporalTelemetryFields $log
+    $shaderDenoiseBoundary = Get-Round7ShaderDenoiseBoundaryEvidence $log
 
     return [ordered]@{
         markers = [ordered]@{
@@ -560,8 +678,14 @@ function Measure-Round7CompositeStabilityLogProof {
             focusWindowOnlyPresent = $focusWindowOnlyPresent
             wrongWindowScreenshotPresent = $wrongWindowScreenshotPresent
             nativeErrorPresent = $nativeErrorPresent
+            shaderDenoiseBoundaryPresent = [bool]$shaderDenoiseBoundary.present
+            shaderDenoiseExplicitStatePresent = [bool]$shaderDenoiseBoundary.explicitStatePresent
+            shaderDenoiseHonestNonOverclaimPresent = [bool]$shaderDenoiseBoundary.honestNonOverclaimPresent
+            shaderDenoiseOverclaimPresent = [bool]$shaderDenoiseBoundary.overclaimPresent
+            realShaderDenoiseOutputProven = [bool]$shaderDenoiseBoundary.realOutputProven
         }
         temporalTelemetry = $temporalTelemetry
+        shaderDenoiseBoundary = $shaderDenoiseBoundary
         patterns = [ordered]@{
             finalCompositePatterns = @($FinalCompositePatterns)
             hudPreservationPatterns = @($HudPreservationPatterns)
@@ -767,6 +891,18 @@ if ($logProof) {
     if ($logProof.markers.nativeErrorPresent) {
         $failures.Add("Log contains native/Vulkan error markers.")
     }
+    if ($logProof.markers.shaderDenoiseOverclaimPresent) {
+        $failures.Add("Log over-claims real shader-denoise output during composite stability proof without full shader-output prerequisites.")
+    }
+    if ($RequireShaderDenoiseBoundaryEvidence -and -not $logProof.markers.shaderDenoiseBoundaryPresent) {
+        $failures.Add("Shader-denoise boundary evidence was required but no shader-denoise boundary markers were present.")
+    }
+    if (($RequireShaderDenoiseBoundaryEvidence -or $logProof.markers.shaderDenoiseBoundaryPresent) -and -not $logProof.markers.shaderDenoiseExplicitStatePresent) {
+        $failures.Add("Shader-denoise boundary evidence is missing explicit output image/material, shader-generated, CPU fallback, or real-output readiness state.")
+    }
+    if (($RequireShaderDenoiseBoundaryEvidence -or $logProof.markers.shaderDenoiseBoundaryPresent) -and -not $logProof.markers.shaderDenoiseHonestNonOverclaimPresent) {
+        $failures.Add("Shader-denoise boundary evidence is missing honest non-overclaim reporting; include real output proof or explicit CPU fallback/candidate/blocker state.")
+    }
 }
 
 $result = [ordered]@{
@@ -812,6 +948,7 @@ $result = [ordered]@{
         }
         rejectWindowScreenshotSources = [bool]$RejectWindowScreenshotSources
         requireLogProof = [bool]$RequireLogProof
+        requireShaderDenoiseBoundaryEvidence = [bool]$RequireShaderDenoiseBoundaryEvidence
     }
     screenshots = [ordered]@{
         particleBaselineDimensions = $particleBaselineDimensions
@@ -880,8 +1017,14 @@ $result = [ordered]@{
             focusWindowOnlyPresent = if ($logProof) { [bool]$logProof.markers.focusWindowOnlyPresent } else { $null }
             wrongWindowScreenshotPresent = if ($logProof) { [bool]$logProof.markers.wrongWindowScreenshotPresent } else { $null }
             nativeErrorPresent = if ($logProof) { [bool]$logProof.markers.nativeErrorPresent } else { $null }
+            shaderDenoiseBoundaryPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseBoundaryPresent } else { $null }
+            shaderDenoiseExplicitStatePresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseExplicitStatePresent } else { $null }
+            shaderDenoiseHonestNonOverclaimPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseHonestNonOverclaimPresent } else { $null }
+            shaderDenoiseOverclaimPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOverclaimPresent } else { $null }
+            realShaderDenoiseOutputProven = if ($logProof) { [bool]$logProof.markers.realShaderDenoiseOutputProven } else { $null }
         }
         temporalTelemetry = if ($logProof) { $logProof.temporalTelemetry } else { $null }
+        shaderDenoiseBoundary = if ($logProof) { $logProof.shaderDenoiseBoundary } else { $null }
     }
     passed = $failures.Count -eq 0
     failures = @($failures)
@@ -941,6 +1084,22 @@ if ($logProof) {
     Write-Host "focusWindowOnlyPresent=$($logProof.markers.focusWindowOnlyPresent)"
     Write-Host "wrongWindowScreenshotPresent=$($logProof.markers.wrongWindowScreenshotPresent)"
     Write-Host "nativeErrorPresent=$($logProof.markers.nativeErrorPresent)"
+    Write-Host "shaderDenoiseBoundaryPresent=$($logProof.markers.shaderDenoiseBoundaryPresent)"
+    Write-Host "shaderDenoiseExplicitStatePresent=$($logProof.markers.shaderDenoiseExplicitStatePresent)"
+    Write-Host "shaderDenoiseHonestNonOverclaimPresent=$($logProof.markers.shaderDenoiseHonestNonOverclaimPresent)"
+    Write-Host "shaderDenoiseOverclaimPresent=$($logProof.markers.shaderDenoiseOverclaimPresent)"
+    Write-Host "realShaderDenoiseOutputProven=$($logProof.markers.realShaderDenoiseOutputProven)"
+    Write-Host "shaderDenoiseSourceIdentity=$($logProof.shaderDenoiseBoundary.sourceIdentity)"
+    Write-Host "shaderDenoiseSourceKind=$($logProof.shaderDenoiseBoundary.sourceKind)"
+    Write-Host "shaderDenoiseBlockerReason=$($logProof.shaderDenoiseBoundary.blockerReason)"
+    Write-Host "shaderDenoisePrereq.intent=$($logProof.shaderDenoiseBoundary.prerequisites.intent)"
+    Write-Host "shaderDenoisePrereq.inputReady=$($logProof.shaderDenoiseBoundary.prerequisites.inputReady)"
+    Write-Host "shaderDenoisePrereq.dispatchPrepared=$($logProof.shaderDenoiseBoundary.prerequisites.dispatchPrepared)"
+    Write-Host "shaderDenoisePrereq.outputImageReady=$($logProof.shaderDenoiseBoundary.prerequisites.outputImageReady)"
+    Write-Host "shaderDenoisePrereq.outputMaterialReady=$($logProof.shaderDenoiseBoundary.prerequisites.outputMaterialReady)"
+    Write-Host "shaderDenoisePrereq.shaderGeneratedOutput=$($logProof.shaderDenoiseBoundary.prerequisites.shaderGeneratedOutput)"
+    Write-Host "shaderDenoisePrereq.cpuReadbackFallbackActive=$($logProof.shaderDenoiseBoundary.prerequisites.cpuReadbackFallbackActive)"
+    Write-Host "shaderDenoisePrereq.realOutputReady=$($logProof.shaderDenoiseBoundary.prerequisites.realOutputReady)"
     Write-Host "temporal.telemetry.stablePixels=$($logProof.temporalTelemetry.stablePixels)"
     Write-Host "temporal.telemetry.unstablePixels=$($logProof.temporalTelemetry.unstablePixels)"
     Write-Host "temporal.telemetry.frameDelta=$($logProof.temporalTelemetry.frameDelta)"

@@ -448,7 +448,8 @@ public record FinalCompositeModeStatus(
         }
         if (this.denoisedGiVisualMode()) {
             return "denoised-gi:" + readyState(denoisedSourceReady)
-                    + ",sourceIdentity=" + denoisedIdentity.stableLabel();
+                    + ",sourceIdentity=" + denoisedIdentity.stableLabel()
+                    + ",sourceBoundary=" + denoisedSourceOutputBoundary(cpuDenoisedSourceReady, shaderDenoisedSourceReady);
         }
         if (this.directLightingEnabled && !this.diffuseGiEnabled) {
             return "direct-light:" + readyState(directSourceReady);
@@ -456,16 +457,22 @@ public record FinalCompositeModeStatus(
         if (this.finalCompositeVisualMode()) {
             if (directSourceReady && giSourceReady && denoisedSourceReady) {
                 return "final-selected=direct+raw-gi+denoised-gi:ready-for-controller-surface-quality-proof"
-                        + ",denoisedSourceIdentity=" + denoisedIdentity.stableLabel();
+                        + ",denoisedSourceIdentity=" + denoisedIdentity.stableLabel()
+                        + ",denoisedSourceBoundary="
+                        + denoisedSourceOutputBoundary(cpuDenoisedSourceReady, shaderDenoisedSourceReady);
             }
             if (denoisedSourceReady && giSourceReady) {
                 return "final-selected=raw-gi+denoised-gi:ready,direct-blend=" + readyState(directSourceReady)
-                        + ",denoisedSourceIdentity=" + denoisedIdentity.stableLabel();
+                        + ",denoisedSourceIdentity=" + denoisedIdentity.stableLabel()
+                        + ",denoisedSourceBoundary="
+                        + denoisedSourceOutputBoundary(cpuDenoisedSourceReady, shaderDenoisedSourceReady);
             }
             if (denoisedSourceReady) {
                 return "final-selected=denoised-gi-only:degraded,raw-gi=missing,direct-blend="
                         + readyState(directSourceReady)
-                        + ",denoisedSourceIdentity=" + denoisedIdentity.stableLabel();
+                        + ",denoisedSourceIdentity=" + denoisedIdentity.stableLabel()
+                        + ",denoisedSourceBoundary="
+                        + denoisedSourceOutputBoundary(cpuDenoisedSourceReady, shaderDenoisedSourceReady);
             }
             if (giSourceReady) {
                 return "final-selected=raw-gi-fallback:degraded,denoised-gi=missing,direct-blend="
@@ -477,7 +484,9 @@ public record FinalCompositeModeStatus(
         return "custom:direct=" + readyState(directSourceReady)
                 + ",raw-gi=" + readyState(giSourceReady)
                 + ",denoised-gi=" + readyState(denoisedSourceReady)
-                + ",denoisedSourceIdentity=" + denoisedIdentity.stableLabel();
+                + ",denoisedSourceIdentity=" + denoisedIdentity.stableLabel()
+                + ",denoisedSourceBoundary="
+                + denoisedSourceOutputBoundary(cpuDenoisedSourceReady, shaderDenoisedSourceReady);
     }
 
     public String focusedRegionProofExpectation() {
@@ -590,6 +599,8 @@ public record FinalCompositeModeStatus(
         )
                 + ",selectedDenoisedIdentity="
                 + denoisedSourceIdentity(cpuDenoisedSourceReady, shaderDenoisedSourceReady).stableLabel()
+                + ",selectedDenoisedBoundary="
+                + denoisedSourceOutputBoundary(cpuDenoisedSourceReady, shaderDenoisedSourceReady)
                 + ",shaderDenoiseRequiredForQualityMilestone="
                 + (this.denoisedGiVisualMode() || this.finalCompositeVisualMode());
     }
@@ -722,5 +733,20 @@ public record FinalCompositeModeStatus(
             return PublicMojangFinalCompositeSubmissionResult.DenoisedGiSourceIdentity.CPU_DENOISED_READBACK;
         }
         return PublicMojangFinalCompositeSubmissionResult.DenoisedGiSourceIdentity.NONE;
+    }
+
+    private static String denoisedSourceOutputBoundary(
+            boolean cpuDenoisedSourceReady,
+            boolean shaderDenoisedSourceReady
+    ) {
+        if (shaderDenoisedSourceReady) {
+            return cpuDenoisedSourceReady
+                    ? "mixed:shader-generated-ready-plus-cpu-readback-present"
+                    : "shader-generated-denoise-output-ready";
+        }
+        if (cpuDenoisedSourceReady) {
+            return "cpu-readback-visual-shaping;real-shader-denoise-output=false";
+        }
+        return "missing;real-shader-denoise-output=false";
     }
 }

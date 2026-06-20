@@ -439,6 +439,73 @@ public record DenoiseExecutionSnapshot(
                 && this.shaderDenoiseOutputImageCandidateChecksum > 0L;
     }
 
+    public boolean shaderDenoiseCpuReadbackFallbackActive() {
+        return this.hasExecutionTelemetry()
+                && this.cpuDenoisedOutputReadbackReady()
+                && (!this.realDenoiseShaderOutput
+                || !this.shaderDenoiseShaderGeneratedOutput
+                || !this.shaderDenoiseOutputReady
+                || !this.shaderDenoiseOutputImageReady);
+    }
+
+    public boolean realShaderDenoiseOutputReady() {
+        return this.hasExecutionTelemetry()
+                && this.realDenoiseShaderOutput
+                && this.shaderDenoiseShaderGeneratedOutput
+                && this.shaderDenoiseOutputReady
+                && this.shaderDenoiseOutputImageReady
+                && this.shaderDenoiseOutputMaterialReady
+                && !this.shaderDenoiseOutputImageCandidateCpuStaged
+                && !this.shaderDenoiseOutputImageCandidateNonGpu;
+    }
+
+    public String shaderDenoiseOutputBlockerReason() {
+        if (!this.hasExecutionTelemetry()) {
+            return "no-denoise-execution-telemetry";
+        }
+        if (this.realShaderDenoiseOutputReady()) {
+            return "none";
+        }
+        if (!this.shaderDenoiseDispatchPrepared) {
+            return "shader-denoise-dispatch-not-prepared";
+        }
+        if (!this.shaderDenoiseInputReady) {
+            return "shader-denoise-input-not-ready";
+        }
+        if (!this.shaderDenoiseOutputImageReady) {
+            return this.shaderDenoiseOutputImageBlocker;
+        }
+        if (!this.shaderDenoiseOutputMaterialReady) {
+            return "shader-denoise-output-material-handoff-not-ready";
+        }
+        if (!this.shaderDenoiseShaderGeneratedOutput) {
+            return "shader-denoise-output-is-not-shader-generated";
+        }
+        if (!this.realDenoiseShaderOutput) {
+            return "real-denoise-shader-output-flag-false";
+        }
+        if (this.shaderDenoiseOutputImageCandidateCpuStaged || this.shaderDenoiseOutputImageCandidateNonGpu) {
+            return "shader-denoise-output-candidate-is-cpu-staged-or-non-gpu";
+        }
+        return this.shaderDenoiseOutputImageBlocker;
+    }
+
+    public String shaderDenoiseOutputReadinessLabel() {
+        if (this.realShaderDenoiseOutputReady()) {
+            return "real-shader-output-ready";
+        }
+        if (this.shaderDenoiseCpuReadbackFallbackActive()) {
+            return "cpu-readback-fallback-active";
+        }
+        if (this.shaderDenoiseOutputImageCandidatePresent()) {
+            return "candidate-image-only";
+        }
+        if (this.shaderDenoiseDispatchPrepared || this.shaderDenoiseInputReady) {
+            return "shader-output-blocked";
+        }
+        return "shader-output-unavailable";
+    }
+
     public String shaderDenoiseOutputImageCandidateBoundary() {
         if (!this.hasExecutionTelemetry()) {
             return "no-denoise-execution-telemetry";
@@ -459,13 +526,13 @@ public record DenoiseExecutionSnapshot(
         if (!this.hasExecutionTelemetry()) {
             return "no-denoise-execution-telemetry";
         }
-        if (!this.cpuDenoisedOutputReadbackReady()) {
-            return "not-ready:missing-accepted-cpu-output-readback";
-        }
-        if (this.realDenoiseShaderOutput) {
+        if (this.realShaderDenoiseOutputReady()) {
             return this.denoiseQualityEvidenceReady()
                     ? "real-shader-denoise-output-with-quality-evidence"
                     : "real-shader-denoise-output-without-quality-evidence";
+        }
+        if (!this.cpuDenoisedOutputReadbackReady()) {
+            return "not-ready:missing-accepted-cpu-output-readback";
         }
         if (this.denoiseQualityEvidenceReady()) {
             return "cpu-output-readback-ready; quality-evidence-present; real-shader-output=false";
@@ -523,6 +590,10 @@ public record DenoiseExecutionSnapshot(
                 + " shaderDenoiseOutputImageCandidateReady=" + this.shaderDenoiseOutputImageCandidateReady
                 + " shaderDenoiseOutputImageCandidateCpuStaged=" + this.shaderDenoiseOutputImageCandidateCpuStaged
                 + " shaderDenoiseOutputImageCandidateNonGpu=" + this.shaderDenoiseOutputImageCandidateNonGpu
+                + " realShaderDenoiseOutputReady=" + this.realShaderDenoiseOutputReady()
+                + " shaderDenoiseCpuReadbackFallbackActive=" + this.shaderDenoiseCpuReadbackFallbackActive()
+                + " shaderDenoiseOutputReadinessLabel=" + this.shaderDenoiseOutputReadinessLabel()
+                + " shaderDenoiseOutputBlockerReason=" + this.shaderDenoiseOutputBlockerReason()
                 + " shaderDenoiseOutputImageCandidateSize=" + this.shaderDenoiseOutputImageCandidateWidth
                 + "x" + this.shaderDenoiseOutputImageCandidateHeight
                 + " shaderDenoiseOutputImageCandidatePixels=" + this.shaderDenoiseOutputImageCandidatePixels

@@ -1061,6 +1061,10 @@ public final class LucernaNativeBridge {
                 + "|" + denoise.shaderDenoiseOutputImageCandidateChecksum()
                 + "|" + denoise.shaderDenoiseOutputImageCandidateMarker()
                 + "|" + denoise.shaderDenoiseOutputImageBlocker()
+                + "|" + denoise.realShaderDenoiseOutputReady()
+                + "|" + denoise.shaderDenoiseCpuReadbackFallbackActive()
+                + "|" + denoise.shaderDenoiseOutputReadinessLabel()
+                + "|" + denoise.shaderDenoiseOutputBlockerReason()
                 + "|" + denoisedOutput.outputEvidenceMarker()
                 + "|" + denoisedOutput.readyForPreviewPayload();
         if (key.equals(this.lastLoggedDenoiseExecutionKey)) {
@@ -1069,7 +1073,7 @@ public final class LucernaNativeBridge {
 
         this.lastLoggedDenoiseExecutionKey = key;
         Lucerna.LOGGER.info(
-                "Lucerna native signal-separated denoise execution scaffold: dispatchGeneration={} size={}x{} inputs={} outputs={} samples={} enabled={} ready={} accepted={} diffuseGiSignal={} directShadowSignal={} edgeInputs={} temporalHistory={} historyAccepted={} historyRejected={} edgePreserved={} edgeRejected={} rawGi={} rawGiPixels={} rawGiSamples={} rawGiRays={} rawGiCacheReads={} rawDirect={} denoisedIntent={} denoisedCpuOutputGenerated={} denoisedOutputPixels={} denoisedOutputChangedPixels={} denoisedOutputMeanAbsDelta={} previousDenoisedOutputChecksum={} currentDenoisedOutputChecksum={} frameToFrameChangedPixels={} frameToFrameMeanAbsDelta={} temporalStablePixels={} temporalUnstablePixels={} temporalHistoryConfidence={} temporalFlickerScore={} temporalReady={} temporalGhostingRisk={} temporalReadinessMarker={} temporalGhostingRiskMarker={} denoisedOutputDiffersFromRaw={} realDenoiseShaderOutput={} rawGiInputReady={} cpuDenoisedReadbackReady={} shaderDenoiseDispatchPrepared={} shaderDenoiseInputReady={} shaderDenoiseOutputReady={} shaderDenoiseOutputImageReady={} shaderDenoiseOutputImageCandidateReady={} shaderDenoiseOutputImageCandidateCpuStaged={} shaderDenoiseOutputImageCandidateNonGpu={} shaderDenoiseOutputImageCandidateSize={}x{} shaderDenoiseOutputImageCandidatePixels={} shaderDenoiseOutputImageCandidateBytes={} shaderDenoiseOutputImageCandidateChecksum={} shaderDenoiseOutputImageCandidateMarker={} shaderDenoiseOutputImageBlocker={} shaderDenoiseOutputImageCandidateBoundary={} shaderDenoiseOutputMaterialReady={} shaderDenoiseShaderGeneratedOutput={} cpuReadbackDenoiseFallbackActive={} round7.shaderDenoise.dispatchPrepared={} round7.shaderDenoise.outputImageReady={} round7.shaderDenoise.outputImageCandidateReady={} round7.shaderDenoise.outputImageCandidateCpuStaged={} round7.shaderDenoise.outputImageCandidateNonGpu={} round7.shaderDenoise.outputImageCandidateMarker={} round7.shaderDenoise.outputImageBlocker={} round7.shaderDenoise.outputMaterialReady={} round7.shaderDenoise.shaderGeneratedOutput={} round7.shaderDenoise.cpuReadbackFallbackActive={} round7.shaderDenoise.realOutputReady={} denoisedPayloadReady={} denoisedPayloadEvidence={} denoisedPayloadReason={} composite={} compositeSize={}x{} compositeOutputs={} specularPlaceholder={} aoPlaceholder={} marker={} rawInputMarker={} denoisedOutputMarker={} compositeMarker={} reason={}.",
+                "Lucerna native signal-separated denoise execution scaffold: dispatchGeneration={} size={}x{} inputs={} outputs={} samples={} enabled={} ready={} accepted={} diffuseGiSignal={} directShadowSignal={} edgeInputs={} temporalHistory={} historyAccepted={} historyRejected={} edgePreserved={} edgeRejected={} rawGi={} rawGiPixels={} rawGiSamples={} rawGiRays={} rawGiCacheReads={} rawDirect={} denoisedIntent={} denoisedCpuOutputGenerated={} denoisedOutputPixels={} denoisedOutputChangedPixels={} denoisedOutputMeanAbsDelta={} previousDenoisedOutputChecksum={} currentDenoisedOutputChecksum={} frameToFrameChangedPixels={} frameToFrameMeanAbsDelta={} temporalStablePixels={} temporalUnstablePixels={} temporalHistoryConfidence={} temporalFlickerScore={} temporalReady={} temporalGhostingRisk={} temporalReadinessMarker={} temporalGhostingRiskMarker={} denoisedOutputDiffersFromRaw={} realDenoiseShaderOutput={} rawGiInputReady={} cpuDenoisedReadbackReady={} shaderDenoiseDispatchPrepared={} shaderDenoiseInputReady={} shaderDenoiseOutputReady={} shaderDenoiseOutputImageReady={} shaderDenoiseOutputImageCandidateReady={} shaderDenoiseOutputImageCandidateCpuStaged={} shaderDenoiseOutputImageCandidateNonGpu={} shaderDenoiseOutputImageCandidateSize={}x{} shaderDenoiseOutputImageCandidatePixels={} shaderDenoiseOutputImageCandidateBytes={} shaderDenoiseOutputImageCandidateChecksum={} shaderDenoiseOutputImageCandidateMarker={} shaderDenoiseOutputImageBlocker={} shaderDenoiseOutputImageCandidateBoundary={} shaderDenoiseOutputMaterialReady={} shaderDenoiseShaderGeneratedOutput={} realShaderDenoiseOutputReady={} cpuReadbackDenoiseFallbackActive={} shaderDenoiseOutputReadinessLabel={} shaderDenoiseOutputBlockerReason={} round7.shaderDenoise.dispatchPrepared={} round7.shaderDenoise.outputImageReady={} round7.shaderDenoise.outputImageCandidateReady={} round7.shaderDenoise.outputImageCandidateCpuStaged={} round7.shaderDenoise.outputImageCandidateNonGpu={} round7.shaderDenoise.outputImageCandidateMarker={} round7.shaderDenoise.outputImageBlocker={} round7.shaderDenoise.outputMaterialReady={} round7.shaderDenoise.shaderGeneratedOutput={} round7.shaderDenoise.cpuReadbackFallbackActive={} round7.shaderDenoise.realOutputReady={} denoisedPayloadReady={} denoisedPayloadEvidence={} denoisedPayloadReason={} composite={} compositeSize={}x{} compositeOutputs={} specularPlaceholder={} aoPlaceholder={} marker={} rawInputMarker={} denoisedOutputMarker={} compositeMarker={} reason={}.",
                 denoise.dispatchGeneration(),
                 denoise.width(),
                 denoise.height(),
@@ -1131,7 +1135,10 @@ public final class LucernaNativeBridge {
                 denoise.shaderDenoiseOutputImageCandidateBoundary(),
                 denoise.shaderDenoiseOutputMaterialReady(),
                 denoise.shaderDenoiseShaderGeneratedOutput(),
-                denoise.cpuDenoisedReadbackReady() && !denoise.shaderDenoiseShaderGeneratedOutput(),
+                denoise.realShaderDenoiseOutputReady(),
+                denoise.shaderDenoiseCpuReadbackFallbackActive(),
+                denoise.shaderDenoiseOutputReadinessLabel(),
+                denoise.shaderDenoiseOutputBlockerReason(),
                 denoise.shaderDenoiseDispatchPrepared(),
                 denoise.shaderDenoiseOutputImageReady(),
                 denoise.shaderDenoiseOutputImageCandidateReady(),
@@ -1141,8 +1148,8 @@ public final class LucernaNativeBridge {
                 denoise.shaderDenoiseOutputImageBlocker(),
                 denoise.shaderDenoiseOutputMaterialReady(),
                 denoise.shaderDenoiseShaderGeneratedOutput(),
-                denoise.cpuDenoisedReadbackReady() && !denoise.shaderDenoiseShaderGeneratedOutput(),
-                denoise.realDenoiseShaderOutput(),
+                denoise.shaderDenoiseCpuReadbackFallbackActive(),
+                denoise.realShaderDenoiseOutputReady(),
                 denoisedOutput.readyForPreviewPayload(),
                 denoisedOutput.outputEvidenceMarker(),
                 denoisedOutput.previewReadinessReason(),
@@ -1159,7 +1166,14 @@ public final class LucernaNativeBridge {
                 denoise.readinessReason()
         );
         Lucerna.LOGGER.info(
-                "Lucerna native shader denoise output image candidate: ready={} size={}x{} pixels={} bytes={} checksum={} cpuStaged={} nonGpu={} realShaderGenerated={} realOutput={} marker={} blocker={}.",
+                "Lucerna native shader denoise output readiness: label={} realOutputReady={} outputReady={} imageReady={} materialReady={} shaderGenerated={} cpuFallback={} candidateReady={} candidateSize={}x{} candidatePixels={} candidateBytes={} candidateChecksum={} candidateCpuStaged={} candidateNonGpu={} marker={} blocker={}.",
+                denoise.shaderDenoiseOutputReadinessLabel(),
+                denoise.realShaderDenoiseOutputReady(),
+                denoise.shaderDenoiseOutputReady(),
+                denoise.shaderDenoiseOutputImageReady(),
+                denoise.shaderDenoiseOutputMaterialReady(),
+                denoise.shaderDenoiseShaderGeneratedOutput(),
+                denoise.shaderDenoiseCpuReadbackFallbackActive(),
                 denoise.shaderDenoiseOutputImageCandidateReady(),
                 denoise.shaderDenoiseOutputImageCandidateWidth(),
                 denoise.shaderDenoiseOutputImageCandidateHeight(),
@@ -1168,10 +1182,8 @@ public final class LucernaNativeBridge {
                 denoise.shaderDenoiseOutputImageCandidateChecksum(),
                 denoise.shaderDenoiseOutputImageCandidateCpuStaged(),
                 denoise.shaderDenoiseOutputImageCandidateNonGpu(),
-                denoise.shaderDenoiseShaderGeneratedOutput(),
-                denoise.realDenoiseShaderOutput(),
                 denoise.shaderDenoiseOutputImageCandidateMarker(),
-                denoise.shaderDenoiseOutputImageBlocker()
+                denoise.shaderDenoiseOutputBlockerReason()
         );
     }
 

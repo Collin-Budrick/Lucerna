@@ -221,7 +221,9 @@ function Get-Round7CaptureIntent {
                 "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=(?:true|false)",
                 "(?:round7\.shaderDenoise\.cpuReadbackFallbackActive|shaderDenoiseCpuReadbackFallbackActive|cpuReadbackDenoiseFallbackActive|cpu_readback_denoise_fallback_active)=(?:true|false)",
                 "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=(?:true|false)",
-                "Lucerna native shader denoise output image candidate: ready=(?:true|false) size=[0-9]+x[0-9]+ pixels=[0-9]+ bytes=[0-9]+ checksum=[0-9]+ cpuStaged=(?:true|false) nonGpu=(?:true|false) realShaderGenerated=(?:true|false) realOutput=(?:true|false) marker=\S+ blocker=[^.`r`n]+"
+                "(?:shaderDenoiseBlockerReason|shader_denoise_blocker_reason|shaderDenoiseBlocker|shader_denoise_blocker)=[A-Za-z0-9_.-]+|Lucerna native shader denoise output (?:image candidate|readiness): .*blocker=[^.`r`n]+",
+                "(?:sourceIdentity|source_identity)=(?:[^`r`n]*cpu-denoised-diffuse-gi-rgba8|[^`r`n]*shader-denoised-diffuse-gi-rgba8|[^`r`n]*shader-output-image-candidate)",
+                "Lucerna native shader denoise output (?:image candidate: ready=(?:true|false) size=[0-9]+x[0-9]+ pixels=[0-9]+ bytes=[0-9]+ checksum=[0-9]+ cpuStaged=(?:true|false) nonGpu=(?:true|false) realShaderGenerated=(?:true|false) realOutput=(?:true|false)|readiness: label=[^ ]+ realOutputReady=(?:true|false) outputReady=(?:true|false) imageReady=(?:true|false) materialReady=(?:true|false) shaderGenerated=(?:true|false) cpuFallback=(?:true|false) candidateReady=(?:true|false) candidateSize=[0-9]+x[0-9]+ candidatePixels=[0-9]+ candidateBytes=[0-9]+ candidateChecksum=[0-9]+ candidateCpuStaged=(?:true|false) candidateNonGpu=(?:true|false)) .*blocker=[^.`r`n]+"
             )
             return [ordered]@{
                 rendererEnabled = $true
@@ -243,7 +245,10 @@ function Get-Round7CaptureIntent {
                 "(?:round7\.shaderDenoise\.outputMaterialReady|shaderDenoiseOutputMaterialReady|shader_denoise_output_material_ready)=(?:true|false)",
                 "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=(?:true|false)",
                 "(?:round7\.shaderDenoise\.cpuReadbackFallbackActive|shaderDenoiseCpuReadbackFallbackActive|cpuReadbackDenoiseFallbackActive|cpu_readback_denoise_fallback_active)=(?:true|false)",
-                "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=(?:true|false)"
+                "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=(?:true|false)",
+                "(?:shaderDenoiseBlockerReason|shader_denoise_blocker_reason|shaderDenoiseBlocker|shader_denoise_blocker)=[A-Za-z0-9_.-]+|Lucerna native shader denoise output (?:image candidate|readiness): .*blocker=[^.`r`n]+",
+                "(?:sourceIdentity|source_identity)=(?:[^`r`n]*cpu-denoised-diffuse-gi-rgba8|[^`r`n]*shader-denoised-diffuse-gi-rgba8|[^`r`n]*shader-output-image-candidate)",
+                "Lucerna native shader denoise output (?:image candidate: ready=(?:true|false) size=[0-9]+x[0-9]+ pixels=[0-9]+ bytes=[0-9]+ checksum=[0-9]+ cpuStaged=(?:true|false) nonGpu=(?:true|false) realShaderGenerated=(?:true|false) realOutput=(?:true|false)|readiness: label=[^ ]+ realOutputReady=(?:true|false) outputReady=(?:true|false) imageReady=(?:true|false) materialReady=(?:true|false) shaderGenerated=(?:true|false) cpuFallback=(?:true|false) candidateReady=(?:true|false) candidateSize=[0-9]+x[0-9]+ candidatePixels=[0-9]+ candidateBytes=[0-9]+ candidateChecksum=[0-9]+ candidateCpuStaged=(?:true|false) candidateNonGpu=(?:true|false)) .*blocker=[^.`r`n]+"
             )
             return [ordered]@{
                 rendererEnabled = $true
@@ -292,7 +297,10 @@ function Get-Round7CaptureIntent {
                 "(?:round7\.shaderDenoise\.outputMaterialReady|shaderDenoiseOutputMaterialReady|shader_denoise_output_material_ready)=(?:true|false)",
                 "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=(?:true|false)",
                 "(?:round7\.shaderDenoise\.cpuReadbackFallbackActive|shaderDenoiseCpuReadbackFallbackActive|cpuReadbackDenoiseFallbackActive|cpu_readback_denoise_fallback_active)=(?:true|false)",
-                "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=(?:true|false)"
+                "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=(?:true|false)",
+                "(?:shaderDenoiseBlockerReason|shader_denoise_blocker_reason|shaderDenoiseBlocker|shader_denoise_blocker)=[A-Za-z0-9_.-]+|Lucerna native shader denoise output (?:image candidate|readiness): .*blocker=[^.`r`n]+",
+                "(?:sourceIdentity|source_identity)=(?:[^`r`n]*cpu-denoised-diffuse-gi-rgba8|[^`r`n]*shader-denoised-diffuse-gi-rgba8|[^`r`n]*shader-output-image-candidate)",
+                "Lucerna native shader denoise output (?:image candidate: ready=(?:true|false) size=[0-9]+x[0-9]+ pixels=[0-9]+ bytes=[0-9]+ checksum=[0-9]+ cpuStaged=(?:true|false) nonGpu=(?:true|false) realShaderGenerated=(?:true|false) realOutput=(?:true|false)|readiness: label=[^ ]+ realOutputReady=(?:true|false) outputReady=(?:true|false) imageReady=(?:true|false) materialReady=(?:true|false) shaderGenerated=(?:true|false) cpuFallback=(?:true|false) candidateReady=(?:true|false) candidateSize=[0-9]+x[0-9]+ candidatePixels=[0-9]+ candidateBytes=[0-9]+ candidateChecksum=[0-9]+ candidateCpuStaged=(?:true|false) candidateNonGpu=(?:true|false)) .*blocker=[^.`r`n]+"
             )
             return [ordered]@{
                 rendererEnabled = $true
@@ -1683,6 +1691,7 @@ try {
             $psi.Environment["LUCERNA_ROUND7_SHADER_DENOISE_PROOF"] = "true"
             $psi.Environment["LUCERNA_ROUND7_SHADER_DENOISE_ARTIFACT_ROLE"] = [string]$round7CaptureIntent.artifactRole
             $psi.Environment["LUCERNA_ROUND7_SHADER_DENOISE_INTENT"] = "true"
+            $psi.Environment["LUCERNA_ROUND7_SHADER_DENOISE_BOUNDARY_EVIDENCE"] = "true"
         }
     }
     if ($ValidationProfile -eq "Round7CompositeStability") {

@@ -898,6 +898,29 @@ public record LightingDispatchStageTelemetryStatus(
                 + " blockers=" + shorten(this.shaderDenoiseBlockers, 56);
     }
 
+    public String shaderDenoiseOutputBoundaryLine() {
+        boolean realShaderOutputReady = Boolean.TRUE.equals(this.shaderOutputReady)
+                && Boolean.TRUE.equals(this.shaderGeneratedOutput)
+                && Boolean.TRUE.equals(this.shaderOutputImageReady)
+                && Boolean.TRUE.equals(this.shaderOutputMaterialReady);
+        String blocker = this.shaderDenoiseBlockers.isBlank()
+                ? "unreported"
+                : shorten(this.shaderDenoiseBlockers, 64);
+        String source = this.sourceIdentity.isBlank()
+                ? "unreported"
+                : shorten(this.sourceIdentity, 48);
+        return this.stageDisplayName()
+                + " shader denoise output realShaderOutputReady=" + realShaderOutputReady
+                + " outputReady=" + booleanOrUnknown(this.shaderOutputReady)
+                + " generatedOutput=" + booleanOrUnknown(this.shaderGeneratedOutput)
+                + " outputImage=" + booleanOrUnknown(this.shaderOutputImageReady)
+                + " outputMaterial=" + booleanOrUnknown(this.shaderOutputMaterialReady)
+                + " cpuReadbackFallback=" + booleanOrUnknown(this.cpuReadbackFallback)
+                + " sourceIdentity=" + source
+                + " blockers=" + blocker
+                + " boundary=\"CPU/readback visual shaping is not real shader-generated denoise output\"";
+    }
+
     public String denoiseEvidenceBoundaryLine() {
         String boundary = this.evidenceBoundary.isBlank()
                 ? "unreported"
@@ -937,6 +960,7 @@ public record LightingDispatchStageTelemetryStatus(
         if (isDenoiseLikeStage() || hasAnyDenoiseEvidence()) {
             fields.put(normalizedPrefix + ".denoiseReadiness", this.denoiseReadinessStatusLine());
             fields.put(normalizedPrefix + ".shaderDenoiseState", this.shaderDenoiseStateStatusLine());
+            fields.put(normalizedPrefix + ".shaderDenoiseOutputBoundary", this.shaderDenoiseOutputBoundaryLine());
             fields.put(normalizedPrefix + ".denoiseEvidenceBoundary", this.denoiseEvidenceBoundaryLine());
             fields.put(normalizedPrefix + ".temporalFlickerEvidence", this.temporalFlickerEvidenceLine());
         }

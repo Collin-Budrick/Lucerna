@@ -70,6 +70,8 @@ param(
 
     [double] $MinDenoiseRoughnessReductionPercent = 0.0,
 
+    [double] $MinDenoiseEdgePreservationPercent = 0.0,
+
     [double] $MinFinalChangedPixelPercent = 0.5,
 
     [double] $MinFinalMeanAbsLuma = 0.5,
@@ -254,6 +256,7 @@ param(
     [string[]] $ShaderDenoiseOutputOpenPatterns = @(
         "(?:realDenoiseShaderOutput|real_denoise_shader_output|shaderDenoiseOutputReady|shader_denoise_output_ready)=false",
         "realShaderDenoiseOutputReady=false",
+        "(?:shaderDenoiseBlocker|shader_denoise_blocker|shaderDenoiseBlockerReason|shader_denoise_blocker_reason)=[A-Za-z0-9_.-]+",
         "(?:shaderDenoiseOutputState|shader_denoise_output_state|shaderDenoiseReadiness|shader_denoise_readiness)=(?:open|false|not-ready|not_ready|pending|missing)",
         "(?:shaderDenoiseOutput|shader_denoise_output|denoiseShaderOutput|denoise_shader_output).*?(?:open|not-ready|not_ready|pending|unproven)"
     ),
@@ -391,13 +394,18 @@ function Compare-Roughness {
     $rawRms = [double]$RawRoughness.rmsNeighborLuma
     $denoisedRms = [double]$DenoisedRoughness.rmsNeighborLuma
     $rmsReduction = if ($rawRms -gt 0.0) { 100.0 * ($rawRms - $denoisedRms) / $rawRms } else { 0.0 }
+    $rawMax = [double]$RawRoughness.maxAbsNeighborLuma
+    $denoisedMax = [double]$DenoisedRoughness.maxAbsNeighborLuma
+    $edgePreservation = if ($rawMax -gt 0.0) { 100.0 * $denoisedMax / $rawMax } else { 100.0 }
 
     return [ordered]@{
         raw = $RawRoughness
         denoised = $DenoisedRoughness
         meanAbsNeighborLumaReductionPercent = [Math]::Round($meanReduction, 4)
         rmsNeighborLumaReductionPercent = [Math]::Round($rmsReduction, 4)
+        maxEdgeLumaPreservationPercent = [Math]::Round($edgePreservation, 4)
         roughnessImproved = $meanReduction -ge $MinDenoiseRoughnessReductionPercent
+        edgeDetailPreserved = $edgePreservation -ge $MinDenoiseEdgePreservationPercent
     }
 }
 
@@ -700,6 +708,104 @@ function Get-Round7ShaderOutputImageCandidateEvidence {
     }
 }
 
+function Get-Round7ShaderDenoiseBoundaryEvidence {
+    param(
+        [string] $LogText,
+        [object] $ImageCandidateEvidence,
+        [bool] $IntentPresent,
+        [bool] $InputReadyPresent,
+        [bool] $DispatchPreparedPresent,
+        [bool] $OutputImageReadyPresent,
+        [bool] $OutputImageStateExplicitPresent,
+        [bool] $OutputMaterialReadyPresent,
+        [bool] $OutputMaterialStateExplicitPresent,
+        [bool] $ShaderGeneratedOutputTruePresent,
+        [bool] $ShaderGeneratedOutputExplicitPresent,
+        [bool] $CpuReadbackFallbackActivePresent,
+        [bool] $CpuReadbackFallbackExplicitPresent,
+        [bool] $RealOutputReadyPresent,
+        [bool] $RealOutputStateExplicitPresent,
+        [bool] $CpuReadbackSourcePresent,
+        [bool] $RealOutputProven
+    )
+
+    $sourceIdentityMatch = Get-LastRegexMatch $LogText "(?:sourceIdentity|source_identity)=`"?(?<source>[^,;`" `r`n]+)"
+    $sourceAuthenticityMatch = Get-LastRegexMatch $LogText "(?:sourceAuthenticity|source_authenticity)=`"?(?<source>[^,;`" `r`n]+)"
+    $blockerMatch = Get-LastRegexMatch $LogText "(?:shaderDenoiseBlockerReason|shader_denoise_blocker_reason|shaderDenoiseBlocker|shader_denoise_blocker)=`"?(?<blocker>[A-Za-z0-9_.-]+)"
+
+    $sourceIdentity = if ($sourceIdentityMatch) { $sourceIdentityMatch.Groups["source"].Value } elseif ($ImageCandidateEvidence.source) { [string]$ImageCandidateEvidence.source } else { $null }
+    $sourceAuthenticity = if ($sourceAuthenticityMatch) { $sourceAuthenticityMatch.Groups["source"].Value } else { $null }
+
+    $blockerReason = if ($RealOutputProven) {
+        "none"
+    } elseif ($blockerMatch) {
+        $blockerMatch.Groups["blocker"].Value
+    } elseif (-not $IntentPresent) {
+        "shader_denoise_intent_missing"
+    } elseif (-not $InputReadyPresent) {
+        "shader_denoise_input_not_ready"
+    } elseif (-not $DispatchPreparedPresent) {
+        "shader_denoise_dispatch_not_prepared"
+    } elseif (-not $OutputImageStateExplicitPresent) {
+        "shader_output_image_state_missing"
+    } elseif (-not $OutputImageReadyPresent) {
+        "shader_output_image_not_ready"
+    } elseif (-not $OutputMaterialStateExplicitPresent) {
+        "shader_output_material_state_missing"
+    } elseif (-not $OutputMaterialReadyPresent) {
+        "shader_output_material_not_ready"
+    } elseif (-not $ShaderGeneratedOutputExplicitPresent) {
+        "shader_generated_output_state_missing"
+    } elseif (-not $ShaderGeneratedOutputTruePresent) {
+        "shader_generated_output_false"
+    } elseif (-not $CpuReadbackFallbackExplicitPresent) {
+        "cpu_readback_fallback_state_missing"
+    } elseif ($CpuReadbackFallbackActivePresent) {
+        "cpu_readback_fallback_active"
+    } elseif (-not $RealOutputStateExplicitPresent) {
+        "real_shader_output_state_missing"
+    } elseif (-not $RealOutputReadyPresent) {
+        "real_shader_output_not_ready"
+    } else {
+        "real_shader_output_unproven"
+    }
+
+    $sourceKind = if ($RealOutputProven) {
+        "real-shader-denoised-output"
+    } elseif ($CpuReadbackFallbackActivePresent -or $CpuReadbackSourcePresent) {
+        "cpu-readback-denoised-output"
+    } elseif ([bool]$ImageCandidateEvidence.boundaryOnly) {
+        "shader-output-image-candidate-boundary"
+    } elseif (-not [string]::IsNullOrWhiteSpace($sourceIdentity)) {
+        "declared-source-identity"
+    } else {
+        "unknown"
+    }
+
+    return [ordered]@{
+        sourceIdentity = $sourceIdentity
+        sourceAuthenticity = $sourceAuthenticity
+        sourceKind = $sourceKind
+        blockerReason = $blockerReason
+        honestNonOverclaim = $RealOutputProven -or ($CpuReadbackFallbackActivePresent -or $CpuReadbackSourcePresent -or [bool]$ImageCandidateEvidence.boundaryOnly -or $blockerReason -ne "none")
+        prerequisites = [ordered]@{
+            intent = $IntentPresent
+            inputReady = $InputReadyPresent
+            dispatchPrepared = $DispatchPreparedPresent
+            outputImageReady = $OutputImageReadyPresent
+            outputImageStateExplicit = $OutputImageStateExplicitPresent
+            outputMaterialReady = $OutputMaterialReadyPresent
+            outputMaterialStateExplicit = $OutputMaterialStateExplicitPresent
+            shaderGeneratedOutput = $ShaderGeneratedOutputTruePresent
+            shaderGeneratedOutputStateExplicit = $ShaderGeneratedOutputExplicitPresent
+            cpuReadbackFallbackActive = $CpuReadbackFallbackActivePresent
+            cpuReadbackFallbackStateExplicit = $CpuReadbackFallbackExplicitPresent
+            realOutputReady = $RealOutputReadyPresent
+            realOutputStateExplicit = $RealOutputStateExplicitPresent
+        }
+    }
+}
+
 function Measure-Round7LogProof {
     param([string] $ResolvedLogPath)
 
@@ -746,6 +852,24 @@ function Measure-Round7LogProof {
     $shaderDenoiseOutputOpenPresent = (Test-AnyRegex $log $ShaderDenoiseOutputOpenPatterns) -or $realShaderDenoiseOutputNotReadyPresent -or $shaderDenoiseOutputImageNotReadyPresent -or $shaderDenoiseOutputMaterialNotReadyPresent -or $shaderDenoiseShaderGeneratedOutputFalsePresent
     $shaderDenoiseOutputStateExplicitPresent = $realShaderDenoiseOutputStateExplicitPresent
     $realShaderDenoiseOutputProven = $shaderDenoiseDispatchPreparedPresent -and $shaderDenoiseOutputImageReadyPresent -and $shaderDenoiseOutputMaterialReadyPresent -and $shaderDenoiseShaderGeneratedOutputTruePresent -and $realShaderDenoiseOutputReadyPresent -and -not $shaderDenoiseCpuReadbackFallbackActivePresent
+    $shaderDenoiseBoundaryEvidence = Get-Round7ShaderDenoiseBoundaryEvidence `
+        -LogText $log `
+        -ImageCandidateEvidence $shaderOutputImageCandidateEvidence `
+        -IntentPresent $shaderDenoiseIntentPresent `
+        -InputReadyPresent $shaderDenoiseInputReadyPresent `
+        -DispatchPreparedPresent $shaderDenoiseDispatchPreparedPresent `
+        -OutputImageReadyPresent $shaderDenoiseOutputImageReadyPresent `
+        -OutputImageStateExplicitPresent $shaderDenoiseOutputImageStateExplicitPresent `
+        -OutputMaterialReadyPresent $shaderDenoiseOutputMaterialReadyPresent `
+        -OutputMaterialStateExplicitPresent $shaderDenoiseOutputMaterialStateExplicitPresent `
+        -ShaderGeneratedOutputTruePresent $shaderDenoiseShaderGeneratedOutputTruePresent `
+        -ShaderGeneratedOutputExplicitPresent $shaderDenoiseShaderGeneratedOutputExplicitPresent `
+        -CpuReadbackFallbackActivePresent $shaderDenoiseCpuReadbackFallbackActivePresent `
+        -CpuReadbackFallbackExplicitPresent $shaderDenoiseCpuReadbackFallbackExplicitPresent `
+        -RealOutputReadyPresent $realShaderDenoiseOutputReadyPresent `
+        -RealOutputStateExplicitPresent $realShaderDenoiseOutputStateExplicitPresent `
+        -CpuReadbackSourcePresent $cpuReadbackDenoiseSourcePresent `
+        -RealOutputProven $realShaderDenoiseOutputProven
     $shaderDenoiseOpenBoundaryPresent = $shaderDenoiseOutputOpenPresent -or $shaderDenoiseCpuReadbackFallbackActivePresent -or $cpuReadbackDenoiseSourcePresent -or ([bool]$shaderOutputImageCandidateEvidence.boundaryOnly)
     $shaderDenoiseOverclaimPresent = (Test-AnyRegex $log $ShaderDenoiseOverclaimPatterns) -or ($shaderDenoiseSourceClaimPresent -and -not $realShaderDenoiseOutputProven) -or ($realShaderDenoiseOutputReadyPresent -and ($shaderDenoiseCpuReadbackFallbackActivePresent -or -not $shaderDenoiseShaderGeneratedOutputTruePresent -or -not $shaderDenoiseOutputImageReadyPresent -or -not $shaderDenoiseOutputMaterialReadyPresent))
     $physicalGiOverclaimPresent = [bool]$physicalGiEvidence.overclaimPresent
@@ -801,6 +925,7 @@ function Measure-Round7LogProof {
             shaderDenoiseOutputOpenPresent = $shaderDenoiseOutputOpenPresent
             shaderDenoiseOutputStateExplicitPresent = $shaderDenoiseOutputStateExplicitPresent
             shaderDenoiseOverclaimPresent = $shaderDenoiseOverclaimPresent
+            shaderDenoiseHonestNonOverclaimPresent = [bool]$shaderDenoiseBoundaryEvidence.honestNonOverclaim -and -not $shaderDenoiseOverclaimPresent
             physicalGiEvidencePresent = [bool]$physicalGiEvidence.present
             physicalGiOverclaimPresent = $physicalGiOverclaimPresent
             proofMarkerPresent = $proofMarkerPresent
@@ -810,6 +935,7 @@ function Measure-Round7LogProof {
             nativeErrorPresent = $nativeErrorPresent
         }
         shaderOutputImageCandidate = $shaderOutputImageCandidateEvidence
+        shaderDenoiseBoundary = $shaderDenoiseBoundaryEvidence
         physicalGiEvidence = $physicalGiEvidence
         patterns = [ordered]@{
             rawGiSourcePatterns = @($RawGiSourcePatterns)
@@ -905,6 +1031,9 @@ if ([double]$denoiseDelta.focusRegionMetrics.meanAbsLuma -lt $MinDenoiseMeanAbsL
 if ([double]$denoiseQuality.meanAbsNeighborLumaReductionPercent -lt $MinDenoiseRoughnessReductionPercent) {
     $failures.Add("Denoised GI roughness did not improve enough over raw GI in the denoise focus region. actualReductionPercent=$($denoiseQuality.meanAbsNeighborLumaReductionPercent) expected>=$MinDenoiseRoughnessReductionPercent rawMeanAbsNeighborLuma=$($denoiseQuality.raw.meanAbsNeighborLuma) denoisedMeanAbsNeighborLuma=$($denoiseQuality.denoised.meanAbsNeighborLuma)")
 }
+if ([double]$denoiseQuality.maxEdgeLumaPreservationPercent -lt $MinDenoiseEdgePreservationPercent) {
+    $failures.Add("Denoised GI edge/detail preservation below threshold. actualPreservationPercent=$($denoiseQuality.maxEdgeLumaPreservationPercent) expected>=$MinDenoiseEdgePreservationPercent rawMaxAbsNeighborLuma=$($denoiseQuality.raw.maxAbsNeighborLuma) denoisedMaxAbsNeighborLuma=$($denoiseQuality.denoised.maxAbsNeighborLuma)")
+}
 if ([double]$finalDelta.focusRegionMetrics.changedPixelPercent -lt $MinFinalChangedPixelPercent) {
     $failures.Add("Final composite focused-region changed pixels below threshold. actual=$($finalDelta.focusRegionMetrics.changedPixelPercent) expected>=$MinFinalChangedPixelPercent")
 }
@@ -991,6 +1120,15 @@ if ($logProof) {
         if ($logProof.markers.shaderDenoiseOverclaimPresent) {
             $failures.Add("Log over-claims real shader-denoise output without the full explicit marker set: dispatch prepared, output image ready, output material ready, shader-generated output true, CPU/readback fallback inactive, and real output ready.")
         }
+        if ([string]::IsNullOrWhiteSpace([string]$logProof.shaderDenoiseBoundary.sourceKind) -or [string]$logProof.shaderDenoiseBoundary.sourceKind -eq "unknown") {
+            $failures.Add("Missing shader-denoise source identity/source kind marker for boundary evidence.")
+        }
+        if ([string]::IsNullOrWhiteSpace([string]$logProof.shaderDenoiseBoundary.blockerReason)) {
+            $failures.Add("Missing shader-denoise blocker reason for non-proven shader output boundary evidence.")
+        }
+        if (-not $logProof.markers.shaderDenoiseHonestNonOverclaimPresent) {
+            $failures.Add("Missing honest shader-denoise non-overclaim boundary marker; proof must either prove real shader output or explicitly report CPU fallback/candidate/open blocker state.")
+        }
     }
 }
 
@@ -1009,6 +1147,7 @@ $result = [ordered]@{
         minDenoiseChangedPixelPercent = $MinDenoiseChangedPixelPercent
         minDenoiseMeanAbsLuma = $MinDenoiseMeanAbsLuma
         minDenoiseRoughnessReductionPercent = $MinDenoiseRoughnessReductionPercent
+        minDenoiseEdgePreservationPercent = $MinDenoiseEdgePreservationPercent
         minFinalChangedPixelPercent = $MinFinalChangedPixelPercent
         minFinalMeanAbsLuma = $MinFinalMeanAbsLuma
         changedPixelThreshold = $ChangedPixelThreshold
@@ -1065,7 +1204,8 @@ $result = [ordered]@{
         denoiseComparisonPresent = (
             ([double]$denoiseDelta.focusRegionMetrics.changedPixelPercent -ge $MinDenoiseChangedPixelPercent) -and
             ([double]$denoiseDelta.focusRegionMetrics.meanAbsLuma -ge $MinDenoiseMeanAbsLuma) -and
-            ([double]$denoiseQuality.meanAbsNeighborLumaReductionPercent -ge $MinDenoiseRoughnessReductionPercent)
+            ([double]$denoiseQuality.meanAbsNeighborLumaReductionPercent -ge $MinDenoiseRoughnessReductionPercent) -and
+            ([double]$denoiseQuality.maxEdgeLumaPreservationPercent -ge $MinDenoiseEdgePreservationPercent)
         )
         finalCompositeEvidencePresent = (
             ([double]$finalDelta.focusRegionMetrics.changedPixelPercent -ge $MinFinalChangedPixelPercent) -and
@@ -1106,11 +1246,14 @@ $result = [ordered]@{
                 imageDeltaPresent = (
                     ([double]$denoiseDelta.focusRegionMetrics.changedPixelPercent -ge $MinDenoiseChangedPixelPercent) -and
                     ([double]$denoiseDelta.focusRegionMetrics.meanAbsLuma -ge $MinDenoiseMeanAbsLuma) -and
-                    ([double]$denoiseQuality.meanAbsNeighborLumaReductionPercent -ge $MinDenoiseRoughnessReductionPercent)
+                    ([double]$denoiseQuality.meanAbsNeighborLumaReductionPercent -ge $MinDenoiseRoughnessReductionPercent) -and
+                    ([double]$denoiseQuality.maxEdgeLumaPreservationPercent -ge $MinDenoiseEdgePreservationPercent)
                 )
                 dispatchLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.denoiseDispatchPresent } else { $null }
                 outputLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.denoisedGiOutputPresent } else { $null }
                 roughnessReductionPercent = $denoiseQuality.meanAbsNeighborLumaReductionPercent
+                edgeDetailPreservationPercent = $denoiseQuality.maxEdgeLumaPreservationPercent
+                edgeDetailPreserved = $denoiseQuality.edgeDetailPreserved
             }
             shaderDenoise = [ordered]@{
                 required = [bool]$RequireShaderDenoiseEvidence
@@ -1147,6 +1290,11 @@ $result = [ordered]@{
                 shaderOutputOpenLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputOpenPresent } else { $null }
                 shaderOutputStateExplicitLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputStateExplicitPresent } else { $null }
                 shaderOutputOverclaimPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOverclaimPresent } else { $null }
+                honestNonOverclaimPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseHonestNonOverclaimPresent } else { $null }
+                boundary = if ($logProof) { $logProof.shaderDenoiseBoundary } else { $null }
+                sourceIdentity = if ($logProof) { $logProof.shaderDenoiseBoundary.sourceIdentity } else { $null }
+                sourceKind = if ($logProof) { $logProof.shaderDenoiseBoundary.sourceKind } else { $null }
+                blockerReason = if ($logProof) { $logProof.shaderDenoiseBoundary.blockerReason } else { $null }
                 classification = if (-not $RequireShaderDenoiseEvidence) {
                     "not_required"
                 } elseif (-not $logProof) {
@@ -1200,6 +1348,10 @@ $result = [ordered]@{
                 shaderDenoiseSourceClaimPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseSourceClaimPresent } else { $null }
                 shaderDenoiseOutputOpenPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputOpenPresent } else { $null }
                 shaderDenoiseOverclaimPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOverclaimPresent } else { $null }
+                shaderDenoiseHonestNonOverclaimPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseHonestNonOverclaimPresent } else { $null }
+                shaderDenoiseSourceIdentity = if ($logProof) { $logProof.shaderDenoiseBoundary.sourceIdentity } else { $null }
+                shaderDenoiseSourceKind = if ($logProof) { $logProof.shaderDenoiseBoundary.sourceKind } else { $null }
+                shaderDenoiseBlockerReason = if ($logProof) { $logProof.shaderDenoiseBoundary.blockerReason } else { $null }
                 physicalGiEvidencePresent = if ($logProof) { [bool]$logProof.markers.physicalGiEvidencePresent } else { $null }
                 physicalGiOverclaimPresent = if ($logProof) { [bool]$logProof.markers.physicalGiOverclaimPresent } else { $null }
                 proofMarkerPresent = if ($logProof) { [bool]$logProof.markers.proofMarkerPresent } else { $null }
@@ -1243,6 +1395,8 @@ Write-Host "denoise.roughness.raw.meanAbsNeighborLuma=$($denoiseQuality.raw.mean
 Write-Host "denoise.roughness.denoised.meanAbsNeighborLuma=$($denoiseQuality.denoised.meanAbsNeighborLuma)"
 Write-Host "denoise.roughness.meanAbsNeighborLumaReductionPercent=$($denoiseQuality.meanAbsNeighborLumaReductionPercent)"
 Write-Host "denoise.roughness.rmsNeighborLumaReductionPercent=$($denoiseQuality.rmsNeighborLumaReductionPercent)"
+Write-Host "denoise.detail.maxEdgeLumaPreservationPercent=$($denoiseQuality.maxEdgeLumaPreservationPercent)"
+Write-Host "denoise.detail.edgeDetailPreserved=$($denoiseQuality.edgeDetailPreserved)"
 Write-Host "final.focusRegion=$($finalDelta.focusRegion.left),$($finalDelta.focusRegion.top),$($finalDelta.focusRegion.width),$($finalDelta.focusRegion.height)"
 Write-Host "final.focus.changedPixelPercent=$($finalDelta.focusRegionMetrics.changedPixelPercent)"
 Write-Host "final.focus.meanAbsLuma=$($finalDelta.focusRegionMetrics.meanAbsLuma)"
@@ -1297,6 +1451,19 @@ if ($logProof) {
     Write-Host "shaderDenoiseOutputOpenPresent=$($logProof.markers.shaderDenoiseOutputOpenPresent)"
     Write-Host "shaderDenoiseOutputStateExplicitPresent=$($logProof.markers.shaderDenoiseOutputStateExplicitPresent)"
     Write-Host "shaderDenoiseOverclaimPresent=$($logProof.markers.shaderDenoiseOverclaimPresent)"
+    Write-Host "shaderDenoiseHonestNonOverclaimPresent=$($logProof.markers.shaderDenoiseHonestNonOverclaimPresent)"
+    Write-Host "shaderDenoiseSourceIdentity=$($logProof.shaderDenoiseBoundary.sourceIdentity)"
+    Write-Host "shaderDenoiseSourceAuthenticity=$($logProof.shaderDenoiseBoundary.sourceAuthenticity)"
+    Write-Host "shaderDenoiseSourceKind=$($logProof.shaderDenoiseBoundary.sourceKind)"
+    Write-Host "shaderDenoiseBlockerReason=$($logProof.shaderDenoiseBoundary.blockerReason)"
+    Write-Host "shaderDenoisePrereq.intent=$($logProof.shaderDenoiseBoundary.prerequisites.intent)"
+    Write-Host "shaderDenoisePrereq.inputReady=$($logProof.shaderDenoiseBoundary.prerequisites.inputReady)"
+    Write-Host "shaderDenoisePrereq.dispatchPrepared=$($logProof.shaderDenoiseBoundary.prerequisites.dispatchPrepared)"
+    Write-Host "shaderDenoisePrereq.outputImageReady=$($logProof.shaderDenoiseBoundary.prerequisites.outputImageReady)"
+    Write-Host "shaderDenoisePrereq.outputMaterialReady=$($logProof.shaderDenoiseBoundary.prerequisites.outputMaterialReady)"
+    Write-Host "shaderDenoisePrereq.shaderGeneratedOutput=$($logProof.shaderDenoiseBoundary.prerequisites.shaderGeneratedOutput)"
+    Write-Host "shaderDenoisePrereq.cpuReadbackFallbackActive=$($logProof.shaderDenoiseBoundary.prerequisites.cpuReadbackFallbackActive)"
+    Write-Host "shaderDenoisePrereq.realOutputReady=$($logProof.shaderDenoiseBoundary.prerequisites.realOutputReady)"
     Write-Host "physicalGiEvidencePresent=$($logProof.markers.physicalGiEvidencePresent)"
     Write-Host "physicalGiOverclaimPresent=$($logProof.markers.physicalGiOverclaimPresent)"
     Write-Host "physicalSceneLinkedPresent=$($logProof.physicalGiEvidence.physicalSceneLinkedPresent)"
