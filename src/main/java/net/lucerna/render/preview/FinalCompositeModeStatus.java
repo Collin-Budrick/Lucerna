@@ -153,6 +153,25 @@ public record FinalCompositeModeStatus(
         );
     }
 
+    public String shaderDenoiseIntentReadinessSummary(
+            boolean cpuDenoisedSourceReady,
+            boolean shaderDenoisedSourceReady
+    ) {
+        boolean denoiseVisualIntent = this.denoisedGiVisualMode() || this.finalCompositeVisualMode();
+        return "round7.cpuDenoisedOutputReady=" + cpuDenoisedSourceReady
+                + ",round7.shaderDenoiseVisualShaderIntent=" + denoiseVisualIntent
+                + ",round7.shaderDenoiseVisualShaderSource="
+                + (denoiseVisualIntent ? "public-mojang-source-gated-denoised-gi-visual" : "excluded-by-mode")
+                + ",round7.realShaderDenoiseDispatchReady=" + shaderDenoisedSourceReady
+                + ",round7.realShaderDenoiseOutputReady=" + shaderDenoisedSourceReady
+                + ",round7.realShaderDenoiseClaimAllowed=" + shaderDenoisedSourceReady
+                + ",round7.shaderDenoiseBoundary=\""
+                + (shaderDenoisedSourceReady
+                ? "real shader-denoised output was reported by the submitted source"
+                : "visual shader may draw CPU/readback denoised payload cues, but real shader-side denoise output is not proven")
+                + "\"";
+    }
+
     public String compactSourceMixPolicy() {
         return "direct=" + sourcePolicyState(this.directLightingEnabled, "native-direct")
                 + ",rawGI=" + sourcePolicyState(
@@ -187,6 +206,9 @@ public record FinalCompositeModeStatus(
                 + ",cpuGiScaffoldOutput=" + (!this.baselineVisualMode() && (this.diffuseGiEnabled || this.rawGiVisualMode()))
                 + ",realDenoiseShaderOutput=false"
                 + ",cpuDenoiseScaffoldOutput=" + (this.denoisedGiVisualMode() || this.finalCompositeVisualMode())
+                + ",shaderDenoiseVisualShaderIntent=" + (this.denoisedGiVisualMode() || this.finalCompositeVisualMode())
+                + ",realShaderDenoiseDispatchReady=false"
+                + ",realShaderDenoiseOutputReady=false"
                 + ",shaderQualityGate=open";
     }
 

@@ -337,7 +337,10 @@ public final class LucernaController {
                     target,
                     directOutputPayload != null && directOutputPayload.readyForPreviewDraw(),
                     diffuseGiPayload != null && diffuseGiPayload.readyForPreviewDraw(),
-                    denoisedGiPayload != null && denoisedGiPayload.readyForPreviewDraw()
+                    denoisedGiPayload != null && denoisedGiPayload.readyForPreviewDraw(),
+                    denoisedGiPayload != null
+                            && denoisedGiPayload.readyForPreviewDraw()
+                            && denoisedGiPayload.snapshot().realDenoiseShaderOutput()
             );
             return this.frameHooks.attachFramePass(finalCompositeRequest);
         } finally {
@@ -1287,7 +1290,8 @@ public final class LucernaController {
             LucernaFramePassTarget target,
             boolean directSourceReady,
             boolean giSourceReady,
-            boolean denoisedSourceReady
+            boolean denoisedSourceReady,
+            boolean shaderDenoisedSourceReady
     ) {
         if (result == null) {
             return;
@@ -1305,6 +1309,16 @@ public final class LucernaController {
                 directSourceReady,
                 giSourceReady,
                 denoisedSourceReady
+        );
+        String shaderDenoiseIntent = resolvedModeStatus.shaderDenoiseIntentReadinessSummary(
+                denoisedSourceReady,
+                shaderDenoisedSourceReady || result.submittedRealShaderDenoiseOutputReady()
+        );
+        String finalSourceIdentity = resolvedModeStatus.selectedSourceIdentityMatrix(
+                directSourceReady,
+                giSourceReady,
+                denoisedSourceReady,
+                shaderDenoisedSourceReady || result.submittedRealShaderDenoiseOutputReady()
         );
         String substitutionBoundary = resolvedModeStatus.substitutionBoundarySummary(
                 result.submittedFocusWindowOnly(),
@@ -1330,6 +1344,14 @@ public final class LucernaController {
                 + "|"
                 + sourceMix
                 + "|"
+                + shaderDenoiseIntent
+                + "|"
+                + finalSourceIdentity
+                + "|"
+                + result.denoiseEvidenceBoundarySummary()
+                + "|"
+                + result.authenticityGuardsSummary()
+                + "|"
                 + result.submittedSourceIdentity()
                 + "|"
                 + substitutionBoundary
@@ -1345,6 +1367,8 @@ public final class LucernaController {
         Lucerna.LOGGER.info(
                 "Lucerna public Mojang final composite: attempted={} submitted={} drawCalls={} javaOpaque={} targetStatus={} "
                         + "{} round7.finalCompositeHudSafe={} round7.finalCompositeSourceMix={} "
+                        + "round7.shaderDenoiseIntentReadiness={} round7.finalSourceIdentityMatrix={} "
+                        + "round7.submittedDenoiseEvidence={} round7.finalCompositeAuthenticityGuards={} "
                         + "round7.finalCompositeSourceIdentity={} {} {} round7.finalCompositeSubmission={} reason={}.",
                 result.attempted(),
                 result.submitted(),
@@ -1354,6 +1378,10 @@ public final class LucernaController {
                 resolvedModeStatus.round7FinalCompositeModeMarker(),
                 hudSafe,
                 sourceMix,
+                shaderDenoiseIntent,
+                finalSourceIdentity,
+                result.denoiseEvidenceBoundarySummary(),
+                result.authenticityGuardsSummary(),
                 result.submittedSourceIdentity(),
                 substitutionBoundary,
                 physicalProof.logFields(),

@@ -735,6 +735,8 @@ struct NativeDenoiseExecutionTelemetry {
     std::uint64_t last_raw_gi_samples = 0;
     std::uint64_t last_raw_gi_rays = 0;
     std::uint64_t last_raw_gi_cache_reads = 0;
+    std::uint64_t last_edge_input_count = 0;
+    std::uint64_t last_history_input_count = 0;
     std::uint64_t last_denoised_output_pixels = 0;
     std::uint64_t last_denoised_output_checksum = 0;
     std::uint64_t last_denoised_output_changed_pixels = 0;
@@ -768,6 +770,12 @@ struct NativeDenoiseExecutionTelemetry {
     bool last_denoised_output_intent = false;
     bool last_denoised_cpu_output_generated = false;
     bool last_denoised_output_differs_from_raw = false;
+    bool last_raw_gi_source_present = false;
+    bool last_cpu_denoised_source_present = false;
+    bool last_shader_denoise_dispatch_intent = false;
+    bool last_shader_denoise_input_ready = false;
+    bool last_shader_denoise_output_ready = false;
+    bool last_metadata_only_path = true;
     bool last_real_denoise_shader_output = false;
     bool last_cpu_fallback_quality_metrics = false;
     bool last_composite_stage_recorded = false;
@@ -785,8 +793,10 @@ struct NativeDenoiseExecutionTelemetry {
     bool last_temporary_direct_substitution_rejected = true;
     bool last_rectangular_washout_rejected = true;
     std::string last_output_marker;
+    std::string last_source_identity_marker;
     std::string last_raw_input_marker;
     std::string last_denoised_output_marker;
+    std::string last_shader_denoise_readiness_marker;
     std::string last_composite_marker;
     std::string last_history_acceptance_reason;
     std::string last_history_rejection_reason;

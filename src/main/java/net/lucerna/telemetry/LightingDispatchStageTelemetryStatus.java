@@ -43,6 +43,14 @@ public record LightingDispatchStageTelemetryStatus(
         Boolean payloadValidated,
         Boolean payloadHasDirectWork,
         Boolean payloadReadyForShadowTracing,
+        Boolean rawSourceReady,
+        Boolean cpuDenoiseReady,
+        Boolean shaderDenoiseIntended,
+        Boolean shaderOutputReady,
+        Long edgeRejectionCount,
+        Long historyRejectionCount,
+        String sourceIdentity,
+        String evidenceBoundary,
         Map<String, String> details
 ) {
     public LightingDispatchStageTelemetryStatus {
@@ -54,6 +62,8 @@ public record LightingDispatchStageTelemetryStatus(
         payloadGenerationRange = blankToEmpty(stripQuotes(payloadGenerationRange));
         outputDimensions = blankToEmpty(stripQuotes(outputDimensions));
         outputEnergy = blankToEmpty(stripQuotes(outputEnergy));
+        sourceIdentity = blankToEmpty(stripQuotes(sourceIdentity));
+        evidenceBoundary = blankToEmpty(stripQuotes(evidenceBoundary));
         details = immutable(details);
     }
 
@@ -285,6 +295,93 @@ public record LightingDispatchStageTelemetryStatus(
                 "payload_ready_for_shadow_tracing",
                 "ready_for_shadow_tracing"
         ));
+        Boolean rawSourceReady = parseBoolean(firstPresent(
+                normalizedFields,
+                "raw_source_ready",
+                "raw_input_ready",
+                "input_source_ready",
+                "raw_gi_ready",
+                "raw_diffuse_gi_ready",
+                "raw_diffuse_gi_input_ready",
+                "denoise_raw_source_ready",
+                "denoise_raw_input_ready"
+        ));
+        Boolean cpuDenoiseReady = parseBoolean(firstPresent(
+                normalizedFields,
+                "cpu_denoise_ready",
+                "cpu_denoise_output_ready",
+                "cpu_denoised_output_ready",
+                "cpu_readback_denoise_ready",
+                "cpu_readback_denoised_output_ready",
+                "denoise_cpu_ready",
+                "denoise_cpu_output_ready"
+        ));
+        Boolean shaderDenoiseIntended = parseBoolean(firstPresent(
+                normalizedFields,
+                "shader_denoise_intent",
+                "shader_denoise_intended",
+                "shader_denoise_planned",
+                "shader_denoise_enabled",
+                "denoise_shader_intended",
+                "denoise_shader_planned",
+                "shader_denoise_contract_ready"
+        ));
+        Boolean shaderOutputReady = parseBoolean(firstPresent(
+                normalizedFields,
+                "shader_output_ready",
+                "shader_denoise_output_ready",
+                "real_denoise_shader_output",
+                "real_shader_denoise_output",
+                "real_shader_gi_output",
+                "gpu_denoise_output_ready",
+                "gpu_denoise_output",
+                "shader_denoise_ready"
+        ));
+        Long edgeRejectionCount = parseLong(firstPresent(
+                normalizedFields,
+                "edge_rejection_count",
+                "edge_reject_count",
+                "edge_rejections",
+                "edge_rejected",
+                "edge_rejected_count",
+                "denoise_edge_rejections"
+        ));
+        Long historyRejectionCount = parseLong(firstPresent(
+                normalizedFields,
+                "history_rejection_count",
+                "history_reject_count",
+                "history_rejections",
+                "history_rejected",
+                "history_rejected_count",
+                "temporal_history_rejected",
+                "temporal_history_rejection_count",
+                "last_history_rejected"
+        ));
+        String sourceIdentity = firstPresent(
+                normalizedFields,
+                "source_identity",
+                "source_id",
+                "source",
+                "source_label",
+                "output_source",
+                "output_source_label",
+                "preview_source",
+                "native_output_source",
+                "native_gi_output_source",
+                "denoise_source",
+                "denoise_source_identity"
+        );
+        String evidenceBoundary = firstPresent(
+                normalizedFields,
+                "evidence_boundary",
+                "proof_boundary",
+                "boundary",
+                "quality_boundary",
+                "shader_denoise_evidence_boundary",
+                "shader_denoise_boundary",
+                "denoise_evidence_boundary",
+                "denoise_quality_boundary"
+        );
 
         return new LightingDispatchStageTelemetryStatus(
                 stageId,
@@ -324,6 +421,14 @@ public record LightingDispatchStageTelemetryStatus(
                 payloadValidated,
                 payloadHasDirectWork,
                 payloadReadyForShadowTracing,
+                rawSourceReady,
+                cpuDenoiseReady,
+                shaderDenoiseIntended,
+                shaderOutputReady,
+                edgeRejectionCount,
+                historyRejectionCount,
+                sourceIdentity,
+                evidenceBoundary,
                 normalizedFields
         );
     }
@@ -343,6 +448,12 @@ public record LightingDispatchStageTelemetryStatus(
         fieldCount += append(label, "payload", this.payloadAccepted == null ? "" : Boolean.toString(this.payloadAccepted));
         fieldCount += append(label, "payloadGen", this.payloadGeneration == null ? "" : Long.toString(this.payloadGeneration));
         fieldCount += append(label, "frame", this.frameIndex == null ? "" : Long.toString(this.frameIndex));
+        if (isDenoiseLikeStage()) {
+            fieldCount += append(label, "raw", this.rawSourceReady == null ? "" : Boolean.toString(this.rawSourceReady));
+            fieldCount += append(label, "cpuDenoise", this.cpuDenoiseReady == null ? "" : Boolean.toString(this.cpuDenoiseReady));
+            fieldCount += append(label, "shaderIntent", this.shaderDenoiseIntended == null ? "" : Boolean.toString(this.shaderDenoiseIntended));
+            fieldCount += append(label, "shaderOutput", this.shaderOutputReady == null ? "" : Boolean.toString(this.shaderOutputReady));
+        }
         if (fieldCount == 0) {
             label.append(" reported");
         }
@@ -436,6 +547,27 @@ public record LightingDispatchStageTelemetryStatus(
                 + " reason=" + shorten(this.readinessReason, 48);
     }
 
+    public String denoiseReadinessStatusLine() {
+        return this.stageDisplayName()
+                + " denoise rawSource=" + booleanOrUnknown(this.rawSourceReady)
+                + " cpuReady=" + booleanOrUnknown(this.cpuDenoiseReady)
+                + " shaderIntent=" + booleanOrUnknown(this.shaderDenoiseIntended)
+                + " shaderOutput=" + booleanOrUnknown(this.shaderOutputReady)
+                + " edgeRejects=" + valueOrUnknown(this.edgeRejectionCount)
+                + " historyRejects=" + valueOrUnknown(this.historyRejectionCount)
+                + " source=" + shorten(this.sourceIdentity, 40);
+    }
+
+    public String denoiseEvidenceBoundaryLine() {
+        String boundary = this.evidenceBoundary.isBlank()
+                ? "unreported"
+                : shorten(this.evidenceBoundary, 72);
+        return this.stageDisplayName()
+                + " denoise evidence metadataOnly=" + booleanOrUnknown(this.metadataOnly)
+                + " source=" + shorten(this.sourceIdentity, 40)
+                + " boundary=" + boundary;
+    }
+
     public Map<String, String> validationFields(String prefix) {
         String normalizedPrefix = clean(prefix, "lighting.dispatch.stage." + sanitizeKey(this.stageId));
         Map<String, String> fields = new LinkedHashMap<>();
@@ -447,6 +579,10 @@ public record LightingDispatchStageTelemetryStatus(
         fields.put(normalizedPrefix + ".compactTimingBoundary", this.compactTimingBoundaryLine());
         fields.put(normalizedPrefix + ".temporalHistory", this.temporalHistoryStatusLine());
         fields.put(normalizedPrefix + ".proofBoundary", this.proofBoundaryLine());
+        if (isDenoiseLikeStage() || hasAnyDenoiseEvidence()) {
+            fields.put(normalizedPrefix + ".denoiseReadiness", this.denoiseReadinessStatusLine());
+            fields.put(normalizedPrefix + ".denoiseEvidenceBoundary", this.denoiseEvidenceBoundaryLine());
+        }
         if (this.enabled != null) {
             fields.put(normalizedPrefix + ".enabled", Boolean.toString(this.enabled));
         }
@@ -558,6 +694,30 @@ public record LightingDispatchStageTelemetryStatus(
         if (this.payloadReadyForShadowTracing != null) {
             fields.put(normalizedPrefix + ".payloadReadyForShadowTracing", Boolean.toString(this.payloadReadyForShadowTracing));
         }
+        if (this.rawSourceReady != null) {
+            fields.put(normalizedPrefix + ".rawSourceReady", Boolean.toString(this.rawSourceReady));
+        }
+        if (this.cpuDenoiseReady != null) {
+            fields.put(normalizedPrefix + ".cpuDenoiseReady", Boolean.toString(this.cpuDenoiseReady));
+        }
+        if (this.shaderDenoiseIntended != null) {
+            fields.put(normalizedPrefix + ".shaderDenoiseIntended", Boolean.toString(this.shaderDenoiseIntended));
+        }
+        if (this.shaderOutputReady != null) {
+            fields.put(normalizedPrefix + ".shaderOutputReady", Boolean.toString(this.shaderOutputReady));
+        }
+        if (this.edgeRejectionCount != null) {
+            fields.put(normalizedPrefix + ".edgeRejectionCount", Long.toString(this.edgeRejectionCount));
+        }
+        if (this.historyRejectionCount != null) {
+            fields.put(normalizedPrefix + ".historyRejectionCount", Long.toString(this.historyRejectionCount));
+        }
+        if (!this.sourceIdentity.isBlank()) {
+            fields.put(normalizedPrefix + ".sourceIdentity", this.sourceIdentity);
+        }
+        if (!this.evidenceBoundary.isBlank()) {
+            fields.put(normalizedPrefix + ".evidenceBoundary", this.evidenceBoundary);
+        }
         for (Map.Entry<String, String> entry : this.details.entrySet()) {
             fields.put(normalizedPrefix + ".raw." + sanitizeKey(entry.getKey()), entry.getValue());
         }
@@ -568,7 +728,7 @@ public record LightingDispatchStageTelemetryStatus(
         return switch (this.stageId) {
             case "direct_lighting" -> "Direct";
             case "diffuse_gi", "low_res_gi", "low_resolution_gi", "gi" -> "GI";
-            case "denoise" -> "Denoise";
+            case "denoise", "shader_denoise", "edge_aware_denoise", "diffuse_gi_denoise" -> "Denoise";
             case "composite", "final_composite" -> "Composite";
             case "cache", "radiance_cache", "sparse_radiance_cache", "sparse_voxel_radiance_cache" -> "Cache";
             case "adaptive_sampling", "ray_budget", "variance", "history_confidence" -> "Adaptive";
@@ -626,6 +786,9 @@ public record LightingDispatchStageTelemetryStatus(
     }
 
     private String realGpuOutputBoundaryLabel() {
+        if (this.shaderOutputReady != null) {
+            return Boolean.toString(this.shaderOutputReady);
+        }
         String shaderOutput = firstDetailOrFallback(
                 "",
                 "real_shader_gi_output",
@@ -641,6 +804,24 @@ public record LightingDispatchStageTelemetryStatus(
             return shaderOutput;
         }
         return this.hasMeasuredGpuTiming() ? "timed_no_output_flag" : "unavailable";
+    }
+
+    private boolean isDenoiseLikeStage() {
+        return switch (this.stageId) {
+            case "denoise", "shader_denoise", "edge_aware_denoise", "diffuse_gi_denoise" -> true;
+            default -> false;
+        };
+    }
+
+    private boolean hasAnyDenoiseEvidence() {
+        return this.rawSourceReady != null
+                || this.cpuDenoiseReady != null
+                || this.shaderDenoiseIntended != null
+                || this.shaderOutputReady != null
+                || this.edgeRejectionCount != null
+                || this.historyRejectionCount != null
+                || !this.sourceIdentity.isBlank()
+                || !this.evidenceBoundary.isBlank();
     }
 
     private String firstDetailOrFallback(String fallback, String... keys) {

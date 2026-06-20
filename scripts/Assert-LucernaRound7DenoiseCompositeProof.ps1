@@ -162,11 +162,62 @@ param(
         "HUD remains readable"
     ),
 
+    [string[]] $ShaderDenoiseIntentPatterns = @(
+        "(?:shaderDenoiseIntent|shader_denoise_intent|denoiseShaderIntent|denoise_shader_intent)=true",
+        "shaderDenoiseVisualShaderIntent=true",
+        "(?:round7\.shaderDenoise|shader_denoise|denoiseShader).*intent(?:=|:)(?:true|enabled|requested)",
+        "LUCERNA_ROUND7_SHADER_DENOISE_INTENT=true",
+        "round7ShaderDenoiseEvidence=True"
+    ),
+
+    [string[]] $ShaderDenoiseInputReadyPatterns = @(
+        "(?:shaderDenoiseInputReady|shader_denoise_input_ready|shaderDenoiseRawInputReady|shader_denoise_raw_input_ready)=true",
+        "(?:rawGiInputReady|raw_gi_input_ready|rawInputReady|raw_input_ready)=true",
+        "(?:rawGI|cpuDenoisedGI)=(?:enabled-)?ready",
+        "(?:shaderDenoiseInput|shader_denoise_input).*?(?:raw|diffuse|gi).*?(?:ready|available)=true",
+        "(?:denoiseShaderInput|denoise_shader_input).*?(?:ready|available)=true"
+    ),
+
+    [string[]] $CpuReadbackDenoiseSourcePatterns = @(
+        "(?:cpuReadbackDenoiseSource|cpu_readback_denoise_source|cpuDenoisedSource|cpu_denoised_source)=true",
+        "sourceIdentity=.*cpu-denoised-diffuse-gi-rgba8",
+        "denoisedPayloadEvidence=.*(?:cpu|readback)",
+        "denoised_diffuse_gi_cpu_rgba8_output_generated_from_raw_gi",
+        "first_practical_cpu_denoised_diffuse_gi_rgba8_generated"
+    ),
+
+    [string[]] $ShaderDenoiseOutputReadyPatterns = @(
+        "realShaderDenoiseOutputReady=true",
+        "(?:shaderDenoiseOutputState|shader_denoise_output_state|shaderDenoiseReadiness|shader_denoise_readiness)=(?:ready|proven)",
+        "(?:shaderDenoiseOutputReady|shader_denoise_output_ready|denoiseShaderOutputReady|denoise_shader_output_ready)=true"
+    ),
+
+    [string[]] $ShaderDenoiseSourceClaimPatterns = @(
+        "sourceIdentity=.*shader-denoised-diffuse-gi-rgba8",
+        "(?:accepted:|sourceAuthenticity=accepted:).*shader-denoised",
+        "(?:shaderDenoiseSource|shader_denoise_source|denoiseShaderSource|denoise_shader_source)=shader"
+    ),
+
+    [string[]] $ShaderDenoiseOutputOpenPatterns = @(
+        "(?:realDenoiseShaderOutput|real_denoise_shader_output|shaderDenoiseOutputReady|shader_denoise_output_ready)=false",
+        "realShaderDenoiseOutputReady=false",
+        "(?:shaderDenoiseOutputState|shader_denoise_output_state|shaderDenoiseReadiness|shader_denoise_readiness)=(?:open|false|not-ready|not_ready|pending|missing)",
+        "(?:shaderDenoiseOutput|shader_denoise_output|denoiseShaderOutput|denoise_shader_output).*?(?:open|not-ready|not_ready|pending|unproven)"
+    ),
+
+    [string[]] $ShaderDenoiseOverclaimPatterns = @(
+        "sourceIdentity=.*shader-denoised-diffuse-gi-rgba8.*(?:realDenoiseShaderOutput|real_denoise_shader_output|shaderDenoiseOutputReady|shader_denoise_output_ready)=false",
+        "(?:realDenoiseShaderOutput|real_denoise_shader_output|shaderDenoiseOutputReady|shader_denoise_output_ready)=false.*sourceIdentity=.*shader-denoised-diffuse-gi-rgba8",
+        "(?:accepted:|sourceAuthenticity=accepted:).*shader-denoised.*(?:realDenoiseShaderOutput|real_denoise_shader_output|shaderDenoiseOutputReady|shader_denoise_output_ready)=false"
+    ),
+
     [switch] $RequireLogProof,
 
     [switch] $RequireDirectImage,
 
-    [switch] $RequireDebugScreenshot
+    [switch] $RequireDebugScreenshot,
+
+    [switch] $RequireShaderDenoiseEvidence
 )
 
 $ErrorActionPreference = "Stop"
@@ -391,8 +442,16 @@ function Measure-Round7LogProof {
     $temporaryDirectLightSourcePresent = Test-Regex $log "temporarySourceReady=true|temporaryDirectLightSubstitution=true|using the current direct-light RGBA payload as the temporary visible source"
     $metadataOnlyPreviewPresent = (Test-Regex $log "metadata-only|metadata scaffold|signal_separated_denoise_metadata_scaffold_no_render_output|no_render_output") -and -not $acceptedFinalCompositePresent
     $firstPracticalCpuOutputPresent = Test-Regex $log "first_practical_cpu_denoised_diffuse_gi_rgba8_generated|denoisedCpuOutputGenerated=true|denoised_cpu_output_generated=true"
-    $realDenoiseShaderOutputPresent = Test-Regex $log "(?:^|[\s,;])(?:realDenoiseShaderOutput|real_denoise_shader_output)=true(?:[,;]|$)"
+    $realDenoiseShaderOutputPresent = Test-Regex $log "(?:^|[\s,;])(?:realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=true(?:[,;]|$)"
     $realDenoiseShaderOutputFalsePresent = Test-Regex $log "realDenoiseShaderOutput=false|real_denoise_shader_output=false"
+    $shaderDenoiseIntentPresent = Test-AnyRegex $log $ShaderDenoiseIntentPatterns
+    $shaderDenoiseInputReadyPresent = Test-AnyRegex $log $ShaderDenoiseInputReadyPatterns
+    $cpuReadbackDenoiseSourcePresent = Test-AnyRegex $log $CpuReadbackDenoiseSourcePatterns
+    $shaderDenoiseOutputReadyPresent = (Test-AnyRegex $log $ShaderDenoiseOutputReadyPatterns) -or $realDenoiseShaderOutputPresent
+    $shaderDenoiseSourceClaimPresent = Test-AnyRegex $log $ShaderDenoiseSourceClaimPatterns
+    $shaderDenoiseOutputOpenPresent = (Test-AnyRegex $log $ShaderDenoiseOutputOpenPatterns) -or $realDenoiseShaderOutputFalsePresent
+    $shaderDenoiseOutputStateExplicitPresent = $shaderDenoiseOutputReadyPresent -or $shaderDenoiseOutputOpenPresent
+    $shaderDenoiseOverclaimPresent = (Test-AnyRegex $log $ShaderDenoiseOverclaimPatterns) -or ($shaderDenoiseSourceClaimPresent -and $shaderDenoiseOutputOpenPresent -and -not $shaderDenoiseOutputReadyPresent)
     $proofMarkerPresent = Test-Regex $log "proofMarkerSource=true|cpuOutputProofMarker=true|round6-gi-proof|round7-proof-marker|R6 GI proof|R7 proof|CPU output proof"
     $submittedFocusWindowOnlyPresent = Test-Regex $log "sourceIdentity=native-direct-light-rgba8,focusWindowOnly=true|mode=final-composite-direct-light-focus-window-additive"
     $submittedRound7GiSourcePresent = Test-Regex $log "sourceIdentity=native-denoised-diffuse-gi-rgba8,focusWindowOnly=false,round7GiSource=true|mode=round7-final-composite"
@@ -414,6 +473,14 @@ function Measure-Round7LogProof {
             firstPracticalCpuOutputPresent = $firstPracticalCpuOutputPresent
             realDenoiseShaderOutputPresent = $realDenoiseShaderOutputPresent
             realDenoiseShaderOutputFalsePresent = $realDenoiseShaderOutputFalsePresent
+            shaderDenoiseIntentPresent = $shaderDenoiseIntentPresent
+            shaderDenoiseInputReadyPresent = $shaderDenoiseInputReadyPresent
+            cpuReadbackDenoiseSourcePresent = $cpuReadbackDenoiseSourcePresent
+            shaderDenoiseOutputReadyPresent = $shaderDenoiseOutputReadyPresent
+            shaderDenoiseSourceClaimPresent = $shaderDenoiseSourceClaimPresent
+            shaderDenoiseOutputOpenPresent = $shaderDenoiseOutputOpenPresent
+            shaderDenoiseOutputStateExplicitPresent = $shaderDenoiseOutputStateExplicitPresent
+            shaderDenoiseOverclaimPresent = $shaderDenoiseOverclaimPresent
             proofMarkerPresent = $proofMarkerPresent
             focusWindowOnlyPresent = $focusWindowOnlyPresent
             submittedFocusWindowOnlyPresent = $submittedFocusWindowOnlyPresent
@@ -428,6 +495,13 @@ function Measure-Round7LogProof {
             denoisedGiOutputPatterns = @($DenoisedGiOutputPatterns)
             finalCompositePatterns = @($FinalCompositePatterns)
             hudSafeFinalCompositePatterns = @($HudSafeFinalCompositePatterns)
+            shaderDenoiseIntentPatterns = @($ShaderDenoiseIntentPatterns)
+            shaderDenoiseInputReadyPatterns = @($ShaderDenoiseInputReadyPatterns)
+            cpuReadbackDenoiseSourcePatterns = @($CpuReadbackDenoiseSourcePatterns)
+            shaderDenoiseOutputReadyPatterns = @($ShaderDenoiseOutputReadyPatterns)
+            shaderDenoiseSourceClaimPatterns = @($ShaderDenoiseSourceClaimPatterns)
+            shaderDenoiseOutputOpenPatterns = @($ShaderDenoiseOutputOpenPatterns)
+            shaderDenoiseOverclaimPatterns = @($ShaderDenoiseOverclaimPatterns)
         }
     }
 }
@@ -508,6 +582,9 @@ if ($RequireDebugScreenshot -and [string]::IsNullOrWhiteSpace($debugResolved)) {
 if ($RequireLogProof -and [string]::IsNullOrWhiteSpace($logResolved)) {
     $failures.Add("Log proof was required but no -LogPath was provided.")
 }
+if ($RequireShaderDenoiseEvidence -and [string]::IsNullOrWhiteSpace($logResolved)) {
+    $failures.Add("Shader-denoise evidence requires -LogPath so intent, input readiness, source identity, and output readiness can be checked.")
+}
 if ($logProof) {
     if (-not $logProof.markers.directSourcePresent) {
         $failures.Add("Missing native direct/emissive source/output log marker.")
@@ -545,6 +622,23 @@ if ($logProof) {
     if ($logProof.markers.nativeErrorPresent) {
         $failures.Add("Log contains native/Vulkan error markers.")
     }
+    if ($RequireShaderDenoiseEvidence) {
+        if (-not $logProof.markers.shaderDenoiseIntentPresent) {
+            $failures.Add("Missing shader-denoise intent marker.")
+        }
+        if (-not $logProof.markers.shaderDenoiseInputReadyPresent) {
+            $failures.Add("Missing shader-denoise input readiness marker.")
+        }
+        if (-not $logProof.markers.cpuReadbackDenoiseSourcePresent) {
+            $failures.Add("Missing CPU/readback denoise source marker; shader-denoise proof must distinguish CPU/readback from shader output.")
+        }
+        if (-not $logProof.markers.shaderDenoiseOutputStateExplicitPresent) {
+            $failures.Add("Missing explicit shader-denoise output readiness marker; proof must show shader output ready or explicitly false/open.")
+        }
+        if ($logProof.markers.shaderDenoiseOverclaimPresent) {
+            $failures.Add("Log over-claims shader-denoise output while shader output readiness is false/open.")
+        }
+    }
 }
 
 $result = [ordered]@{
@@ -581,6 +675,7 @@ $result = [ordered]@{
         requireLogProof = [bool]$RequireLogProof
         requireDirectImage = [bool]$RequireDirectImage
         requireDebugScreenshot = [bool]$RequireDebugScreenshot
+        requireShaderDenoiseEvidence = [bool]$RequireShaderDenoiseEvidence
     }
     screenshots = [ordered]@{
         baselineDimensions = $baselineDimensions
@@ -648,6 +743,28 @@ $result = [ordered]@{
                 outputLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.denoisedGiOutputPresent } else { $null }
                 roughnessReductionPercent = $denoiseQuality.meanAbsNeighborLumaReductionPercent
             }
+            shaderDenoise = [ordered]@{
+                required = [bool]$RequireShaderDenoiseEvidence
+                intentLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseIntentPresent } else { $null }
+                inputReadyLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseInputReadyPresent } else { $null }
+                cpuReadbackSourceLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.cpuReadbackDenoiseSourcePresent } else { $null }
+                shaderOutputReadyLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputReadyPresent } else { $null }
+                shaderSourceClaimLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseSourceClaimPresent } else { $null }
+                shaderOutputOpenLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputOpenPresent } else { $null }
+                shaderOutputStateExplicitLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputStateExplicitPresent } else { $null }
+                shaderOutputOverclaimPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOverclaimPresent } else { $null }
+                classification = if (-not $RequireShaderDenoiseEvidence) {
+                    "not_required"
+                } elseif (-not $logProof) {
+                    "missing_log"
+                } elseif ([bool]$logProof.markers.shaderDenoiseOutputReadyPresent) {
+                    "shader_denoise_output_proven"
+                } elseif ([bool]$logProof.markers.shaderDenoiseOutputOpenPresent) {
+                    "shader_denoise_output_explicitly_open"
+                } else {
+                    "shader_denoise_output_state_missing"
+                }
+            }
             finalComposite = [ordered]@{
                 imageDeltaPresent = (
                     ([double]$finalDelta.focusRegionMetrics.changedPixelPercent -ge $MinFinalChangedPixelPercent) -and
@@ -662,6 +779,13 @@ $result = [ordered]@{
                 firstPracticalCpuOutputPresent = if ($logProof) { [bool]$logProof.markers.firstPracticalCpuOutputPresent } else { $null }
                 realDenoiseShaderOutputPresent = if ($logProof) { [bool]$logProof.markers.realDenoiseShaderOutputPresent } else { $null }
                 realDenoiseShaderOutputFalsePresent = if ($logProof) { [bool]$logProof.markers.realDenoiseShaderOutputFalsePresent } else { $null }
+                shaderDenoiseIntentPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseIntentPresent } else { $null }
+                shaderDenoiseInputReadyPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseInputReadyPresent } else { $null }
+                cpuReadbackDenoiseSourcePresent = if ($logProof) { [bool]$logProof.markers.cpuReadbackDenoiseSourcePresent } else { $null }
+                shaderDenoiseOutputReadyPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputReadyPresent } else { $null }
+                shaderDenoiseSourceClaimPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseSourceClaimPresent } else { $null }
+                shaderDenoiseOutputOpenPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputOpenPresent } else { $null }
+                shaderDenoiseOverclaimPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOverclaimPresent } else { $null }
                 proofMarkerPresent = if ($logProof) { [bool]$logProof.markers.proofMarkerPresent } else { $null }
                 focusWindowOnlyPresent = if ($logProof) { [bool]$logProof.markers.focusWindowOnlyPresent } else { $null }
                 nativeErrorPresent = if ($logProof) { [bool]$logProof.markers.nativeErrorPresent } else { $null }
@@ -719,6 +843,14 @@ if ($logProof) {
     Write-Host "firstPracticalCpuOutputPresent=$($logProof.markers.firstPracticalCpuOutputPresent)"
     Write-Host "realDenoiseShaderOutputPresent=$($logProof.markers.realDenoiseShaderOutputPresent)"
     Write-Host "realDenoiseShaderOutputFalsePresent=$($logProof.markers.realDenoiseShaderOutputFalsePresent)"
+    Write-Host "shaderDenoiseIntentPresent=$($logProof.markers.shaderDenoiseIntentPresent)"
+    Write-Host "shaderDenoiseInputReadyPresent=$($logProof.markers.shaderDenoiseInputReadyPresent)"
+    Write-Host "cpuReadbackDenoiseSourcePresent=$($logProof.markers.cpuReadbackDenoiseSourcePresent)"
+    Write-Host "shaderDenoiseOutputReadyPresent=$($logProof.markers.shaderDenoiseOutputReadyPresent)"
+    Write-Host "shaderDenoiseSourceClaimPresent=$($logProof.markers.shaderDenoiseSourceClaimPresent)"
+    Write-Host "shaderDenoiseOutputOpenPresent=$($logProof.markers.shaderDenoiseOutputOpenPresent)"
+    Write-Host "shaderDenoiseOutputStateExplicitPresent=$($logProof.markers.shaderDenoiseOutputStateExplicitPresent)"
+    Write-Host "shaderDenoiseOverclaimPresent=$($logProof.markers.shaderDenoiseOverclaimPresent)"
     Write-Host "proofMarkerPresent=$($logProof.markers.proofMarkerPresent)"
     Write-Host "focusWindowOnlyPresent=$($logProof.markers.focusWindowOnlyPresent)"
     Write-Host "nativeErrorPresent=$($logProof.markers.nativeErrorPresent)"

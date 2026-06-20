@@ -9,6 +9,7 @@ public enum DebugOverlay {
     DIRECT_LIGHTING("Direct lighting"),
     FIRST_LIGHTING_QUALITY("First-lighting quality"),
     FIRST_LIGHTING_PHYSICAL_PROOF("First-lighting physical proof"),
+    SHADER_DENOISE_TEMPORAL("Shader denoise temporal proof"),
     NATIVE_QUEUE("Native queue"),
     ADAPTIVE_SAMPLING("Round 8 adaptive sampling"),
     RAY_BUDGET_HEATMAP("Round 8 ray budget heatmap"),

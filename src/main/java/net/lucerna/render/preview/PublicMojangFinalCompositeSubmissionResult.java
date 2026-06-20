@@ -207,6 +207,47 @@ public record PublicMojangFinalCompositeSubmissionResult(
         return this.submittedSourceIdentity().contains("shader-denoised-diffuse-gi-rgba8");
     }
 
+    public boolean submittedShaderDenoiseVisualShaderIntent() {
+        String normalizedReason = this.reason.toLowerCase(Locale.ROOT);
+        return this.submitted
+                && (normalizedReason.contains("round 7 denoised_gi visual")
+                || normalizedReason.contains("round 7 final_composite visual")
+                || normalizedReason.contains("round7_denoised_gi_visual")
+                || normalizedReason.contains("denoised-source additive draw")
+                || normalizedReason.contains("source-gated-denoised-gi-visual")
+                || normalizedReason.contains("shader=lucerna:core/round7_denoised_gi_visual"));
+    }
+
+    public boolean submittedRealShaderDenoiseDispatchReady() {
+        return this.submittedShaderDenoisedGiSource();
+    }
+
+    public boolean submittedRealShaderDenoiseOutputReady() {
+        return this.submittedShaderDenoisedGiSource();
+    }
+
+    public String denoiseEvidenceBoundarySummary() {
+        return "cpuDenoisedOutput=" + readyState(this.submittedCpuDenoisedGiSource())
+                + ",shaderDenoiseVisualShaderIntent=" + readyState(this.submittedShaderDenoiseVisualShaderIntent())
+                + ",realShaderDenoiseDispatchReady=" + readyState(this.submittedRealShaderDenoiseDispatchReady())
+                + ",realShaderDenoiseOutputReady=" + readyState(this.submittedRealShaderDenoiseOutputReady())
+                + ",finalDenoiseSourceIdentity=" + this.denoiseSourceClassLabel()
+                + ",boundary=\""
+                + (this.submittedRealShaderDenoiseOutputReady()
+                ? "submitted source reports shader-denoised GI output; controller still needs quality/stability proof"
+                : "current submitted denoise evidence is CPU/readback or absent; visual shader intent is not real shader-side denoise output")
+                + "\"";
+    }
+
+    public String authenticityGuardsSummary() {
+        return "metadataOnlyPreview=" + this.submittedMetadataOnlyPreview()
+                + ",focusWindowOnly=" + this.submittedFocusWindowOnly()
+                + ",proofMarkerSource=" + this.submittedProofMarkerSource()
+                + ",temporaryDirectLightSubstitution=" + this.submittedTemporaryDirectLightSubstitution()
+                + ",rectangularWashoutRisk=" + this.submittedRectangularWashoutRisk()
+                + ",previewEvidenceClean=" + !this.submittedPreviewOnlyEvidence();
+    }
+
     public boolean submittedRound7GiSource() {
         return this.submittedRawGiSource() || this.submittedDenoisedGiSource();
     }
@@ -402,7 +443,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",targetStatus=" + this.targetStatus
                 + ",sourceIdentity=" + this.submittedSourceIdentity()
                 + ",sourceReadinessMatrix=" + this.sourceReadinessMatrix()
+                + ",denoiseEvidenceBoundary=" + this.denoiseEvidenceBoundarySummary()
                 + ",sourceAuthenticity=" + this.sourceAuthenticityLabel()
+                + ",authenticityGuards=" + this.authenticityGuardsSummary()
                 + ",surfaceProjectionEvidence=" + this.surfaceProjectionEvidenceLabel()
                 + ",geometryMaterialProjectionReadiness=" + this.geometryMaterialProjectionReadiness()
                 + ",temporalStabilityReadiness=" + this.temporalStabilityReadiness()
@@ -425,6 +468,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",rawGI=" + readyState(this.submittedRawGiSource())
                 + ",cpuDenoisedGI=" + readyState(this.submittedCpuDenoisedGiSource())
                 + ",shaderDenoisedGI=" + readyState(this.submittedShaderDenoisedGiSource())
+                + ",shaderDenoiseVisualShaderIntent=" + readyState(this.submittedShaderDenoiseVisualShaderIntent())
+                + ",realShaderDenoiseDispatchReady=" + readyState(this.submittedRealShaderDenoiseDispatchReady())
+                + ",realShaderDenoiseOutputReady=" + readyState(this.submittedRealShaderDenoiseOutputReady())
                 + ",previewEvidenceClean=" + readyState(!this.submittedPreviewOnlyEvidence())
                 + ",sourceGatedSurfaceProjection=" + readyState(this.submittedSourceGatedSurfaceProjection());
     }

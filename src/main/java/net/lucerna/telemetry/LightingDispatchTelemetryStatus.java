@@ -41,6 +41,24 @@ public record LightingDispatchTelemetryStatus(
                     + "native_gi_output_source|temporary_direct_source|temporary_direct_light_source|"
                     + "temporary_direct_light_source_ready|temporary_source_ready|uses_direct_light_payload|"
                     + "using_direct_light_payload|direct_light_payload_source|"
+                    + "raw_source_ready|raw_input_ready|input_source_ready|raw_gi_ready|raw_diffuse_gi_ready|"
+                    + "raw_diffuse_gi_input_ready|denoise_raw_source_ready|denoise_raw_input_ready|"
+                    + "cpu_denoise_ready|cpu_denoise_output_ready|cpu_denoised_output_ready|"
+                    + "cpu_readback_denoise_ready|cpu_readback_denoised_output_ready|"
+                    + "denoise_cpu_ready|denoise_cpu_output_ready|"
+                    + "shader_denoise_intent|shader_denoise_intended|shader_denoise_planned|"
+                    + "shader_denoise_enabled|shader_denoise_contract_ready|denoise_shader_intended|"
+                    + "denoise_shader_planned|shader_output_ready|shader_denoise_output_ready|"
+                    + "real_denoise_shader_output|real_shader_denoise_output|real_shader_gi_output|"
+                    + "gpu_denoise_output_ready|gpu_denoise_output|shader_denoise_ready|"
+                    + "edge_rejection_count|edge_reject_count|edge_rejections|edge_rejected|"
+                    + "edge_rejected_count|denoise_edge_rejections|history_rejection_count|"
+                    + "history_reject_count|history_rejections|history_rejected|history_rejected_count|"
+                    + "temporal_history_rejected|temporal_history_rejection_count|last_history_rejected|"
+                    + "source_identity|source_id|denoise_source|denoise_source_identity|"
+                    + "evidence_boundary|proof_boundary|boundary|quality_boundary|"
+                    + "shader_denoise_evidence_boundary|shader_denoise_boundary|"
+                    + "denoise_evidence_boundary|denoise_quality_boundary|"
                     + "cache|last_cache|cache_counts|cache_reads|cache_writes|cache_read_count|cache_write_count|"
                     + "last_flags|flags|stage_flags|placeholder|metadata_only|validated|valid|debug_overlay|debug|"
                     + "ready_for_native_execution|native_ready|ready|executable|readiness_reason|ready_reason|"
@@ -676,7 +694,10 @@ public record LightingDispatchTelemetryStatus(
 
     private static boolean isKnownStageId(String stageId) {
         return switch (stageId) {
-            case "direct_lighting", "diffuse_gi", "denoise", "composite", "cache" -> true;
+            case "direct_lighting", "diffuse_gi", "low_res_gi", "low_resolution_gi", "gi",
+                    "denoise", "shader_denoise", "edge_aware_denoise", "diffuse_gi_denoise",
+                    "composite", "final_composite", "cache", "radiance_cache",
+                    "sparse_radiance_cache", "sparse_voxel_radiance_cache" -> true;
             default -> false;
         };
     }
@@ -701,6 +722,25 @@ public record LightingDispatchTelemetryStatus(
                     "native_gi_output_pixel_count" -> "output_pixels";
             case "gi_output_energy", "native_gi_output_energy" -> "output_energy";
             case "gi_output_checksum", "native_gi_output_checksum" -> "output_checksum";
+            case "raw_input_ready", "input_source_ready", "raw_gi_ready", "raw_diffuse_gi_ready",
+                    "raw_diffuse_gi_input_ready", "denoise_raw_source_ready", "denoise_raw_input_ready" -> "raw_source_ready";
+            case "cpu_denoise_output_ready", "cpu_denoised_output_ready", "cpu_readback_denoise_ready",
+                    "cpu_readback_denoised_output_ready", "denoise_cpu_ready", "denoise_cpu_output_ready" -> "cpu_denoise_ready";
+            case "shader_denoise_intent", "shader_denoise_planned", "shader_denoise_enabled",
+                    "shader_denoise_contract_ready", "denoise_shader_intended",
+                    "denoise_shader_planned" -> "shader_denoise_intended";
+            case "shader_denoise_output_ready", "real_denoise_shader_output", "real_shader_denoise_output",
+                    "real_shader_gi_output", "gpu_denoise_output_ready", "gpu_denoise_output",
+                    "shader_denoise_ready" -> "shader_output_ready";
+            case "edge_reject_count", "edge_rejections", "edge_rejected", "edge_rejected_count",
+                    "denoise_edge_rejections" -> "edge_rejection_count";
+            case "history_reject_count", "history_rejections", "history_rejected",
+                    "history_rejected_count", "temporal_history_rejected",
+                    "temporal_history_rejection_count", "last_history_rejected" -> "history_rejection_count";
+            case "source_id", "denoise_source", "denoise_source_identity" -> "source_identity";
+            case "proof_boundary", "boundary", "quality_boundary", "shader_denoise_evidence_boundary",
+                    "shader_denoise_boundary", "denoise_evidence_boundary",
+                    "denoise_quality_boundary" -> "evidence_boundary";
             case "cache", "cache_counts" -> "last_cache";
             case "cache_reads", "cache_read_count" -> "cache_reads";
             case "cache_writes", "cache_write_count" -> "cache_writes";

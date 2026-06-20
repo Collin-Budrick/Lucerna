@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalStable", "TemporalMoved", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay", "VoxelRayDebug", "RtEntityDebug", "HybridHitDebug", "DirectReservoirDebug", "GiReservoirDebug", "ReservoirReuseDebug", "DirectBruteBaseline", "RestirDirectEnabled", "RestirTemporalStable", "RestirTemporalMoved", "RestirExecutionDebug")]
+    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ShaderDenoisedGi", "ShaderDenoiseFinalComposite", "ShaderDenoiseDebug", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalStable", "TemporalMoved", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay", "VoxelRayDebug", "RtEntityDebug", "HybridHitDebug", "DirectReservoirDebug", "GiReservoirDebug", "ReservoirReuseDebug", "DirectBruteBaseline", "RestirDirectEnabled", "RestirTemporalStable", "RestirTemporalMoved", "RestirExecutionDebug")]
     [string] $Mode,
 
     [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round56PhysicalLighting", "Round7DenoiseComposite", "Round7CompositeStability", "Round7EmissiveGiSurface", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry", "Round10HybridTracing", "Round11Restir")]
@@ -213,6 +213,39 @@ function Get-Round7CaptureIntent {
                 )
             }
         }
+        "ShaderDenoisedGi" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "DENOISED_GI"
+                artifactRole = "shader-denoised-gi"
+                shaderDenoiseEvidence = $true
+                requiredPatterns = @(
+                    "(?:shaderDenoiseIntent|shader_denoise_intent|denoiseShaderIntent|denoise_shader_intent|shaderDenoiseVisualShaderIntent)=true",
+                    "(?:shaderDenoiseInputReady|shader_denoise_input_ready|shaderDenoiseRawInputReady|shader_denoise_raw_input_ready|rawGiInputReady|raw_gi_input_ready)=true|(?:rawGI|cpuDenoisedGI)=enabled-ready|(?:rawGI|cpuDenoisedGI)=ready",
+                    "(?:cpuReadbackDenoiseSource|cpu_readback_denoise_source|cpuDenoisedSource|cpu_denoised_source|sourceIdentity=.*cpu-denoised-diffuse-gi-rgba8|denoisedPayloadEvidence=.*cpu)",
+                    "(?:(?:realDenoiseShaderOutput|real_denoise_shader_output|realShaderDenoiseOutputReady|shaderDenoiseOutputReady|shader_denoise_output_ready)=true|(?:realDenoiseShaderOutput|real_denoise_shader_output|realShaderDenoiseOutputReady|shaderDenoiseOutputReady|shader_denoise_output_ready)=false|(?:shaderDenoiseOutputState|shader_denoise_output_state|shaderDenoiseReadiness|shader_denoise_readiness)=(?:open|false|not-ready|not_ready|pending|missing))",
+                    "public Mojang Round 7 DENOISED_GI visual render pass submitted; .*mode=ROUND7_DENOISED_GI"
+                )
+            }
+        }
+        "ShaderDenoiseFinalComposite" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "shader-denoise-final-composite"
+                shaderDenoiseEvidence = $true
+                requiredPatterns = @(
+                    "(?:shaderDenoiseIntent|shader_denoise_intent|denoiseShaderIntent|denoise_shader_intent|shaderDenoiseVisualShaderIntent)=true",
+                    "(?:shaderDenoiseInputReady|shader_denoise_input_ready|shaderDenoiseRawInputReady|shader_denoise_raw_input_ready|rawGiInputReady|raw_gi_input_ready)=true|(?:rawGI|cpuDenoisedGI)=enabled-ready|(?:rawGI|cpuDenoisedGI)=ready",
+                    "(?:cpuReadbackDenoiseSource|cpu_readback_denoise_source|cpuDenoisedSource|cpu_denoised_source|sourceIdentity=.*cpu-denoised-diffuse-gi-rgba8|denoisedPayloadEvidence=.*cpu)",
+                    "(?:(?:realDenoiseShaderOutput|real_denoise_shader_output|realShaderDenoiseOutputReady|shaderDenoiseOutputReady|shader_denoise_output_ready)=true|(?:realDenoiseShaderOutput|real_denoise_shader_output|realShaderDenoiseOutputReady|shaderDenoiseOutputReady|shader_denoise_output_ready)=false|(?:shaderDenoiseOutputState|shader_denoise_output_state|shaderDenoiseReadiness|shader_denoise_readiness)=(?:open|false|not-ready|not_ready|pending|missing))",
+                    "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true",
+                    "public Mojang Round 7 FINAL_COMPOSITE visual render pass submitted; .*mode=FINAL_LUCERNA_COMPOSITE"
+                )
+            }
+        }
         "FinalComposite" {
             return [ordered]@{
                 rendererEnabled = $true
@@ -236,6 +269,21 @@ function Get-Round7CaptureIntent {
                 requiredPatterns = @(
                     "Lucerna Round 7 denoised GI CPU output: .*denoisedCpuOutputGenerated=true",
                     "(?:round7\.compositeMode|debug\.overlay=DIRECT_LIGHTING|Overlay state: DIRECT_LIGHTING|Direct Lighting)"
+                )
+            }
+        }
+        "ShaderDenoiseDebug" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "SHADER_DENOISE_TEMPORAL"
+                compositeMode = "DENOISED_GI"
+                artifactRole = "shader-denoise-debug"
+                shaderDenoiseEvidence = $true
+                requiredPatterns = @(
+                    "(?:shaderDenoiseIntent|shader_denoise_intent|denoiseShaderIntent|denoise_shader_intent|shaderDenoiseVisualShaderIntent)=true",
+                    "(?:shaderDenoiseInputReady|shader_denoise_input_ready|shaderDenoiseRawInputReady|shader_denoise_raw_input_ready|rawGiInputReady|raw_gi_input_ready)=true|(?:rawGI|cpuDenoisedGI)=enabled-ready|(?:rawGI|cpuDenoisedGI)=ready",
+                    "(?:cpuReadbackDenoiseSource|cpu_readback_denoise_source|cpuDenoisedSource|cpu_denoised_source|sourceIdentity=.*cpu-denoised-diffuse-gi-rgba8|denoisedPayloadEvidence=.*cpu)",
+                    "(?:(?:realDenoiseShaderOutput|real_denoise_shader_output|realShaderDenoiseOutputReady|shaderDenoiseOutputReady|shader_denoise_output_ready)=true|(?:realDenoiseShaderOutput|real_denoise_shader_output|realShaderDenoiseOutputReady|shaderDenoiseOutputReady|shader_denoise_output_ready)=false|(?:shaderDenoiseOutputState|shader_denoise_output_state|shaderDenoiseReadiness|shader_denoise_readiness)=(?:open|false|not-ready|not_ready|pending|missing))"
                 )
             }
         }
@@ -1608,6 +1656,11 @@ try {
     }
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
         $psi.Environment["LUCERNA_ROUND7_CAPTURE_MODE"] = [string]$round7CaptureIntent.artifactRole
+        if ($round7CaptureIntent.Contains("shaderDenoiseEvidence") -and [bool]$round7CaptureIntent.shaderDenoiseEvidence) {
+            $psi.Environment["LUCERNA_ROUND7_SHADER_DENOISE_PROOF"] = "true"
+            $psi.Environment["LUCERNA_ROUND7_SHADER_DENOISE_ARTIFACT_ROLE"] = [string]$round7CaptureIntent.artifactRole
+            $psi.Environment["LUCERNA_ROUND7_SHADER_DENOISE_INTENT"] = "true"
+        }
     }
     if ($ValidationProfile -eq "Round7CompositeStability") {
         $psi.Environment["LUCERNA_ROUND7_CAPTURE_MODE"] = [string]$round7StabilityCaptureIntent.artifactRole
@@ -1782,7 +1835,13 @@ try {
             "round6-gi-proof",
             "R6 GI proof",
             "proofMarkerSource=true",
-            "cpuOutputProofMarker=true"
+            "cpuOutputProofMarker=true",
+            "invalid descriptor",
+            "VK_ERROR",
+            "VK_[A-Z_]*ERROR",
+            "Lucerna native error",
+            "native error",
+            "Vulkan error"
         )
     } elseif ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
         @(
@@ -1989,6 +2048,10 @@ try {
                 $repeatMarkerPrefix = if ($ValidationProfile -eq "Round11Restir") { "round11.stability.temporal" } else { "round7.stability.temporal" }
                 Add-LucernaControllerMarker $markerLog "$repeatMarkerPrefix.repeatCapture index=$($captureIndex + 1) count=$effectiveCaptureCount label=$captureLabelSafe intervalSeconds=$TemporalCaptureIntervalSeconds sceneState=$repeatSceneState"
             }
+            Focus-MinecraftWindow | Out-Null
+            Send-MinecraftKeys "{ESC}"
+            Send-MinecraftKeys "{ESC}"
+            Start-Sleep -Milliseconds 500
             $existingScreenshotNames = @(Get-ChildItem -LiteralPath $screenshotDir -Filter "*.png" -ErrorAction SilentlyContinue |
                     Select-Object -ExpandProperty Name)
             $beforeScreenshot = Get-Date
@@ -2002,7 +2065,8 @@ try {
                     $screenshot = Wait-NewScreenshot $screenshotDir $existingScreenshotNames $beforeScreenshot $screenshotDeadline -RequireNewAfter
                     $capturedScreenshotSource = "minecraft-in-client-f2-repeat"
                 } else {
-                    $screenshot = Wait-NewScreenshot $screenshotDir $existingScreenshotNames $beforeScreenshot $screenshotDeadline
+                    Send-MinecraftKeys "{F2}"
+                    $screenshot = Wait-NewScreenshot $screenshotDir $existingScreenshotNames $beforeScreenshot $screenshotDeadline -RequireNewAfter
                     $capturedScreenshotSource = "minecraft-in-client"
                 }
                 Copy-Item -LiteralPath $screenshot.FullName -Destination $captureArchivePath -Force
@@ -2072,6 +2136,9 @@ try {
     if ($round7CaptureIntent) {
         Write-Host "round7ArtifactRole=$($round7CaptureIntent.artifactRole)"
         Write-Host "round7CompositeMode=$($round7CaptureIntent.compositeMode)"
+        if ($round7CaptureIntent.Contains("shaderDenoiseEvidence")) {
+            Write-Host "round7ShaderDenoiseEvidence=$($round7CaptureIntent.shaderDenoiseEvidence)"
+        }
     }
     if ($round7StabilityCaptureIntent) {
         Write-Host "round7StabilityArtifactRole=$($round7StabilityCaptureIntent.artifactRole)"

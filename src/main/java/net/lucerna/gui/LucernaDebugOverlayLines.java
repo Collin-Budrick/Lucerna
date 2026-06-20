@@ -88,6 +88,7 @@ public final class LucernaDebugOverlayLines {
             case DIRECT_LIGHTING -> addDirectLightingLines(lines, snapshot);
             case FIRST_LIGHTING_QUALITY -> addFirstLightingQualityLines(lines, snapshot);
             case FIRST_LIGHTING_PHYSICAL_PROOF -> addFirstLightingPhysicalProofLines(lines, snapshot);
+            case SHADER_DENOISE_TEMPORAL -> addShaderDenoiseTemporalLines(lines, snapshot);
             case NATIVE_QUEUE -> addNativeQueueLines(lines, snapshot);
             case ADAPTIVE_SAMPLING -> addAdaptiveSamplingLines(lines, snapshot);
             case RAY_BUDGET_HEATMAP -> addRayBudgetHeatmapLines(lines, snapshot);
@@ -200,6 +201,55 @@ public final class LucernaDebugOverlayLines {
                 + " region=" + giAffectedSurfaceRegionLabel(diffuseGiStage)
                 + " hudExcluded=" + giHandHudExcludedLabel(diffuseGiStage)));
         lines.add(Component.literal("Proof boundary: " + firstLightingPhysicalProofBoundary(compositeStatus)));
+    }
+
+    private static void addShaderDenoiseTemporalLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        LightingDispatchTelemetryStatus lightingDispatch = snapshot.lightingDispatchStatus();
+        LightingDispatchStageTelemetryStatus denoiseStage = firstStage(
+                lightingDispatch,
+                "shader_denoise",
+                "edge_aware_denoise",
+                "denoise",
+                "diffuse_gi_denoise",
+                "denoised_gi",
+                "round7_denoise"
+        );
+        LightingDispatchStageTelemetryStatus adaptiveStage = firstStage(
+                lightingDispatch,
+                "adaptive_sampling",
+                "history_confidence",
+                "variance",
+                "ray_budget"
+        );
+        lines.add(Component.literal("Overlay scope: shader denoise + temporal proof readiness; no quality claim."));
+        if (!lightingDispatch.hasLightingDispatchStatus()) {
+            lines.add(Component.literal("Denoise telemetry: unavailable(" + shorten(lightingDispatch.message(), 64) + ")"));
+            lines.add(Component.literal("Sources: raw=? cpu=? shaderIntent=? shaderOut=?"));
+            lines.add(Component.literal("Denoise output: source=? generated=? energy=missing checksum=missing"));
+            lines.add(Component.literal("Edge/history: edgeReject=? edgeKeep=? histReject=?"));
+            lines.add(Component.literal("Temporal proof: accept=? reject=? reset=? missing=? ready=?"));
+            lines.add(Component.literal("Proof boundary: controller screenshots/logs required before temporal or shader-quality claim."));
+            return;
+        }
+
+        lines.add(Component.literal("Sources: raw=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.rawSourceReady())
+                + " cpu=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.cpuDenoiseReady())
+                + " shaderIntent=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderDenoiseIntended())
+                + " shaderOut=" + shaderOutputReadinessLabel(denoiseStage)));
+        lines.add(Component.literal("Denoise output: source=" + denoiseSourceIdentityLabel(denoiseStage)
+                + " generated=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.cpuOutputGenerated())
+                + " energy=" + stageOutputEnergyLabel(denoiseStage)
+                + " checksum=" + stageOutputChecksumLabel(denoiseStage)));
+        lines.add(Component.literal("Edge/history: edgeReject=" + valueOrUnknown(denoiseStage == null ? null : denoiseStage.edgeRejectionCount())
+                + " edgeKeep=" + firstDetailOrUnknown(denoiseStage, "edge_preserved_count", "edge_preserved", "edge_kept")
+                + " histReject=" + valueOrUnknown(denoiseStage == null ? null : denoiseStage.historyRejectionCount())));
+        lines.add(Component.literal("Temporal proof: accept=" + firstDetailOrUnknown(denoiseStage, "history_accepted_count", "history_accepted", "temporal_history_accepted")
+                + " reject=" + valueOrUnknown(denoiseStage == null ? null : denoiseStage.historyRejectionCount())
+                + " reset=" + firstDetailOrUnknown(denoiseStage, "history_reset_count", "history_reset", "temporal_history_reset")
+                + " missing=" + firstDetailOrUnknown(denoiseStage, "missing_history_pixels", "history_missing", "temporal_history_missing")
+                + " ready=" + temporalReadinessLabel(denoiseStage, adaptiveStage)));
+        lines.add(Component.literal("Temporal line: " + denoiseTemporalStatusLabel(denoiseStage, adaptiveStage)));
+        lines.add(Component.literal("Proof boundary: " + denoiseProofBoundaryLabel(denoiseStage)));
     }
 
     public static List<Component> validationLines(LucernaStatusSnapshot snapshot) {
@@ -1726,6 +1776,16 @@ public final class LucernaDebugOverlayLines {
         );
     }
 
+    private static String denoiseSourceIdentityLabel(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null) {
+            return "?";
+        }
+        if (!stage.sourceIdentity().isBlank()) {
+            return shorten(stage.sourceIdentity(), 32);
+        }
+        return shorten(denoiseSourceLabel(stage), 32);
+    }
+
     private static String realDenoiseShaderLabel(LightingDispatchStageTelemetryStatus stage) {
         return firstDetailOrUnknown(
                 stage,
@@ -1735,6 +1795,78 @@ public final class LucernaDebugOverlayLines {
                 "shaderDenoiseOutput",
                 "gpu_denoise_output"
         );
+    }
+
+    private static String shaderOutputReadinessLabel(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null) {
+            return "?";
+        }
+        if (stage.shaderOutputReady() != null) {
+            return yesNoUnknown(stage.shaderOutputReady());
+        }
+        return realDenoiseShaderLabel(stage);
+    }
+
+    private static String temporalReadinessLabel(
+            LightingDispatchStageTelemetryStatus denoiseStage,
+            LightingDispatchStageTelemetryStatus adaptiveStage
+    ) {
+        String explicit = firstDetailOrUnknown(
+                denoiseStage,
+                "temporal_ready",
+                "temporal_history_ready",
+                "history_ready",
+                "temporal_proof_ready",
+                "temporal_acceptance_ready"
+        );
+        if (!"?".equals(explicit)) {
+            return explicit;
+        }
+        explicit = firstDetailOrUnknown(
+                adaptiveStage,
+                "temporal_ready",
+                "temporal_history_ready",
+                "history_ready",
+                "temporal_proof_ready",
+                "temporal_acceptance_ready"
+        );
+        if (!"?".equals(explicit)) {
+            return explicit;
+        }
+        if (denoiseStage != null) {
+            String acceptedCount = firstDetailOrUnknown(
+                    denoiseStage,
+                    "history_accepted_count",
+                    "history_accepted"
+            );
+            if (denoiseStage.historyRejectionCount() != null || !"?".equals(acceptedCount)) {
+                return "counters_present";
+            }
+        }
+        return "?";
+    }
+
+    private static String denoiseTemporalStatusLabel(
+            LightingDispatchStageTelemetryStatus denoiseStage,
+            LightingDispatchStageTelemetryStatus adaptiveStage
+    ) {
+        if (denoiseStage != null) {
+            return shorten(denoiseStage.temporalHistoryStatusLine(), 96);
+        }
+        if (adaptiveStage != null) {
+            return shorten(adaptiveStage.temporalHistoryStatusLine(), 96);
+        }
+        return "pending(no denoise/adaptive temporal stage details)";
+    }
+
+    private static String denoiseProofBoundaryLabel(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null) {
+            return "shader denoise and temporal proof telemetry not reported yet";
+        }
+        if (!stage.evidenceBoundary().isBlank()) {
+            return shorten(stage.evidenceBoundary(), 96);
+        }
+        return "CPU/readback preview evidence only until real shader output and temporal screenshots pass";
     }
 
     private static String cpuDenoiseFallbackLabel(LightingDispatchStageTelemetryStatus stage) {
