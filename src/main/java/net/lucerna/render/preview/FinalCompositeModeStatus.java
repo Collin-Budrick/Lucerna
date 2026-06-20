@@ -159,12 +159,17 @@ public record FinalCompositeModeStatus(
     ) {
         boolean denoiseVisualIntent = this.denoisedGiVisualMode() || this.finalCompositeVisualMode();
         return "round7.cpuDenoisedOutputReady=" + cpuDenoisedSourceReady
+                + ",round7.denoisedGiSourceIdentity="
+                + denoisedSourceIdentity(cpuDenoisedSourceReady, shaderDenoisedSourceReady).stableLabel()
                 + ",round7.shaderDenoiseVisualShaderIntent=" + denoiseVisualIntent
                 + ",round7.shaderDenoiseVisualShaderSource="
                 + (denoiseVisualIntent ? "public-mojang-source-gated-denoised-gi-visual" : "excluded-by-mode")
                 + ",round7.realShaderDenoiseDispatchReady=" + shaderDenoisedSourceReady
                 + ",round7.realShaderDenoiseOutputReady=" + shaderDenoisedSourceReady
-                + ",round7.realShaderDenoiseClaimAllowed=" + shaderDenoisedSourceReady
+                + ",round7.realShaderDenoiseClaimAllowed="
+                + (shaderDenoisedSourceReady && denoiseVisualIntent)
+                + ",round7.shaderDenoiseOverclaimPresent="
+                + (denoiseVisualIntent && !shaderDenoisedSourceReady)
                 + ",round7.shaderDenoiseBoundary=\""
                 + (shaderDenoisedSourceReady
                 ? "real shader-denoised output was reported by the submitted source"
@@ -384,6 +389,23 @@ public record FinalCompositeModeStatus(
             boolean giSourceReady,
             boolean denoisedSourceReady
     ) {
+        return this.selectedSourceReadinessSummary(
+                directSourceReady,
+                giSourceReady,
+                denoisedSourceReady,
+                false
+        );
+    }
+
+    public String selectedSourceReadinessSummary(
+            boolean directSourceReady,
+            boolean giSourceReady,
+            boolean cpuDenoisedSourceReady,
+            boolean shaderDenoisedSourceReady
+    ) {
+        boolean denoisedSourceReady = cpuDenoisedSourceReady || shaderDenoisedSourceReady;
+        PublicMojangFinalCompositeSubmissionResult.DenoisedGiSourceIdentity denoisedIdentity =
+                denoisedSourceIdentity(cpuDenoisedSourceReady, shaderDenoisedSourceReady);
         if (this.baselineVisualMode()) {
             return "baseline-control:ready";
         }
@@ -391,21 +413,25 @@ public record FinalCompositeModeStatus(
             return "raw-gi:" + readyState(giSourceReady);
         }
         if (this.denoisedGiVisualMode()) {
-            return "denoised-gi:" + readyState(denoisedSourceReady);
+            return "denoised-gi:" + readyState(denoisedSourceReady)
+                    + ",sourceIdentity=" + denoisedIdentity.stableLabel();
         }
         if (this.directLightingEnabled && !this.diffuseGiEnabled) {
             return "direct-light:" + readyState(directSourceReady);
         }
         if (this.finalCompositeVisualMode()) {
             if (directSourceReady && giSourceReady && denoisedSourceReady) {
-                return "final-selected=direct+raw-gi+denoised-gi:ready-for-controller-surface-quality-proof";
+                return "final-selected=direct+raw-gi+denoised-gi:ready-for-controller-surface-quality-proof"
+                        + ",denoisedSourceIdentity=" + denoisedIdentity.stableLabel();
             }
             if (denoisedSourceReady && giSourceReady) {
-                return "final-selected=raw-gi+denoised-gi:ready,direct-blend=" + readyState(directSourceReady);
+                return "final-selected=raw-gi+denoised-gi:ready,direct-blend=" + readyState(directSourceReady)
+                        + ",denoisedSourceIdentity=" + denoisedIdentity.stableLabel();
             }
             if (denoisedSourceReady) {
                 return "final-selected=denoised-gi-only:degraded,raw-gi=missing,direct-blend="
-                        + readyState(directSourceReady);
+                        + readyState(directSourceReady)
+                        + ",denoisedSourceIdentity=" + denoisedIdentity.stableLabel();
             }
             if (giSourceReady) {
                 return "final-selected=raw-gi-fallback:degraded,denoised-gi=missing,direct-blend="
@@ -416,7 +442,8 @@ public record FinalCompositeModeStatus(
         }
         return "custom:direct=" + readyState(directSourceReady)
                 + ",raw-gi=" + readyState(giSourceReady)
-                + ",denoised-gi=" + readyState(denoisedSourceReady);
+                + ",denoised-gi=" + readyState(denoisedSourceReady)
+                + ",denoisedSourceIdentity=" + denoisedIdentity.stableLabel();
     }
 
     public String focusedRegionProofExpectation() {
@@ -507,6 +534,8 @@ public record FinalCompositeModeStatus(
                 (this.denoisedGiVisualMode() || this.finalCompositeVisualMode()) && this.diffuseGiEnabled,
                 shaderDenoisedSourceReady
         )
+                + ",selectedDenoisedIdentity="
+                + denoisedSourceIdentity(cpuDenoisedSourceReady, shaderDenoisedSourceReady).stableLabel()
                 + ",shaderDenoiseRequiredForQualityMilestone="
                 + (this.denoisedGiVisualMode() || this.finalCompositeVisualMode());
     }
@@ -530,7 +559,8 @@ public record FinalCompositeModeStatus(
         if (!antiWashoutClean) {
             return "blocked:rectangular-washout-or-focus-window-risk";
         }
-        if (!(directSourceReady && rawGiSourceReady && cpuDenoisedSourceReady)) {
+        boolean denoisedSourceReady = cpuDenoisedSourceReady || shaderDenoisedSourceReady;
+        if (!(directSourceReady && rawGiSourceReady && denoisedSourceReady)) {
             return "blocked:missing-source "
                     + this.selectedSourceIdentityMatrix(
                     directSourceReady,
@@ -548,7 +578,7 @@ public record FinalCompositeModeStatus(
         if (!shaderDenoisedSourceReady) {
             return "partial:first-lighting-preview-ready;real-shader-denoise=pending";
         }
-        return "ready:source-separated-final-composite-with-shader-denoise-candidate";
+        return "ready:source-separated-final-composite-with-shader-generated-denoised-gi-candidate";
     }
 
     public String geometryMaterialProjectionBoundary() {
@@ -622,5 +652,21 @@ public record FinalCompositeModeStatus(
 
     private static String readyState(boolean sourceReady) {
         return sourceReady ? "ready" : "missing";
+    }
+
+    private static PublicMojangFinalCompositeSubmissionResult.DenoisedGiSourceIdentity denoisedSourceIdentity(
+            boolean cpuDenoisedSourceReady,
+            boolean shaderDenoisedSourceReady
+    ) {
+        if (cpuDenoisedSourceReady && shaderDenoisedSourceReady) {
+            return PublicMojangFinalCompositeSubmissionResult.DenoisedGiSourceIdentity.MIXED_CPU_AND_SHADER;
+        }
+        if (shaderDenoisedSourceReady) {
+            return PublicMojangFinalCompositeSubmissionResult.DenoisedGiSourceIdentity.SHADER_GENERATED_DENOISED_GI;
+        }
+        if (cpuDenoisedSourceReady) {
+            return PublicMojangFinalCompositeSubmissionResult.DenoisedGiSourceIdentity.CPU_DENOISED_READBACK;
+        }
+        return PublicMojangFinalCompositeSubmissionResult.DenoisedGiSourceIdentity.NONE;
     }
 }

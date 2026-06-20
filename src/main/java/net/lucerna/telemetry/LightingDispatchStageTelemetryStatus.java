@@ -47,6 +47,12 @@ public record LightingDispatchStageTelemetryStatus(
         Boolean cpuDenoiseReady,
         Boolean shaderDenoiseIntended,
         Boolean shaderOutputReady,
+        Boolean shaderDispatchPrepared,
+        Boolean shaderOutputImageReady,
+        Boolean shaderOutputMaterialReady,
+        Boolean shaderGeneratedOutput,
+        Boolean cpuReadbackFallback,
+        String shaderDenoiseBlockers,
         Long edgeRejectionCount,
         Long historyRejectionCount,
         String sourceIdentity,
@@ -62,6 +68,7 @@ public record LightingDispatchStageTelemetryStatus(
         payloadGenerationRange = blankToEmpty(stripQuotes(payloadGenerationRange));
         outputDimensions = blankToEmpty(stripQuotes(outputDimensions));
         outputEnergy = blankToEmpty(stripQuotes(outputEnergy));
+        shaderDenoiseBlockers = blankToEmpty(stripQuotes(shaderDenoiseBlockers));
         sourceIdentity = blankToEmpty(stripQuotes(sourceIdentity));
         evidenceBoundary = blankToEmpty(stripQuotes(evidenceBoundary));
         details = immutable(details);
@@ -337,6 +344,58 @@ public record LightingDispatchStageTelemetryStatus(
                 "gpu_denoise_output",
                 "shader_denoise_ready"
         ));
+        Boolean shaderDispatchPrepared = parseBoolean(firstPresent(
+                normalizedFields,
+                "shader_dispatch_prepared",
+                "shader_denoise_dispatch_prepared",
+                "denoise_shader_dispatch_prepared",
+                "real_shader_denoise_dispatch_prepared",
+                "gpu_denoise_dispatch_prepared"
+        ));
+        Boolean shaderOutputImageReady = parseBoolean(firstPresent(
+                normalizedFields,
+                "shader_output_image_ready",
+                "shader_denoise_output_image_ready",
+                "real_shader_output_image_ready",
+                "real_shader_denoise_output_image_ready",
+                "gpu_denoise_output_image_ready"
+        ));
+        Boolean shaderOutputMaterialReady = parseBoolean(firstPresent(
+                normalizedFields,
+                "shader_output_material_ready",
+                "shader_denoise_output_material_ready",
+                "real_shader_output_material_ready",
+                "real_shader_denoise_output_material_ready",
+                "gpu_denoise_output_material_ready"
+        ));
+        Boolean shaderGeneratedOutput = parseBoolean(firstPresent(
+                normalizedFields,
+                "shader_generated_output",
+                "shader_denoise_generated_output",
+                "real_shader_generated_output",
+                "real_shader_denoise_generated_output",
+                "real_denoise_shader_generated_output",
+                "gpu_denoise_generated_output"
+        ));
+        Boolean cpuReadbackFallback = parseBoolean(firstPresent(
+                normalizedFields,
+                "cpu_readback_fallback",
+                "cpu_readback_fallback_used",
+                "cpu_denoise_readback_fallback",
+                "shader_denoise_cpu_readback_fallback",
+                "denoise_cpu_readback_fallback"
+        ));
+        String shaderDenoiseBlockers = firstPresent(
+                normalizedFields,
+                "shader_denoise_blockers",
+                "shader_denoise_blocker",
+                "shader_blockers",
+                "shader_blocker",
+                "denoise_blockers",
+                "output_blockers",
+                "blockers",
+                "blocker"
+        );
         Long edgeRejectionCount = parseLong(firstPresent(
                 normalizedFields,
                 "edge_rejection_count",
@@ -425,6 +484,12 @@ public record LightingDispatchStageTelemetryStatus(
                 cpuDenoiseReady,
                 shaderDenoiseIntended,
                 shaderOutputReady,
+                shaderDispatchPrepared,
+                shaderOutputImageReady,
+                shaderOutputMaterialReady,
+                shaderGeneratedOutput,
+                cpuReadbackFallback,
+                shaderDenoiseBlockers,
                 edgeRejectionCount,
                 historyRejectionCount,
                 sourceIdentity,
@@ -453,6 +518,11 @@ public record LightingDispatchStageTelemetryStatus(
             fieldCount += append(label, "cpuDenoise", this.cpuDenoiseReady == null ? "" : Boolean.toString(this.cpuDenoiseReady));
             fieldCount += append(label, "shaderIntent", this.shaderDenoiseIntended == null ? "" : Boolean.toString(this.shaderDenoiseIntended));
             fieldCount += append(label, "shaderOutput", this.shaderOutputReady == null ? "" : Boolean.toString(this.shaderOutputReady));
+            fieldCount += append(label, "shaderDispatch", this.shaderDispatchPrepared == null ? "" : Boolean.toString(this.shaderDispatchPrepared));
+            fieldCount += append(label, "shaderImage", this.shaderOutputImageReady == null ? "" : Boolean.toString(this.shaderOutputImageReady));
+            fieldCount += append(label, "shaderMaterial", this.shaderOutputMaterialReady == null ? "" : Boolean.toString(this.shaderOutputMaterialReady));
+            fieldCount += append(label, "shaderGenerated", this.shaderGeneratedOutput == null ? "" : Boolean.toString(this.shaderGeneratedOutput));
+            fieldCount += append(label, "cpuFallback", this.cpuReadbackFallback == null ? "" : Boolean.toString(this.cpuReadbackFallback));
         }
         if (fieldCount == 0) {
             label.append(" reported");
@@ -553,9 +623,21 @@ public record LightingDispatchStageTelemetryStatus(
                 + " cpuReady=" + booleanOrUnknown(this.cpuDenoiseReady)
                 + " shaderIntent=" + booleanOrUnknown(this.shaderDenoiseIntended)
                 + " shaderOutput=" + booleanOrUnknown(this.shaderOutputReady)
+                + " shaderGenerated=" + booleanOrUnknown(this.shaderGeneratedOutput)
+                + " cpuFallback=" + booleanOrUnknown(this.cpuReadbackFallback)
                 + " edgeRejects=" + valueOrUnknown(this.edgeRejectionCount)
                 + " historyRejects=" + valueOrUnknown(this.historyRejectionCount)
                 + " source=" + shorten(this.sourceIdentity, 40);
+    }
+
+    public String shaderDenoiseStateStatusLine() {
+        return this.stageDisplayName()
+                + " shader denoise dispatchPrepared=" + booleanOrUnknown(this.shaderDispatchPrepared)
+                + " outputImage=" + booleanOrUnknown(this.shaderOutputImageReady)
+                + " outputMaterial=" + booleanOrUnknown(this.shaderOutputMaterialReady)
+                + " generatedOutput=" + booleanOrUnknown(this.shaderGeneratedOutput)
+                + " cpuReadbackFallback=" + booleanOrUnknown(this.cpuReadbackFallback)
+                + " blockers=" + shorten(this.shaderDenoiseBlockers, 56);
     }
 
     public String denoiseEvidenceBoundaryLine() {
@@ -581,6 +663,7 @@ public record LightingDispatchStageTelemetryStatus(
         fields.put(normalizedPrefix + ".proofBoundary", this.proofBoundaryLine());
         if (isDenoiseLikeStage() || hasAnyDenoiseEvidence()) {
             fields.put(normalizedPrefix + ".denoiseReadiness", this.denoiseReadinessStatusLine());
+            fields.put(normalizedPrefix + ".shaderDenoiseState", this.shaderDenoiseStateStatusLine());
             fields.put(normalizedPrefix + ".denoiseEvidenceBoundary", this.denoiseEvidenceBoundaryLine());
         }
         if (this.enabled != null) {
@@ -706,6 +789,24 @@ public record LightingDispatchStageTelemetryStatus(
         if (this.shaderOutputReady != null) {
             fields.put(normalizedPrefix + ".shaderOutputReady", Boolean.toString(this.shaderOutputReady));
         }
+        if (this.shaderDispatchPrepared != null) {
+            fields.put(normalizedPrefix + ".shaderDispatchPrepared", Boolean.toString(this.shaderDispatchPrepared));
+        }
+        if (this.shaderOutputImageReady != null) {
+            fields.put(normalizedPrefix + ".shaderOutputImageReady", Boolean.toString(this.shaderOutputImageReady));
+        }
+        if (this.shaderOutputMaterialReady != null) {
+            fields.put(normalizedPrefix + ".shaderOutputMaterialReady", Boolean.toString(this.shaderOutputMaterialReady));
+        }
+        if (this.shaderGeneratedOutput != null) {
+            fields.put(normalizedPrefix + ".shaderGeneratedOutput", Boolean.toString(this.shaderGeneratedOutput));
+        }
+        if (this.cpuReadbackFallback != null) {
+            fields.put(normalizedPrefix + ".cpuReadbackFallback", Boolean.toString(this.cpuReadbackFallback));
+        }
+        if (!this.shaderDenoiseBlockers.isBlank()) {
+            fields.put(normalizedPrefix + ".shaderDenoiseBlockers", this.shaderDenoiseBlockers);
+        }
         if (this.edgeRejectionCount != null) {
             fields.put(normalizedPrefix + ".edgeRejectionCount", Long.toString(this.edgeRejectionCount));
         }
@@ -786,6 +887,9 @@ public record LightingDispatchStageTelemetryStatus(
     }
 
     private String realGpuOutputBoundaryLabel() {
+        if (this.shaderGeneratedOutput != null) {
+            return Boolean.toString(this.shaderGeneratedOutput);
+        }
         if (this.shaderOutputReady != null) {
             return Boolean.toString(this.shaderOutputReady);
         }
@@ -818,6 +922,12 @@ public record LightingDispatchStageTelemetryStatus(
                 || this.cpuDenoiseReady != null
                 || this.shaderDenoiseIntended != null
                 || this.shaderOutputReady != null
+                || this.shaderDispatchPrepared != null
+                || this.shaderOutputImageReady != null
+                || this.shaderOutputMaterialReady != null
+                || this.shaderGeneratedOutput != null
+                || this.cpuReadbackFallback != null
+                || !this.shaderDenoiseBlockers.isBlank()
                 || this.edgeRejectionCount != null
                 || this.historyRejectionCount != null
                 || !this.sourceIdentity.isBlank()

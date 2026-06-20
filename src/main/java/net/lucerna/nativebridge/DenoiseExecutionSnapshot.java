@@ -40,6 +40,15 @@ public record DenoiseExecutionSnapshot(
         boolean denoisedCpuOutputGenerated,
         boolean denoisedOutputDiffersFromRaw,
         boolean realDenoiseShaderOutput,
+        boolean rawGiInputReady,
+        boolean cpuDenoisedReadbackReady,
+        boolean shaderDenoiseDispatchPrepared,
+        boolean shaderDenoiseInputReady,
+        boolean shaderDenoiseOutputReady,
+        boolean shaderDenoiseOutputImageReady,
+        boolean shaderDenoiseOutputMaterialReady,
+        boolean shaderDenoiseShaderGeneratedOutput,
+        boolean cpuFallbackQualityMetrics,
         boolean compositeStageRecorded,
         boolean compositeEnabled,
         boolean compositeReady,
@@ -121,6 +130,15 @@ public record DenoiseExecutionSnapshot(
                 false,
                 false,
                 false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
                 true,
                 true,
                 false,
@@ -177,6 +195,15 @@ public record DenoiseExecutionSnapshot(
                     0,
                     0,
                     0,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
+                    false,
                     false,
                     false,
                     false,
@@ -250,6 +277,15 @@ public record DenoiseExecutionSnapshot(
                 parseBoolean(extractField(denoiseExecution, "denoised_cpu_output_generated")),
                 parseBoolean(extractField(denoiseExecution, "denoised_output_differs_from_raw")),
                 parseBoolean(extractField(denoiseExecution, "real_denoise_shader_output")),
+                parseBoolean(extractField(denoiseExecution, "raw_gi_input_ready")),
+                parseBoolean(extractField(denoiseExecution, "cpu_denoised_readback_ready")),
+                parseBoolean(extractField(denoiseExecution, "shader_denoise_dispatch_prepared")),
+                parseBoolean(extractField(denoiseExecution, "shader_denoise_input_ready")),
+                parseBoolean(extractField(denoiseExecution, "shader_denoise_output_ready")),
+                parseBoolean(extractField(denoiseExecution, "shader_denoise_output_image_ready")),
+                parseBoolean(extractField(denoiseExecution, "shader_denoise_output_material_ready")),
+                parseBoolean(extractField(denoiseExecution, "shader_denoise_output_shader_generated")),
+                parseBoolean(extractField(denoiseExecution, "cpu_fallback_quality_metrics")),
                 parseBoolean(extractField(denoiseExecution, "composite_stage_recorded")),
                 parseBoolean(extractField(denoiseExecution, "composite_enabled")),
                 parseBoolean(extractField(denoiseExecution, "composite_ready")),
@@ -278,12 +314,14 @@ public record DenoiseExecutionSnapshot(
 
     public boolean cpuDenoisedOutputReadbackReady() {
         return this.hasExecutionTelemetry()
-                && this.enabled
-                && this.accepted
-                && this.denoisedOutputIntent
-                && this.denoisedCpuOutputGenerated
-                && this.denoisedOutputPixels > 0
-                && this.denoisedOutputChecksum > 0L;
+                && (this.cpuDenoisedReadbackReady || (
+                this.enabled
+                        && this.accepted
+                        && this.denoisedOutputIntent
+                        && this.denoisedCpuOutputGenerated
+                        && this.denoisedOutputPixels > 0
+                        && this.denoisedOutputChecksum > 0L
+        ));
     }
 
     public boolean denoiseQualityEvidenceReady() {
@@ -340,6 +378,15 @@ public record DenoiseExecutionSnapshot(
                 + " denoisedOutputMeanAbsDelta=" + this.denoisedOutputMeanAbsDelta
                 + " denoisedOutputDiffersFromRaw=" + this.denoisedOutputDiffersFromRaw
                 + " realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
+                + " rawGiInputReady=" + this.rawGiInputReady
+                + " cpuDenoisedReadbackReady=" + this.cpuDenoisedReadbackReady
+                + " shaderDenoiseDispatchPrepared=" + this.shaderDenoiseDispatchPrepared
+                + " shaderDenoiseInputReady=" + this.shaderDenoiseInputReady
+                + " shaderDenoiseOutputReady=" + this.shaderDenoiseOutputReady
+                + " shaderDenoiseOutputImageReady=" + this.shaderDenoiseOutputImageReady
+                + " shaderDenoiseOutputMaterialReady=" + this.shaderDenoiseOutputMaterialReady
+                + " shaderDenoiseShaderGeneratedOutput=" + this.shaderDenoiseShaderGeneratedOutput
+                + " cpuFallbackQualityMetrics=" + this.cpuFallbackQualityMetrics
                 + " cpuReadbackReady=" + this.cpuDenoisedOutputReadbackReady()
                 + " denoiseQualityEvidenceReady=" + this.denoiseQualityEvidenceReady()
                 + " readinessBoundary=" + this.denoiseReadinessBoundary()

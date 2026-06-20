@@ -146,6 +146,26 @@ public record DenoisePassPlan(
         return this.shaderOutputContract.realDenoiseShaderOutput();
     }
 
+    public boolean shaderDenoiseDispatchPrepared() {
+        return this.shaderOutputContract.shaderDispatchPrepared();
+    }
+
+    public boolean shaderDenoiseOutputImageReady() {
+        return this.shaderOutputContract.shaderOutputImageReady();
+    }
+
+    public boolean shaderDenoiseOutputMaterialReady() {
+        return this.shaderOutputContract.shaderOutputMaterialReady();
+    }
+
+    public boolean shaderDenoiseGeneratedOutput() {
+        return this.shaderOutputContract.shaderGeneratedOutput();
+    }
+
+    public boolean shaderDenoiseCpuReadbackFallbackActive() {
+        return this.shaderOutputContract.cpuReadbackFallbackActive();
+    }
+
     public boolean readyForControllerShaderDenoiseProof() {
         return this.shaderOutputContract.readyForControllerShaderProof();
     }
@@ -164,6 +184,10 @@ public record DenoisePassPlan(
 
     public String shaderDenoisePendingChecklist() {
         return this.shaderOutputContract.pendingChecklist();
+    }
+
+    public String shaderDenoiseOutputReadinessSummary() {
+        return this.shaderOutputContract.outputReadinessSummary();
     }
 
     public String shaderDenoiseQualityBoundarySummary() {

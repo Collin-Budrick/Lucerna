@@ -236,6 +236,12 @@ public final class LucernaDebugOverlayLines {
                 + " cpu=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.cpuDenoiseReady())
                 + " shaderIntent=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderDenoiseIntended())
                 + " shaderOut=" + shaderOutputReadinessLabel(denoiseStage)));
+        lines.add(Component.literal("Shader state: dispatch=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderDispatchPrepared())
+                + " image=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderOutputImageReady())
+                + " material=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderOutputMaterialReady())
+                + " generated=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderGeneratedOutput())));
+        lines.add(Component.literal("Fallback/blockers: cpuFallback=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.cpuReadbackFallback())
+                + " blockers=" + shorten(denoiseStage == null ? "" : denoiseStage.shaderDenoiseBlockers(), 78)));
         lines.add(Component.literal("Denoise output: source=" + denoiseSourceIdentityLabel(denoiseStage)
                 + " generated=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.cpuOutputGenerated())
                 + " energy=" + stageOutputEnergyLabel(denoiseStage)

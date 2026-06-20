@@ -1147,17 +1147,23 @@ void append_denoise_execution_status(
         << ",optional_ao_placeholder=" << execution.last_optional_ao_placeholder
         << ",raw_gi_input_available=" << execution.last_raw_gi_input_available
         << ",raw_direct_input_available=" << execution.last_raw_direct_input_available
+        << ",raw_gi_input_ready=" << execution.last_raw_gi_input_ready
         << ",denoised_output_intent=" << execution.last_denoised_output_intent
         << ",denoised_cpu_output_generated=" << execution.last_denoised_cpu_output_generated
+        << ",cpu_denoised_readback_ready=" << execution.last_cpu_denoised_readback_ready
         << ",denoised_output_differs_from_raw=" << execution.last_denoised_output_differs_from_raw
         << ",raw_gi_source_present=" << execution.last_raw_gi_source_present
         << ",cpu_denoised_source_present=" << execution.last_cpu_denoised_source_present
         << ",shader_denoise_dispatch_intent=" << execution.last_shader_denoise_dispatch_intent
+        << ",shader_denoise_dispatch_prepared=" << execution.last_shader_denoise_dispatch_prepared
         << ",shader_denoise_input_ready=" << execution.last_shader_denoise_input_ready
         << ",shader_denoise_output_ready=" << execution.last_shader_denoise_output_ready
+        << ",shader_denoise_output_image_ready=" << execution.last_shader_denoise_output_image_ready
+        << ",shader_denoise_output_material_ready=" << execution.last_shader_denoise_output_material_ready
         << ",metadata_only_path=" << execution.last_metadata_only_path
         << ",real_denoise_shader_output=" << execution.last_real_denoise_shader_output
         << ",real_shader_output=" << execution.last_real_denoise_shader_output
+        << ",shader_denoise_output_shader_generated=" << execution.last_shader_denoise_output_shader_generated
         << ",cpu_fallback_quality_metrics=" << execution.last_cpu_fallback_quality_metrics
         << ",composite_stage_recorded=" << execution.last_composite_stage_recorded
         << ",composite_enabled=" << execution.last_composite_enabled
@@ -1182,6 +1188,12 @@ void append_denoise_execution_status(
         << ",denoised_output_marker=\"" << execution.last_denoised_output_marker
         << "\""
         << ",shader_denoise_readiness_marker=\"" << execution.last_shader_denoise_readiness_marker
+        << "\""
+        << ",shader_denoise_handoff_marker=\"" << execution.last_shader_denoise_handoff_marker
+        << "\""
+        << ",shader_denoise_output_readiness_marker=\"" << execution.last_shader_denoise_output_readiness_marker
+        << "\""
+        << ",shader_denoise_generation_marker=\"" << execution.last_shader_denoise_generation_marker
         << "\""
         << ",composite_marker=\"" << execution.last_composite_marker
         << "\""
@@ -2684,13 +2696,24 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
     denoise_execution.last_denoised_neighbor_luma_delta = 0;
     denoise_execution.last_noise_reduction_percent = 0;
     denoise_execution.last_denoised_cpu_output_generated = false;
+    denoise_execution.last_cpu_denoised_readback_ready = false;
     denoise_execution.last_denoised_output_differs_from_raw = false;
     denoise_execution.last_raw_gi_source_present = false;
+    denoise_execution.last_raw_gi_input_ready = false;
     denoise_execution.last_cpu_denoised_source_present = false;
     denoise_execution.last_metadata_only_path = true;
     denoise_execution.last_cpu_fallback_quality_metrics = false;
     denoise_execution.last_real_denoise_shader_output = false;
+    denoise_execution.last_shader_denoise_output_shader_generated = false;
     denoise_execution.last_shader_denoise_output_ready = false;
+    denoise_execution.last_shader_denoise_output_image_ready = false;
+    denoise_execution.last_shader_denoise_output_material_ready = false;
+    denoise_execution.last_shader_denoise_handoff_marker =
+            "cpu_denoised_readback_not_ready_for_material_handoff";
+    denoise_execution.last_shader_denoise_output_readiness_marker =
+            "shader_output_image_missing_material_missing_cpu_readback_pending";
+    denoise_execution.last_shader_denoise_generation_marker =
+            "shader_generated_output=false";
     denoise_execution.last_quality_marker = "cpu_fallback_quality_metrics_unavailable";
 
     const auto& gi_execution = staging_.lighting.diffuse_gi_execution;
@@ -2701,6 +2724,7 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
     }
     denoise_execution.last_raw_gi_source_present = true;
     denoise_execution.last_raw_gi_input_available = true;
+    denoise_execution.last_raw_gi_input_ready = true;
     denoise_execution.last_source_identity_marker =
             "raw_gi_source=native_diffuse_gi_cpu_readback";
 
@@ -2910,12 +2934,22 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
             denoise_execution.history_rejected,
             denoise_execution.last_history_rejected);
     denoise_execution.last_denoised_cpu_output_generated = true;
+    denoise_execution.last_cpu_denoised_readback_ready = true;
     denoise_execution.last_denoised_output_differs_from_raw = changed_pixels != 0;
     denoise_execution.last_cpu_denoised_source_present = true;
     denoise_execution.last_metadata_only_path = false;
     denoise_execution.last_cpu_fallback_quality_metrics = true;
     denoise_execution.last_real_denoise_shader_output = false;
+    denoise_execution.last_shader_denoise_output_shader_generated = false;
     denoise_execution.last_shader_denoise_output_ready = false;
+    denoise_execution.last_shader_denoise_output_image_ready = false;
+    denoise_execution.last_shader_denoise_output_material_ready = false;
+    denoise_execution.last_shader_denoise_handoff_marker =
+            "cpu_denoised_readback_ready_for_public_mojang_material_handoff";
+    denoise_execution.last_shader_denoise_output_readiness_marker =
+            "shader_output_image_missing_material_missing_cpu_readback_ready";
+    denoise_execution.last_shader_denoise_generation_marker =
+            "output_generated_by_native_cpu_readback_not_gpu_shader";
     denoise_execution.last_history_acceptance_reason = has_previous_cpu_history
             ? "previous_cpu_denoised_rgba8_within_temporal_delta_threshold"
             : (denoise_execution.last_temporal_history
@@ -6620,22 +6654,32 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
             || execution.last_raw_gi_samples > 0
             || execution.last_raw_gi_rays > 0
             || execution.last_raw_gi_cache_reads > 0;
+    execution.last_raw_gi_input_ready = execution.last_raw_gi_input_available
+            && denoise_stage.ready_for_native_execution_this_packet;
     execution.last_raw_gi_source_present = execution.last_raw_gi_input_available;
     execution.last_raw_direct_input_available = execution.last_direct_shadow_signal_available
             || direct_execution.last_sample_count > 0
             || direct_execution.last_ray_count > 0;
     execution.last_denoised_output_intent = denoise_stage.last_output_count > 0;
     execution.last_denoised_cpu_output_generated = false;
+    execution.last_cpu_denoised_readback_ready = false;
     execution.last_denoised_output_differs_from_raw = false;
     execution.last_cpu_denoised_source_present = false;
     execution.last_shader_denoise_dispatch_intent = denoise_stage.enabled_this_packet
             && execution.last_denoised_output_intent;
+    execution.last_shader_denoise_dispatch_prepared = execution.last_shader_denoise_dispatch_intent
+            && denoise_stage.last_validated
+            && execution.last_edge_input_count >= 3
+            && execution.last_raw_gi_input_available;
     execution.last_shader_denoise_input_ready = execution.last_shader_denoise_dispatch_intent
             && execution.last_raw_gi_source_present
             && execution.last_edge_input_count >= 3;
     execution.last_shader_denoise_output_ready = false;
+    execution.last_shader_denoise_output_image_ready = false;
+    execution.last_shader_denoise_output_material_ready = false;
     execution.last_metadata_only_path = true;
     execution.last_real_denoise_shader_output = false;
+    execution.last_shader_denoise_output_shader_generated = false;
     execution.last_cpu_fallback_quality_metrics = false;
     execution.last_composite_stage_recorded = composite_stage.packets > 0;
     execution.last_composite_enabled = composite_stage.enabled_this_packet;
@@ -6680,6 +6724,14 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
             execution.last_shader_denoise_input_ready
                     ? "shader_denoise_inputs_ready_output_pending_real_shader_output_false"
                     : "shader_denoise_inputs_pending_output_pending_real_shader_output_false";
+    execution.last_shader_denoise_handoff_marker =
+            execution.last_shader_denoise_dispatch_prepared
+                    ? "shader_denoise_dispatch_prepared_waiting_for_output_image_material"
+                    : "shader_denoise_dispatch_not_prepared";
+    execution.last_shader_denoise_output_readiness_marker =
+            "shader_output_image_missing_material_missing_cpu_readback_pending";
+    execution.last_shader_denoise_generation_marker =
+            "real_shader_generated_output=false";
     execution.last_composite_marker = execution.last_composite_stage_recorded
             ? (execution.last_composite_placeholder
                     ? "composite_stage_metadata_recorded_placeholder"
@@ -6747,9 +6799,17 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
     execution.last_denoised_output_marker = denoised_output_generated
             ? "denoised_diffuse_gi_cpu_rgba8_output_generated_from_raw_gi"
             : execution.last_denoised_output_marker;
+    execution.last_raw_gi_input_ready = execution.last_raw_gi_input_ready
+            || denoised_output_generated;
     execution.last_cpu_denoised_source_present = denoised_output_generated;
+    execution.last_cpu_denoised_readback_ready = denoised_output_generated;
     execution.last_metadata_only_path = !denoised_output_generated;
     execution.last_shader_denoise_output_ready = false;
+    execution.last_shader_denoise_output_image_ready = false;
+    execution.last_shader_denoise_output_material_ready = denoised_output_generated
+            && execution.last_composite_stage_recorded
+            && execution.last_composite_outputs > 0;
+    execution.last_shader_denoise_output_shader_generated = false;
     execution.last_source_identity_marker = denoised_output_generated
             ? "raw_gi_source=native_diffuse_gi_cpu_readback;denoised_source=native_cpu_readback;shader_source=absent"
             : execution.last_source_identity_marker;
@@ -6757,6 +6817,18 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
             execution.last_shader_denoise_input_ready
                     ? "shader_denoise_inputs_ready_dispatch_intent_recorded_output_pending_real_shader_output_false"
                     : "shader_denoise_inputs_pending_dispatch_intent_recorded_output_pending_real_shader_output_false";
+    execution.last_shader_denoise_handoff_marker = denoised_output_generated
+            ? (execution.last_shader_denoise_output_material_ready
+                    ? "cpu_readback_material_handoff_ready_shader_output_image_missing"
+                    : "cpu_readback_ready_waiting_for_composite_material_handoff")
+            : execution.last_shader_denoise_handoff_marker;
+    execution.last_shader_denoise_output_readiness_marker = denoised_output_generated
+            ? (execution.last_shader_denoise_output_material_ready
+                    ? "shader_output_image_missing_material_handoff_ready_cpu_readback_source"
+                    : "shader_output_image_missing_material_handoff_pending_cpu_readback_source")
+            : execution.last_shader_denoise_output_readiness_marker;
+    execution.last_shader_denoise_generation_marker =
+            "shader_generated_output=false;source=native_cpu_denoised_readback";
     execution.last_metadata_only_proof_rejected = !denoised_output_generated;
     execution.last_focus_window_capture_rejected = denoised_output_generated
             && execution.last_denoised_output_changed_pixels != 0

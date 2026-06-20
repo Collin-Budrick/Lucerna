@@ -4,6 +4,11 @@ public record ShaderDenoiseOutputContract(
         boolean contractReady,
         boolean dispatchPathImplemented,
         boolean shaderWritableOutput,
+        boolean shaderDispatchPrepared,
+        boolean shaderOutputImageReady,
+        boolean shaderOutputMaterialReady,
+        boolean shaderGeneratedOutput,
+        boolean cpuReadbackFallbackActive,
         boolean realDenoiseShaderOutput,
         boolean geometryAwareInputsBound,
         boolean edgePreservationInputsBound,
@@ -45,6 +50,11 @@ public record ShaderDenoiseOutputContract(
                 contractReady,
                 dispatchPathImplemented,
                 shaderWritableOutput,
+                shaderDispatchPrepared,
+                shaderOutputImageReady,
+                shaderOutputMaterialReady,
+                shaderGeneratedOutput,
+                cpuReadbackFallbackActive,
                 realDenoiseShaderOutput
         ));
         rawVsDenoisedQualityBoundary = normalizeText(rawVsDenoisedQualityBoundary, defaultQualityBoundary(
@@ -58,18 +68,33 @@ public record ShaderDenoiseOutputContract(
                 contractReady,
                 dispatchPathImplemented,
                 shaderWritableOutput,
+                shaderDispatchPrepared,
+                shaderOutputImageReady,
+                shaderOutputMaterialReady,
+                shaderGeneratedOutput,
+                cpuReadbackFallbackActive,
                 realDenoiseShaderOutput
         ));
         readinessReason = normalizeText(readinessReason, defaultReadinessReason(
                 contractReady,
                 dispatchPathImplemented,
                 shaderWritableOutput,
+                shaderDispatchPrepared,
+                shaderOutputImageReady,
+                shaderOutputMaterialReady,
+                shaderGeneratedOutput,
+                cpuReadbackFallbackActive,
                 realDenoiseShaderOutput
         ));
     }
 
     public static ShaderDenoiseOutputContract disabled(String reason) {
         return new ShaderDenoiseOutputContract(
+                false,
+                false,
+                false,
+                false,
+                false,
                 false,
                 false,
                 false,
@@ -116,6 +141,11 @@ public record ShaderDenoiseOutputContract(
                 false,
                 false,
                 false,
+                false,
+                false,
+                false,
+                true,
+                false,
                 geometryAwareInputsBound,
                 edgePreservationInputsBound,
                 temporalInputsBound,
@@ -144,6 +174,11 @@ public record ShaderDenoiseOutputContract(
         return this.contractReady
                 && this.dispatchPathImplemented
                 && this.shaderWritableOutput
+                && this.shaderDispatchPrepared
+                && this.shaderOutputImageReady
+                && this.shaderOutputMaterialReady
+                && this.shaderGeneratedOutput
+                && !this.cpuReadbackFallbackActive
                 && this.realDenoiseShaderOutput
                 && this.width > 0
                 && this.height > 0;
@@ -153,6 +188,11 @@ public record ShaderDenoiseOutputContract(
         return "shaderDenoise contractReady=" + this.contractReady
                 + " dispatchPathImplemented=" + this.dispatchPathImplemented
                 + " shaderWritableOutput=" + this.shaderWritableOutput
+                + " shaderDispatchPrepared=" + this.shaderDispatchPrepared
+                + " shaderOutputImageReady=" + this.shaderOutputImageReady
+                + " shaderOutputMaterialReady=" + this.shaderOutputMaterialReady
+                + " shaderGeneratedOutput=" + this.shaderGeneratedOutput
+                + " cpuReadbackFallbackActive=" + this.cpuReadbackFallbackActive
                 + " realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
                 + " geometryInputs=" + this.geometryAwareInputsBound
                 + " edgePreservationInputs=" + this.edgePreservationInputsBound
@@ -187,8 +227,25 @@ public record ShaderDenoiseOutputContract(
                 + " inputsCompleteForDispatch=" + this.shaderDenoiseInputsCompleteForDispatch()
                 + " dispatchPathImplemented=" + this.dispatchPathImplemented
                 + " shaderWritableOutput=" + this.shaderWritableOutput
+                + " shaderDispatchPrepared=" + this.shaderDispatchPrepared
+                + " shaderOutputImageReady=" + this.shaderOutputImageReady
+                + " shaderOutputMaterialReady=" + this.shaderOutputMaterialReady
+                + " shaderGeneratedOutput=" + this.shaderGeneratedOutput
+                + " cpuReadbackFallbackActive=" + this.cpuReadbackFallbackActive
                 + " realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
                 + " pending=" + this.pendingReason;
+    }
+
+    public String outputReadinessSummary() {
+        return "shaderDenoiseOutputReadiness"
+                + " dispatchPrepared=" + this.shaderDispatchPrepared
+                + " imageReady=" + this.shaderOutputImageReady
+                + " materialReady=" + this.shaderOutputMaterialReady
+                + " shaderGenerated=" + this.shaderGeneratedOutput
+                + " cpuFallback=" + this.cpuReadbackFallbackActive
+                + " realShaderOutput=" + this.realDenoiseShaderOutput
+                + " readyForProof=" + this.readyForControllerShaderProof()
+                + " reason=" + this.readinessReason;
     }
 
     public String qualityBoundarySummary() {
@@ -200,6 +257,11 @@ public record ShaderDenoiseOutputContract(
             boolean contractReady,
             boolean dispatchPathImplemented,
             boolean shaderWritableOutput,
+            boolean shaderDispatchPrepared,
+            boolean shaderOutputImageReady,
+            boolean shaderOutputMaterialReady,
+            boolean shaderGeneratedOutput,
+            boolean cpuReadbackFallbackActive,
             boolean realDenoiseShaderOutput
     ) {
         if (!contractReady) {
@@ -208,8 +270,22 @@ public record ShaderDenoiseOutputContract(
         if (!dispatchPathImplemented) {
             return "shader denoise dispatch path is not wired yet";
         }
+        if (!shaderDispatchPrepared) {
+            return "shader denoise dispatch is not prepared for the current frame";
+        }
         if (!shaderWritableOutput) {
             return "shader denoise output attachment is not writable yet";
+        }
+        if (!shaderOutputImageReady) {
+            return "shader denoise output image is not ready";
+        }
+        if (!shaderOutputMaterialReady) {
+            return "shader denoise material/descriptors are not ready";
+        }
+        if (!shaderGeneratedOutput) {
+            return cpuReadbackFallbackActive
+                    ? "CPU/readback denoise fallback is active; shader output has not generated pixels"
+                    : "shader denoise output has not generated pixels";
         }
         if (!realDenoiseShaderOutput) {
             return "shader denoise output has not been controller-validated";
@@ -221,6 +297,11 @@ public record ShaderDenoiseOutputContract(
             boolean contractReady,
             boolean dispatchPathImplemented,
             boolean shaderWritableOutput,
+            boolean shaderDispatchPrepared,
+            boolean shaderOutputImageReady,
+            boolean shaderOutputMaterialReady,
+            boolean shaderGeneratedOutput,
+            boolean cpuReadbackFallbackActive,
             boolean realDenoiseShaderOutput
     ) {
         if (!contractReady) {
@@ -229,8 +310,19 @@ public record ShaderDenoiseOutputContract(
         if (!dispatchPathImplemented) {
             return "contract-only resource; scheduler has not dispatched a denoise shader";
         }
+        if (!shaderDispatchPrepared) {
+            return "dispatch path exists but no current-frame shader dispatch has been prepared";
+        }
         if (!shaderWritableOutput) {
             return "dispatch path exists but writable denoise output is not bound";
+        }
+        if (!shaderOutputImageReady || !shaderOutputMaterialReady) {
+            return "shader output target or descriptor material is not ready for generated output";
+        }
+        if (!shaderGeneratedOutput) {
+            return cpuReadbackFallbackActive
+                    ? "CPU/readback fallback is active; shader output has no generated pixels"
+                    : "shader output target is ready but no shader-generated pixels are proven";
         }
         if (!realDenoiseShaderOutput) {
             return "shader wrote an output candidate but controller proof has not validated it";
@@ -264,15 +356,33 @@ public record ShaderDenoiseOutputContract(
             boolean contractReady,
             boolean dispatchPathImplemented,
             boolean shaderWritableOutput,
+            boolean shaderDispatchPrepared,
+            boolean shaderOutputImageReady,
+            boolean shaderOutputMaterialReady,
+            boolean shaderGeneratedOutput,
+            boolean cpuReadbackFallbackActive,
             boolean realDenoiseShaderOutput
     ) {
-        if (contractReady && dispatchPathImplemented && shaderWritableOutput && realDenoiseShaderOutput) {
+        if (contractReady
+                && dispatchPathImplemented
+                && shaderWritableOutput
+                && shaderDispatchPrepared
+                && shaderOutputImageReady
+                && shaderOutputMaterialReady
+                && shaderGeneratedOutput
+                && !cpuReadbackFallbackActive
+                && realDenoiseShaderOutput) {
             return "real shader denoise output is available for validation";
         }
         return defaultPendingReason(
                 contractReady,
                 dispatchPathImplemented,
                 shaderWritableOutput,
+                shaderDispatchPrepared,
+                shaderOutputImageReady,
+                shaderOutputMaterialReady,
+                shaderGeneratedOutput,
+                cpuReadbackFallbackActive,
                 realDenoiseShaderOutput
         );
     }

@@ -214,6 +214,14 @@ function Get-Round7CaptureIntent {
             }
         }
         "ShaderDenoisedGi" {
+            $shaderDenoiseRequiredPatterns = @(
+                "(?:round7\.shaderDenoise\.dispatchPrepared|shaderDenoiseDispatchPrepared|shader_denoise_dispatch_prepared)=true",
+                "(?:round7\.shaderDenoise\.outputImageReady|shaderDenoiseOutputImageReady|shader_denoise_output_image_ready)=(?:true|false)",
+                "(?:round7\.shaderDenoise\.outputMaterialReady|shaderDenoiseOutputMaterialReady|shader_denoise_output_material_ready)=(?:true|false)",
+                "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=(?:true|false)",
+                "(?:round7\.shaderDenoise\.cpuReadbackFallbackActive|shaderDenoiseCpuReadbackFallbackActive|cpuReadbackDenoiseFallbackActive|cpu_readback_denoise_fallback_active)=(?:true|false)",
+                "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=(?:true|false)"
+            )
             return [ordered]@{
                 rendererEnabled = $true
                 debugOverlay = "OFF"
@@ -223,13 +231,19 @@ function Get-Round7CaptureIntent {
                 requiredPatterns = @(
                     "(?:shaderDenoiseIntent|shader_denoise_intent|denoiseShaderIntent|denoise_shader_intent|shaderDenoiseVisualShaderIntent)=true",
                     "(?:shaderDenoiseInputReady|shader_denoise_input_ready|shaderDenoiseRawInputReady|shader_denoise_raw_input_ready|rawGiInputReady|raw_gi_input_ready)=true|(?:rawGI|cpuDenoisedGI)=enabled-ready|(?:rawGI|cpuDenoisedGI)=ready",
-                    "(?:cpuReadbackDenoiseSource|cpu_readback_denoise_source|cpuDenoisedSource|cpu_denoised_source|sourceIdentity=.*cpu-denoised-diffuse-gi-rgba8|denoisedPayloadEvidence=.*cpu)",
-                    "(?:(?:realDenoiseShaderOutput|real_denoise_shader_output|realShaderDenoiseOutputReady|shaderDenoiseOutputReady|shader_denoise_output_ready)=true|(?:realDenoiseShaderOutput|real_denoise_shader_output|realShaderDenoiseOutputReady|shaderDenoiseOutputReady|shader_denoise_output_ready)=false|(?:shaderDenoiseOutputState|shader_denoise_output_state|shaderDenoiseReadiness|shader_denoise_readiness)=(?:open|false|not-ready|not_ready|pending|missing))",
                     "public Mojang Round 7 DENOISED_GI visual render pass submitted; .*mode=ROUND7_DENOISED_GI"
-                )
+                ) + $shaderDenoiseRequiredPatterns
             }
         }
         "ShaderDenoiseFinalComposite" {
+            $shaderDenoiseRequiredPatterns = @(
+                "(?:round7\.shaderDenoise\.dispatchPrepared|shaderDenoiseDispatchPrepared|shader_denoise_dispatch_prepared)=true",
+                "(?:round7\.shaderDenoise\.outputImageReady|shaderDenoiseOutputImageReady|shader_denoise_output_image_ready)=(?:true|false)",
+                "(?:round7\.shaderDenoise\.outputMaterialReady|shaderDenoiseOutputMaterialReady|shader_denoise_output_material_ready)=(?:true|false)",
+                "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=(?:true|false)",
+                "(?:round7\.shaderDenoise\.cpuReadbackFallbackActive|shaderDenoiseCpuReadbackFallbackActive|cpuReadbackDenoiseFallbackActive|cpu_readback_denoise_fallback_active)=(?:true|false)",
+                "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=(?:true|false)"
+            )
             return [ordered]@{
                 rendererEnabled = $true
                 debugOverlay = "OFF"
@@ -239,11 +253,9 @@ function Get-Round7CaptureIntent {
                 requiredPatterns = @(
                     "(?:shaderDenoiseIntent|shader_denoise_intent|denoiseShaderIntent|denoise_shader_intent|shaderDenoiseVisualShaderIntent)=true",
                     "(?:shaderDenoiseInputReady|shader_denoise_input_ready|shaderDenoiseRawInputReady|shader_denoise_raw_input_ready|rawGiInputReady|raw_gi_input_ready)=true|(?:rawGI|cpuDenoisedGI)=enabled-ready|(?:rawGI|cpuDenoisedGI)=ready",
-                    "(?:cpuReadbackDenoiseSource|cpu_readback_denoise_source|cpuDenoisedSource|cpu_denoised_source|sourceIdentity=.*cpu-denoised-diffuse-gi-rgba8|denoisedPayloadEvidence=.*cpu)",
-                    "(?:(?:realDenoiseShaderOutput|real_denoise_shader_output|realShaderDenoiseOutputReady|shaderDenoiseOutputReady|shader_denoise_output_ready)=true|(?:realDenoiseShaderOutput|real_denoise_shader_output|realShaderDenoiseOutputReady|shaderDenoiseOutputReady|shader_denoise_output_ready)=false|(?:shaderDenoiseOutputState|shader_denoise_output_state|shaderDenoiseReadiness|shader_denoise_readiness)=(?:open|false|not-ready|not_ready|pending|missing))",
                     "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true",
                     "public Mojang Round 7 FINAL_COMPOSITE visual render pass submitted; .*mode=FINAL_LUCERNA_COMPOSITE"
-                )
+                ) + $shaderDenoiseRequiredPatterns
             }
         }
         "FinalComposite" {
@@ -273,6 +285,14 @@ function Get-Round7CaptureIntent {
             }
         }
         "ShaderDenoiseDebug" {
+            $shaderDenoiseRequiredPatterns = @(
+                "(?:round7\.shaderDenoise\.dispatchPrepared|shaderDenoiseDispatchPrepared|shader_denoise_dispatch_prepared)=true",
+                "(?:round7\.shaderDenoise\.outputImageReady|shaderDenoiseOutputImageReady|shader_denoise_output_image_ready)=(?:true|false)",
+                "(?:round7\.shaderDenoise\.outputMaterialReady|shaderDenoiseOutputMaterialReady|shader_denoise_output_material_ready)=(?:true|false)",
+                "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=(?:true|false)",
+                "(?:round7\.shaderDenoise\.cpuReadbackFallbackActive|shaderDenoiseCpuReadbackFallbackActive|cpuReadbackDenoiseFallbackActive|cpu_readback_denoise_fallback_active)=(?:true|false)",
+                "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=(?:true|false)"
+            )
             return [ordered]@{
                 rendererEnabled = $true
                 debugOverlay = "SHADER_DENOISE_TEMPORAL"
@@ -281,10 +301,8 @@ function Get-Round7CaptureIntent {
                 shaderDenoiseEvidence = $true
                 requiredPatterns = @(
                     "(?:shaderDenoiseIntent|shader_denoise_intent|denoiseShaderIntent|denoise_shader_intent|shaderDenoiseVisualShaderIntent)=true",
-                    "(?:shaderDenoiseInputReady|shader_denoise_input_ready|shaderDenoiseRawInputReady|shader_denoise_raw_input_ready|rawGiInputReady|raw_gi_input_ready)=true|(?:rawGI|cpuDenoisedGI)=enabled-ready|(?:rawGI|cpuDenoisedGI)=ready",
-                    "(?:cpuReadbackDenoiseSource|cpu_readback_denoise_source|cpuDenoisedSource|cpu_denoised_source|sourceIdentity=.*cpu-denoised-diffuse-gi-rgba8|denoisedPayloadEvidence=.*cpu)",
-                    "(?:(?:realDenoiseShaderOutput|real_denoise_shader_output|realShaderDenoiseOutputReady|shaderDenoiseOutputReady|shader_denoise_output_ready)=true|(?:realDenoiseShaderOutput|real_denoise_shader_output|realShaderDenoiseOutputReady|shaderDenoiseOutputReady|shader_denoise_output_ready)=false|(?:shaderDenoiseOutputState|shader_denoise_output_state|shaderDenoiseReadiness|shader_denoise_readiness)=(?:open|false|not-ready|not_ready|pending|missing))"
-                )
+                    "(?:shaderDenoiseInputReady|shader_denoise_input_ready|shaderDenoiseRawInputReady|shader_denoise_raw_input_ready|rawGiInputReady|raw_gi_input_ready)=true|(?:rawGI|cpuDenoisedGI)=enabled-ready|(?:rawGI|cpuDenoisedGI)=ready"
+                ) + $shaderDenoiseRequiredPatterns
             }
         }
         "Enabled" {

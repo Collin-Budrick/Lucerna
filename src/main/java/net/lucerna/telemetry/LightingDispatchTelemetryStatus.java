@@ -51,6 +51,20 @@ public record LightingDispatchTelemetryStatus(
                     + "denoise_shader_planned|shader_output_ready|shader_denoise_output_ready|"
                     + "real_denoise_shader_output|real_shader_denoise_output|real_shader_gi_output|"
                     + "gpu_denoise_output_ready|gpu_denoise_output|shader_denoise_ready|"
+                    + "shader_dispatch_prepared|shader_denoise_dispatch_prepared|"
+                    + "denoise_shader_dispatch_prepared|real_shader_denoise_dispatch_prepared|"
+                    + "gpu_denoise_dispatch_prepared|shader_output_image_ready|"
+                    + "shader_denoise_output_image_ready|real_shader_output_image_ready|"
+                    + "real_shader_denoise_output_image_ready|gpu_denoise_output_image_ready|"
+                    + "shader_output_material_ready|shader_denoise_output_material_ready|"
+                    + "real_shader_output_material_ready|real_shader_denoise_output_material_ready|"
+                    + "gpu_denoise_output_material_ready|shader_generated_output|"
+                    + "shader_denoise_generated_output|real_shader_generated_output|"
+                    + "real_shader_denoise_generated_output|real_denoise_shader_generated_output|"
+                    + "gpu_denoise_generated_output|cpu_readback_fallback|cpu_readback_fallback_used|"
+                    + "cpu_denoise_readback_fallback|shader_denoise_cpu_readback_fallback|"
+                    + "denoise_cpu_readback_fallback|shader_denoise_blockers|shader_denoise_blocker|"
+                    + "shader_blockers|shader_blocker|denoise_blockers|output_blockers|blockers|blocker|"
                     + "edge_rejection_count|edge_reject_count|edge_rejections|edge_rejected|"
                     + "edge_rejected_count|denoise_edge_rejections|history_rejection_count|"
                     + "history_reject_count|history_rejections|history_rejected|history_rejected_count|"
@@ -209,6 +223,7 @@ public record LightingDispatchTelemetryStatus(
         Map<String, Map<String, String>> stageFields = new LinkedHashMap<>();
         parseStageBlocks(nativeStatus, stageFields);
         parseLooseStageFields(nativeStatus, stageFields);
+        mergeDenoiseExecutionFields(nativeStatus, stageFields);
         mergeDirectExecutionFields(nativeStatus, stageFields);
         mergeDirectPayloadSummaryFields(nativeStatus, stageFields);
 
@@ -283,6 +298,41 @@ public record LightingDispatchTelemetryStatus(
         copyMissing(target, executionFields, "ray_count", "rays");
         copyMissing(target, executionFields, "ready", "ready_for_native_execution");
         copyMissing(target, executionFields, "last_frame", "frame_index");
+    }
+
+    private static void mergeDenoiseExecutionFields(String nativeStatus, Map<String, Map<String, String>> stageFields) {
+        String denoiseExecution = extractBraceContent(nativeStatus, "denoise_execution={");
+        if (denoiseExecution.isBlank()) {
+            return;
+        }
+
+        Map<String, String> executionFields = parseDelimitedFields(denoiseExecution);
+        if (executionFields.isEmpty()) {
+            return;
+        }
+
+        Map<String, String> target = stageFields.computeIfAbsent("denoise", ignored -> new LinkedHashMap<>());
+        target.putIfAbsent("id", "denoise");
+        putMissing(target, executionFields);
+        copyMissing(target, executionFields, "dispatch_generation", "generation");
+        copyMissing(target, executionFields, "raw_gi_input_ready", "raw_source_ready");
+        copyMissing(target, executionFields, "cpu_denoised_readback_ready", "cpu_denoise_ready");
+        copyMissing(target, executionFields, "shader_denoise_dispatch_intent", "shader_denoise_intended");
+        copyMissing(target, executionFields, "shader_denoise_dispatch_prepared", "shader_dispatch_prepared");
+        copyMissing(target, executionFields, "shader_denoise_input_ready", "shader_denoise_input_ready");
+        copyMissing(target, executionFields, "shader_denoise_output_ready", "shader_output_ready");
+        copyMissing(target, executionFields, "shader_denoise_output_image_ready", "shader_output_image_ready");
+        copyMissing(target, executionFields, "shader_denoise_output_material_ready", "shader_output_material_ready");
+        copyMissing(target, executionFields, "shader_denoise_output_shader_generated", "shader_generated_output");
+        copyMissing(target, executionFields, "cpu_fallback_quality_metrics", "cpu_readback_fallback");
+        copyMissing(target, executionFields, "denoised_cpu_output_generated", "cpu_output_generated");
+        copyMissing(target, executionFields, "denoised_output_pixels", "output_pixels");
+        copyMissing(target, executionFields, "denoised_output_checksum", "output_checksum");
+        copyMissing(target, executionFields, "denoised_output_changed_pixels", "changed_pixels");
+        copyMissing(target, executionFields, "denoised_output_mean_abs_delta", "mean_abs_delta");
+        copyMissing(target, executionFields, "edge_rejected", "edge_rejection_count");
+        copyMissing(target, executionFields, "history_rejected", "history_rejection_count");
+        copyMissing(target, executionFields, "shader_denoise_output_readiness_marker", "shader_denoise_blockers");
     }
 
     private static void mergeDirectPayloadSummaryFields(String nativeStatus, Map<String, Map<String, String>> stageFields) {
@@ -732,6 +782,21 @@ public record LightingDispatchTelemetryStatus(
             case "shader_denoise_output_ready", "real_denoise_shader_output", "real_shader_denoise_output",
                     "real_shader_gi_output", "gpu_denoise_output_ready", "gpu_denoise_output",
                     "shader_denoise_ready" -> "shader_output_ready";
+            case "shader_denoise_dispatch_prepared", "denoise_shader_dispatch_prepared",
+                    "real_shader_denoise_dispatch_prepared", "gpu_denoise_dispatch_prepared" -> "shader_dispatch_prepared";
+            case "shader_denoise_output_image_ready", "real_shader_output_image_ready",
+                    "real_shader_denoise_output_image_ready", "gpu_denoise_output_image_ready" -> "shader_output_image_ready";
+            case "shader_denoise_output_material_ready", "real_shader_output_material_ready",
+                    "real_shader_denoise_output_material_ready",
+                    "gpu_denoise_output_material_ready" -> "shader_output_material_ready";
+            case "shader_denoise_generated_output", "real_shader_generated_output",
+                    "real_shader_denoise_generated_output", "real_denoise_shader_generated_output",
+                    "gpu_denoise_generated_output" -> "shader_generated_output";
+            case "cpu_readback_fallback_used", "cpu_denoise_readback_fallback",
+                    "shader_denoise_cpu_readback_fallback",
+                    "denoise_cpu_readback_fallback" -> "cpu_readback_fallback";
+            case "shader_denoise_blocker", "shader_blockers", "shader_blocker", "denoise_blockers",
+                    "output_blockers", "blockers", "blocker" -> "shader_denoise_blockers";
             case "edge_reject_count", "edge_rejections", "edge_rejected", "edge_rejected_count",
                     "denoise_edge_rejections" -> "edge_rejection_count";
             case "history_reject_count", "history_rejections", "history_rejected",
