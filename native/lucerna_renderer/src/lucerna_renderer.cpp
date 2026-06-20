@@ -3404,6 +3404,10 @@ std::string Renderer::status() const {
         << ",visible_cluster_count=" << staging_.virtual_geometry.visible_cluster_count
         << ",culled_cluster_count=" << staging_.virtual_geometry.culled_cluster_count
         << ",offscreen_cluster_count=" << staging_.virtual_geometry.offscreen_cluster_count
+        << ",frustum_culling_candidate_count=" << staging_.virtual_geometry.frustum_culling_candidate_count
+        << ",occlusion_culling_candidate_count=" << staging_.virtual_geometry.occlusion_culling_candidate_count
+        << ",occlusion_culling_placeholder_count=" << staging_.virtual_geometry.occlusion_culling_placeholder_count
+        << ",indirect_draw_candidate_count=" << staging_.virtual_geometry.indirect_draw_candidate_count
         << ",upload_byte_estimate=" << staging_.virtual_geometry.upload_byte_estimate
         << ",total_upload_byte_estimate=" << staging_.virtual_geometry.total_upload_byte_estimate
         << ",indirect_draw_count_placeholder=" << staging_.virtual_geometry.indirect_draw_count_placeholder
@@ -3418,6 +3422,17 @@ std::string Renderer::status() const {
         << ",metadata_buffer_intents=" << staging_.virtual_geometry.metadata_buffer_intents
         << ",culling_evaluations=" << staging_.virtual_geometry.culling_evaluations
         << ",metadata_only=true"
+        << ",gpu_culling_executed=" << (staging_.virtual_geometry.gpu_culling_executed ? "true" : "false")
+        << ",gpu_culling_prerequisites_ready="
+        << (staging_.virtual_geometry.gpu_culling_prerequisites_ready ? "true" : "false")
+        << ",gpu_frustum_culling_ready="
+        << (staging_.virtual_geometry.gpu_frustum_culling_ready ? "true" : "false")
+        << ",gpu_occlusion_culling_ready="
+        << (staging_.virtual_geometry.gpu_occlusion_culling_ready ? "true" : "false")
+        << ",indirect_draw_ready=" << (staging_.virtual_geometry.indirect_draw_ready ? "true" : "false")
+        << ",cpu_frame_time_ms_placeholder=0"
+        << ",gpu_frame_time_ms_placeholder=0"
+        << ",frameTimingMarker=true"
         << ",cluster_marker=\"" << (staging_.virtual_geometry.cluster_marker.empty()
             ? "round9_virtual_chunk_geometry_not_recorded"
             : staging_.virtual_geometry.cluster_marker)
@@ -3433,6 +3448,26 @@ std::string Renderer::status() const {
         << ",culling_reason=\"" << (staging_.virtual_geometry.culling_reason.empty()
             ? "round9_cluster_culling_reason_not_recorded"
             : staging_.virtual_geometry.culling_reason)
+        << "\""
+        << ",gpu_culling_prerequisite_marker=\"" << (staging_.virtual_geometry.gpu_culling_prerequisite_marker.empty()
+            ? "round9_gpu_culling_prerequisites_not_recorded"
+            : staging_.virtual_geometry.gpu_culling_prerequisite_marker)
+        << "\""
+        << ",gpu_culling_blocker_reason=\"" << (staging_.virtual_geometry.gpu_culling_blocker_reason.empty()
+            ? "round9_gpu_culling_blocker_not_recorded"
+            : staging_.virtual_geometry.gpu_culling_blocker_reason)
+        << "\""
+        << ",frustum_culling_marker=\"" << (staging_.virtual_geometry.frustum_culling_marker.empty()
+            ? "round9_frustum_culling_marker_not_recorded"
+            : staging_.virtual_geometry.frustum_culling_marker)
+        << "\""
+        << ",occlusion_culling_marker=\"" << (staging_.virtual_geometry.occlusion_culling_marker.empty()
+            ? "round9_occlusion_culling_marker_not_recorded"
+            : staging_.virtual_geometry.occlusion_culling_marker)
+        << "\""
+        << ",indirect_draw_marker=\"" << (staging_.virtual_geometry.indirect_draw_marker.empty()
+            ? "round9_indirect_draw_marker_not_recorded"
+            : staging_.virtual_geometry.indirect_draw_marker)
         << "\""
         << "},round10_voxel_traversal={metadata_packets=" << staging_.virtual_geometry.traversal_metadata_packets
         << ",ray_count=" << staging_.virtual_geometry.traversal_ray_count
@@ -4053,10 +4088,14 @@ void Renderer::track_virtual_chunk_geometry_metadata(const SectionUploadPacket& 
     telemetry.visible_cluster_count = culling.visible_clusters;
     telemetry.culled_cluster_count = culling.offscreen_clusters;
     telemetry.offscreen_cluster_count = culling.offscreen_clusters;
+    telemetry.frustum_culling_candidate_count = cluster_count;
+    telemetry.occlusion_culling_candidate_count = 0;
+    telemetry.occlusion_culling_placeholder_count = cluster_count == 0 ? 0 : culling.visible_clusters;
+    telemetry.indirect_draw_candidate_count = culling.visible_clusters;
     telemetry.upload_byte_estimate = upload_bytes;
     telemetry.total_upload_byte_estimate = saturated_add(telemetry.total_upload_byte_estimate, upload_bytes);
     telemetry.indirect_draw_count_placeholder = culling.visible_clusters;
-    telemetry.indirect_draw_count = culling.visible_clusters;
+    telemetry.indirect_draw_count = 0;
     telemetry.generation_counter = packet.generation;
     telemetry.first_generation = packet.first_section_snapshot_generation;
     telemetry.last_generation = packet.last_section_snapshot_generation;
@@ -4065,6 +4104,11 @@ void Renderer::track_virtual_chunk_geometry_metadata(const SectionUploadPacket& 
     telemetry.translucent_voxel_count = translucent_voxels;
     telemetry.emissive_voxel_count = emissive_voxels;
     telemetry.culling_evaluations++;
+    telemetry.gpu_culling_executed = false;
+    telemetry.gpu_culling_prerequisites_ready = cluster_count != 0 && upload_bytes != 0 && resources_ != nullptr && frame_open_;
+    telemetry.gpu_frustum_culling_ready = telemetry.gpu_culling_prerequisites_ready && cluster_count != 0;
+    telemetry.gpu_occlusion_culling_ready = false;
+    telemetry.indirect_draw_ready = false;
     telemetry.traversal_metadata_packets++;
     telemetry.traversal_ray_count = traversal_rays;
     telemetry.traversal_hit_count = traversal_hits;
@@ -4086,9 +4130,32 @@ void Renderer::track_virtual_chunk_geometry_metadata(const SectionUploadPacket& 
             : "round9_virtual_chunk_geometry_cluster_metadata_recorded";
     telemetry.culling_marker = cluster_count == 0
             ? "round9_cluster_culling_no_clusters"
-            : "round9_cluster_culling_cpu_conservative_visibility_counts_recorded_no_gpu_indirect_execution";
+            : "round9_cluster_culling_cpu_conservative_candidates_recorded_gpu_execution_false";
     telemetry.culling_mode = culling.mode;
     telemetry.culling_reason = culling.reason;
+    telemetry.gpu_culling_prerequisite_marker = telemetry.gpu_culling_prerequisites_ready
+            ? "round9_gpu_culling_prerequisites_ready_metadata_resource_intent_frame_open"
+            : "round9_gpu_culling_prerequisites_missing_metadata_or_resource_intent";
+    if (cluster_count == 0) {
+        telemetry.gpu_culling_blocker_reason = "no_virtual_cluster_candidates";
+    } else if (upload_bytes == 0) {
+        telemetry.gpu_culling_blocker_reason = "virtual_cluster_metadata_upload_bytes_zero";
+    } else if (resources_ == nullptr) {
+        telemetry.gpu_culling_blocker_reason = "native_resource_manager_unavailable";
+    } else if (!frame_open_) {
+        telemetry.gpu_culling_blocker_reason = "frame_not_open_for_gpu_culling_resource_intent";
+    } else {
+        telemetry.gpu_culling_blocker_reason = "gpu_culling_dispatch_not_implemented";
+    }
+    telemetry.frustum_culling_marker = telemetry.gpu_frustum_culling_ready
+            ? "round9_gpu_frustum_culling_candidates_ready_no_dispatch"
+            : "round9_gpu_frustum_culling_candidates_missing_or_not_dispatchable";
+    telemetry.occlusion_culling_marker = cluster_count == 0
+            ? "round9_gpu_occlusion_culling_no_cluster_candidates"
+            : "round9_gpu_occlusion_culling_placeholder_only_no_depth_pyramid_or_query_path";
+    telemetry.indirect_draw_marker = culling.visible_clusters == 0
+            ? "round9_indirect_draw_no_visible_candidates"
+            : "round9_indirect_draw_candidates_ready_but_gpu_compacted_command_buffer_missing";
     telemetry.traversal_marker = traversal_rays == 0
             ? "round10_voxel_traversal_no_section_payload"
             : "round10_voxel_traversal_cpu_metadata_dda_scaffold_recorded";

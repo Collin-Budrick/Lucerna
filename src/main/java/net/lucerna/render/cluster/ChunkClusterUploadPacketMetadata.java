@@ -51,6 +51,59 @@ public record ChunkClusterUploadPacketMetadata(
         return !this.clusters.isEmpty();
     }
 
+    public int boundsCompleteClusterCount() {
+        int count = 0;
+        for (ChunkClusterMetadata cluster : this.clusters) {
+            if (cluster.boundsComplete()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public int gpuUploadMetadataReadyClusterCount() {
+        int count = 0;
+        for (ChunkClusterMetadata cluster : this.clusters) {
+            if (cluster.gpuUploadMetadataReady()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public int indirectPayloadMetadataReadyClusterCount() {
+        int count = 0;
+        for (ChunkClusterMetadata cluster : this.clusters) {
+            if (cluster.indirectPayloadMetadataReady()) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public boolean allClusterBoundsComplete() {
+        return this.boundsCompleteClusterCount() == this.clusters.size();
+    }
+
+    public boolean hasGpuUploadMetadataReadyCluster() {
+        return this.gpuUploadMetadataReadyClusterCount() > 0;
+    }
+
+    public boolean hasIndirectPayloadMetadataReadyCluster() {
+        return this.indirectPayloadMetadataReadyClusterCount() > 0;
+    }
+
+    public ChunkClusterDensityComplexityBucket maxDensityComplexityBucket() {
+        ChunkClusterDensityComplexityBucket maxBucket = ChunkClusterDensityComplexityBucket.EMPTY;
+        for (ChunkClusterMetadata cluster : this.clusters) {
+            ChunkClusterDensityComplexityBucket bucket = cluster.densityComplexityBucket();
+            if (bucket.telemetryRank() > maxBucket.telemetryRank()) {
+                maxBucket = bucket;
+            }
+        }
+        return maxBucket;
+    }
+
     private static void validateClusters(ChunkSectionOrigin sectionOrigin, List<ChunkClusterMetadata> clusters) {
         Set<String> keys = new HashSet<>();
         for (ChunkClusterMetadata cluster : clusters) {

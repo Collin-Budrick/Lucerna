@@ -46,6 +46,7 @@ public final class Round9ChunkCullingPlanner {
                 snapshot.generation()
         );
         int culled = snapshot.clusterCount() - visible;
+        int frustumCandidates = snapshot.clusterCount() - missingMetadata;
         return new ClusterCullingSummary(
                 snapshot.clusterCount(),
                 visible,
@@ -55,6 +56,14 @@ public final class Round9ChunkCullingPlanner {
                 occlusionPlaceholder,
                 missingMetadata,
                 snapshot.uploadBytes(),
+                false,
+                false,
+                "gpu-dispatch-visibility-buffer-occlusion-query",
+                "actual GPU culling not executed; using conservative Java metadata classification",
+                frustumCandidates,
+                false,
+                false,
+                "conservative-cpu-status",
                 snapshot.generationSummary(),
                 indirect,
                 decisions

@@ -6,7 +6,10 @@ public record IndirectDrawListStats(
         int primitiveCount,
         int estimatedCommandBytes,
         long generation,
-        boolean metadataOnly
+        boolean metadataOnly,
+        boolean actualGpuIndirectReady,
+        String readinessLabel,
+        String blockerReason
 ) {
     private static final int VULKAN_INDEXED_INDIRECT_COMMAND_BYTES = 20;
 
@@ -16,6 +19,13 @@ public record IndirectDrawListStats(
         }
         if (generation < 0L) {
             throw new IllegalArgumentException("generation must be non-negative");
+        }
+        actualGpuIndirectReady = actualGpuIndirectReady && !metadataOnly;
+        if (readinessLabel == null || readinessLabel.isBlank()) {
+            readinessLabel = actualGpuIndirectReady ? "gpu-indirect-ready" : "metadata-only-placeholder";
+        }
+        if (blockerReason == null || blockerReason.isBlank()) {
+            blockerReason = actualGpuIndirectReady ? "none" : "gpu-indirect-draw-not-executed";
         }
     }
 
@@ -27,7 +37,10 @@ public record IndirectDrawListStats(
                 primitiveCount,
                 commandBytes,
                 generation,
-                true
+                true,
+                false,
+                "metadata-only-placeholder",
+                "gpu-indirect-draw-not-executed"
         );
     }
 
@@ -37,6 +50,9 @@ public record IndirectDrawListStats(
                 + " primitives=" + this.primitiveCount
                 + " bytes=" + this.estimatedCommandBytes
                 + " gen=" + this.generation
-                + " metadataOnly=" + this.metadataOnly;
+                + " metadataOnly=" + this.metadataOnly
+                + " gpuReady=" + this.actualGpuIndirectReady
+                + " readiness=" + this.readinessLabel
+                + " blocker=" + this.blockerReason;
     }
 }

@@ -18,6 +18,10 @@ public record Round9CullingDebugStatus(
         String uploadLine,
         String generationLine,
         String readinessLine,
+        String gpuCullingReadinessLine,
+        String frustumCandidateLine,
+        String occlusionReadinessLine,
+        String executionBoundaryLine,
         String evidenceBoundaryLine
 ) {
     public Round9CullingDebugStatus {
@@ -29,6 +33,10 @@ public record Round9CullingDebugStatus(
         uploadLine = clean(uploadLine, "Cluster upload: unavailable");
         generationLine = clean(generationLine, "Cluster generation: unavailable");
         readinessLine = clean(readinessLine, "Round 9 readiness: missing");
+        gpuCullingReadinessLine = clean(gpuCullingReadinessLine, "Round 9 GPU culling readiness: missing");
+        frustumCandidateLine = clean(frustumCandidateLine, "Round 9 frustum candidates: unavailable");
+        occlusionReadinessLine = clean(occlusionReadinessLine, "Round 9 occlusion readiness: unavailable");
+        executionBoundaryLine = clean(executionBoundaryLine, "Round 9 execution boundary: actualGpuExecuted=no");
         evidenceBoundaryLine = clean(
                 evidenceBoundaryLine,
                 "Round 9 evidence boundary: metadata/status only; controller owns visual no-corruption proof"
@@ -115,6 +123,16 @@ public record Round9CullingDebugStatus(
                 "frustum_culled",
                 "frustum"
         );
+        String frustumCandidateCount = firstValue(
+                cullingStage,
+                clusterStage,
+                nativeRound9Details,
+                nativePasses,
+                "frustum_candidate_count",
+                "frustum_candidates",
+                "candidate_clusters",
+                "culling_candidates"
+        );
         String occlusionPlaceholderCount = firstValue(
                 cullingStage,
                 clusterStage,
@@ -125,6 +143,15 @@ public record Round9CullingDebugStatus(
                 "occlusion_placeholder",
                 "occlusion_culled"
         );
+        String occlusionReady = firstValue(
+                cullingStage,
+                nativeRound9Details,
+                nativePasses,
+                "occlusion_ready",
+                "occlusion_culling_ready",
+                "occlusion_query_ready",
+                "hiz_ready"
+        );
         String drawCount = firstValue(
                 cullingStage,
                 nativeRound9Details,
@@ -134,6 +161,15 @@ public record Round9CullingDebugStatus(
                 "draw_command_count",
                 "draws",
                 "indirect_draws"
+        );
+        String indirectReady = firstValue(
+                cullingStage,
+                nativeRound9Details,
+                nativePasses,
+                "indirect_draw_ready",
+                "indirect_ready",
+                "draw_list_ready",
+                "indirect_dispatch_ready"
         );
         String indirectBytes = firstValue(
                 cullingStage,
@@ -191,15 +227,64 @@ public record Round9CullingDebugStatus(
                 "culling_ready",
                 "visibility_ready"
         );
+        String actualGpuExecuted = firstValue(
+                cullingStage,
+                nativeRound9Details,
+                nativePasses,
+                "actual_gpu_culling_executed",
+                "gpu_culling_executed",
+                "executed_on_gpu",
+                "gpu_execution"
+        );
+        String gpuPrerequisitesReady = firstValue(
+                cullingStage,
+                nativeRound9Details,
+                nativePasses,
+                "gpu_culling_prerequisites_ready",
+                "gpu_prerequisites_ready",
+                "prerequisites_ready"
+        );
+        String missingPrerequisites = firstValue(
+                cullingStage,
+                nativeRound9Details,
+                nativePasses,
+                "gpu_culling_missing_prerequisites",
+                "missing_prerequisites",
+                "missing_prereqs"
+        );
+        String blockerReason = firstValue(
+                cullingStage,
+                nativeRound9Details,
+                nativePasses,
+                "gpu_culling_blocker_reason",
+                "blocker_reason",
+                "culling_blocker"
+        );
 
         boolean hasTelemetry = (dispatch != null && dispatch.hasLightingDispatchStatus())
                 || hasAny(clusterCount, visibleCount, culledCount, drawCount, uploadBytes, generation)
                 || nativePassTelemetryPresent
                 || !nativeRound9Details.isEmpty();
+        String actualGpuExecutedLabel = yesNo(truthy(actualGpuExecuted));
+        String prerequisitesReadyLabel = yesNo(truthy(gpuPrerequisitesReady));
+        String occlusionReadyLabel = yesNo(truthy(occlusionReady));
+        String indirectReadyLabel = yesNo(truthy(indirectReady) && truthy(actualGpuExecuted));
+        String missingPrerequisitesLabel = tokenOrFallback(
+                missingPrerequisites,
+                truthy(actualGpuExecuted) ? "none" : "gpu-dispatch-visibility-buffer-occlusion-query"
+        );
+        String blockerReasonLabel = tokenOrFallback(
+                blockerReason,
+                truthy(actualGpuExecuted) ? "none" : "actual-gpu-culling-not-proven"
+        );
+        String modeLabel = truthy(actualGpuExecuted) ? "actual-gpu-culling" : "conservative-cpu-status";
         String summary = "clusters=" + valueOrUnknown(clusterCount)
                 + ",visible=" + valueOrUnknown(visibleCount)
                 + ",culled=" + valueOrUnknown(culledCount)
                 + ",offscreen=" + valueOrUnknown(offscreenCount)
+                + ",gpuExecuted=" + actualGpuExecutedLabel
+                + ",gpuPrereqsReady=" + prerequisitesReadyLabel
+                + ",frustumCandidates=" + valueOrUnknown(frustumCandidateCount)
                 + ",occlusionPlaceholder=" + valueOrUnknown(occlusionPlaceholderCount)
                 + ",draws=" + valueOrUnknown(drawCount)
                 + ",uploadBytes=" + valueOrUnknown(uploadBytes)
@@ -210,14 +295,23 @@ public record Round9CullingDebugStatus(
         String visibilityLine = "Visibility counts: visible=" + valueOrUnknown(visibleCount)
                 + " culled=" + valueOrUnknown(culledCount)
                 + " offscreen=" + valueOrUnknown(offscreenCount)
+                + " frustumCandidates=" + valueOrUnknown(frustumCandidateCount)
                 + " occlusionPlaceholder=" + valueOrUnknown(occlusionPlaceholderCount);
-        String cullingLine = "Culling: frustum=" + valueOrUnknown(frustumCount)
+        String cullingLine = "Culling: actualGpuExecuted=" + actualGpuExecutedLabel
+                + " gpuPrereqsReady=" + prerequisitesReadyLabel
+                + " missingPrereqs=" + missingPrerequisitesLabel
+                + " blocker=" + blockerReasonLabel
+                + " frustumCandidates=" + valueOrUnknown(frustumCandidateCount)
+                + " frustum=" + valueOrUnknown(frustumCount)
+                + " occlusionReady=" + occlusionReadyLabel
                 + " occlusionPlaceholder=" + valueOrUnknown(occlusionPlaceholderCount)
                 + " mode=" + valueOrUnknown(mode, "metadata-only-placeholder")
+                + " modeLabel=" + modeLabel
                 + " terrainRenderingChanged=no";
         String indirectLine = "Indirect draw list: draws=" + valueOrUnknown(drawCount)
                 + " visibleClusters=" + valueOrUnknown(visibleCount)
                 + " bytes=" + valueOrUnknown(indirectBytes)
+                + " ready=" + indirectReadyLabel
                 + " metadataOnly=yes";
         String uploadLine = "Cluster upload: bytes=" + valueOrUnknown(uploadBytes)
                 + " uploadWorldGen=" + snapshot.uploadWorldGeneration()
@@ -230,7 +324,26 @@ public record Round9CullingDebugStatus(
                 + " counts=" + readinessFrom(visibleCount, culledCount, offscreenCount, occlusionPlaceholderCount)
                 + " indirect=" + readinessFrom(drawCount, indirectBytes)
                 + " upload=" + readinessFrom(uploadBytes)
+                + " gpuPrereqs=" + prerequisitesReadyLabel
+                + " gpuExecuted=" + actualGpuExecutedLabel
+                + " blocker=" + blockerReasonLabel
                 + " ready=" + valueOrUnknown(cullingReady);
+        String gpuReadinessLine = "Round 9 GPU culling readiness: actualGpuExecuted=" + actualGpuExecutedLabel
+                + " prerequisitesReady=" + prerequisitesReadyLabel
+                + " missingPrereqs=" + missingPrerequisitesLabel
+                + " blocker=" + blockerReasonLabel
+                + " modeLabel=" + modeLabel;
+        String frustumLine = "Round 9 frustum candidates: candidates=" + valueOrUnknown(frustumCandidateCount)
+                + " culled=" + valueOrUnknown(frustumCount)
+                + " visible=" + valueOrUnknown(visibleCount)
+                + " offscreen=" + valueOrUnknown(offscreenCount);
+        String occlusionLine = "Round 9 occlusion readiness: ready=" + occlusionReadyLabel
+                + " placeholders=" + valueOrUnknown(occlusionPlaceholderCount)
+                + " blocker=" + (truthy(occlusionReady) ? "none" : "occlusion-query-or-hiz-not-proven");
+        String executionLine = "Round 9 execution boundary: actualGpuExecuted=" + actualGpuExecutedLabel
+                + " indirectReady=" + indirectReadyLabel
+                + " modeLabel=" + modeLabel
+                + " conservativeCpuFallback=" + yesNo(!truthy(actualGpuExecuted));
         String boundaryLine = "Round 9 evidence boundary: culling/status only; no rendering hooks or terrain visibility changes";
 
         return new Round9CullingDebugStatus(
@@ -243,6 +356,10 @@ public record Round9CullingDebugStatus(
                 uploadLine,
                 generationLine,
                 readinessLine,
+                gpuReadinessLine,
+                frustumLine,
+                occlusionLine,
+                executionLine,
                 boundaryLine
         );
     }
@@ -409,6 +526,25 @@ public record Round9CullingDebugStatus(
 
     private static String valueOrUnknown(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private static String tokenOrFallback(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value.trim().replace(' ', '-');
+    }
+
+    private static boolean truthy(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String normalized = normalize(value);
+        return "true".equals(normalized)
+                || "yes".equals(normalized)
+                || "ready".equals(normalized)
+                || "1".equals(normalized)
+                || "executed".equals(normalized);
     }
 
     private static String yesNo(boolean value) {

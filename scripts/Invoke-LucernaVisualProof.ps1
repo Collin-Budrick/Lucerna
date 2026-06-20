@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ShaderDenoisedGi", "ShaderDenoiseFinalComposite", "ShaderDenoiseDebug", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalStable", "TemporalMoved", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay", "VoxelRayDebug", "RtEntityDebug", "HybridHitDebug", "DirectReservoirDebug", "GiReservoirDebug", "ReservoirReuseDebug", "DirectBruteBaseline", "RestirDirectEnabled", "RestirTemporalStable", "RestirTemporalMoved", "RestirExecutionDebug")]
+    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ShaderDenoisedGi", "ShaderDenoiseFinalComposite", "ShaderDenoiseDebug", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalStable", "TemporalMoved", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay", "ForestComplexCullingOverlay", "VoxelRayDebug", "RtEntityDebug", "HybridHitDebug", "DirectReservoirDebug", "GiReservoirDebug", "ReservoirReuseDebug", "DirectBruteBaseline", "RestirDirectEnabled", "RestirTemporalStable", "RestirTemporalMoved", "RestirExecutionDebug")]
     [string] $Mode,
 
     [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round56PhysicalLighting", "Round7DenoiseComposite", "Round7CompositeStability", "Round7EmissiveGiSurface", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry", "Round10HybridTracing", "Round11Restir")]
@@ -646,7 +646,14 @@ function Get-Round9CaptureIntent {
         "(?:Lucerna Round 9 chunk culling|round9\.chunkCulling|virtualized culling)",
         "(?:visibleCluster(?:Count|s)?|visible_clusters|visible_cluster_count)=[0-9]+",
         "(?:(?:culled|offscreen)Cluster(?:Count|s)?|culled_clusters|offscreen_clusters|culled_cluster_count)=[0-9]+",
-        "(?:indirectDraw(?:Count|s|Placeholder)?|indirect_draw(?:_count|_count_placeholder)?|drawList(?:Count)?)=[0-9]+"
+        "(?:indirectDraw(?:Count|s|Placeholder)?|indirect_draw(?:_count|_count_placeholder|_candidate_count)?|drawList(?:Count)?)=[0-9]+",
+        "(?:actualGpuCullingExecuted|realGpuCullingExecuted|gpu_culling_executed|round9\.actualGpuCullingExecuted|round9\.gpu_culling_executed)=(?:true|false)",
+        "(?:gpuCullingPrerequisitesReady|gpuPrerequisitesReady|gpu_prerequisites_ready|gpu_culling_prerequisites_ready|round9\.gpuCullingPrerequisitesReady|round9\.gpu_culling_prerequisites_ready)=(?:true|false)",
+        "(?:gpuCullingBlockerReason|gpu_culling_blocker_reason|round9\.gpuCullingBlockerReason)=",
+        "(?:frustumCandidate(?:Count|s)?|frustum_candidate_count|frustum_candidates|frustum_culling_candidate_count|round9\.frustumCandidates|round9\.frustum_candidate_count)=[0-9]+",
+        "(?:occlusion(?:Candidate|Placeholder|Ready)(?:Count|s)?|occlusion_candidate_count|occlusion_placeholder_count|occlusion_candidates|occlusion_culling_candidate_count|occlusion_culling_placeholder_count|round9\.occlusionCandidates|round9\.occlusionPlaceholderCount|round9\.occlusion_candidate_count|round9\.occlusion_placeholder_count)=[0-9]+",
+        "(?:indirectDrawReady|indirect_draw_ready|gpuIndirectDrawReady|round9\.indirectDrawReady|round9\.indirect_draw_ready)=(?:true|false)",
+        "(?:cpuFrameTime(?:Ms)?(?:Placeholder)?|gpuFrameTime(?:Ms)?(?:Placeholder)?|cpu_frame_time_ms_placeholder|gpu_frame_time_ms_placeholder|frameTiming(?:Ready|Present|Marker)|round9\.cpuFrameTimeMs|round9\.gpuFrameTimeMs|round9\.frameTiming(?:Ready|Present|Marker))="
     )
 
     switch ($CaptureMode) {
@@ -687,6 +694,20 @@ function Get-Round9CaptureIntent {
                 sceneAction = "high-distance-open"
                 requiredPatterns = @($clusterCommonPatterns) + @($cullingCommonPatterns) + @(
                     "(?:sceneKind|round9\.scene)=(?:high-render-distance-open-terrain|high-distance-open|open-terrain)"
+                )
+            }
+        }
+        "ForestComplexCullingOverlay" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "CHUNK_CULLING"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "forest-complex-culling-overlay"
+                sceneKind = "forest-complex-area"
+                sceneAction = "forest-complex"
+                requiredPatterns = @($clusterCommonPatterns) + @($cullingCommonPatterns) + @(
+                    "(?:sceneKind|round9\.scene)=(?:forest-complex-area|forest-complex|complex-area)",
+                    "(?:clusterDensityBucket|complexityBucket|round9\.clusterDensityBucket)=(?:medium|high|complex|forest)"
                 )
             }
         }
@@ -1251,7 +1272,10 @@ function Invoke-Round7EmissiveGiSurfaceSceneAction {
 }
 
 function Invoke-Round9SceneAction {
-    param([string] $SceneAction)
+    param(
+        [string] $SceneAction,
+        [string] $MarkerPath = ""
+    )
 
     switch ($SceneAction) {
         "flat-open" {
@@ -1260,12 +1284,18 @@ function Invoke-Round9SceneAction {
             Send-MinecraftChatCommand "/time set 6000"
             Send-MinecraftChatCommand "/weather clear"
             Send-MinecraftChatCommand "/tp @s ~ ~ ~ 0 18"
+            if (-not [string]::IsNullOrWhiteSpace($MarkerPath)) {
+                Add-LucernaControllerMarker $MarkerPath "round9.scene=flat-open-terrain round9SceneKind=flat-open-terrain sceneKind=flat-open-terrain clusterDensityBucket=open complexityBucket=open"
+            }
         }
         "wall-facing" {
             if ($SetupScene) {
                 Send-MinecraftChatCommand "/fill ~4 ~-1 ~-4 ~4 ~4 ~4 minecraft:smooth_stone"
             }
             Send-MinecraftChatCommand "/tp @s ~ ~ ~ -90 0"
+            if (-not [string]::IsNullOrWhiteSpace($MarkerPath)) {
+                Add-LucernaControllerMarker $MarkerPath "round9.scene=interior-wall-facing round9SceneKind=interior-wall-facing sceneKind=interior-wall-facing clusterDensityBucket=interior complexityBucket=medium"
+            }
         }
         "high-distance-open" {
             Send-MinecraftChatCommand "/gamerule sendCommandFeedback false"
@@ -1273,6 +1303,36 @@ function Invoke-Round9SceneAction {
             Send-MinecraftChatCommand "/time set 6000"
             Send-MinecraftChatCommand "/weather clear"
             Send-MinecraftChatCommand "/tp @s ~ ~ ~ 35 10"
+            if (-not [string]::IsNullOrWhiteSpace($MarkerPath)) {
+                Add-LucernaControllerMarker $MarkerPath "round9.scene=high-render-distance-open-terrain round9SceneKind=high-render-distance-open-terrain sceneKind=high-render-distance-open-terrain clusterDensityBucket=open complexityBucket=medium"
+            }
+        }
+        "forest-complex" {
+            Send-MinecraftChatCommand "/gamerule sendCommandFeedback false"
+            Send-MinecraftChatCommand "/gamemode creative"
+            Send-MinecraftChatCommand "/time set 6000"
+            Send-MinecraftChatCommand "/weather clear"
+            if ($SetupScene) {
+                Send-MinecraftChatCommand "/fill ~-8 ~-1 ~-8 ~8 ~-1 ~8 minecraft:grass_block"
+                Send-MinecraftChatCommand "/fill ~-8 ~ ~-8 ~8 ~8 ~8 minecraft:air"
+                Send-MinecraftChatCommand "/fill ~-7 ~ ~-7 ~-5 ~5 ~-5 minecraft:oak_leaves"
+                Send-MinecraftChatCommand "/fill ~5 ~ ~-7 ~7 ~6 ~-5 minecraft:spruce_leaves"
+                Send-MinecraftChatCommand "/fill ~-7 ~ ~5 ~-5 ~4 ~7 minecraft:birch_leaves"
+                Send-MinecraftChatCommand "/fill ~5 ~ ~5 ~7 ~5 ~7 minecraft:jungle_leaves"
+                Send-MinecraftChatCommand "/fill ~-6 ~ ~-6 ~-6 ~4 ~-6 minecraft:oak_log"
+                Send-MinecraftChatCommand "/fill ~6 ~ ~-6 ~6 ~5 ~-6 minecraft:spruce_log"
+                Send-MinecraftChatCommand "/fill ~-6 ~ ~6 ~-6 ~3 ~6 minecraft:birch_log"
+                Send-MinecraftChatCommand "/fill ~6 ~ ~6 ~6 ~4 ~6 minecraft:jungle_log"
+                Send-MinecraftChatCommand "/fill ~-2 ~ ~-2 ~2 ~2 ~2 minecraft:mossy_cobblestone"
+                Send-MinecraftChatCommand "/setblock ~ ~1 ~ minecraft:glowstone"
+            }
+            Send-MinecraftChatCommand "/tp @s ~ ~2 ~ -35 12"
+            if (-not [string]::IsNullOrWhiteSpace($MarkerPath)) {
+                Add-LucernaControllerMarker $MarkerPath "round9.scene=forest-complex-area round9SceneKind=forest-complex-area sceneKind=forest-complex-area clusterDensityBucket=forest complexityBucket=complex"
+            }
+        }
+        default {
+            throw "Unsupported Round 9 scene action: $SceneAction"
         }
     }
 }
@@ -1921,7 +1981,25 @@ try {
             "invalidCluster(?:Count|s)?=true",
             "negative cluster",
             "cluster(?:Count|s)?=.*(?:NaN|Infinity)",
-            "visibleCluster(?:Count|s)?=.*(?:NaN|Infinity)"
+            "visibleCluster(?:Count|s)?=.*(?:NaN|Infinity)",
+            "terrain corruption",
+            "missing terrain",
+            "chunk hole",
+            "geometry corruption",
+            "invalid meshlet",
+            "cluster bounds invalid",
+            "actualGpuCullingExecuted=false[^`r`n]*(?:realGpuCulling(?:Proven|Ready)|gpuCullingOutputReady)=true",
+            "gpu_culling_executed=false[^`r`n]*(?:real_gpu_culling_(?:proven|ready)|gpu_culling_output_ready)=true",
+            "realGpuCulling(?:Proven|Ready)=true[^`r`n]*(?:actualGpuCullingExecuted|gpu_culling_executed)=false",
+            "real_gpu_culling_(?:proven|ready)=true[^`r`n]*(?:actualGpuCullingExecuted|gpu_culling_executed)=false",
+            "gpuCullingBlockerReason=(?!none|ready|executed|n/?a)[A-Za-z0-9_.:-]+[^`r`n]*(?:realGpuCulling(?:Proven|Ready)|gpuCullingOutputReady)=true",
+            "gpu_culling_blocker_reason=(?!none|ready|executed|n/?a)[A-Za-z0-9_.:-]+[^`r`n]*(?:real_gpu_culling_(?:proven|ready)|gpu_culling_output_ready)=true",
+            "invalid descriptor",
+            "VK_ERROR",
+            "VK_[A-Z_]*ERROR",
+            "Lucerna native error",
+            "native error",
+            "Vulkan error"
         )
     } elseif ($ValidationProfile -eq "Round10HybridTracing") {
         @(
@@ -2011,7 +2089,7 @@ try {
         }
     }
     if ($ValidationProfile -eq "Round9VirtualizedGeometry") {
-        Invoke-Round9SceneAction ([string]$round9CaptureIntent.sceneAction)
+        Invoke-Round9SceneAction ([string]$round9CaptureIntent.sceneAction) $markerLog
         Start-Sleep -Seconds 5
     }
     if ($ValidationProfile -eq "Round10HybridTracing") {

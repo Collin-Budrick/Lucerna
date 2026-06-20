@@ -563,15 +563,226 @@ public final class LucernaDebugOverlayLines {
 
     private static void addChunkCullingLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
         Round9CullingRuntimeStatus status = Round9CullingRuntimeStatus.fromSnapshot(snapshot);
-        lines.add(Component.literal("Overlay scope: Round 9 CPU/conservative chunk culling runtime status."));
-        lines.add(Component.literal(status.clusterCountLine()));
-        lines.add(Component.literal(status.visibilityCountLine()));
+        lines.add(Component.literal("Overlay scope: Round 9 culling status; GPU fields only count when reported true."));
+        lines.add(Component.literal("GPU culling: executed=" + round9GpuCullingExecuted(snapshot)
+                + " prereq=" + round9GpuPrerequisitesReady(snapshot)
+                + " blocker=" + round9GpuBlockerReason(snapshot)));
+        lines.add(Component.literal("Frustum: candidates=" + round9FrustumCandidates(snapshot)
+                + " | clusters=" + status.clusterCountLine()));
+        lines.add(Component.literal("Occlusion: placeholder=" + round9OcclusionPlaceholder(snapshot)
+                + " candidates=" + round9OcclusionCandidates(snapshot)));
+        lines.add(Component.literal("Indirect draws: ready=" + round9IndirectDrawReady(snapshot)
+                + " count=" + round9IndirectDrawCount(snapshot)
+                + " | " + status.indirectDrawCountLine()));
+        lines.add(Component.literal("Visibility: visible=" + round9VisibleCount(snapshot)
+                + " culled=" + round9CulledCount(snapshot)
+                + " offscreen=" + round9OffscreenCount(snapshot)
+                + " | " + status.visibilityCountLine()));
+        lines.add(Component.literal("Frame timing: cpu=" + round9CpuTiming(snapshot)
+                + " gpu=" + round9GpuTiming(snapshot)
+                + " queue=" + round9FrameQueueTiming(snapshot)));
+        lines.add(Component.literal("Density: " + round9DensityLabel(snapshot)));
         lines.add(Component.literal(status.cullingModeLine()));
-        lines.add(Component.literal(status.indirectDrawCountLine()));
         lines.add(Component.literal(status.terrainRenderingLine()));
         lines.add(Component.literal(status.invalidOrZeroLine()));
         lines.add(Component.literal(status.readinessLine()));
         lines.add(Component.literal(status.evidenceBoundaryLine()));
+    }
+
+    private static String round9GpuCullingExecuted(LucernaStatusSnapshot snapshot) {
+        return round9NativeValue(
+                snapshot,
+                "false",
+                "round9_gpu_culling_executed",
+                "gpu_culling_executed",
+                "gpuCullingExecuted",
+                "gpu_culling_real",
+                "gpuCullingReal"
+        );
+    }
+
+    private static String round9GpuPrerequisitesReady(LucernaStatusSnapshot snapshot) {
+        return round9NativeValue(
+                snapshot,
+                "?",
+                "round9_gpu_prerequisites_ready",
+                "gpu_prerequisites_ready",
+                "gpuPrerequisitesReady",
+                "gpu_culling_prerequisites_ready",
+                "gpuCullingPrerequisitesReady"
+        );
+    }
+
+    private static String round9GpuBlockerReason(LucernaStatusSnapshot snapshot) {
+        return shorten(round9NativeValue(
+                snapshot,
+                "unreported",
+                "round9_gpu_blocker_reason",
+                "gpu_blocker_reason",
+                "gpuCullingBlockerReason",
+                "gpu_culling_blocker",
+                "culling_blocker_reason",
+                "blocker_reason"
+        ), 72);
+    }
+
+    private static String round9FrustumCandidates(LucernaStatusSnapshot snapshot) {
+        return round9NativeValue(
+                snapshot,
+                "?",
+                "round9_frustum_candidate_count",
+                "frustum_candidate_count",
+                "frustumCandidates",
+                "frustum_candidates",
+                "frustum_visible_candidates"
+        );
+    }
+
+    private static String round9OcclusionPlaceholder(LucernaStatusSnapshot snapshot) {
+        return round9NativeValue(
+                snapshot,
+                "?",
+                "round9_occlusion_placeholder",
+                "occlusion_placeholder",
+                "occlusionPlaceholder",
+                "occlusion_culling_placeholder",
+                "gpu_occlusion_placeholder"
+        );
+    }
+
+    private static String round9OcclusionCandidates(LucernaStatusSnapshot snapshot) {
+        return round9NativeValue(
+                snapshot,
+                "?",
+                "round9_occlusion_candidate_count",
+                "occlusion_candidate_count",
+                "occlusionCandidates",
+                "occlusion_candidates",
+                "occlusion_test_candidates"
+        );
+    }
+
+    private static String round9IndirectDrawReady(LucernaStatusSnapshot snapshot) {
+        return round9NativeValue(
+                snapshot,
+                "?",
+                "round9_indirect_draw_ready",
+                "indirect_draw_ready",
+                "indirectDrawReady",
+                "indirect_ready",
+                "real_indirect_draw_ready"
+        );
+    }
+
+    private static String round9IndirectDrawCount(LucernaStatusSnapshot snapshot) {
+        return round9NativeValue(
+                snapshot,
+                "?",
+                "round9_indirect_draw_count",
+                "indirect_draw_count",
+                "indirectDrawCount",
+                "real_indirect_draw_count",
+                "draw_count"
+        );
+    }
+
+    private static String round9VisibleCount(LucernaStatusSnapshot snapshot) {
+        return round9NativeValue(
+                snapshot,
+                "?",
+                "round9_visible_count",
+                "visible_count",
+                "visibleCount",
+                "visible_cluster_count",
+                "visible_chunk_count"
+        );
+    }
+
+    private static String round9CulledCount(LucernaStatusSnapshot snapshot) {
+        return round9NativeValue(
+                snapshot,
+                "?",
+                "round9_culled_count",
+                "culled_count",
+                "culledCount",
+                "culled_cluster_count",
+                "culled_chunk_count"
+        );
+    }
+
+    private static String round9OffscreenCount(LucernaStatusSnapshot snapshot) {
+        return round9NativeValue(
+                snapshot,
+                "?",
+                "round9_offscreen_count",
+                "offscreen_count",
+                "offscreenCount",
+                "offscreen_cluster_count",
+                "offscreen_chunk_count"
+        );
+    }
+
+    private static String round9CpuTiming(LucernaStatusSnapshot snapshot) {
+        return round9NativeValue(
+                snapshot,
+                "pending",
+                "round9_cpu_ms",
+                "round9_cpu_millis",
+                "culling_cpu_ms",
+                "cpu_ms",
+                "cpuMillis"
+        );
+    }
+
+    private static String round9GpuTiming(LucernaStatusSnapshot snapshot) {
+        return round9NativeValue(
+                snapshot,
+                "pending",
+                "round9_gpu_ms",
+                "round9_gpu_millis",
+                "culling_gpu_ms",
+                "gpu_ms",
+                "gpuMillis"
+        );
+    }
+
+    private static String round9FrameQueueTiming(LucernaStatusSnapshot snapshot) {
+        return round9NativeValue(
+                snapshot,
+                "pending",
+                "round9_frame_queue_ms",
+                "frame_queue_ms",
+                "queue_ms",
+                "queueMillis",
+                "latency_ms"
+        );
+    }
+
+    private static String round9DensityLabel(LucernaStatusSnapshot snapshot) {
+        return shorten(round9NativeValue(
+                snapshot,
+                "unreported",
+                "round9_density_label",
+                "density_label",
+                "forest_density_label",
+                "complex_density_label",
+                "terrain_density_label",
+                "scene_density_label"
+        ), 72);
+    }
+
+    private static String round9NativeValue(LucernaStatusSnapshot snapshot, String fallback, String... keys) {
+        if (snapshot == null || keys == null) {
+            return fallback;
+        }
+        String nativeStatus = snapshot.nativeBridge().nativeStatus();
+        for (String key : keys) {
+            String value = nativeStatusValue(nativeStatus, key);
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return fallback;
     }
 
     private static void addRoundTenVoxelRayLines(List<Component> lines, LucernaStatusSnapshot snapshot) {

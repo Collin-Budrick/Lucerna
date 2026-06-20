@@ -61,6 +61,58 @@ public record ChunkClusterMetadata(
         return this.translucentVoxelCount > 0 || this.fluidVoxelCount > 0;
     }
 
+    public boolean boundsComplete() {
+        return this.localBounds.spanX() == this.lodTier.edgeLength()
+                && this.localBounds.spanY() == this.lodTier.edgeLength()
+                && this.localBounds.spanZ() == this.lodTier.edgeLength();
+    }
+
+    public float occupiedDensity() {
+        int capacity = this.localBounds.estimatedVoxelCapacity();
+        if (capacity <= 0 || this.occupiedVoxelCount <= 0) {
+            return 0.0F;
+        }
+        return Math.min(1.0F, (float) this.occupiedVoxelCount / capacity);
+    }
+
+    public ChunkClusterDensityComplexityBucket densityComplexityBucket() {
+        if (!this.hasGeometryPayload()) {
+            return ChunkClusterDensityComplexityBucket.EMPTY;
+        }
+
+        float density = this.occupiedDensity();
+        boolean mixedMaterialKinds = this.hasTranslucentOrFluid() || this.emissiveVoxelCount > 0;
+        boolean highSurfaceDetail = this.surfaceSampleCount >= Math.max(8, this.localBounds.estimatedVoxelCapacity() / 16);
+        boolean largePalette = this.materialPaletteSize >= 16;
+        if (density >= 0.75F || (density >= 0.35F && mixedMaterialKinds && (highSurfaceDetail || largePalette))) {
+            return ChunkClusterDensityComplexityBucket.COMPLEX;
+        }
+        if (density >= 0.35F || mixedMaterialKinds || highSurfaceDetail || largePalette) {
+            return ChunkClusterDensityComplexityBucket.DENSE;
+        }
+        if (density >= 0.10F || this.surfaceSampleCount >= 4 || this.materialPaletteSize >= 8) {
+            return ChunkClusterDensityComplexityBucket.MODERATE;
+        }
+        return ChunkClusterDensityComplexityBucket.SPARSE;
+    }
+
+    public boolean gpuUploadMetadataReady() {
+        return this.hasGeometryPayload()
+                && this.boundsComplete()
+                && this.estimatedUploadBytes() >= ESTIMATED_UPLOAD_HEADER_BYTES
+                && this.sourceGeneration >= this.sectionGeneration.combinedGeneration();
+    }
+
+    public boolean indirectPayloadMetadataReady() {
+        return this.gpuUploadMetadataReady()
+                && this.lodTier.clustersPerSection() > 0
+                && this.densityComplexityBucket() != ChunkClusterDensityComplexityBucket.EMPTY;
+    }
+
+    public String generationAssociationKey() {
+        return this.id.stableKey() + "@generation=" + this.sourceGeneration;
+    }
+
     public int estimatedUploadBytes() {
         return ESTIMATED_UPLOAD_HEADER_BYTES
                 + this.surfaceSampleCount * Integer.BYTES * 4

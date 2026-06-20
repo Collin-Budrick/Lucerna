@@ -11,9 +11,19 @@ public record Round9CullingRuntimeStatus(
         Long visibleClusterCount,
         Long culledClusterCount,
         Long offscreenClusterCount,
+        Long frustumCandidateCount,
+        Long frustumCulledCount,
+        Long occlusionPlaceholderCount,
         Long indirectDrawCount,
         Long uploadBytes,
         Long generation,
+        boolean actualGpuCullingExecuted,
+        boolean gpuCullingPrerequisitesReady,
+        String gpuCullingMissingPrerequisites,
+        String gpuCullingBlockerReason,
+        boolean occlusionReady,
+        boolean indirectDrawReady,
+        String executionModeLabel,
         String nativeMode,
         String cullingReason,
         boolean terrainRenderingChanged,
@@ -35,9 +45,21 @@ public record Round9CullingRuntimeStatus(
                     "Cluster upload: unavailable",
                     "Cluster generation: unavailable",
                     "Round 9 readiness: missing",
+                    "Round 9 GPU culling readiness: missing",
+                    "Round 9 frustum candidates: unavailable",
+                    "Round 9 occlusion readiness: unavailable",
+                    "Round 9 execution boundary: actualGpuExecuted=no",
                     "Round 9 evidence boundary: runtime status unavailable"
             );
         }
+        gpuCullingMissingPrerequisites = clean(gpuCullingMissingPrerequisites, "gpu-dispatch-visibility-buffer-occlusion-query");
+        gpuCullingBlockerReason = clean(gpuCullingBlockerReason, "actual-gpu-culling-not-proven");
+        actualGpuCullingExecuted = actualGpuCullingExecuted && gpuCullingPrerequisitesReady;
+        indirectDrawReady = indirectDrawReady && actualGpuCullingExecuted;
+        executionModeLabel = clean(
+                executionModeLabel,
+                actualGpuCullingExecuted ? "actual-gpu-culling" : "conservative-cpu-status"
+        );
     }
 
     public static Round9CullingRuntimeStatus fromSnapshot(LucernaStatusSnapshot snapshot) {
@@ -54,9 +76,19 @@ public record Round9CullingRuntimeStatus(
                 firstLong(visibilityLine, "visible", indirectLine, "visibleClusters"),
                 firstLong(visibilityLine, "culled"),
                 firstLong(visibilityLine, "offscreen"),
+                firstLong(visibilityLine, "frustumCandidates", cullingLine, "frustumCandidates"),
+                firstLong(cullingLine, "frustum"),
+                firstLong(visibilityLine, "occlusionPlaceholder", cullingLine, "occlusionPlaceholder"),
                 firstLong(indirectLine, "draws"),
                 firstLong(uploadLine, "bytes"),
                 firstLong(generationLine, "gen"),
+                truthy(firstToken(cullingLine, "actualGpuExecuted")),
+                truthy(firstToken(cullingLine, "gpuPrereqsReady")),
+                firstToken(cullingLine, "missingPrereqs"),
+                firstToken(cullingLine, "blocker"),
+                truthy(firstToken(cullingLine, "occlusionReady")),
+                truthy(firstToken(indirectLine, "ready")),
+                firstToken(cullingLine, "modeLabel"),
                 firstToken(cullingLine, "mode"),
                 reasonFrom(source, cullingLine),
                 parseTerrainRenderingChanged(cullingLine),
@@ -69,6 +101,7 @@ public record Round9CullingRuntimeStatus(
                 + ",visible=" + countLabel(visibleClusterCount)
                 + ",culled=" + countLabel(totalCulledOrOffscreen())
                 + ",draws=" + countLabel(indirectDrawCount)
+                + ",gpuExecuted=" + yesNo(actualGpuCullingExecuted)
                 + ",mode=" + cullingModeLabel()
                 + ",terrainUnchanged=" + yesNo(!terrainRenderingChanged);
     }
@@ -84,20 +117,47 @@ public record Round9CullingRuntimeStatus(
         return "Round 9 visibility: visible=" + countLabel(visibleClusterCount)
                 + " culled=" + countLabel(culledClusterCount)
                 + " offscreen=" + countLabel(offscreenClusterCount)
+                + " frustumCandidates=" + countLabel(frustumCandidateCount)
+                + " frustumCulled=" + countLabel(frustumCulledCount)
+                + " occlusionPlaceholder=" + countLabel(occlusionPlaceholderCount)
                 + " totalHidden=" + countLabel(totalCulledOrOffscreen())
                 + " state=" + visibilityState();
     }
 
     public String indirectDrawCountLine() {
         return "Round 9 indirect draws: count=" + countLabel(indirectDrawCount)
+                + " ready=" + yesNo(indirectDrawReady)
                 + " state=" + indirectDrawState()
-                + " source=CPU/conservative runtime status";
+                + " source=" + (indirectDrawReady ? "gpu-ready telemetry" : "CPU/conservative runtime status");
     }
 
     public String cullingModeLine() {
         return "Round 9 culling mode: " + cullingModeLabel()
+                + " actualGpuExecuted=" + yesNo(actualGpuCullingExecuted)
+                + " prerequisitesReady=" + yesNo(gpuCullingPrerequisitesReady)
                 + " nativeMode=" + nativeMode
                 + " reason=" + cullingReason;
+    }
+
+    public String gpuCullingReadinessLine() {
+        return "Round 9 GPU culling readiness: actualGpuExecuted=" + yesNo(actualGpuCullingExecuted)
+                + " prerequisitesReady=" + yesNo(gpuCullingPrerequisitesReady)
+                + " missingPrereqs=" + gpuCullingMissingPrerequisites
+                + " blocker=" + gpuCullingBlockerReason
+                + " modeLabel=" + executionModeLabel;
+    }
+
+    public String frustumCandidateLine() {
+        return "Round 9 frustum candidates: candidates=" + countLabel(frustumCandidateCount)
+                + " culled=" + countLabel(frustumCulledCount)
+                + " visible=" + countLabel(visibleClusterCount)
+                + " offscreen=" + countLabel(offscreenClusterCount);
+    }
+
+    public String occlusionReadinessLine() {
+        return "Round 9 occlusion readiness: ready=" + yesNo(occlusionReady)
+                + " placeholders=" + countLabel(occlusionPlaceholderCount)
+                + " blocker=" + (occlusionReady ? "none" : "occlusion-query-or-hiz-not-proven");
     }
 
     public String terrainRenderingLine() {
@@ -122,11 +182,17 @@ public record Round9CullingRuntimeStatus(
                 + " clusters=" + readiness(clusterCount)
                 + " visibility=" + readiness(visibleClusterCount)
                 + " culling=" + hiddenReadiness()
-                + " indirect=" + readiness(indirectDrawCount);
+                + " gpuPrereqs=" + yesNo(gpuCullingPrerequisitesReady)
+                + " gpuExecuted=" + yesNo(actualGpuCullingExecuted)
+                + " indirect=" + readiness(indirectDrawCount)
+                + " indirectReady=" + yesNo(indirectDrawReady);
     }
 
     public String evidenceBoundaryLine() {
-        return "Round 9 evidence boundary: CPU/conservative culling status is live; terrain rendering remains vanilla/unchanged";
+        if (actualGpuCullingExecuted) {
+            return "Round 9 evidence boundary: GPU culling execution reported by telemetry; terrain rendering replacement still requires controller proof";
+        }
+        return "Round 9 evidence boundary: CPU/conservative culling status is live; actual GPU culling not proven; terrain rendering remains vanilla/unchanged";
     }
 
     public boolean hasInvalidCounts() {
@@ -156,6 +222,9 @@ public record Round9CullingRuntimeStatus(
     private String cullingModeLabel() {
         if (!telemetryPresent) {
             return "unavailable";
+        }
+        if (actualGpuCullingExecuted) {
+            return executionModeLabel;
         }
         if ("metadata-only-placeholder".equalsIgnoreCase(nativeMode)) {
             return "CPU/conservative first-pass";
@@ -205,6 +274,9 @@ public record Round9CullingRuntimeStatus(
     private String valueGuard() {
         if (!telemetryPresent) {
             return "missing telemetry";
+        }
+        if (!actualGpuCullingExecuted && gpuCullingPrerequisitesReady) {
+            return "GPU prerequisites ready but execution not proven: " + gpuCullingBlockerReason;
         }
         if (hasInvalidCounts()) {
             return "invalid cluster/visibility relationship";
@@ -296,6 +368,18 @@ public record Round9CullingRuntimeStatus(
     private static boolean parseTerrainRenderingChanged(String cullingLine) {
         String value = firstToken(cullingLine, "terrainRenderingChanged");
         return "yes".equalsIgnoreCase(value) || "true".equalsIgnoreCase(value);
+    }
+
+    private static boolean truthy(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        return "true".equals(normalized)
+                || "yes".equals(normalized)
+                || "ready".equals(normalized)
+                || "1".equals(normalized)
+                || "executed".equals(normalized);
     }
 
     private static String reasonFrom(Round9CullingDebugStatus source, String cullingLine) {

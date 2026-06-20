@@ -1744,6 +1744,17 @@ public final class LucernaController {
                 round9NativeValue(nativeStatus, "indirect_draw_count_placeholder", "0")
         );
         String indirectDrawPlaceholder = round9NativeValue(nativeStatus, "indirect_draw_count_placeholder", "0");
+        String indirectDrawCandidateCount = round9NativeValue(nativeStatus, "indirect_draw_candidate_count", indirectDrawPlaceholder);
+        String gpuCullingExecuted = round9NativeValue(nativeStatus, "gpu_culling_executed", "false");
+        String gpuCullingPrerequisitesReady = round9NativeValue(nativeStatus, "gpu_culling_prerequisites_ready", "false");
+        String gpuCullingBlockerReason = round9NativeValue(nativeStatus, "gpu_culling_blocker_reason", "round9_gpu_culling_blocker_not_recorded");
+        String frustumCandidateCount = round9NativeValue(nativeStatus, "frustum_culling_candidate_count", "0");
+        String occlusionCandidateCount = round9NativeValue(nativeStatus, "occlusion_culling_candidate_count", "0");
+        String occlusionPlaceholderCount = round9NativeValue(nativeStatus, "occlusion_culling_placeholder_count", "0");
+        String indirectDrawReady = round9NativeValue(nativeStatus, "indirect_draw_ready", "false");
+        String cpuFrameTimePlaceholder = round9NativeValue(nativeStatus, "cpu_frame_time_ms_placeholder", "0");
+        String gpuFrameTimePlaceholder = round9NativeValue(nativeStatus, "gpu_frame_time_ms_placeholder", "0");
+        String frameTimingMarker = round9NativeValue(nativeStatus, "frameTimingMarker", "true");
         String offscreenClusterCount = round9NativeValue(nativeStatus, "offscreen_cluster_count", culledClusterCount);
         String cullingMode = round9NativeValue(nativeStatus, "culling_mode", "round9_cluster_culling_mode_not_recorded");
         String cullingReason = round9NativeValue(nativeStatus, "culling_reason", "round9_cluster_culling_reason_not_recorded");
@@ -1763,6 +1774,10 @@ public final class LucernaController {
                 + "|"
                 + culledClusterCount
                 + "|"
+                + gpuCullingExecuted
+                + "|"
+                + frustumCandidateCount
+                + "|"
                 + generationCounter;
         if (logKey.equals(this.lastLoggedRound9VirtualizedGeometryKey)) {
             return;
@@ -1770,7 +1785,7 @@ public final class LucernaController {
 
         this.lastLoggedRound9VirtualizedGeometryKey = logKey;
         Lucerna.LOGGER.info(
-                "Lucerna Round 9 virtualized chunk geometry: artifactRole={} sceneKind={} captureMode={} owner={} clusterOverlayVisible=true cullingOverlayVisible={} cluster_count={} visible_cluster_count={} culled_cluster_count={} offscreen_cluster_count={} upload_byte_estimate={} total_upload_byte_estimate={} generation_counter={} payload_sections={} indirect_draw_count={} indirect_draw_count_placeholder={} cpuConservativeCullingTelemetry={} round9.cpuConservativeCullingActive={} culling_mode={} culling_reason={} {} {}.",
+                "Lucerna Round 9 virtualized chunk geometry: artifactRole={} sceneKind={} captureMode={} owner={} clusterOverlayVisible=true cullingOverlayVisible={} cluster_count={} visible_cluster_count={} culled_cluster_count={} offscreen_cluster_count={} upload_byte_estimate={} total_upload_byte_estimate={} generation_counter={} payload_sections={} indirect_draw_count={} indirect_draw_count_placeholder={} indirect_draw_candidate_count={} gpu_culling_executed={} gpu_culling_prerequisites_ready={} gpu_culling_blocker_reason={} frustum_culling_candidate_count={} occlusion_culling_candidate_count={} occlusion_culling_placeholder_count={} indirect_draw_ready={} cpu_frame_time_ms_placeholder={} gpu_frame_time_ms_placeholder={} frameTimingMarker={} cpuConservativeCullingTelemetry={} round9.cpuConservativeCullingActive={} culling_mode={} culling_reason={} {} {}.",
                 artifactRole,
                 sceneKind,
                 captureMode,
@@ -1786,6 +1801,17 @@ public final class LucernaController {
                 payloadSections,
                 indirectDrawCount,
                 indirectDrawPlaceholder,
+                indirectDrawCandidateCount,
+                gpuCullingExecuted,
+                gpuCullingPrerequisitesReady,
+                gpuCullingBlockerReason,
+                frustumCandidateCount,
+                occlusionCandidateCount,
+                occlusionPlaceholderCount,
+                indirectDrawReady,
+                cpuFrameTimePlaceholder,
+                gpuFrameTimePlaceholder,
+                frameTimingMarker,
                 cpuConservativeCulling,
                 cpuConservativeCulling,
                 cullingMode,
@@ -1794,7 +1820,7 @@ public final class LucernaController {
                 status.evidenceBoundaryLine()
         );
         Lucerna.LOGGER.info(
-                "Lucerna Round 9 chunk culling: artifactRole={} sceneKind={} visible_cluster_count={} culled_cluster_count={} offscreen_clusters={} indirect_draw_count={} indirect_draw_count_placeholder={} terrainRenderingChanged=false visibleClusterCountsChanged=true cpuConservativeCullingTelemetry={} round9.cpuConservativeCullingActive={} culling_mode={} culling_reason={} {} {} {}.",
+                "Lucerna Round 9 chunk culling: artifactRole={} sceneKind={} visible_cluster_count={} culled_cluster_count={} offscreen_clusters={} indirect_draw_count={} indirect_draw_count_placeholder={} indirect_draw_candidate_count={} gpu_culling_executed={} gpu_culling_prerequisites_ready={} gpu_culling_blocker_reason={} frustum_culling_candidate_count={} occlusion_culling_candidate_count={} occlusion_culling_placeholder_count={} indirect_draw_ready={} cpu_frame_time_ms_placeholder={} gpu_frame_time_ms_placeholder={} frameTimingMarker={} terrainRenderingChanged=false visibleClusterCountsChanged=true cpuConservativeCullingTelemetry={} round9.cpuConservativeCullingActive={} culling_mode={} culling_reason={} {} {} {}.",
                 artifactRole,
                 sceneKind,
                 visibleClusterCount,
@@ -1802,6 +1828,17 @@ public final class LucernaController {
                 offscreenClusterCount,
                 indirectDrawCount,
                 indirectDrawPlaceholder,
+                indirectDrawCandidateCount,
+                gpuCullingExecuted,
+                gpuCullingPrerequisitesReady,
+                gpuCullingBlockerReason,
+                frustumCandidateCount,
+                occlusionCandidateCount,
+                occlusionPlaceholderCount,
+                indirectDrawReady,
+                cpuFrameTimePlaceholder,
+                gpuFrameTimePlaceholder,
+                frameTimingMarker,
                 cpuConservativeCulling,
                 cpuConservativeCulling,
                 cullingMode,
