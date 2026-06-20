@@ -220,7 +220,8 @@ function Get-Round7CaptureIntent {
                 "(?:round7\.shaderDenoise\.outputMaterialReady|shaderDenoiseOutputMaterialReady|shader_denoise_output_material_ready)=(?:true|false)",
                 "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=(?:true|false)",
                 "(?:round7\.shaderDenoise\.cpuReadbackFallbackActive|shaderDenoiseCpuReadbackFallbackActive|cpuReadbackDenoiseFallbackActive|cpu_readback_denoise_fallback_active)=(?:true|false)",
-                "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=(?:true|false)"
+                "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=(?:true|false)",
+                "Lucerna native shader denoise output image candidate: ready=(?:true|false) size=[0-9]+x[0-9]+ pixels=[0-9]+ bytes=[0-9]+ checksum=[0-9]+ cpuStaged=(?:true|false) nonGpu=(?:true|false) realShaderGenerated=(?:true|false) realOutput=(?:true|false) marker=\S+ blocker=[^.`r`n]+"
             )
             return [ordered]@{
                 rendererEnabled = $true

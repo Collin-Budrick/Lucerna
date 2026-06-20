@@ -225,6 +225,8 @@ public final class LucernaDebugOverlayLines {
         if (!lightingDispatch.hasLightingDispatchStatus()) {
             lines.add(Component.literal("Denoise telemetry: unavailable(" + shorten(lightingDispatch.message(), 64) + ")"));
             lines.add(Component.literal("Sources: raw=? cpu=? shaderIntent=? shaderOut=?"));
+            lines.add(Component.literal("Shader output candidate: present=? dims=missing checksum=missing"));
+            lines.add(Component.literal("Candidate boundary: blocker=telemetry-unavailable notRealShaderOut=true"));
             lines.add(Component.literal("Denoise output: source=? generated=? energy=missing checksum=missing"));
             lines.add(Component.literal("Edge/history: edgeReject=? edgeKeep=? histReject=?"));
             lines.add(Component.literal("Temporal proof: accept=? reject=? reset=? missing=? ready=?"));
@@ -240,6 +242,12 @@ public final class LucernaDebugOverlayLines {
                 + " image=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderOutputImageReady())
                 + " material=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderOutputMaterialReady())
                 + " generated=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderGeneratedOutput())));
+        lines.add(Component.literal("Shader output candidate: present=" + shaderOutputImageCandidateReadinessLabel(denoiseStage)
+                + " dims=" + shaderOutputImageCandidateDimensionsLabel(denoiseStage)
+                + " checksum=" + shaderOutputImageCandidateChecksumLabel(denoiseStage)));
+        lines.add(Component.literal("Candidate source: " + shaderOutputImageCandidateSourceLabel(denoiseStage)));
+        lines.add(Component.literal("Candidate boundary: blocker=" + shaderOutputImageCandidateBlockerLabel(denoiseStage)
+                + " notRealShaderOut=" + yesNo(!Boolean.TRUE.equals(denoiseStage == null ? null : denoiseStage.shaderGeneratedOutput()))));
         lines.add(Component.literal("Fallback/blockers: cpuFallback=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.cpuReadbackFallback())
                 + " blockers=" + shorten(denoiseStage == null ? "" : denoiseStage.shaderDenoiseBlockers(), 78)));
         lines.add(Component.literal("Denoise output: source=" + denoiseSourceIdentityLabel(denoiseStage)
@@ -1813,6 +1821,153 @@ public final class LucernaDebugOverlayLines {
         return realDenoiseShaderLabel(stage);
     }
 
+    private static String shaderOutputImageCandidateReadinessLabel(LightingDispatchStageTelemetryStatus stage) {
+        String explicit = firstDetailOrUnknown(
+                stage,
+                "shader_output_image_candidate",
+                "shaderOutputImageCandidate",
+                "shader_output_image_candidate_present",
+                "shaderOutputImageCandidatePresent",
+                "shader_denoise_output_candidate",
+                "shaderDenoiseOutputCandidate",
+                "shader_output_candidate",
+                "shaderOutputCandidate"
+        );
+        if (!"?".equals(explicit)) {
+            return explicit;
+        }
+        String sourceKind = firstDetailOrUnknown(stage, "source_kind", "sourceKind", "denoised_source_kind");
+        if (containsShaderOutputImageCandidate(sourceKind)
+                || (stage != null && containsShaderOutputImageCandidate(stage.sourceIdentity()))) {
+            return "true";
+        }
+        return "?";
+    }
+
+    private static String shaderOutputImageCandidateDimensionsLabel(LightingDispatchStageTelemetryStatus stage) {
+        String explicit = firstDetailOrUnknown(
+                stage,
+                "shader_output_image_candidate_dimensions",
+                "shaderOutputImageCandidateDimensions",
+                "shader_output_candidate_dimensions",
+                "shaderOutputCandidateDimensions",
+                "shader_output_image_candidate_size",
+                "shaderOutputImageCandidateSize",
+                "shader_output_candidate_size",
+                "shaderOutputCandidateSize",
+                "shader_output_candidate_dims",
+                "shaderOutputCandidateDims"
+        );
+        if (!"?".equals(explicit)) {
+            return explicit;
+        }
+        String width = firstDetailOrUnknown(
+                stage,
+                "shader_output_image_candidate_width",
+                "shaderOutputImageCandidateWidth",
+                "shader_output_candidate_width",
+                "shaderOutputCandidateWidth",
+                "shader_output_width",
+                "shaderOutputWidth"
+        );
+        String height = firstDetailOrUnknown(
+                stage,
+                "shader_output_image_candidate_height",
+                "shaderOutputImageCandidateHeight",
+                "shader_output_candidate_height",
+                "shaderOutputCandidateHeight",
+                "shader_output_height",
+                "shaderOutputHeight"
+        );
+        if (!"?".equals(width) && !"?".equals(height)) {
+            return width + "x" + height;
+        }
+        if (stage != null
+                && "true".equalsIgnoreCase(shaderOutputImageCandidateReadinessLabel(stage))
+                && !stage.outputDimensions().isBlank()) {
+            return stage.outputDimensions();
+        }
+        return "?";
+    }
+
+    private static String shaderOutputImageCandidateChecksumLabel(LightingDispatchStageTelemetryStatus stage) {
+        String explicit = firstDetailOrUnknown(
+                stage,
+                "shader_output_image_candidate_checksum",
+                "shaderOutputImageCandidateChecksum",
+                "shader_output_candidate_checksum",
+                "shaderOutputCandidateChecksum",
+                "shader_denoise_output_candidate_checksum",
+                "shaderDenoiseOutputCandidateChecksum",
+                "shader_output_checksum",
+                "shaderOutputChecksum"
+        );
+        if (!"?".equals(explicit)) {
+            return explicit;
+        }
+        if (stage != null
+                && "true".equalsIgnoreCase(shaderOutputImageCandidateReadinessLabel(stage))
+                && stage.outputChecksum() != null) {
+            return Long.toUnsignedString(stage.outputChecksum());
+        }
+        return "?";
+    }
+
+    private static String shaderOutputImageCandidateSourceLabel(LightingDispatchStageTelemetryStatus stage) {
+        String explicit = firstDetailOrUnknown(
+                stage,
+                "shader_output_image_candidate_source",
+                "shaderOutputImageCandidateSource",
+                "shader_output_candidate_source",
+                "shaderOutputCandidateSource",
+                "shader_output_image_candidate_source_label",
+                "shaderOutputImageCandidateSourceLabel",
+                "source_kind",
+                "sourceKind"
+        );
+        if (!"?".equals(explicit)) {
+            return shorten(explicit, 72);
+        }
+        if (stage != null && containsShaderOutputImageCandidate(stage.sourceIdentity())) {
+            return shorten(stage.sourceIdentity(), 72);
+        }
+        return "?";
+    }
+
+    private static String shaderOutputImageCandidateBlockerLabel(LightingDispatchStageTelemetryStatus stage) {
+        String explicit = firstDetailOrUnknown(
+                stage,
+                "shader_output_image_candidate_blocker",
+                "shaderOutputImageCandidateBlocker",
+                "shader_output_candidate_blocker",
+                "shaderOutputCandidateBlocker",
+                "shader_output_candidate_boundary",
+                "shaderOutputCandidateBoundary",
+                "shader_output_image_candidate_boundary",
+                "shaderOutputImageCandidateBoundary"
+        );
+        if (!"?".equals(explicit)) {
+            return shorten(explicit, 72);
+        }
+        if (stage != null && !stage.shaderDenoiseBlockers().isBlank()) {
+            return shorten(stage.shaderDenoiseBlockers(), 72);
+        }
+        if (stage != null && containsShaderOutputImageCandidate(stage.sourceIdentity())) {
+            return "candidate-only:not-real-shader-generated-denoised-output";
+        }
+        return "?";
+    }
+
+    private static boolean containsShaderOutputImageCandidate(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String normalized = value.toLowerCase(Locale.ROOT).replace("_", "-");
+        return normalized.contains("shader-output-image-candidate")
+                || normalized.contains("shader-denoise-output-candidate")
+                || normalized.contains("shader-output-candidate");
+    }
+
     private static String temporalReadinessLabel(
             LightingDispatchStageTelemetryStatus denoiseStage,
             LightingDispatchStageTelemetryStatus adaptiveStage
@@ -2254,6 +2409,9 @@ public final class LucernaDebugOverlayLines {
         }
         for (String key : keys) {
             String value = stage.details().get(key);
+            if ((value == null || value.isBlank()) && key != null) {
+                value = stage.details().get(key.toLowerCase(Locale.ROOT).replace('-', '_').replace('.', '_'));
+            }
             if (value != null && !value.isBlank()) {
                 return value;
             }

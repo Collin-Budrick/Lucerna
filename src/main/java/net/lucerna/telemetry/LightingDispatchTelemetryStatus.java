@@ -322,6 +322,17 @@ public record LightingDispatchTelemetryStatus(
         copyMissing(target, executionFields, "shader_denoise_input_ready", "shader_denoise_input_ready");
         copyMissing(target, executionFields, "shader_denoise_output_ready", "shader_output_ready");
         copyMissing(target, executionFields, "shader_denoise_output_image_ready", "shader_output_image_ready");
+        copyMissing(target, executionFields, "shader_denoise_output_image_candidate_ready", "shader_output_image_candidate");
+        copyMissing(target, executionFields, "shader_denoise_output_image_candidate_ready", "shader_output_image_candidate_present");
+        copyMissing(target, executionFields, "shader_denoise_output_image_candidate_cpu_staged", "shader_output_image_candidate_cpu_staged");
+        copyMissing(target, executionFields, "shader_denoise_output_image_candidate_non_gpu", "shader_output_image_candidate_non_gpu");
+        copyMissing(target, executionFields, "shader_denoise_output_image_candidate_size", "shader_output_image_candidate_dimensions");
+        copyMissing(target, executionFields, "shader_denoise_output_image_candidate_width", "shader_output_image_candidate_width");
+        copyMissing(target, executionFields, "shader_denoise_output_image_candidate_height", "shader_output_image_candidate_height");
+        copyMissing(target, executionFields, "shader_denoise_output_image_candidate_checksum", "shader_output_image_candidate_checksum");
+        copyMissing(target, executionFields, "shader_denoise_output_image_candidate_marker", "shader_output_image_candidate_source");
+        copyMissing(target, executionFields, "shader_denoise_output_image_blocker", "shader_output_image_candidate_blocker");
+        copyMissing(target, executionFields, "shader_denoise_output_image_blocker", "shader_output_image_candidate_boundary");
         copyMissing(target, executionFields, "shader_denoise_output_material_ready", "shader_output_material_ready");
         copyMissing(target, executionFields, "shader_denoise_output_shader_generated", "shader_generated_output");
         copyMissing(target, executionFields, "cpu_fallback_quality_metrics", "cpu_readback_fallback");

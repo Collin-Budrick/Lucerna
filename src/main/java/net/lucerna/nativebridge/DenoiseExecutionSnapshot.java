@@ -22,6 +22,11 @@ public record DenoiseExecutionSnapshot(
         long denoisedOutputChecksum,
         int denoisedOutputChangedPixels,
         int denoisedOutputMeanAbsDelta,
+        int shaderDenoiseOutputImageCandidateWidth,
+        int shaderDenoiseOutputImageCandidateHeight,
+        int shaderDenoiseOutputImageCandidatePixels,
+        long shaderDenoiseOutputImageCandidateBytes,
+        long shaderDenoiseOutputImageCandidateChecksum,
         int compositeWidth,
         int compositeHeight,
         int compositeOutputCount,
@@ -46,6 +51,9 @@ public record DenoiseExecutionSnapshot(
         boolean shaderDenoiseInputReady,
         boolean shaderDenoiseOutputReady,
         boolean shaderDenoiseOutputImageReady,
+        boolean shaderDenoiseOutputImageCandidateReady,
+        boolean shaderDenoiseOutputImageCandidateCpuStaged,
+        boolean shaderDenoiseOutputImageCandidateNonGpu,
         boolean shaderDenoiseOutputMaterialReady,
         boolean shaderDenoiseShaderGeneratedOutput,
         boolean cpuFallbackQualityMetrics,
@@ -62,6 +70,8 @@ public record DenoiseExecutionSnapshot(
         String outputMarker,
         String rawInputMarker,
         String denoisedOutputMarker,
+        String shaderDenoiseOutputImageCandidateMarker,
+        String shaderDenoiseOutputImageBlocker,
         String compositeMarker,
         String readinessReason
 ) {
@@ -85,80 +95,111 @@ public record DenoiseExecutionSnapshot(
         denoisedOutputChecksum = Math.max(0L, denoisedOutputChecksum);
         denoisedOutputChangedPixels = Math.max(0, denoisedOutputChangedPixels);
         denoisedOutputMeanAbsDelta = Math.max(0, denoisedOutputMeanAbsDelta);
+        shaderDenoiseOutputImageCandidateWidth = Math.max(0, shaderDenoiseOutputImageCandidateWidth);
+        shaderDenoiseOutputImageCandidateHeight = Math.max(0, shaderDenoiseOutputImageCandidateHeight);
+        shaderDenoiseOutputImageCandidatePixels = Math.max(0, shaderDenoiseOutputImageCandidatePixels);
+        shaderDenoiseOutputImageCandidateBytes = Math.max(0L, shaderDenoiseOutputImageCandidateBytes);
+        shaderDenoiseOutputImageCandidateChecksum = Math.max(0L, shaderDenoiseOutputImageCandidateChecksum);
         compositeWidth = Math.max(0, compositeWidth);
         compositeHeight = Math.max(0, compositeHeight);
         compositeOutputCount = Math.max(0, compositeOutputCount);
         outputMarker = outputMarker == null || outputMarker.isBlank() ? "unknown" : outputMarker;
         rawInputMarker = rawInputMarker == null || rawInputMarker.isBlank() ? "unknown" : rawInputMarker;
         denoisedOutputMarker = denoisedOutputMarker == null || denoisedOutputMarker.isBlank() ? "unknown" : denoisedOutputMarker;
+        shaderDenoiseOutputImageCandidateMarker = shaderDenoiseOutputImageCandidateMarker == null
+                || shaderDenoiseOutputImageCandidateMarker.isBlank()
+                ? "unknown"
+                : shaderDenoiseOutputImageCandidateMarker;
+        shaderDenoiseOutputImageBlocker = shaderDenoiseOutputImageBlocker == null
+                || shaderDenoiseOutputImageBlocker.isBlank()
+                ? "unknown"
+                : shaderDenoiseOutputImageBlocker;
         compositeMarker = compositeMarker == null || compositeMarker.isBlank() ? "unknown" : compositeMarker;
         readinessReason = readinessReason == null || readinessReason.isBlank() ? "unknown" : readinessReason;
     }
 
     public static DenoiseExecutionSnapshot unavailable(String reason) {
+        return unavailableStatus(false, false, reason);
+    }
+
+    private static DenoiseExecutionSnapshot unavailableStatus(
+            boolean nativeStatusAvailable,
+            boolean denoiseExecutionAvailable,
+            String reason
+    ) {
         return new DenoiseExecutionSnapshot(
-                false,
-                false,
-                0L,
-                0L,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0L,
-                0,
-                0,
-                0,
-                0,
-                0,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                true,
-                true,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                "unknown",
-                "unknown",
-                "unknown",
-                "unknown",
+                nativeStatusAvailable,
+                denoiseExecutionAvailable,
+                0L, // dispatchGeneration
+                0L, // packetGeneration
+                0, // width
+                0, // height
+                0, // inputCount
+                0, // outputCount
+                0, // sampleCount
+                0, // historyAcceptedCount
+                0, // historyRejectedCount
+                0, // edgeRejectedCount
+                0, // edgePreservedCount
+                0, // rawGiPixels
+                0, // rawGiSamples
+                0, // rawGiRays
+                0, // rawGiCacheReads
+                0, // denoisedOutputPixels
+                0L, // denoisedOutputChecksum
+                0, // denoisedOutputChangedPixels
+                0, // denoisedOutputMeanAbsDelta
+                0, // shaderDenoiseOutputImageCandidateWidth
+                0, // shaderDenoiseOutputImageCandidateHeight
+                0, // shaderDenoiseOutputImageCandidatePixels
+                0L, // shaderDenoiseOutputImageCandidateBytes
+                0L, // shaderDenoiseOutputImageCandidateChecksum
+                0, // compositeWidth
+                0, // compositeHeight
+                0, // compositeOutputCount
+                false, // enabled
+                false, // validated
+                false, // placeholder
+                false, // temporalHistory
+                false, // edgeInputsAvailable
+                false, // directShadowSignalAvailable
+                false, // diffuseGiSignalAvailable
+                false, // optionalSpecularPlaceholder
+                false, // optionalAoPlaceholder
+                false, // rawGiInputAvailable
+                false, // rawDirectInputAvailable
+                false, // denoisedOutputIntent
+                false, // denoisedCpuOutputGenerated
+                false, // denoisedOutputDiffersFromRaw
+                false, // realDenoiseShaderOutput
+                false, // rawGiInputReady
+                false, // cpuDenoisedReadbackReady
+                true, // shaderDenoiseDispatchPrepared
+                true, // shaderDenoiseInputReady
+                false, // shaderDenoiseOutputReady
+                false, // shaderDenoiseOutputImageReady
+                false, // shaderDenoiseOutputImageCandidateReady
+                false, // shaderDenoiseOutputImageCandidateCpuStaged
+                true, // shaderDenoiseOutputImageCandidateNonGpu
+                false, // shaderDenoiseOutputMaterialReady
+                false, // shaderDenoiseShaderGeneratedOutput
+                false, // cpuFallbackQualityMetrics
+                false, // compositeStageRecorded
+                false, // compositeEnabled
+                false, // compositeReady
+                false, // compositePlaceholder
+                false, // edgeDepthAvailable
+                false, // edgeNormalAvailable
+                false, // edgeMaterialAvailable
+                false, // historyConfidenceAvailable
+                false, // ready
+                false, // accepted
+                "unknown", // outputMarker
+                "unknown", // rawInputMarker
+                "unknown", // denoisedOutputMarker
+                "unknown", // shaderDenoiseOutputImageCandidateMarker
+                "unknown", // shaderDenoiseOutputImageBlocker
+                "unknown", // compositeMarker
                 reason
         );
     }
@@ -170,71 +211,7 @@ public record DenoiseExecutionSnapshot(
 
         String denoiseExecution = extractBlock(nativeStatus, "denoise_execution={");
         if (denoiseExecution.isBlank()) {
-            return new DenoiseExecutionSnapshot(
-                    true,
-                    false,
-                    0L,
-                    0L,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0L,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    true,
-                    true,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    false,
-                    "unknown",
-                    "unknown",
-                    "unknown",
-                    "unknown",
-                    "native denoise execution status unavailable"
-            );
+            return unavailableStatus(true, false, "native denoise execution status unavailable");
         }
 
         return new DenoiseExecutionSnapshot(
@@ -259,6 +236,21 @@ public record DenoiseExecutionSnapshot(
                 parseLong(extractField(denoiseExecution, "denoised_output_checksum")),
                 parseInt(extractField(denoiseExecution, "denoised_output_changed_pixels")),
                 parseInt(extractField(denoiseExecution, "denoised_output_mean_abs_delta")),
+                dimensionOrFieldInt(
+                        denoiseExecution,
+                        "shader_denoise_output_image_candidate_size",
+                        "shader_denoise_output_image_candidate_width",
+                        0
+                ),
+                dimensionOrFieldInt(
+                        denoiseExecution,
+                        "shader_denoise_output_image_candidate_size",
+                        "shader_denoise_output_image_candidate_height",
+                        1
+                ),
+                parseInt(extractField(denoiseExecution, "shader_denoise_output_image_candidate_pixels")),
+                parseLong(extractField(denoiseExecution, "shader_denoise_output_image_candidate_bytes")),
+                parseLong(extractField(denoiseExecution, "shader_denoise_output_image_candidate_checksum")),
                 dimensionComponentInt(extractField(denoiseExecution, "composite_size"), 0),
                 dimensionComponentInt(extractField(denoiseExecution, "composite_size"), 1),
                 parseInt(extractField(denoiseExecution, "composite_outputs")),
@@ -283,6 +275,9 @@ public record DenoiseExecutionSnapshot(
                 parseBoolean(extractField(denoiseExecution, "shader_denoise_input_ready")),
                 parseBoolean(extractField(denoiseExecution, "shader_denoise_output_ready")),
                 parseBoolean(extractField(denoiseExecution, "shader_denoise_output_image_ready")),
+                parseBoolean(extractField(denoiseExecution, "shader_denoise_output_image_candidate_ready")),
+                parseBoolean(extractField(denoiseExecution, "shader_denoise_output_image_candidate_cpu_staged")),
+                parseBoolean(extractField(denoiseExecution, "shader_denoise_output_image_candidate_non_gpu")),
                 parseBoolean(extractField(denoiseExecution, "shader_denoise_output_material_ready")),
                 parseBoolean(extractField(denoiseExecution, "shader_denoise_output_shader_generated")),
                 parseBoolean(extractField(denoiseExecution, "cpu_fallback_quality_metrics")),
@@ -299,6 +294,8 @@ public record DenoiseExecutionSnapshot(
                 extractField(denoiseExecution, "output_marker"),
                 extractField(denoiseExecution, "raw_input_marker"),
                 extractField(denoiseExecution, "denoised_output_marker"),
+                extractField(denoiseExecution, "shader_denoise_output_image_candidate_marker"),
+                extractField(denoiseExecution, "shader_denoise_output_image_blocker"),
                 extractField(denoiseExecution, "composite_marker"),
                 extractField(denoiseExecution, "readiness_reason")
         );
@@ -329,6 +326,32 @@ public record DenoiseExecutionSnapshot(
                 && this.denoisedOutputDiffersFromRaw
                 && this.edgeInputsAvailable
                 && (this.hasHistoryCounters() || this.edgePreservedCount > 0 || this.edgeRejectedCount > 0);
+    }
+
+    public boolean shaderDenoiseOutputImageCandidatePresent() {
+        return this.hasExecutionTelemetry()
+                && this.shaderDenoiseOutputImageCandidateReady
+                && this.shaderDenoiseOutputImageCandidateWidth > 0
+                && this.shaderDenoiseOutputImageCandidateHeight > 0
+                && this.shaderDenoiseOutputImageCandidatePixels > 0
+                && this.shaderDenoiseOutputImageCandidateBytes > 0L
+                && this.shaderDenoiseOutputImageCandidateChecksum > 0L;
+    }
+
+    public String shaderDenoiseOutputImageCandidateBoundary() {
+        if (!this.hasExecutionTelemetry()) {
+            return "no-denoise-execution-telemetry";
+        }
+        if (!this.shaderDenoiseOutputImageCandidateReady) {
+            return this.shaderDenoiseOutputImageBlocker;
+        }
+        if (this.shaderDenoiseOutputImageCandidateNonGpu || this.shaderDenoiseOutputImageCandidateCpuStaged) {
+            return "candidate image is CPU-staged/non-GPU and is not real shader-generated output";
+        }
+        if (!this.shaderDenoiseShaderGeneratedOutput || !this.realDenoiseShaderOutput) {
+            return "candidate image exists, but real shader-generated output remains false";
+        }
+        return "candidate image is real shader-generated denoise output";
     }
 
     public String denoiseReadinessBoundary() {
@@ -384,6 +407,17 @@ public record DenoiseExecutionSnapshot(
                 + " shaderDenoiseInputReady=" + this.shaderDenoiseInputReady
                 + " shaderDenoiseOutputReady=" + this.shaderDenoiseOutputReady
                 + " shaderDenoiseOutputImageReady=" + this.shaderDenoiseOutputImageReady
+                + " shaderDenoiseOutputImageCandidateReady=" + this.shaderDenoiseOutputImageCandidateReady
+                + " shaderDenoiseOutputImageCandidateCpuStaged=" + this.shaderDenoiseOutputImageCandidateCpuStaged
+                + " shaderDenoiseOutputImageCandidateNonGpu=" + this.shaderDenoiseOutputImageCandidateNonGpu
+                + " shaderDenoiseOutputImageCandidateSize=" + this.shaderDenoiseOutputImageCandidateWidth
+                + "x" + this.shaderDenoiseOutputImageCandidateHeight
+                + " shaderDenoiseOutputImageCandidatePixels=" + this.shaderDenoiseOutputImageCandidatePixels
+                + " shaderDenoiseOutputImageCandidateBytes=" + this.shaderDenoiseOutputImageCandidateBytes
+                + " shaderDenoiseOutputImageCandidateChecksum=" + this.shaderDenoiseOutputImageCandidateChecksum
+                + " shaderDenoiseOutputImageCandidateMarker=" + this.shaderDenoiseOutputImageCandidateMarker
+                + " shaderDenoiseOutputImageBlocker=" + this.shaderDenoiseOutputImageBlocker
+                + " shaderDenoiseOutputImageCandidateBoundary=" + this.shaderDenoiseOutputImageCandidateBoundary()
                 + " shaderDenoiseOutputMaterialReady=" + this.shaderDenoiseOutputMaterialReady
                 + " shaderDenoiseShaderGeneratedOutput=" + this.shaderDenoiseShaderGeneratedOutput
                 + " cpuFallbackQualityMetrics=" + this.cpuFallbackQualityMetrics
@@ -510,5 +544,10 @@ public record DenoiseExecutionSnapshot(
             return 0;
         }
         return parseInt(parts[component]);
+    }
+
+    private static int dimensionOrFieldInt(String block, String dimensionsField, String scalarField, int component) {
+        int dimensionValue = dimensionComponentInt(extractField(block, dimensionsField), component);
+        return dimensionValue > 0 ? dimensionValue : parseInt(extractField(block, scalarField));
     }
 }

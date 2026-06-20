@@ -9,12 +9,42 @@ public record Round7DenoisedGiVisualSource(
         String shaderLabel,
         DenoisedSourceKind sourceKind,
         boolean sourceReady,
+        int shaderOutputCandidateWidth,
+        int shaderOutputCandidateHeight,
+        long shaderOutputCandidateChecksum,
+        String shaderOutputCandidateSource,
+        String shaderOutputCandidateBlocker,
         String reason
 ) {
     private static final String MODE_KEY = "ROUND7_DENOISED_GI";
     private static final String SOURCE_LABEL = "Round 7 DENOISED_GI visual mode using CPU denoised diffuse-GI RGBA8 payload";
     private static final String EVIDENCE_LABEL = "round7.denoisedGi.cpuDenoisedDiffuseGiPayload";
     private static final String SHADER_LABEL = "lucerna:core/round7_denoised_gi_visual";
+
+    public Round7DenoisedGiVisualSource(
+            String modeKey,
+            String sourceLabel,
+            String evidenceLabel,
+            String shaderLabel,
+            DenoisedSourceKind sourceKind,
+            boolean sourceReady,
+            String reason
+    ) {
+        this(
+                modeKey,
+                sourceLabel,
+                evidenceLabel,
+                shaderLabel,
+                sourceKind,
+                sourceReady,
+                0,
+                0,
+                0L,
+                "",
+                "",
+                reason
+        );
+    }
 
     public Round7DenoisedGiVisualSource {
         if (sourceKind == null) {
@@ -24,6 +54,29 @@ public record Round7DenoisedGiVisualSource(
         sourceLabel = normalize(sourceLabel, sourceKind.defaultSourceLabel());
         evidenceLabel = normalize(evidenceLabel, sourceKind.defaultEvidenceLabel());
         shaderLabel = normalize(shaderLabel, SHADER_LABEL);
+        if (sourceKind != DenoisedSourceKind.SHADER_OUTPUT_IMAGE_CANDIDATE) {
+            shaderOutputCandidateWidth = 0;
+            shaderOutputCandidateHeight = 0;
+            shaderOutputCandidateChecksum = 0L;
+        }
+        if (shaderOutputCandidateWidth < 0) {
+            shaderOutputCandidateWidth = 0;
+        }
+        if (shaderOutputCandidateHeight < 0) {
+            shaderOutputCandidateHeight = 0;
+        }
+        shaderOutputCandidateSource = normalize(
+                shaderOutputCandidateSource,
+                sourceKind == DenoisedSourceKind.SHADER_OUTPUT_IMAGE_CANDIDATE
+                        ? "shader-output-image-candidate"
+                        : "none"
+        );
+        shaderOutputCandidateBlocker = normalize(
+                shaderOutputCandidateBlocker,
+                sourceKind == DenoisedSourceKind.SHADER_OUTPUT_IMAGE_CANDIDATE
+                        ? "candidate-only:not-real-shader-generated-denoised-output"
+                        : "not-provided"
+        );
         if (reason == null || reason.isBlank()) {
             reason = sourceReady
                     ? "Round 7 DENOISED_GI source is ready for visual draw"
@@ -67,6 +120,29 @@ public record Round7DenoisedGiVisualSource(
         );
     }
 
+    public static Round7DenoisedGiVisualSource shaderOutputImageCandidate(
+            int width,
+            int height,
+            long checksum,
+            String source,
+            String blocker
+    ) {
+        return new Round7DenoisedGiVisualSource(
+                MODE_KEY,
+                DenoisedSourceKind.SHADER_OUTPUT_IMAGE_CANDIDATE.defaultSourceLabel(),
+                DenoisedSourceKind.SHADER_OUTPUT_IMAGE_CANDIDATE.defaultEvidenceLabel(),
+                SHADER_LABEL,
+                DenoisedSourceKind.SHADER_OUTPUT_IMAGE_CANDIDATE,
+                false,
+                width,
+                height,
+                checksum,
+                source,
+                blocker,
+                "Round 7 DENOISED_GI shader output image candidate was reported, but it is candidate-only and must not be treated as real shader-generated denoise output"
+        );
+    }
+
     public static Round7DenoisedGiVisualSource unavailable(String reason) {
         return new Round7DenoisedGiVisualSource(
                 MODE_KEY,
@@ -87,6 +163,7 @@ public record Round7DenoisedGiVisualSource(
                 + ",sourceIdentity=" + this.sourceIdentity()
                 + ",sourceClass=" + this.sourceClassLabel()
                 + ",readinessIdentity=" + this.readinessIdentitySummary()
+                + ",shaderOutputCandidate=\"" + this.shaderOutputCandidateSummary() + "\""
                 + ",sourceAuthenticity=\"" + this.sourceAuthenticityBoundary() + "\""
                 + ",projectionBoundary=\"" + this.surfaceProjectionBoundary() + "\""
                 + ",qualityBoundary=\"" + this.qualityBoundary() + "\""
@@ -116,6 +193,10 @@ public record Round7DenoisedGiVisualSource(
         return this.sourceReady && this.sourceKind == DenoisedSourceKind.SHADER_GENERATED_DENOISED_GI;
     }
 
+    public boolean shaderOutputImageCandidatePresent() {
+        return this.sourceKind == DenoisedSourceKind.SHADER_OUTPUT_IMAGE_CANDIDATE;
+    }
+
     public boolean realShaderDenoiseOutputReady() {
         return this.shaderGeneratedDenoisedSourceReady();
     }
@@ -123,12 +204,30 @@ public record Round7DenoisedGiVisualSource(
     public String readinessIdentitySummary() {
         return "cpuDenoisedReadback=" + readyState(this.cpuDenoisedReadbackSourceReady())
                 + ",shaderGeneratedDenoisedGI=" + readyState(this.shaderGeneratedDenoisedSourceReady())
+                + ",shaderOutputImageCandidate=" + readyState(this.shaderOutputImageCandidatePresent())
                 + ",realShaderDenoiseOutputReady=" + readyState(this.realShaderDenoiseOutputReady())
                 + ",overclaimPrevented=" + (this.sourceKind != DenoisedSourceKind.SHADER_GENERATED_DENOISED_GI
                 || this.realShaderDenoiseOutputReady());
     }
 
+    public String shaderOutputCandidateSummary() {
+        return "present=" + this.shaderOutputImageCandidatePresent()
+                + ",dims=" + (this.shaderOutputImageCandidatePresent()
+                ? this.shaderOutputCandidateWidth + "x" + this.shaderOutputCandidateHeight
+                : "none")
+                + ",checksum=" + (this.shaderOutputImageCandidatePresent()
+                ? Long.toUnsignedString(this.shaderOutputCandidateChecksum)
+                : "none")
+                + ",source=" + this.shaderOutputCandidateSource
+                + ",blocker=" + this.shaderOutputCandidateBlocker
+                + ",sourceKind=shader-output-image-candidate"
+                + ",realShaderDenoiseOutputReady=false";
+    }
+
     public String qualityBoundary() {
+        if (this.sourceKind == DenoisedSourceKind.SHADER_OUTPUT_IMAGE_CANDIDATE) {
+            return "shader output image candidate is telemetry only; it can report dimensions/checksum/source/blocker, but it is not shader-generated denoised GI readiness";
+        }
         if (this.sourceKind == DenoisedSourceKind.SHADER_GENERATED_DENOISED_GI) {
             return "shader-generated denoised GI source readiness is only a candidate; controller raw-vs-denoised and temporal proof must still pass";
         }
@@ -144,6 +243,10 @@ public record Round7DenoisedGiVisualSource(
     }
 
     public String temporalReadinessBoundary() {
+        if (this.sourceKind == DenoisedSourceKind.SHADER_OUTPUT_IMAGE_CANDIDATE) {
+            return "temporal proof should not pass from shader-output image candidate telemetry; blocker="
+                    + this.shaderOutputCandidateBlocker;
+        }
         return this.sourceReady
                 ? "CPU denoised source is drawable, but temporal stability still requires controller stable/moved screenshot sequence proof and history accept/reject telemetry"
                 : "temporal proof should not pass because denoised source is not drawable";
@@ -178,6 +281,12 @@ public record Round7DenoisedGiVisualSource(
                 "round7.denoisedGi.shaderGeneratedDenoisedDiffuseGiOutput",
                 "shader-denoised-diffuse-gi-rgba8/denoised-gi",
                 "shader-denoised-gi/generated-output;not-cpu-readback;real-shader-denoise=true"
+        ),
+        SHADER_OUTPUT_IMAGE_CANDIDATE(
+                "Round 7 DENOISED_GI visual mode with shader-output image candidate telemetry",
+                "round7.denoisedGi.shaderOutputImageCandidate",
+                "shader-output-image-candidate/denoised-gi-candidate",
+                "shader-output-image-candidate;not-cpu-readback;not-real-shader-denoise-output;real-shader-denoise=false"
         ),
         UNAVAILABLE(
                 SOURCE_LABEL,

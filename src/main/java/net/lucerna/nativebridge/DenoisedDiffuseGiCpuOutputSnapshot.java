@@ -15,6 +15,11 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
         long nativeOutputChecksum,
         int nativeOutputChangedPixels,
         int nativeOutputMeanAbsDelta,
+        int shaderOutputImageCandidateWidth,
+        int shaderOutputImageCandidateHeight,
+        int shaderOutputImageCandidatePixels,
+        long shaderOutputImageCandidateBytes,
+        long shaderOutputImageCandidateChecksum,
         int historyAcceptedCount,
         int historyRejectedCount,
         int edgePreservedCount,
@@ -27,11 +32,17 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
         boolean denoisedCpuOutputGenerated,
         boolean denoisedOutputDiffersFromRaw,
         boolean realDenoiseShaderOutput,
+        boolean shaderOutputImageCandidateReady,
+        boolean shaderOutputImageCandidateCpuStaged,
+        boolean shaderOutputImageCandidateNonGpu,
+        boolean shaderDenoiseShaderGeneratedOutput,
         boolean edgeInputsAvailable,
         boolean historyConfidenceAvailable,
         String outputMarker,
         String rawInputMarker,
         String denoisedOutputMarker,
+        String shaderOutputImageCandidateMarker,
+        String shaderOutputImageBlocker,
         String readinessReason
 ) {
     public DenoisedDiffuseGiCpuOutputSnapshot {
@@ -47,6 +58,11 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
         nativeOutputChecksum = Math.max(0L, nativeOutputChecksum);
         nativeOutputChangedPixels = Math.max(0, nativeOutputChangedPixels);
         nativeOutputMeanAbsDelta = Math.max(0, nativeOutputMeanAbsDelta);
+        shaderOutputImageCandidateWidth = Math.max(0, shaderOutputImageCandidateWidth);
+        shaderOutputImageCandidateHeight = Math.max(0, shaderOutputImageCandidateHeight);
+        shaderOutputImageCandidatePixels = Math.max(0, shaderOutputImageCandidatePixels);
+        shaderOutputImageCandidateBytes = Math.max(0L, shaderOutputImageCandidateBytes);
+        shaderOutputImageCandidateChecksum = Math.max(0L, shaderOutputImageCandidateChecksum);
         historyAcceptedCount = Math.max(0, historyAcceptedCount);
         historyRejectedCount = Math.max(0, historyRejectedCount);
         edgePreservedCount = Math.max(0, edgePreservedCount);
@@ -56,6 +72,13 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
         denoisedOutputMarker = denoisedOutputMarker == null || denoisedOutputMarker.isBlank()
                 ? "unknown"
                 : denoisedOutputMarker;
+        shaderOutputImageCandidateMarker = shaderOutputImageCandidateMarker == null
+                || shaderOutputImageCandidateMarker.isBlank()
+                ? "unknown"
+                : shaderOutputImageCandidateMarker;
+        shaderOutputImageBlocker = shaderOutputImageBlocker == null || shaderOutputImageBlocker.isBlank()
+                ? "unknown"
+                : shaderOutputImageBlocker;
         readinessReason = readinessReason == null || readinessReason.isBlank()
                 ? "unknown"
                 : readinessReason;
@@ -63,37 +86,48 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
 
     public static DenoisedDiffuseGiCpuOutputSnapshot unavailable(String reason) {
         return new DenoisedDiffuseGiCpuOutputSnapshot(
-                false,
-                false,
-                0L,
-                0L,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0L,
-                0,
-                0,
-                0,
-                0,
-                0,
-                0,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                false,
-                "unknown",
-                "unknown",
-                "unknown",
+                false, // nativeStatusAvailable
+                false, // denoiseExecutionAvailable
+                0L, // dispatchGeneration
+                0L, // packetGeneration
+                0, // outputWidth
+                0, // outputHeight
+                0, // outputPixels
+                0, // inputCount
+                0, // outputCount
+                0, // sampleCount
+                0, // nativeOutputPixels
+                0L, // nativeOutputChecksum
+                0, // nativeOutputChangedPixels
+                0, // nativeOutputMeanAbsDelta
+                0, // shaderOutputImageCandidateWidth
+                0, // shaderOutputImageCandidateHeight
+                0, // shaderOutputImageCandidatePixels
+                0L, // shaderOutputImageCandidateBytes
+                0L, // shaderOutputImageCandidateChecksum
+                0, // historyAcceptedCount
+                0, // historyRejectedCount
+                0, // edgePreservedCount
+                0, // edgeRejectedCount
+                false, // enabled
+                false, // ready
+                false, // accepted
+                false, // rawGiInputAvailable
+                false, // denoisedOutputIntent
+                false, // denoisedCpuOutputGenerated
+                false, // denoisedOutputDiffersFromRaw
+                false, // realDenoiseShaderOutput
+                false, // shaderOutputImageCandidateReady
+                false, // shaderOutputImageCandidateCpuStaged
+                false, // shaderOutputImageCandidateNonGpu
+                false, // shaderDenoiseShaderGeneratedOutput
+                false, // edgeInputsAvailable
+                false, // historyConfidenceAvailable
+                "unknown", // outputMarker
+                "unknown", // rawInputMarker
+                "unknown", // denoisedOutputMarker
+                "unknown", // shaderOutputImageCandidateMarker
+                reason, // shaderOutputImageBlocker
                 reason
         );
     }
@@ -128,6 +162,11 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
                 denoise.denoisedOutputChecksum(),
                 denoise.denoisedOutputChangedPixels(),
                 denoise.denoisedOutputMeanAbsDelta(),
+                denoise.shaderDenoiseOutputImageCandidateWidth(),
+                denoise.shaderDenoiseOutputImageCandidateHeight(),
+                denoise.shaderDenoiseOutputImageCandidatePixels(),
+                denoise.shaderDenoiseOutputImageCandidateBytes(),
+                denoise.shaderDenoiseOutputImageCandidateChecksum(),
                 denoise.historyAcceptedCount(),
                 denoise.historyRejectedCount(),
                 denoise.edgePreservedCount(),
@@ -140,11 +179,17 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
                 denoise.denoisedCpuOutputGenerated(),
                 denoise.denoisedOutputDiffersFromRaw(),
                 denoise.realDenoiseShaderOutput(),
+                denoise.shaderDenoiseOutputImageCandidateReady(),
+                denoise.shaderDenoiseOutputImageCandidateCpuStaged(),
+                denoise.shaderDenoiseOutputImageCandidateNonGpu(),
+                denoise.shaderDenoiseShaderGeneratedOutput(),
                 denoise.edgeInputsAvailable(),
                 denoise.historyConfidenceAvailable(),
                 denoise.outputMarker(),
                 denoise.rawInputMarker(),
                 denoise.denoisedOutputMarker(),
+                denoise.shaderDenoiseOutputImageCandidateMarker(),
+                denoise.shaderDenoiseOutputImageBlocker(),
                 denoise.readinessReason()
         );
     }
@@ -188,6 +233,32 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
                 || this.historyRejectedCount > 0
                 || this.edgePreservedCount > 0
                 || this.edgeRejectedCount > 0);
+    }
+
+    public boolean shaderOutputImageCandidatePresent() {
+        return this.hasExecutionTelemetry()
+                && this.shaderOutputImageCandidateReady
+                && this.shaderOutputImageCandidateWidth > 0
+                && this.shaderOutputImageCandidateHeight > 0
+                && this.shaderOutputImageCandidatePixels > 0
+                && this.shaderOutputImageCandidateBytes > 0L
+                && this.shaderOutputImageCandidateChecksum > 0L;
+    }
+
+    public String shaderOutputImageCandidateBoundary() {
+        if (!this.hasExecutionTelemetry()) {
+            return this.readinessReason;
+        }
+        if (!this.shaderOutputImageCandidateReady) {
+            return this.shaderOutputImageBlocker;
+        }
+        if (this.shaderOutputImageCandidateNonGpu || this.shaderOutputImageCandidateCpuStaged) {
+            return "shader output image candidate is CPU-staged/non-GPU and distinct from real shader-generated output";
+        }
+        if (!this.shaderDenoiseShaderGeneratedOutput || !this.realDenoiseShaderOutput) {
+            return "shader output image candidate exists, but real shader-generated output remains false";
+        }
+        return "shader output image candidate is real shader-generated denoised diffuse GI";
     }
 
     public String previewReadinessReason() {
@@ -257,6 +328,15 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
                 + " nativeOutputChecksum=" + this.nativeOutputChecksum
                 + " nativeOutputChangedPixels=" + this.nativeOutputChangedPixels
                 + " nativeOutputMeanAbsDelta=" + this.nativeOutputMeanAbsDelta
+                + " shaderOutputImageCandidateReady=" + this.shaderOutputImageCandidateReady
+                + " shaderOutputImageCandidateCpuStaged=" + this.shaderOutputImageCandidateCpuStaged
+                + " shaderOutputImageCandidateNonGpu=" + this.shaderOutputImageCandidateNonGpu
+                + " shaderOutputImageCandidateSize="
+                + this.shaderOutputImageCandidateWidth + "x" + this.shaderOutputImageCandidateHeight
+                + " shaderOutputImageCandidatePixels=" + this.shaderOutputImageCandidatePixels
+                + " shaderOutputImageCandidateBytes=" + this.shaderOutputImageCandidateBytes
+                + " shaderOutputImageCandidateChecksum=" + this.shaderOutputImageCandidateChecksum
+                + " shaderOutputImageCandidateBoundary=\"" + this.shaderOutputImageCandidateBoundary() + "\""
                 + " historyAccepted=" + this.historyAcceptedCount
                 + " historyRejected=" + this.historyRejectedCount
                 + " edgePreserved=" + this.edgePreservedCount
@@ -266,10 +346,13 @@ public record DenoisedDiffuseGiCpuOutputSnapshot(
                 + " denoisedCpuOutputGenerated=" + this.denoisedCpuOutputGenerated
                 + " denoisedOutputDiffersFromRaw=" + this.denoisedOutputDiffersFromRaw
                 + " realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
+                + " shaderDenoiseShaderGeneratedOutput=" + this.shaderDenoiseShaderGeneratedOutput
                 + " readinessBoundary=\"" + this.outputReadinessBoundary() + "\""
                 + " outputMarker=" + this.outputMarker
                 + " rawInputMarker=" + this.rawInputMarker
                 + " denoisedOutputMarker=" + this.denoisedOutputMarker
+                + " shaderOutputImageCandidateMarker=" + this.shaderOutputImageCandidateMarker
+                + " shaderOutputImageBlocker=" + this.shaderOutputImageBlocker
                 + " reason=" + this.previewReadinessReason();
     }
 

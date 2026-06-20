@@ -741,6 +741,11 @@ struct NativeDenoiseExecutionTelemetry {
     std::uint64_t last_denoised_output_checksum = 0;
     std::uint64_t last_denoised_output_changed_pixels = 0;
     std::uint64_t last_denoised_output_mean_abs_delta = 0;
+    std::uint64_t last_shader_denoise_output_image_candidate_width = 0;
+    std::uint64_t last_shader_denoise_output_image_candidate_height = 0;
+    std::uint64_t last_shader_denoise_output_image_candidate_pixels = 0;
+    std::uint64_t last_shader_denoise_output_image_candidate_bytes = 0;
+    std::uint64_t last_shader_denoise_output_image_candidate_checksum = 0;
     std::uint64_t last_temporal_stable_pixels = 0;
     std::uint64_t last_temporal_unstable_pixels = 0;
     std::uint64_t last_temporal_mean_abs_delta = 0;
@@ -779,6 +784,9 @@ struct NativeDenoiseExecutionTelemetry {
     bool last_shader_denoise_input_ready = false;
     bool last_shader_denoise_output_ready = false;
     bool last_shader_denoise_output_image_ready = false;
+    bool last_shader_denoise_output_image_candidate_ready = false;
+    bool last_shader_denoise_output_image_candidate_cpu_staged = false;
+    bool last_shader_denoise_output_image_candidate_non_gpu = true;
     bool last_shader_denoise_output_material_ready = false;
     bool last_metadata_only_path = true;
     bool last_real_denoise_shader_output = false;
@@ -805,6 +813,8 @@ struct NativeDenoiseExecutionTelemetry {
     std::string last_shader_denoise_readiness_marker;
     std::string last_shader_denoise_handoff_marker;
     std::string last_shader_denoise_output_readiness_marker;
+    std::string last_shader_denoise_output_image_candidate_marker;
+    std::string last_shader_denoise_output_image_blocker;
     std::string last_shader_denoise_generation_marker;
     std::string last_composite_marker;
     std::string last_history_acceptance_reason;
