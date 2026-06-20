@@ -200,6 +200,14 @@ public final class LucernaDebugOverlayLines {
                 + giEmissiveProximityLabel(diffuseGiStage)
                 + " region=" + giAffectedSurfaceRegionLabel(diffuseGiStage)
                 + " hudExcluded=" + giHandHudExcludedLabel(diffuseGiStage)));
+        lines.add(Component.literal("Physical GI coupling: samples="
+                + giPhysicalSampleLabel(diffuseGiStage)
+                + " material=" + giMaterialCouplingLabel(diffuseGiStage)
+                + " geometry=" + giGeometryCouplingLabel(diffuseGiStage)));
+        lines.add(Component.literal("Physical GI tracing: bounceSource="
+                + giBounceSourceLabel(diffuseGiStage)
+                + " trace=" + giTracingEvidenceLabel(diffuseGiStage)
+                + " controllerProof=pending"));
         lines.add(Component.literal("Proof boundary: " + firstLightingPhysicalProofBoundary(compositeStatus)));
     }
 
@@ -1740,6 +1748,86 @@ public final class LucernaDebugOverlayLines {
                 "proofHandHudExcluded",
                 "before_hud_and_hand",
                 "beforeHudAndHand"
+        );
+    }
+
+    private static String giPhysicalSampleLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "physical_gi_sample_count",
+                "physicalGiSampleCount",
+                "gi_physical_sample_count",
+                "giPhysicalSampleCount",
+                "physical_sample_count",
+                "physicalSampleCount",
+                "bounce_sample_count",
+                "bounceSampleCount",
+                "scene_sample_count",
+                "sceneSampleCount"
+        );
+    }
+
+    private static String giMaterialCouplingLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "physical_gi_material_coupling",
+                "physicalGiMaterialCoupling",
+                "gi_material_coupling",
+                "giMaterialCoupling",
+                "material_coupling_score",
+                "materialCouplingScore",
+                "material_response_coupling",
+                "materialResponseCoupling",
+                "albedo_normal_coupling",
+                "albedoNormalCoupling"
+        );
+    }
+
+    private static String giGeometryCouplingLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "physical_gi_geometry_coupling",
+                "physicalGiGeometryCoupling",
+                "gi_geometry_coupling",
+                "giGeometryCoupling",
+                "geometry_coupling_score",
+                "geometryCouplingScore",
+                "surface_normal_coupling",
+                "surfaceNormalCoupling",
+                "occlusion_coupling",
+                "occlusionCoupling"
+        );
+    }
+
+    private static String giBounceSourceLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "physical_gi_bounce_source",
+                "physicalGiBounceSource",
+                "gi_bounce_source",
+                "giBounceSource",
+                "bounce_source",
+                "bounceSource",
+                "source_coupling",
+                "sourceCoupling",
+                "emissive_sun_moon_coupling",
+                "emissiveSunMoonCoupling"
+        );
+    }
+
+    private static String giTracingEvidenceLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "physical_gi_tracing_evidence",
+                "physicalGiTracingEvidence",
+                "gi_tracing_evidence",
+                "giTracingEvidence",
+                "tracing_evidence",
+                "tracingEvidence",
+                "voxel_trace_evidence",
+                "voxelTraceEvidence",
+                "ray_hit_evidence",
+                "rayHitEvidence"
         );
     }
 

@@ -93,7 +93,9 @@ param(
         "sourceIdentity=native-denoised-diffuse-gi-rgba8",
         "round7\.rawGi\.nativeDiffuseGiPayload",
         "nativeDiffuseGiPayload",
-        "native[-_ ]?diffuse[-_ ]?gi.*(?:source|output|payload).*ready"
+        "native[-_ ]?diffuse[-_ ]?gi.*(?:source|output|payload).*ready",
+        "physical_scene_linked=true.*physical_surface_contribution=true",
+        "physicalGI sceneLinked=true surfaceContribution=true"
     ),
 
     [string[]] $RawGiSourcePatterns = @(
@@ -268,7 +270,9 @@ param(
 
     [switch] $RequireDebugScreenshot,
 
-    [switch] $RequireShaderDenoiseEvidence
+    [switch] $RequireShaderDenoiseEvidence,
+
+    [switch] $RequirePhysicalGiEvidence
 )
 
 $ErrorActionPreference = "Stop"
@@ -524,6 +528,110 @@ function Convert-ToNullableInt64 {
     }
 }
 
+function Convert-ToNullableDouble {
+    param([string] $Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value) -or $Value -eq "none") {
+        return $null
+    }
+    $parsed = 0.0
+    if ([double]::TryParse(
+            $Value,
+            [System.Globalization.NumberStyles]::Float,
+            [System.Globalization.CultureInfo]::InvariantCulture,
+            [ref]$parsed)) {
+        return $parsed
+    }
+    return $null
+}
+
+function Get-MaxRegexNumber {
+    param(
+        [string] $Text,
+        [string] $Pattern
+    )
+
+    $max = 0L
+    foreach ($match in [regex]::Matches($Text, $Pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+        if ($match.Groups.Count -lt 2) {
+            continue
+        }
+        $value = Convert-ToNullableInt64 $match.Groups[1].Value
+        if ($null -ne $value) {
+            $max = [Math]::Max($max, [long]$value)
+        }
+    }
+    return $max
+}
+
+function Get-MaxRegexDouble {
+    param(
+        [string] $Text,
+        [string] $Pattern
+    )
+
+    $max = 0.0
+    foreach ($match in [regex]::Matches($Text, $Pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+        if ($match.Groups.Count -lt 2) {
+            continue
+        }
+        $value = Convert-ToNullableDouble $match.Groups[1].Value
+        if ($null -ne $value) {
+            $max = [Math]::Max($max, [double]$value)
+        }
+    }
+    return $max
+}
+
+function Get-Round7PhysicalGiEvidence {
+    param([string] $LogText)
+
+    $physicalGiSamples = Get-MaxRegexNumber $LogText "(?:physical_gi_samples|physicalGiSamples)=(\d+)"
+    $physicalGiHitSamples = Get-MaxRegexNumber $LogText "(?:physical_gi_hit_samples|physicalGiHitSamples)=(\d+)"
+    $surfaceMaterialHitCoupledSamples = Get-MaxRegexNumber $LogText "(?:surface_material_hit_coupled_samples|surfaceMaterialHitCoupledSamples)=(\d+)"
+    $geometryHitCoupledSamples = Get-MaxRegexNumber $LogText "(?:geometry_hit_coupled_samples|geometryHitCoupledSamples)=(\d+)"
+    $surfaceMaterialHitCoupling = Get-MaxRegexDouble $LogText "(?:surface_material_hit_coupling|surfaceMaterialHitCoupling)=([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)"
+    $geometryHitCoupling = Get-MaxRegexDouble $LogText "(?:geometry_hit_coupling|geometryHitCoupling)=([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)"
+    $physicalSceneLinkScore = Get-MaxRegexNumber $LogText "(?:physical_scene_link_score|physicalSceneLinkScore|sceneScore)=(\d+)"
+    $physicalOutputChecksum = Get-MaxRegexNumber $LogText "(?:physical_output_checksum|physicalOutputChecksum|physicalChecksum)=(\d+)"
+    $physicalGiSampleMarkerPresent = Test-Regex $LogText "(?:physical_sample_marker|physicalSampleMarker)=`"?[^`"\r\n,}]+|physicalGI .*marker=(?!unknown)[^ `r`n]+"
+    $surfaceMaterialHitMarkerPresent = Test-Regex $LogText "(?:surface_material_hit_marker|surfaceMaterialHitMarker)=`"?[^`"\r\n,}]+"
+    $physicalSceneMarkerPresent = Test-Regex $LogText "(?:physical_scene_marker|physicalSceneMarker)=`"?[^`"\r\n,}]+|physicalGI .*marker=(?!unknown)[^ `r`n]+"
+    $physicalOutputMarkerPresent = Test-Regex $LogText "(?:physical_output_marker|physicalOutputMarker)=`"?[^`"\r\n,}]+|physicalGI .*outputMarker=(?!unknown)[^ `r`n]+"
+    $physicalSceneLinkedPresent = Test-Regex $LogText "(?:physical_scene_linked|physicalSceneLinked|physicalGI sceneLinked)=true"
+    $physicalSurfaceContributionPresent = Test-Regex $LogText "(?:physical_surface_contribution|physicalSurfaceContribution|physicalGI .*surfaceContribution)=true"
+    $previewFallbackContributionPresent = Test-Regex $LogText "(?:preview_fallback_contribution|previewFallback)=true"
+    $overclaimPresent = Test-Regex $LogText "physicalGiTracingQuality=(?!open)|physical GI .*production-quality|physicallyCorrectGi=true|realPhysicalGiTracing=true|realGpuGiTracing=true"
+    $present = $physicalSceneLinkedPresent `
+        -and $physicalSurfaceContributionPresent `
+        -and ($physicalGiSamples -ge 1) `
+        -and ($physicalGiHitSamples -ge 1) `
+        -and ($surfaceMaterialHitCoupledSamples -ge 1) `
+        -and ($geometryHitCoupledSamples -ge 1) `
+        -and ($physicalOutputChecksum -ge 1) `
+        -and ($physicalGiSampleMarkerPresent -or $physicalSceneMarkerPresent -or $physicalOutputMarkerPresent)
+
+    return [ordered]@{
+        present = $present
+        physicalGiSamples = $physicalGiSamples
+        physicalGiHitSamples = $physicalGiHitSamples
+        surfaceMaterialHitCoupledSamples = $surfaceMaterialHitCoupledSamples
+        geometryHitCoupledSamples = $geometryHitCoupledSamples
+        surfaceMaterialHitCoupling = $surfaceMaterialHitCoupling
+        geometryHitCoupling = $geometryHitCoupling
+        physicalSceneLinkScore = $physicalSceneLinkScore
+        physicalOutputChecksum = $physicalOutputChecksum
+        physicalGiSampleMarkerPresent = $physicalGiSampleMarkerPresent
+        surfaceMaterialHitMarkerPresent = $surfaceMaterialHitMarkerPresent
+        physicalSceneMarkerPresent = $physicalSceneMarkerPresent
+        physicalOutputMarkerPresent = $physicalOutputMarkerPresent
+        physicalSceneLinkedPresent = $physicalSceneLinkedPresent
+        physicalSurfaceContributionPresent = $physicalSurfaceContributionPresent
+        previewFallbackContributionPresent = $previewFallbackContributionPresent
+        overclaimPresent = $overclaimPresent
+    }
+}
+
 function Get-Round7ShaderOutputImageCandidateEvidence {
     param([string] $LogText)
 
@@ -597,6 +705,7 @@ function Measure-Round7LogProof {
 
     $log = Get-Content -Raw -LiteralPath $ResolvedLogPath
     $shaderOutputImageCandidateEvidence = Get-Round7ShaderOutputImageCandidateEvidence $log
+    $physicalGiEvidence = Get-Round7PhysicalGiEvidence $log
     $acceptedFinalCompositePresent = Test-Regex $log "sourceIdentity=native-direct-light-rgba8\+native-diffuse-gi-rgba8\+cpu-denoised-diffuse-gi-rgba8.*sourceAuthenticity=accepted:final-composite-direct-plus-raw-gi-plus-(?:cpu-)?denoised-gi.*evidence=round7\.composite\.final\.direct_raw_denoised.*finalBlendComplete=true.*metadataOnly=false"
     $directSourcePresent = Test-AnyRegex $log $DirectSourcePatterns
     $nativeGiSourcePresent = Test-AnyRegex $log $NativeGiSourcePatterns
@@ -639,6 +748,7 @@ function Measure-Round7LogProof {
     $realShaderDenoiseOutputProven = $shaderDenoiseDispatchPreparedPresent -and $shaderDenoiseOutputImageReadyPresent -and $shaderDenoiseOutputMaterialReadyPresent -and $shaderDenoiseShaderGeneratedOutputTruePresent -and $realShaderDenoiseOutputReadyPresent -and -not $shaderDenoiseCpuReadbackFallbackActivePresent
     $shaderDenoiseOpenBoundaryPresent = $shaderDenoiseOutputOpenPresent -or $shaderDenoiseCpuReadbackFallbackActivePresent -or $cpuReadbackDenoiseSourcePresent -or ([bool]$shaderOutputImageCandidateEvidence.boundaryOnly)
     $shaderDenoiseOverclaimPresent = (Test-AnyRegex $log $ShaderDenoiseOverclaimPatterns) -or ($shaderDenoiseSourceClaimPresent -and -not $realShaderDenoiseOutputProven) -or ($realShaderDenoiseOutputReadyPresent -and ($shaderDenoiseCpuReadbackFallbackActivePresent -or -not $shaderDenoiseShaderGeneratedOutputTruePresent -or -not $shaderDenoiseOutputImageReadyPresent -or -not $shaderDenoiseOutputMaterialReadyPresent))
+    $physicalGiOverclaimPresent = [bool]$physicalGiEvidence.overclaimPresent
     $proofMarkerPresent = Test-Regex $log "proofMarkerSource=true|cpuOutputProofMarker=true|round6-gi-proof|round7-proof-marker|R6 GI proof|R7 proof|CPU output proof"
     $submittedFocusWindowOnlyPresent = Test-Regex $log "sourceIdentity=native-direct-light-rgba8,focusWindowOnly=true|mode=final-composite-direct-light-focus-window-additive"
     $submittedRound7GiSourcePresent = Test-Regex $log "sourceIdentity=native-denoised-diffuse-gi-rgba8,focusWindowOnly=false,round7GiSource=true|mode=round7-final-composite"
@@ -691,6 +801,8 @@ function Measure-Round7LogProof {
             shaderDenoiseOutputOpenPresent = $shaderDenoiseOutputOpenPresent
             shaderDenoiseOutputStateExplicitPresent = $shaderDenoiseOutputStateExplicitPresent
             shaderDenoiseOverclaimPresent = $shaderDenoiseOverclaimPresent
+            physicalGiEvidencePresent = [bool]$physicalGiEvidence.present
+            physicalGiOverclaimPresent = $physicalGiOverclaimPresent
             proofMarkerPresent = $proofMarkerPresent
             focusWindowOnlyPresent = $focusWindowOnlyPresent
             submittedFocusWindowOnlyPresent = $submittedFocusWindowOnlyPresent
@@ -698,6 +810,7 @@ function Measure-Round7LogProof {
             nativeErrorPresent = $nativeErrorPresent
         }
         shaderOutputImageCandidate = $shaderOutputImageCandidateEvidence
+        physicalGiEvidence = $physicalGiEvidence
         patterns = [ordered]@{
             rawGiSourcePatterns = @($RawGiSourcePatterns)
             directSourcePatterns = @($DirectSourcePatterns)
@@ -844,6 +957,12 @@ if ($logProof) {
     if ($logProof.markers.nativeErrorPresent) {
         $failures.Add("Log contains native/Vulkan error markers.")
     }
+    if ($logProof.markers.physicalGiOverclaimPresent) {
+        $failures.Add("Log overclaims physical GI/tracing quality; Round 7 proof must preserve the open physicalGiTracingQuality boundary.")
+    }
+    if ($RequirePhysicalGiEvidence -and -not $logProof.markers.physicalGiEvidencePresent) {
+        $failures.Add("Missing native physical GI sample/coupling evidence markers for Round 7 raw/final GI source.")
+    }
     if ($RequireShaderDenoiseEvidence) {
         if (-not $logProof.markers.shaderDenoiseIntentPresent) {
             $failures.Add("Missing shader-denoise intent marker.")
@@ -910,6 +1029,7 @@ $result = [ordered]@{
         requireDirectImage = [bool]$RequireDirectImage
         requireDebugScreenshot = [bool]$RequireDebugScreenshot
         requireShaderDenoiseEvidence = [bool]$RequireShaderDenoiseEvidence
+        requirePhysicalGiEvidence = [bool]$RequirePhysicalGiEvidence
     }
     screenshots = [ordered]@{
         baselineDimensions = $baselineDimensions
@@ -966,6 +1086,21 @@ $result = [ordered]@{
                 imageDeltaPresent = ([double]$rawDelta.focusRegionMetrics.changedPixelPercent -ge $MinRawChangedPixelPercent)
                 logMarkerPresent = if ($logProof) { [bool]$logProof.markers.rawGiSourcePresent } else { $null }
                 nativeGiLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.nativeGiSourcePresent } else { $null }
+            }
+            physicalGi = [ordered]@{
+                required = [bool]$RequirePhysicalGiEvidence
+                evidence = if ($logProof) { $logProof.physicalGiEvidence } else { $null }
+                evidencePresent = if ($logProof) { [bool]$logProof.markers.physicalGiEvidencePresent } else { $null }
+                overclaimPresent = if ($logProof) { [bool]$logProof.markers.physicalGiOverclaimPresent } else { $null }
+                classification = if (-not $RequirePhysicalGiEvidence) {
+                    "recorded_only"
+                } elseif (-not $logProof) {
+                    "missing_log"
+                } elseif ([bool]$logProof.markers.physicalGiEvidencePresent) {
+                    "native_physical_gi_sample_coupling_evidence_present"
+                } else {
+                    "native_physical_gi_sample_coupling_evidence_missing"
+                }
             }
             denoisedGi = [ordered]@{
                 imageDeltaPresent = (
@@ -1065,6 +1200,8 @@ $result = [ordered]@{
                 shaderDenoiseSourceClaimPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseSourceClaimPresent } else { $null }
                 shaderDenoiseOutputOpenPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputOpenPresent } else { $null }
                 shaderDenoiseOverclaimPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOverclaimPresent } else { $null }
+                physicalGiEvidencePresent = if ($logProof) { [bool]$logProof.markers.physicalGiEvidencePresent } else { $null }
+                physicalGiOverclaimPresent = if ($logProof) { [bool]$logProof.markers.physicalGiOverclaimPresent } else { $null }
                 proofMarkerPresent = if ($logProof) { [bool]$logProof.markers.proofMarkerPresent } else { $null }
                 focusWindowOnlyPresent = if ($logProof) { [bool]$logProof.markers.focusWindowOnlyPresent } else { $null }
                 nativeErrorPresent = if ($logProof) { [bool]$logProof.markers.nativeErrorPresent } else { $null }
@@ -1160,6 +1297,20 @@ if ($logProof) {
     Write-Host "shaderDenoiseOutputOpenPresent=$($logProof.markers.shaderDenoiseOutputOpenPresent)"
     Write-Host "shaderDenoiseOutputStateExplicitPresent=$($logProof.markers.shaderDenoiseOutputStateExplicitPresent)"
     Write-Host "shaderDenoiseOverclaimPresent=$($logProof.markers.shaderDenoiseOverclaimPresent)"
+    Write-Host "physicalGiEvidencePresent=$($logProof.markers.physicalGiEvidencePresent)"
+    Write-Host "physicalGiOverclaimPresent=$($logProof.markers.physicalGiOverclaimPresent)"
+    Write-Host "physicalSceneLinkedPresent=$($logProof.physicalGiEvidence.physicalSceneLinkedPresent)"
+    Write-Host "physicalSurfaceContributionPresent=$($logProof.physicalGiEvidence.physicalSurfaceContributionPresent)"
+    Write-Host "physicalGiSampleMarkerPresent=$($logProof.physicalGiEvidence.physicalGiSampleMarkerPresent)"
+    Write-Host "surfaceMaterialHitMarkerPresent=$($logProof.physicalGiEvidence.surfaceMaterialHitMarkerPresent)"
+    Write-Host "max.physicalGiSamples=$($logProof.physicalGiEvidence.physicalGiSamples)"
+    Write-Host "max.physicalGiHitSamples=$($logProof.physicalGiEvidence.physicalGiHitSamples)"
+    Write-Host "max.surfaceMaterialHitCoupledSamples=$($logProof.physicalGiEvidence.surfaceMaterialHitCoupledSamples)"
+    Write-Host "max.geometryHitCoupledSamples=$($logProof.physicalGiEvidence.geometryHitCoupledSamples)"
+    Write-Host "max.surfaceMaterialHitCoupling=$($logProof.physicalGiEvidence.surfaceMaterialHitCoupling)"
+    Write-Host "max.geometryHitCoupling=$($logProof.physicalGiEvidence.geometryHitCoupling)"
+    Write-Host "max.physicalSceneLinkScore=$($logProof.physicalGiEvidence.physicalSceneLinkScore)"
+    Write-Host "max.physicalOutputChecksum=$($logProof.physicalGiEvidence.physicalOutputChecksum)"
     Write-Host "proofMarkerPresent=$($logProof.markers.proofMarkerPresent)"
     Write-Host "focusWindowOnlyPresent=$($logProof.markers.focusWindowOnlyPresent)"
     Write-Host "nativeErrorPresent=$($logProof.markers.nativeErrorPresent)"

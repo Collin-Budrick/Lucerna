@@ -33,10 +33,20 @@ param(
 
     [long] $MinGiCacheReads = 1,
 
+    [long] $MinPhysicalGiSamples = 1,
+
+    [long] $MinPhysicalGiHitSamples = 1,
+
+    [long] $MinSurfaceMaterialHitCoupledSamples = 1,
+
+    [long] $MinGeometryHitCoupledSamples = 1,
+
     [string[]] $NativeGiOutputSourcePatterns = @(
         "Lucerna Round 6 diffuse GI preview composite: .*ready=true .*(?:nativeGiOutputReady|nativeDiffuseGiOutputReady|sourceNativeGiReady)=true",
         "Lucerna Round 6 diffuse GI preview composite: .*ready=true .*(?:visibleSource|outputSource|source|sourceType)=`"?native[-_ ]?diffuse[-_ ]?gi",
-        "Lucerna public Mojang final composite: .*mode=round6-diffuse-gi-.*(?:visibleSource|outputSource|source|sourceType)=`"?native[-_ ]?diffuse[-_ ]?gi"
+        "Lucerna public Mojang final composite: .*mode=round6-diffuse-gi-.*(?:visibleSource|outputSource|source|sourceType)=`"?native[-_ ]?diffuse[-_ ]?gi",
+        "physical_scene_linked=true.*physical_surface_contribution=true",
+        "physicalGI sceneLinked=true surfaceContribution=true"
     ),
 
     [switch] $RequireDebugScreenshot,
@@ -134,6 +144,29 @@ function Get-MaxRegexNumber {
     return $max
 }
 
+function Get-MaxRegexDouble {
+    param(
+        [string] $Text,
+        [string] $Pattern
+    )
+
+    $max = 0.0
+    foreach ($match in [regex]::Matches($Text, $Pattern)) {
+        if ($match.Groups.Count -lt 2) {
+            continue
+        }
+        $value = 0.0
+        if ([double]::TryParse(
+                $match.Groups[1].Value,
+                [System.Globalization.NumberStyles]::Float,
+                [System.Globalization.CultureInfo]::InvariantCulture,
+                [ref]$value)) {
+            $max = [Math]::Max($max, $value)
+        }
+    }
+    return $max
+}
+
 function Test-Regex {
     param(
         [string] $Text,
@@ -200,6 +233,29 @@ function Measure-Round6LogProof {
         (Get-MaxRegexNumber $log "cacheReads=(\d+)")
     )
     $maxGiSamples = Get-MaxRegexNumber $log "(?:diffuse_gi=\{\{?enabled=true,[^`r`n]*?samples=|samples=)(\d+)"
+    $maxPhysicalGiSamples = Get-MaxRegexNumber $log "(?:physical_gi_samples|physicalGiSamples)=(\d+)"
+    $maxPhysicalGiHitSamples = Get-MaxRegexNumber $log "(?:physical_gi_hit_samples|physicalGiHitSamples)=(\d+)"
+    $maxSurfaceMaterialHitCoupledSamples = Get-MaxRegexNumber $log "(?:surface_material_hit_coupled_samples|surfaceMaterialHitCoupledSamples)=(\d+)"
+    $maxGeometryHitCoupledSamples = Get-MaxRegexNumber $log "(?:geometry_hit_coupled_samples|geometryHitCoupledSamples)=(\d+)"
+    $maxSurfaceMaterialHitCoupling = Get-MaxRegexDouble $log "(?:surface_material_hit_coupling|surfaceMaterialHitCoupling)=([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)"
+    $maxGeometryHitCoupling = Get-MaxRegexDouble $log "(?:geometry_hit_coupling|geometryHitCoupling)=([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)"
+    $maxPhysicalSceneLinkScore = Get-MaxRegexNumber $log "(?:physical_scene_link_score|physicalSceneLinkScore|sceneScore)=(\d+)"
+    $maxPhysicalOutputChecksum = Get-MaxRegexNumber $log "(?:physical_output_checksum|physicalOutputChecksum|physicalChecksum)=(\d+)"
+    $physicalGiSampleMarkerPresent = Test-Regex $log "(?:physical_sample_marker|physicalSampleMarker)=`"?[^`"\r\n,}]+|physicalGI .*marker=(?!unknown)[^ `r`n]+"
+    $surfaceMaterialHitMarkerPresent = Test-Regex $log "(?:surface_material_hit_marker|surfaceMaterialHitMarker)=`"?[^`"\r\n,}]+"
+    $physicalSceneMarkerPresent = Test-Regex $log "(?:physical_scene_marker|physicalSceneMarker)=`"?[^`"\r\n,}]+|physicalGI .*marker=(?!unknown)[^ `r`n]+"
+    $physicalOutputMarkerPresent = Test-Regex $log "(?:physical_output_marker|physicalOutputMarker)=`"?[^`"\r\n,}]+|physicalGI .*outputMarker=(?!unknown)[^ `r`n]+"
+    $physicalSceneLinkedPresent = Test-Regex $log "(?:physical_scene_linked|physicalSceneLinked|physicalGI sceneLinked)=true"
+    $physicalSurfaceContributionPresent = Test-Regex $log "(?:physical_surface_contribution|physicalSurfaceContribution|physicalGI .*surfaceContribution)=true"
+    $previewFallbackContributionPresent = Test-Regex $log "(?:preview_fallback_contribution|previewFallback)=true"
+    $physicalGiEvidencePresent = $physicalSceneLinkedPresent `
+        -and $physicalSurfaceContributionPresent `
+        -and ($maxPhysicalGiSamples -ge 1) `
+        -and ($maxPhysicalGiHitSamples -ge 1) `
+        -and ($maxSurfaceMaterialHitCoupledSamples -ge 1) `
+        -and ($maxGeometryHitCoupledSamples -ge 1) `
+        -and ($maxPhysicalOutputChecksum -ge 1) `
+        -and ($physicalGiSampleMarkerPresent -or $physicalSceneMarkerPresent -or $physicalOutputMarkerPresent)
 
     return [ordered]@{
         markers = [ordered]@{
@@ -216,11 +272,27 @@ function Measure-Round6LogProof {
             focusWindowPreviewDrawPresent = $focusWindowPreviewDrawPresent
             proofMarkerLogPresent = $proofMarkerLogPresent
             nativeErrorPresent = $nativeErrorPresent
+            physicalGiEvidencePresent = $physicalGiEvidencePresent
+            physicalGiSampleMarkerPresent = $physicalGiSampleMarkerPresent
+            surfaceMaterialHitMarkerPresent = $surfaceMaterialHitMarkerPresent
+            physicalSceneMarkerPresent = $physicalSceneMarkerPresent
+            physicalOutputMarkerPresent = $physicalOutputMarkerPresent
+            physicalSceneLinkedPresent = $physicalSceneLinkedPresent
+            physicalSurfaceContributionPresent = $physicalSurfaceContributionPresent
+            previewFallbackContributionPresent = $previewFallbackContributionPresent
         }
         maxima = [ordered]@{
             giRays = $maxGiRays
             giCacheReads = $maxGiCacheReads
             giSamples = $maxGiSamples
+            physicalGiSamples = $maxPhysicalGiSamples
+            physicalGiHitSamples = $maxPhysicalGiHitSamples
+            surfaceMaterialHitCoupledSamples = $maxSurfaceMaterialHitCoupledSamples
+            geometryHitCoupledSamples = $maxGeometryHitCoupledSamples
+            surfaceMaterialHitCoupling = $maxSurfaceMaterialHitCoupling
+            geometryHitCoupling = $maxGeometryHitCoupling
+            physicalSceneLinkScore = $maxPhysicalSceneLinkScore
+            physicalOutputChecksum = $maxPhysicalOutputChecksum
         }
     }
 }
@@ -549,6 +621,21 @@ if ($logProof) {
     if ([long]$logProof.maxima.giCacheReads -lt $MinGiCacheReads) {
         $failures.Add("GI cache reads below threshold. actual=$($logProof.maxima.giCacheReads) expected>=$MinGiCacheReads")
     }
+    if ([long]$logProof.maxima.physicalGiSamples -lt $MinPhysicalGiSamples) {
+        $failures.Add("Physical GI sample count below threshold. actual=$($logProof.maxima.physicalGiSamples) expected>=$MinPhysicalGiSamples")
+    }
+    if ([long]$logProof.maxima.physicalGiHitSamples -lt $MinPhysicalGiHitSamples) {
+        $failures.Add("Physical GI hit sample count below threshold. actual=$($logProof.maxima.physicalGiHitSamples) expected>=$MinPhysicalGiHitSamples")
+    }
+    if ([long]$logProof.maxima.surfaceMaterialHitCoupledSamples -lt $MinSurfaceMaterialHitCoupledSamples) {
+        $failures.Add("Surface/material hit-coupled sample count below threshold. actual=$($logProof.maxima.surfaceMaterialHitCoupledSamples) expected>=$MinSurfaceMaterialHitCoupledSamples")
+    }
+    if ([long]$logProof.maxima.geometryHitCoupledSamples -lt $MinGeometryHitCoupledSamples) {
+        $failures.Add("Geometry hit-coupled sample count below threshold. actual=$($logProof.maxima.geometryHitCoupledSamples) expected>=$MinGeometryHitCoupledSamples")
+    }
+    if (-not $logProof.markers.physicalGiEvidencePresent) {
+        $failures.Add("Missing physical GI sample/coupling evidence markers: require scene-linked surface contribution, nonzero physical GI samples/hits, surface/material and geometry coupling, checksum, and a physical marker.")
+    }
     if ($logProof.markers.nativeErrorPresent) {
         $failures.Add("Log contains native/Vulkan error markers.")
     }
@@ -576,6 +663,10 @@ $result = [ordered]@{
         brightPixelThreshold = $BrightPixelThreshold
         minGiRays = $MinGiRays
         minGiCacheReads = $MinGiCacheReads
+        minPhysicalGiSamples = $MinPhysicalGiSamples
+        minPhysicalGiHitSamples = $MinPhysicalGiHitSamples
+        minSurfaceMaterialHitCoupledSamples = $MinSurfaceMaterialHitCoupledSamples
+        minGeometryHitCoupledSamples = $MinGeometryHitCoupledSamples
         requireNativeGiOutputSource = [bool]$RequireNativeGiOutputSource
         nativeGiOutputSourcePatterns = @($NativeGiOutputSourcePatterns)
         requireDebugScreenshot = [bool]$RequireDebugScreenshot
@@ -650,6 +741,19 @@ if ($logProof) {
     Write-Host "proofMarkerLogPresent=$($logProof.markers.proofMarkerLogPresent)"
     Write-Host "max.giRays=$($logProof.maxima.giRays)"
     Write-Host "max.giCacheReads=$($logProof.maxima.giCacheReads)"
+    Write-Host "physicalGiEvidencePresent=$($logProof.markers.physicalGiEvidencePresent)"
+    Write-Host "physicalSceneLinkedPresent=$($logProof.markers.physicalSceneLinkedPresent)"
+    Write-Host "physicalSurfaceContributionPresent=$($logProof.markers.physicalSurfaceContributionPresent)"
+    Write-Host "physicalGiSampleMarkerPresent=$($logProof.markers.physicalGiSampleMarkerPresent)"
+    Write-Host "surfaceMaterialHitMarkerPresent=$($logProof.markers.surfaceMaterialHitMarkerPresent)"
+    Write-Host "max.physicalGiSamples=$($logProof.maxima.physicalGiSamples)"
+    Write-Host "max.physicalGiHitSamples=$($logProof.maxima.physicalGiHitSamples)"
+    Write-Host "max.surfaceMaterialHitCoupledSamples=$($logProof.maxima.surfaceMaterialHitCoupledSamples)"
+    Write-Host "max.geometryHitCoupledSamples=$($logProof.maxima.geometryHitCoupledSamples)"
+    Write-Host "max.surfaceMaterialHitCoupling=$($logProof.maxima.surfaceMaterialHitCoupling)"
+    Write-Host "max.geometryHitCoupling=$($logProof.maxima.geometryHitCoupling)"
+    Write-Host "max.physicalSceneLinkScore=$($logProof.maxima.physicalSceneLinkScore)"
+    Write-Host "max.physicalOutputChecksum=$($logProof.maxima.physicalOutputChecksum)"
     Write-Host "nativeErrorPresent=$($logProof.markers.nativeErrorPresent)"
 }
 Write-Host "passed=$($result.passed)"

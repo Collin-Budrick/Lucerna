@@ -14,6 +14,7 @@ public record FirstLightingQualityProofStatus(
         String particleTranslucencyPreservation,
         String temporalHistoryState,
         String denoiseSourceIdentity,
+        String physicalGiSourceIdentity,
         String rejectedEvidenceTypes,
         String geometryMaterialProjectionState,
         String readinessGate,
@@ -31,6 +32,7 @@ public record FirstLightingQualityProofStatus(
         particleTranslucencyPreservation = normalize(particleTranslucencyPreservation, "unreported");
         temporalHistoryState = normalize(temporalHistoryState, "unreported");
         denoiseSourceIdentity = normalize(denoiseSourceIdentity, "unreported");
+        physicalGiSourceIdentity = normalize(physicalGiSourceIdentity, "unreported");
         rejectedEvidenceTypes = normalize(rejectedEvidenceTypes, "unreported");
         geometryMaterialProjectionState = normalize(geometryMaterialProjectionState, "unreported");
         readinessGate = normalize(readinessGate, "unreported");
@@ -225,12 +227,26 @@ public record FirstLightingQualityProofStatus(
                 "denoised_output_source",
                 "native_denoise_output_source"
         )) + " boundary=CPU fallback is proof source only, not shader denoise quality";
+        String physicalGiSourceIdentity = "sceneLinked=" + valueOrUnknown(boolDetail(giStage, PhysicalGiBooleanField.SCENE_LINKED))
+                + " surfaceContribution=" + valueOrUnknown(boolDetail(giStage, PhysicalGiBooleanField.SURFACE_CONTRIBUTION))
+                + " sceneLinkScore=" + valueOrUnknown(longDetail(giStage, PhysicalGiLongField.SCENE_LINK_SCORE))
+                + " physicalOutputChecksum=" + valueOrUnknown(longDetail(giStage, PhysicalGiLongField.OUTPUT_CHECKSUM))
+                + " previewFallback=" + valueOrUnknown(boolDetail(giStage, PhysicalGiBooleanField.PREVIEW_FALLBACK))
+                + " physicalSceneMarker=" + valueOrUnknown(stringDetail(giStage, PhysicalGiStringField.SCENE_MARKER))
+                + " physicalOutputMarker=" + valueOrUnknown(stringDetail(giStage, PhysicalGiStringField.OUTPUT_MARKER))
+                + " proofBoundaryMarker=" + valueOrUnknown(stringDetail(giStage, PhysicalGiStringField.PROOF_BOUNDARY_MARKER))
+                + " boundary=scene-linked CPU/readback physical metrics are evidence fields only; real physical GI tracing quality remains open";
         String rejectedEvidenceTypes = "metadataPreview=" + valueOrUnknown(metadataPreviewEvidence)
                 + " focusWindowOnly=" + valueOrUnknown(focusWindowEvidence)
                 + " proofMarker=" + valueOrUnknown(proofMarkerEvidence)
                 + " directSubstitution=" + valueOrUnknown(directSubstitutionEvidence)
                 + " rectangularWashout=" + valueOrUnknown(rectangularWashoutEvidence)
                 + " antiRectangularWashoutPassed=" + valueOrUnknown(antiRectangularWashoutPassed)
+                + " metadataOnlyProofRejected=" + valueOrUnknown(boolDetail(giStage, PhysicalGiBooleanField.METADATA_ONLY_PROOF_REJECTED))
+                + " focusWindowCaptureRejected=" + valueOrUnknown(boolDetail(giStage, PhysicalGiBooleanField.FOCUS_WINDOW_CAPTURE_REJECTED))
+                + " proofMarkerEvidenceRejected=" + valueOrUnknown(boolDetail(giStage, PhysicalGiBooleanField.PROOF_MARKER_EVIDENCE_REJECTED))
+                + " temporaryDirectSubstitutionRejected=" + valueOrUnknown(boolDetail(giStage, PhysicalGiBooleanField.TEMPORARY_DIRECT_SUBSTITUTION_REJECTED))
+                + " rectangularWashoutRejected=" + valueOrUnknown(boolDetail(giStage, PhysicalGiBooleanField.RECTANGULAR_WASHOUT_REJECTED))
                 + " clean=" + yesNo(rejectedEvidenceClean);
         String geometryMaterialProjectionState = "candidateReady=" + yesNo(geometryMaterialProjectionCandidateReady)
                 + " boundary=\"" + compositeStatus.geometryMaterialProjectionBoundary() + "\""
@@ -273,6 +289,7 @@ public record FirstLightingQualityProofStatus(
                 particleTranslucencyPreservation,
                 temporalHistoryState,
                 denoiseSourceIdentity,
+                physicalGiSourceIdentity,
                 rejectedEvidenceTypes,
                 geometryMaterialProjectionState,
                 readinessGate,
@@ -347,6 +364,7 @@ public record FirstLightingQualityProofStatus(
         fields.put(normalizedPrefix + ".particleTranslucencyPreservation", this.particleTranslucencyPreservation);
         fields.put(normalizedPrefix + ".temporalHistoryState", this.temporalHistoryState);
         fields.put(normalizedPrefix + ".denoiseSourceIdentity", this.denoiseSourceIdentity);
+        fields.put(normalizedPrefix + ".physicalGiSourceIdentity", this.physicalGiSourceIdentity);
         fields.put(normalizedPrefix + ".rejectedEvidenceTypes", this.rejectedEvidenceTypes);
         fields.put(normalizedPrefix + ".geometryMaterialProjectionState", this.geometryMaterialProjectionState);
         fields.put(normalizedPrefix + ".readinessGate", this.readinessGate);
@@ -459,6 +477,45 @@ public record FirstLightingQualityProofStatus(
         return value == null || value.isBlank() ? "?" : value;
     }
 
+    private static String boolDetail(LightingDispatchStageTelemetryStatus stage, PhysicalGiBooleanField field) {
+        if (stage == null || field == null) {
+            return "";
+        }
+        Boolean value = switch (field) {
+            case SCENE_LINKED -> stage.physicalSceneLinked();
+            case SURFACE_CONTRIBUTION -> stage.physicalSurfaceContribution();
+            case PREVIEW_FALLBACK -> stage.previewFallbackContribution();
+            case METADATA_ONLY_PROOF_REJECTED -> stage.metadataOnlyProofRejected();
+            case FOCUS_WINDOW_CAPTURE_REJECTED -> stage.focusWindowCaptureRejected();
+            case PROOF_MARKER_EVIDENCE_REJECTED -> stage.proofMarkerEvidenceRejected();
+            case TEMPORARY_DIRECT_SUBSTITUTION_REJECTED -> stage.temporaryDirectSubstitutionRejected();
+            case RECTANGULAR_WASHOUT_REJECTED -> stage.rectangularWashoutRejected();
+        };
+        return value == null ? "" : Boolean.toString(value);
+    }
+
+    private static String longDetail(LightingDispatchStageTelemetryStatus stage, PhysicalGiLongField field) {
+        if (stage == null || field == null) {
+            return "";
+        }
+        Long value = switch (field) {
+            case SCENE_LINK_SCORE -> stage.physicalSceneLinkScore();
+            case OUTPUT_CHECKSUM -> stage.physicalOutputChecksum();
+        };
+        return value == null ? "" : Long.toString(value);
+    }
+
+    private static String stringDetail(LightingDispatchStageTelemetryStatus stage, PhysicalGiStringField field) {
+        if (stage == null || field == null) {
+            return "";
+        }
+        return switch (field) {
+            case SCENE_MARKER -> stage.physicalSceneMarker();
+            case OUTPUT_MARKER -> stage.physicalOutputMarker();
+            case PROOF_BOUNDARY_MARKER -> stage.proofBoundaryMarker();
+        };
+    }
+
     private static String normalizeKey(String value) {
         return normalize(value, "").toLowerCase().replace('-', '_').replace('.', '_');
     }
@@ -472,5 +529,27 @@ public record FirstLightingQualityProofStatus(
 
     private static String yesNo(boolean value) {
         return value ? "yes" : "no";
+    }
+
+    private enum PhysicalGiBooleanField {
+        SCENE_LINKED,
+        SURFACE_CONTRIBUTION,
+        PREVIEW_FALLBACK,
+        METADATA_ONLY_PROOF_REJECTED,
+        FOCUS_WINDOW_CAPTURE_REJECTED,
+        PROOF_MARKER_EVIDENCE_REJECTED,
+        TEMPORARY_DIRECT_SUBSTITUTION_REJECTED,
+        RECTANGULAR_WASHOUT_REJECTED
+    }
+
+    private enum PhysicalGiLongField {
+        SCENE_LINK_SCORE,
+        OUTPUT_CHECKSUM
+    }
+
+    private enum PhysicalGiStringField {
+        SCENE_MARKER,
+        OUTPUT_MARKER,
+        PROOF_BOUNDARY_MARKER
     }
 }

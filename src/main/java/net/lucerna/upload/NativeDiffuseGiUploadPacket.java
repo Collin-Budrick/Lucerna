@@ -170,12 +170,28 @@ public final class NativeDiffuseGiUploadPacket {
         return this.planUpload.sourceCounts();
     }
 
+    public float[] sourceCouplingFloats() {
+        return this.planUpload.sourceCouplingFloats();
+    }
+
+    public int[] sourceCouplingFlags() {
+        return this.planUpload.sourceCouplingFlags();
+    }
+
     public int[] sceneInputIntegers() {
         return this.planUpload.sceneInputIntegers();
     }
 
     public float[] sceneInputFloats() {
         return this.planUpload.sceneInputFloats();
+    }
+
+    public float[] scenePhysicalCouplingFloats() {
+        return this.planUpload.scenePhysicalCouplingFloats();
+    }
+
+    public int[] scenePhysicalCouplingFlags() {
+        return this.planUpload.scenePhysicalCouplingFlags();
     }
 
     public int[] sceneSurfaceRegionBounds() {

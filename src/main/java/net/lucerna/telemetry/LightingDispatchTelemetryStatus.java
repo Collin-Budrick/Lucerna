@@ -91,6 +91,23 @@ public record LightingDispatchTelemetryStatus(
                     + "evidence_boundary|proof_boundary|boundary|quality_boundary|"
                     + "shader_denoise_evidence_boundary|shader_denoise_boundary|"
                     + "denoise_evidence_boundary|denoise_quality_boundary|"
+                    + "physical_scene_link_score|physical_gi_scene_link_score|gi_physical_scene_link_score|"
+                    + "scene_link_score|scene_linked_score|physical_output_checksum|physical_gi_output_checksum|"
+                    + "gi_physical_output_checksum|native_physical_output_checksum|physical_scene_linked|"
+                    + "physical_gi_scene_linked|scene_linked_physical|gi_scene_linked|"
+                    + "physical_surface_contribution|physical_gi_surface_contribution|"
+                    + "surface_physical_contribution|physical_contribution|preview_fallback_contribution|"
+                    + "physical_preview_fallback_contribution|cpu_preview_fallback_contribution|"
+                    + "metadata_only_proof_rejected|metadata_preview_rejected|metadata_only_rejected|"
+                    + "focus_window_capture_rejected|focus_window_rejected|focus_window_only_rejected|"
+                    + "proof_marker_evidence_rejected|proof_marker_rejected|proof_marker_source_rejected|"
+                    + "temporary_direct_substitution_rejected|temporary_direct_light_substitution_rejected|"
+                    + "temporary_direct_source_rejected|direct_light_substitution_rejected|"
+                    + "rectangular_washout_rejected|anti_rectangular_washout_passed|washout_rejected|"
+                    + "physical_scene_marker|physical_gi_scene_marker|scene_link_marker|"
+                    + "physical_scene_evidence_marker|physical_output_marker|physical_gi_output_marker|"
+                    + "physical_output_evidence_marker|proof_boundary_marker|physical_proof_boundary_marker|"
+                    + "physical_gi_proof_boundary|gi_proof_boundary_marker|"
                     + "cache|last_cache|cache_counts|cache_reads|cache_writes|cache_read_count|cache_write_count|"
                     + "last_flags|flags|stage_flags|placeholder|metadata_only|validated|valid|debug_overlay|debug|"
                     + "ready_for_native_execution|native_ready|ready|executable|readiness_reason|ready_reason|"
@@ -242,6 +259,7 @@ public record LightingDispatchTelemetryStatus(
         parseStageBlocks(nativeStatus, stageFields);
         parseLooseStageFields(nativeStatus, stageFields);
         mergeDenoiseExecutionFields(nativeStatus, stageFields);
+        mergeDiffuseGiExecutionFields(nativeStatus, stageFields);
         mergeDirectExecutionFields(nativeStatus, stageFields);
         mergeDirectPayloadSummaryFields(nativeStatus, stageFields);
 
@@ -316,6 +334,37 @@ public record LightingDispatchTelemetryStatus(
         copyMissing(target, executionFields, "ray_count", "rays");
         copyMissing(target, executionFields, "ready", "ready_for_native_execution");
         copyMissing(target, executionFields, "last_frame", "frame_index");
+    }
+
+    private static void mergeDiffuseGiExecutionFields(String nativeStatus, Map<String, Map<String, String>> stageFields) {
+        String diffuseGiExecution = extractBraceContent(nativeStatus, "diffuse_gi_execution={");
+        if (diffuseGiExecution.isBlank()) {
+            return;
+        }
+
+        Map<String, String> executionFields = parseDelimitedFields(diffuseGiExecution);
+        if (executionFields.isEmpty()) {
+            return;
+        }
+
+        Map<String, String> target = stageFields.computeIfAbsent("diffuse_gi", ignored -> new LinkedHashMap<>());
+        target.putIfAbsent("id", "diffuse_gi");
+        putMissing(target, executionFields);
+        copyMissing(target, executionFields, "dispatch_generation", "generation");
+        copyMissing(target, executionFields, "sample_count", "samples");
+        copyMissing(target, executionFields, "ray_count", "rays");
+        copyMissing(target, executionFields, "cache_read_count", "cache_reads");
+        copyMissing(target, executionFields, "cache_write_count", "cache_writes");
+        copyMissing(target, executionFields, "ready", "ready_for_native_execution");
+        copyMissing(target, executionFields, "last_frame", "frame_index");
+        copyMissing(target, executionFields, "cpu_output_generated", "native_gi_output_generated");
+        copyMissing(target, executionFields, "cpu_output_width", "native_gi_output_width");
+        copyMissing(target, executionFields, "cpu_output_height", "native_gi_output_height");
+        copyMissing(target, executionFields, "cpu_output_pixel_count", "native_gi_output_pixel_count");
+        copyMissing(target, executionFields, "cpu_output_energy", "native_gi_output_energy");
+        copyMissing(target, executionFields, "cpu_output_checksum", "native_gi_output_checksum");
+        copyMissing(target, executionFields, "physical_scene_marker", "source_identity");
+        copyMissing(target, executionFields, "proof_boundary_marker", "evidence_boundary");
     }
 
     private static void mergeDenoiseExecutionFields(String nativeStatus, Map<String, Map<String, String>> stageFields) {
@@ -870,6 +919,27 @@ public record LightingDispatchTelemetryStatus(
             case "proof_boundary", "boundary", "quality_boundary", "shader_denoise_evidence_boundary",
                     "shader_denoise_boundary", "denoise_evidence_boundary",
                     "denoise_quality_boundary" -> "evidence_boundary";
+            case "physical_gi_scene_link_score", "gi_physical_scene_link_score",
+                    "scene_link_score", "scene_linked_score" -> "physical_scene_link_score";
+            case "physical_gi_output_checksum", "gi_physical_output_checksum",
+                    "native_physical_output_checksum" -> "physical_output_checksum";
+            case "physical_gi_scene_linked", "scene_linked_physical",
+                    "gi_scene_linked" -> "physical_scene_linked";
+            case "physical_gi_surface_contribution", "surface_physical_contribution",
+                    "physical_contribution" -> "physical_surface_contribution";
+            case "physical_preview_fallback_contribution",
+                    "cpu_preview_fallback_contribution" -> "preview_fallback_contribution";
+            case "metadata_preview_rejected", "metadata_only_rejected" -> "metadata_only_proof_rejected";
+            case "focus_window_rejected", "focus_window_only_rejected" -> "focus_window_capture_rejected";
+            case "proof_marker_rejected", "proof_marker_source_rejected" -> "proof_marker_evidence_rejected";
+            case "temporary_direct_light_substitution_rejected", "temporary_direct_source_rejected",
+                    "direct_light_substitution_rejected" -> "temporary_direct_substitution_rejected";
+            case "anti_rectangular_washout_passed", "washout_rejected" -> "rectangular_washout_rejected";
+            case "physical_gi_scene_marker", "scene_link_marker",
+                    "physical_scene_evidence_marker" -> "physical_scene_marker";
+            case "physical_gi_output_marker", "physical_output_evidence_marker" -> "physical_output_marker";
+            case "physical_proof_boundary_marker", "physical_gi_proof_boundary",
+                    "gi_proof_boundary_marker" -> "proof_boundary_marker";
             case "cache", "cache_counts" -> "last_cache";
             case "cache_reads", "cache_read_count" -> "cache_reads";
             case "cache_writes", "cache_write_count" -> "cache_writes";

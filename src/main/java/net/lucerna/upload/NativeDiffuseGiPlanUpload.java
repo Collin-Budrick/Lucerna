@@ -91,6 +91,13 @@ public record NativeDiffuseGiPlanUpload(
         int sourceSectionSnapshotCount,
         int sourceDirtyRegionCount,
         int sourceMaterialUpdateCount,
+        float sourceEmissiveWorkScore,
+        float sourceEmissiveSourceScore,
+        float sourceCelestialSourceScore,
+        float sourceSceneMutationScore,
+        float sourceCouplingScore,
+        boolean sourceHasDirectLightingWork,
+        boolean sourceHasWorldMaterialInputs,
         int sceneSurfaceSampleCount,
         int sceneColoredSurfaceSampleCount,
         int sceneDistinctMaterialCount,
@@ -112,6 +119,7 @@ public record NativeDiffuseGiPlanUpload(
         float sceneMaterialColorInfluence,
         float sceneSkylightExposureRatio,
         float sceneSealedInteriorRatio,
+        float sceneSkylightInteriorContrast,
         float sceneDownwardFacingRatio,
         float sceneVerticalSurfaceRatio,
         float sceneOrientationBalance,
@@ -141,6 +149,8 @@ public record NativeDiffuseGiPlanUpload(
         float sceneRadianceDirectionConfidence,
         float sceneMaterialGeometryCoupling,
         float scenePhysicalGiInputScore,
+        boolean sceneHasSceneTiedInputs,
+        boolean sceneHasPhysicalGiEvidence,
         boolean sceneEmissiveProximityAvailable,
         boolean sceneAffectedSurfaceRegionAvailable,
         int sceneAffectedSurfaceMinBlockX,
@@ -250,6 +260,15 @@ public record NativeDiffuseGiPlanUpload(
     public static final int SOURCE_SECTION_SNAPSHOT_COUNT_OFFSET = 4;
     public static final int SOURCE_DIRTY_REGION_COUNT_OFFSET = 5;
     public static final int SOURCE_MATERIAL_UPDATE_COUNT_OFFSET = 6;
+    public static final int SOURCE_COUPLING_FLOAT_STRIDE = 5;
+    public static final int SOURCE_EMISSIVE_WORK_SCORE_OFFSET = 0;
+    public static final int SOURCE_EMISSIVE_SOURCE_SCORE_OFFSET = 1;
+    public static final int SOURCE_CELESTIAL_SOURCE_SCORE_OFFSET = 2;
+    public static final int SOURCE_SCENE_MUTATION_SCORE_OFFSET = 3;
+    public static final int SOURCE_COUPLING_SCORE_OFFSET = 4;
+    public static final int SOURCE_COUPLING_FLAG_STRIDE = 2;
+    public static final int SOURCE_HAS_DIRECT_LIGHTING_WORK_OFFSET = 0;
+    public static final int SOURCE_HAS_WORLD_MATERIAL_INPUTS_OFFSET = 1;
     public static final int SCENE_INPUT_INTEGER_STRIDE = 8;
     public static final int SCENE_SURFACE_SAMPLE_COUNT_OFFSET = 0;
     public static final int SCENE_COLORED_SURFACE_SAMPLE_COUNT_OFFSET = 1;
@@ -274,6 +293,20 @@ public record NativeDiffuseGiPlanUpload(
     public static final int SCENE_AVERAGE_RADIANCE_G_OFFSET = 11;
     public static final int SCENE_AVERAGE_RADIANCE_B_OFFSET = 12;
     public static final int SCENE_RADIANCE_ENERGY_OFFSET = 13;
+    public static final int SCENE_PHYSICAL_COUPLING_FLOAT_STRIDE = 10;
+    public static final int SCENE_PHYSICAL_SKYLIGHT_INTERIOR_CONTRAST_OFFSET = 0;
+    public static final int SCENE_PHYSICAL_MATERIAL_GEOMETRY_COUPLING_OFFSET = 1;
+    public static final int SCENE_PHYSICAL_INPUT_SCORE_OFFSET = 2;
+    public static final int SCENE_PHYSICAL_LIGHT_SOURCE_SCENE_COUPLING_OFFSET = 3;
+    public static final int SCENE_PHYSICAL_EMISSIVE_SOURCE_COUPLING_OFFSET = 4;
+    public static final int SCENE_PHYSICAL_CELESTIAL_SOURCE_COUPLING_OFFSET = 5;
+    public static final int SCENE_PHYSICAL_OCCLUSION_DIRTY_REGION_INFLUENCE_OFFSET = 6;
+    public static final int SCENE_PHYSICAL_CACHE_CONFIDENCE_OFFSET = 7;
+    public static final int SCENE_PHYSICAL_SURFACE_ORIENTATION_CONFIDENCE_OFFSET = 8;
+    public static final int SCENE_PHYSICAL_MATERIAL_COLOR_INFLUENCE_OFFSET = 9;
+    public static final int SCENE_PHYSICAL_COUPLING_FLAG_STRIDE = 2;
+    public static final int SCENE_HAS_SCENE_TIED_INPUTS_OFFSET = 0;
+    public static final int SCENE_HAS_PHYSICAL_GI_EVIDENCE_OFFSET = 1;
     public static final int SCENE_SURFACE_MATERIAL_INTEGER_STRIDE = 4;
     public static final int SCENE_DISTINCT_MATERIAL_COUNT_OFFSET = 0;
     public static final int SCENE_DOWNWARD_FACING_SURFACE_COUNT_OFFSET = 1;
@@ -418,6 +451,11 @@ public record NativeDiffuseGiPlanUpload(
         requireNonNegative(sourceSectionSnapshotCount, "sourceSectionSnapshotCount");
         requireNonNegative(sourceDirtyRegionCount, "sourceDirtyRegionCount");
         requireNonNegative(sourceMaterialUpdateCount, "sourceMaterialUpdateCount");
+        requireUnit(sourceEmissiveWorkScore, "sourceEmissiveWorkScore");
+        requireUnit(sourceEmissiveSourceScore, "sourceEmissiveSourceScore");
+        requireUnit(sourceCelestialSourceScore, "sourceCelestialSourceScore");
+        requireUnit(sourceSceneMutationScore, "sourceSceneMutationScore");
+        requireUnit(sourceCouplingScore, "sourceCouplingScore");
         requireNonNegative(sceneSurfaceSampleCount, "sceneSurfaceSampleCount");
         requireNonNegative(sceneColoredSurfaceSampleCount, "sceneColoredSurfaceSampleCount");
         requireNonNegative(sceneDistinctMaterialCount, "sceneDistinctMaterialCount");
@@ -438,6 +476,7 @@ public record NativeDiffuseGiPlanUpload(
         requireUnit(sceneMaterialColorInfluence, "sceneMaterialColorInfluence");
         requireUnit(sceneSkylightExposureRatio, "sceneSkylightExposureRatio");
         requireUnit(sceneSealedInteriorRatio, "sceneSealedInteriorRatio");
+        requireUnit(sceneSkylightInteriorContrast, "sceneSkylightInteriorContrast");
         requireUnit(sceneDownwardFacingRatio, "sceneDownwardFacingRatio");
         requireUnit(sceneVerticalSurfaceRatio, "sceneVerticalSurfaceRatio");
         requireUnit(sceneOrientationBalance, "sceneOrientationBalance");
@@ -606,6 +645,13 @@ public record NativeDiffuseGiPlanUpload(
                 sourceSummary.sectionSnapshotCount(),
                 sourceSummary.dirtyRegionCount(),
                 sourceSummary.materialUpdateCount(),
+                sourceSummary.emissiveWorkScore(),
+                sourceSummary.emissiveSourceScore(),
+                sourceSummary.celestialSourceScore(),
+                sourceSummary.sceneMutationScore(),
+                sourceSummary.sourceCouplingScore(),
+                sourceSummary.hasDirectLightingWork(),
+                sourceSummary.hasWorldMaterialInputs(),
                 sceneInputs.surfaceSampleCount(),
                 sceneInputs.coloredSurfaceSampleCount(),
                 sceneInputs.distinctMaterialCount(),
@@ -627,6 +673,7 @@ public record NativeDiffuseGiPlanUpload(
                 sceneInputs.materialColorInfluence(),
                 sceneInputs.skylightExposureRatio(),
                 sceneInputs.sealedInteriorRatio(),
+                sceneInputs.skylightInteriorContrast(),
                 sceneInputs.downwardFacingRatio(),
                 sceneInputs.verticalSurfaceRatio(),
                 sceneInputs.orientationBalance(),
@@ -656,6 +703,8 @@ public record NativeDiffuseGiPlanUpload(
                 sceneInputs.radianceDirectionConfidence(),
                 sceneInputs.materialGeometryCoupling(),
                 sceneInputs.physicalGiInputScore(),
+                sceneInputs.hasSceneTiedInputs(),
+                sceneInputs.hasPhysicalGiEvidence(),
                 sceneInputs.emissiveProximityAvailable(),
                 sceneInputs.affectedSurfaceRegionAvailable(),
                 sceneInputs.affectedSurfaceMinBlockX(),
@@ -821,6 +870,23 @@ public record NativeDiffuseGiPlanUpload(
         };
     }
 
+    public float[] sourceCouplingFloats() {
+        return new float[]{
+                this.sourceEmissiveWorkScore,
+                this.sourceEmissiveSourceScore,
+                this.sourceCelestialSourceScore,
+                this.sourceSceneMutationScore,
+                this.sourceCouplingScore
+        };
+    }
+
+    public int[] sourceCouplingFlags() {
+        return new int[]{
+                this.sourceHasDirectLightingWork ? 1 : 0,
+                this.sourceHasWorldMaterialInputs ? 1 : 0
+        };
+    }
+
     public int[] sceneInputIntegers() {
         return new int[]{
                 this.sceneSurfaceSampleCount,
@@ -850,6 +916,28 @@ public record NativeDiffuseGiPlanUpload(
                 this.sceneAverageRadianceG,
                 this.sceneAverageRadianceB,
                 this.sceneRadianceEnergy
+        };
+    }
+
+    public float[] scenePhysicalCouplingFloats() {
+        return new float[]{
+                this.sceneSkylightInteriorContrast,
+                this.sceneMaterialGeometryCoupling,
+                this.scenePhysicalGiInputScore,
+                this.sceneLightSourceSceneCoupling,
+                this.sceneEmissiveSourceCoupling,
+                this.sceneCelestialSourceCoupling,
+                this.sceneOcclusionDirtyRegionInfluence,
+                this.sceneCachePhysicalConfidence,
+                this.sceneSurfaceOrientationConfidence,
+                this.sceneMaterialColorInfluence
+        };
+    }
+
+    public int[] scenePhysicalCouplingFlags() {
+        return new int[]{
+                this.sceneHasSceneTiedInputs ? 1 : 0,
+                this.sceneHasPhysicalGiEvidence ? 1 : 0
         };
     }
 

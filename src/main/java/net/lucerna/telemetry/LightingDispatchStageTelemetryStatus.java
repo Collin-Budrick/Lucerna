@@ -68,6 +68,19 @@ public record LightingDispatchStageTelemetryStatus(
         String temporalReadinessMarker,
         String sourceIdentity,
         String evidenceBoundary,
+        Long physicalSceneLinkScore,
+        Long physicalOutputChecksum,
+        Boolean physicalSceneLinked,
+        Boolean physicalSurfaceContribution,
+        Boolean previewFallbackContribution,
+        Boolean metadataOnlyProofRejected,
+        Boolean focusWindowCaptureRejected,
+        Boolean proofMarkerEvidenceRejected,
+        Boolean temporaryDirectSubstitutionRejected,
+        Boolean rectangularWashoutRejected,
+        String physicalSceneMarker,
+        String physicalOutputMarker,
+        String proofBoundaryMarker,
         Map<String, String> details
 ) {
     public LightingDispatchStageTelemetryStatus {
@@ -87,6 +100,9 @@ public record LightingDispatchStageTelemetryStatus(
         temporalReadinessMarker = blankToEmpty(stripQuotes(temporalReadinessMarker));
         sourceIdentity = blankToEmpty(stripQuotes(sourceIdentity));
         evidenceBoundary = blankToEmpty(stripQuotes(evidenceBoundary));
+        physicalSceneMarker = blankToEmpty(stripQuotes(physicalSceneMarker));
+        physicalOutputMarker = blankToEmpty(stripQuotes(physicalOutputMarker));
+        proofBoundaryMarker = blankToEmpty(stripQuotes(proofBoundaryMarker));
         details = immutable(details);
     }
 
@@ -548,6 +564,92 @@ public record LightingDispatchStageTelemetryStatus(
                 "denoise_evidence_boundary",
                 "denoise_quality_boundary"
         );
+        Long physicalSceneLinkScore = parseLong(firstPresent(
+                normalizedFields,
+                "physical_scene_link_score",
+                "physical_gi_scene_link_score",
+                "gi_physical_scene_link_score",
+                "scene_link_score",
+                "scene_linked_score"
+        ));
+        Long physicalOutputChecksum = parseLong(firstPresent(
+                normalizedFields,
+                "physical_output_checksum",
+                "physical_gi_output_checksum",
+                "gi_physical_output_checksum",
+                "native_physical_output_checksum"
+        ));
+        Boolean physicalSceneLinked = parseBoolean(firstPresent(
+                normalizedFields,
+                "physical_scene_linked",
+                "physical_gi_scene_linked",
+                "scene_linked_physical",
+                "gi_scene_linked"
+        ));
+        Boolean physicalSurfaceContribution = parseBoolean(firstPresent(
+                normalizedFields,
+                "physical_surface_contribution",
+                "physical_gi_surface_contribution",
+                "surface_physical_contribution",
+                "physical_contribution"
+        ));
+        Boolean previewFallbackContribution = parseBoolean(firstPresent(
+                normalizedFields,
+                "preview_fallback_contribution",
+                "physical_preview_fallback_contribution",
+                "cpu_preview_fallback_contribution"
+        ));
+        Boolean metadataOnlyProofRejected = parseBoolean(firstPresent(
+                normalizedFields,
+                "metadata_only_proof_rejected",
+                "metadata_preview_rejected",
+                "metadata_only_rejected"
+        ));
+        Boolean focusWindowCaptureRejected = parseBoolean(firstPresent(
+                normalizedFields,
+                "focus_window_capture_rejected",
+                "focus_window_rejected",
+                "focus_window_only_rejected"
+        ));
+        Boolean proofMarkerEvidenceRejected = parseBoolean(firstPresent(
+                normalizedFields,
+                "proof_marker_evidence_rejected",
+                "proof_marker_rejected",
+                "proof_marker_source_rejected"
+        ));
+        Boolean temporaryDirectSubstitutionRejected = parseBoolean(firstPresent(
+                normalizedFields,
+                "temporary_direct_substitution_rejected",
+                "temporary_direct_light_substitution_rejected",
+                "temporary_direct_source_rejected",
+                "direct_light_substitution_rejected"
+        ));
+        Boolean rectangularWashoutRejected = parseBoolean(firstPresent(
+                normalizedFields,
+                "rectangular_washout_rejected",
+                "anti_rectangular_washout_passed",
+                "washout_rejected"
+        ));
+        String physicalSceneMarker = firstPresent(
+                normalizedFields,
+                "physical_scene_marker",
+                "physical_gi_scene_marker",
+                "scene_link_marker",
+                "physical_scene_evidence_marker"
+        );
+        String physicalOutputMarker = firstPresent(
+                normalizedFields,
+                "physical_output_marker",
+                "physical_gi_output_marker",
+                "physical_output_evidence_marker"
+        );
+        String proofBoundaryMarker = firstPresent(
+                normalizedFields,
+                "proof_boundary_marker",
+                "physical_proof_boundary_marker",
+                "physical_gi_proof_boundary",
+                "gi_proof_boundary_marker"
+        );
 
         return new LightingDispatchStageTelemetryStatus(
                 stageId,
@@ -612,6 +714,19 @@ public record LightingDispatchStageTelemetryStatus(
                 temporalReadinessMarker,
                 sourceIdentity,
                 evidenceBoundary,
+                physicalSceneLinkScore,
+                physicalOutputChecksum,
+                physicalSceneLinked,
+                physicalSurfaceContribution,
+                previewFallbackContribution,
+                metadataOnlyProofRejected,
+                focusWindowCaptureRejected,
+                proofMarkerEvidenceRejected,
+                temporaryDirectSubstitutionRejected,
+                rectangularWashoutRejected,
+                physicalSceneMarker,
+                physicalOutputMarker,
+                proofBoundaryMarker,
                 normalizedFields
         );
     }
@@ -643,6 +758,11 @@ public record LightingDispatchStageTelemetryStatus(
             fieldCount += append(label, "cpuFallback", this.cpuReadbackFallback == null ? "" : Boolean.toString(this.cpuReadbackFallback));
             fieldCount += append(label, "temporalReady", this.temporalReady == null ? "" : Boolean.toString(this.temporalReady));
             fieldCount += append(label, "flicker", this.flickerScore);
+        }
+        if (isPhysicalGiLikeStage() || hasAnyPhysicalGiEvidence()) {
+            fieldCount += append(label, "physicalScene", this.physicalSceneLinked == null ? "" : Boolean.toString(this.physicalSceneLinked));
+            fieldCount += append(label, "physicalSurface", this.physicalSurfaceContribution == null ? "" : Boolean.toString(this.physicalSurfaceContribution));
+            fieldCount += append(label, "sceneScore", this.physicalSceneLinkScore == null ? "" : Long.toString(this.physicalSceneLinkScore));
         }
         if (fieldCount == 0) {
             label.append(" reported");
@@ -737,6 +857,24 @@ public record LightingDispatchStageTelemetryStatus(
                 + " reason=" + shorten(this.readinessReason, 48);
     }
 
+    public String physicalGiTracingEvidenceLine() {
+        return this.stageDisplayName()
+                + " physicalGI sceneLinked=" + booleanOrUnknown(this.physicalSceneLinked)
+                + " surfaceContribution=" + booleanOrUnknown(this.physicalSurfaceContribution)
+                + " sceneScore=" + valueOrUnknown(this.physicalSceneLinkScore)
+                + " physicalChecksum=" + valueOrUnknown(this.physicalOutputChecksum)
+                + " previewFallback=" + booleanOrUnknown(this.previewFallbackContribution)
+                + " rejected(metadata/focus/proofMarker/directSubstitution/washout)="
+                + booleanOrUnknown(this.metadataOnlyProofRejected)
+                + "/" + booleanOrUnknown(this.focusWindowCaptureRejected)
+                + "/" + booleanOrUnknown(this.proofMarkerEvidenceRejected)
+                + "/" + booleanOrUnknown(this.temporaryDirectSubstitutionRejected)
+                + "/" + booleanOrUnknown(this.rectangularWashoutRejected)
+                + " marker=" + shorten(valueOrUnknown(this.physicalSceneMarker), 48)
+                + " outputMarker=" + shorten(valueOrUnknown(this.physicalOutputMarker), 48)
+                + " boundary=" + shorten(valueOrUnknown(this.proofBoundaryMarker), 64);
+    }
+
     public String denoiseReadinessStatusLine() {
         return this.stageDisplayName()
                 + " denoise rawSource=" + booleanOrUnknown(this.rawSourceReady)
@@ -801,6 +939,9 @@ public record LightingDispatchStageTelemetryStatus(
             fields.put(normalizedPrefix + ".shaderDenoiseState", this.shaderDenoiseStateStatusLine());
             fields.put(normalizedPrefix + ".denoiseEvidenceBoundary", this.denoiseEvidenceBoundaryLine());
             fields.put(normalizedPrefix + ".temporalFlickerEvidence", this.temporalFlickerEvidenceLine());
+        }
+        if (isPhysicalGiLikeStage() || hasAnyPhysicalGiEvidence()) {
+            fields.put(normalizedPrefix + ".physicalGiTracingEvidence", this.physicalGiTracingEvidenceLine());
         }
         if (this.enabled != null) {
             fields.put(normalizedPrefix + ".enabled", Boolean.toString(this.enabled));
@@ -988,6 +1129,45 @@ public record LightingDispatchStageTelemetryStatus(
         if (!this.evidenceBoundary.isBlank()) {
             fields.put(normalizedPrefix + ".evidenceBoundary", this.evidenceBoundary);
         }
+        if (this.physicalSceneLinkScore != null) {
+            fields.put(normalizedPrefix + ".physicalSceneLinkScore", Long.toString(this.physicalSceneLinkScore));
+        }
+        if (this.physicalOutputChecksum != null) {
+            fields.put(normalizedPrefix + ".physicalOutputChecksum", Long.toString(this.physicalOutputChecksum));
+        }
+        if (this.physicalSceneLinked != null) {
+            fields.put(normalizedPrefix + ".physicalSceneLinked", Boolean.toString(this.physicalSceneLinked));
+        }
+        if (this.physicalSurfaceContribution != null) {
+            fields.put(normalizedPrefix + ".physicalSurfaceContribution", Boolean.toString(this.physicalSurfaceContribution));
+        }
+        if (this.previewFallbackContribution != null) {
+            fields.put(normalizedPrefix + ".previewFallbackContribution", Boolean.toString(this.previewFallbackContribution));
+        }
+        if (this.metadataOnlyProofRejected != null) {
+            fields.put(normalizedPrefix + ".metadataOnlyProofRejected", Boolean.toString(this.metadataOnlyProofRejected));
+        }
+        if (this.focusWindowCaptureRejected != null) {
+            fields.put(normalizedPrefix + ".focusWindowCaptureRejected", Boolean.toString(this.focusWindowCaptureRejected));
+        }
+        if (this.proofMarkerEvidenceRejected != null) {
+            fields.put(normalizedPrefix + ".proofMarkerEvidenceRejected", Boolean.toString(this.proofMarkerEvidenceRejected));
+        }
+        if (this.temporaryDirectSubstitutionRejected != null) {
+            fields.put(normalizedPrefix + ".temporaryDirectSubstitutionRejected", Boolean.toString(this.temporaryDirectSubstitutionRejected));
+        }
+        if (this.rectangularWashoutRejected != null) {
+            fields.put(normalizedPrefix + ".rectangularWashoutRejected", Boolean.toString(this.rectangularWashoutRejected));
+        }
+        if (!this.physicalSceneMarker.isBlank()) {
+            fields.put(normalizedPrefix + ".physicalSceneMarker", this.physicalSceneMarker);
+        }
+        if (!this.physicalOutputMarker.isBlank()) {
+            fields.put(normalizedPrefix + ".physicalOutputMarker", this.physicalOutputMarker);
+        }
+        if (!this.proofBoundaryMarker.isBlank()) {
+            fields.put(normalizedPrefix + ".proofBoundaryMarker", this.proofBoundaryMarker);
+        }
         for (Map.Entry<String, String> entry : this.details.entrySet()) {
             fields.put(normalizedPrefix + ".raw." + sanitizeKey(entry.getKey()), entry.getValue());
         }
@@ -1086,6 +1266,13 @@ public record LightingDispatchStageTelemetryStatus(
         };
     }
 
+    private boolean isPhysicalGiLikeStage() {
+        return switch (this.stageId) {
+            case "diffuse_gi", "low_res_gi", "low_resolution_gi", "gi" -> true;
+            default -> false;
+        };
+    }
+
     private boolean hasAnyDenoiseEvidence() {
         return this.rawSourceReady != null
                 || this.cpuDenoiseReady != null
@@ -1112,6 +1299,22 @@ public record LightingDispatchStageTelemetryStatus(
                 || !this.temporalReadinessMarker.isBlank()
                 || !this.sourceIdentity.isBlank()
                 || !this.evidenceBoundary.isBlank();
+    }
+
+    private boolean hasAnyPhysicalGiEvidence() {
+        return this.physicalSceneLinkScore != null
+                || this.physicalOutputChecksum != null
+                || this.physicalSceneLinked != null
+                || this.physicalSurfaceContribution != null
+                || this.previewFallbackContribution != null
+                || this.metadataOnlyProofRejected != null
+                || this.focusWindowCaptureRejected != null
+                || this.proofMarkerEvidenceRejected != null
+                || this.temporaryDirectSubstitutionRejected != null
+                || this.rectangularWashoutRejected != null
+                || !this.physicalSceneMarker.isBlank()
+                || !this.physicalOutputMarker.isBlank()
+                || !this.proofBoundaryMarker.isBlank();
     }
 
     private String firstDetailOrFallback(String fallback, String... keys) {

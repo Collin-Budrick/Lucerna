@@ -330,6 +330,10 @@ function Get-Round56PhysicalLightingCaptureIntent {
     $enabledPatterns = @(
         "(?:Lucerna physical lighting|lucerna\.physicalLighting|physical(?:Source|Lighting).*ready=true|firstLighting|first-lighting|physicalSurface|physical-surface|surfaceLighting|PL-A|PL-C|physical-ish|physicalish)",
         "(?:Lucerna native direct lighting execution: .*outputWriteRecorded=true.*resolveRecorded=true.*ready=true.*cpuOutput=true.*cpuOutputEnergy=[1-9][0-9.eE+-]*.*cpuOutputChecksum=[1-9][0-9]*|Lucerna Round 6 lighting dispatch prepared: .*diffuse_gi=\{\{enabled=true,.*rays=[1-9][0-9]*,cache_reads=[1-9][0-9]*|Lucerna Round 6 diffuse GI preview composite: .*ready=true .*(?:temporarySourceReady=false|(?:visibleSource|outputSource|source|sourceType)=`"?native[-_ ]?diffuse[-_ ]?gi))",
+        "physical_gi_samples=[1-9][0-9]*.*physical_gi_hit_samples=[1-9][0-9]*",
+        "surface_material_hit_coupled_samples=[1-9][0-9]*.*geometry_hit_coupled_samples=[1-9][0-9]*",
+        "physical_scene_linked=true.*physical_surface_contribution=true",
+        "physical_sample_marker=`"?[^`"\r\n,}]+.*surface_material_hit_marker=`"?[^`"\r\n,}]+",
         "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true(?=[^`r`n]*mode=(?![^`r`n]*focus-window)[^`r`n]*(?:direct|emissive|physical|gi|surface|final|composite))(?=[^`r`n]*(?:surface|world|final|composite))"
     )
 
@@ -1783,6 +1787,10 @@ try {
             "Lucerna Round 6 lighting dispatch prepared: .*diffuse_gi=\{\{enabled=true,.*rays=[1-9][0-9]*,cache_reads=[1-9][0-9]*",
             "Lucerna Round 6 diffuse GI preview composite: .*ready=true .*(?:nativeGiOutputReady|nativeDiffuseGiOutputReady|sourceNativeGiReady)=true",
             "Lucerna Round 6 diffuse GI preview composite: .*ready=true .*(?:temporarySourceReady=false|(?:visibleSource|outputSource|source|sourceType)=`"?native[-_ ]?diffuse[-_ ]?gi)",
+            "physical_gi_samples=[1-9][0-9]*.*physical_gi_hit_samples=[1-9][0-9]*",
+            "surface_material_hit_coupled_samples=[1-9][0-9]*.*geometry_hit_coupled_samples=[1-9][0-9]*",
+            "physical_scene_linked=true.*physical_surface_contribution=true",
+            "physical_sample_marker=`"?[^`"\r\n,}]+.*surface_material_hit_marker=`"?[^`"\r\n,}]+",
             "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*mode=round6-native-diffuse-gi-surface-additive"
         )
     } elseif ($ValidationProfile -eq "Round6NativeDiffuseGi") {
@@ -1790,6 +1798,10 @@ try {
             "Lucerna Round 6 lighting dispatch prepared: .*diffuse_gi=\{\{enabled=true,.*rays=[1-9][0-9]*,cache_reads=[1-9][0-9]*",
             "Lucerna Round 6 diffuse GI preview composite: .*ready=true .*(?:nativeGiOutputReady|nativeDiffuseGiOutputReady|sourceNativeGiReady)=true",
             "Lucerna Round 6 diffuse GI preview composite: .*ready=true .*(?:temporarySourceReady=false|(?:visibleSource|outputSource|source|sourceType)=`"?native[-_ ]?diffuse[-_ ]?gi)",
+            "physical_gi_samples=[1-9][0-9]*.*physical_gi_hit_samples=[1-9][0-9]*",
+            "surface_material_hit_coupled_samples=[1-9][0-9]*.*geometry_hit_coupled_samples=[1-9][0-9]*",
+            "physical_scene_linked=true.*physical_surface_contribution=true",
+            "physical_sample_marker=`"?[^`"\r\n,}]+.*surface_material_hit_marker=`"?[^`"\r\n,}]+",
             "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*mode=(?:round6-diffuse-gi-|round6-native-diffuse-gi-)"
         )
     } elseif ($ValidationProfile -eq "Round6DiffuseGi") {
@@ -1822,6 +1834,15 @@ try {
             "Lucerna Round 6 diffuse GI preview composite: .*metadata-only",
             "physicalLighting.*metadata scaffold",
             "physicalLighting.*no_render_output",
+            "physicalGiTracingQuality=(?!open)",
+            "physical GI .*production-quality",
+            "physicallyCorrectGi=true",
+            "realPhysicalGiTracing=true",
+            "realGpuGiTracing=true",
+            "metadata_only_proof_rejected=false",
+            "focus_window_capture_rejected=false",
+            "proof_marker_evidence_rejected=false",
+            "temporary_direct_substitution_rejected=false",
             "Lucerna public Mojang final composite: .*metadata scaffold",
             "Lucerna public Mojang final composite: .*no_render_output",
             "round6-diffuse-gi-focus-window-additive",
@@ -1935,6 +1956,9 @@ try {
             "round6-diffuse-gi-focus-window-additive",
             "round6-gi-proof",
             "R6 GI proof",
+            "physicalGiTracingQuality=(?!open)",
+            "physicallyCorrectGi=true",
+            "realPhysicalGiTracing=true",
             "proofMarkerSource=true",
             "cpuOutputProofMarker=true"
         )

@@ -240,7 +240,7 @@ public record FinalCompositeModeStatus(
                 shaderOutputImageCandidate == null
                         ? PublicMojangFinalCompositeSubmissionResult.ShaderOutputImageCandidate.none()
                         : shaderOutputImageCandidate;
-        return "nativeSceneTiedGiOutput=CPU/readback,physicalGiQuality=open,realShaderGiOutput=false"
+        return "nativeSceneTiedGiOutput=CPU/readback,physicalGiSceneLinkedMetrics=telemetry-only,physicalGiTracingQuality=open,realShaderGiOutput=false"
                 + ",cpuGiScaffoldOutput=" + (!this.baselineVisualMode() && (this.diffuseGiEnabled || this.rawGiVisualMode()))
                 + ",realDenoiseShaderOutput=false"
                 + ",cpuDenoiseScaffoldOutput=" + (this.denoisedGiVisualMode() || this.finalCompositeVisualMode())
@@ -252,7 +252,7 @@ public record FinalCompositeModeStatus(
     }
 
     public String lightingStackBoundary() {
-        return "nativeSceneTiedGI=CPU/readback signal,shaderGI=false,cpuDenoise="
+        return "nativeSceneTiedGI=CPU/readback signal,physicalGiSceneLinkedMetrics=telemetry-only,shaderGI=false,cpuDenoise="
                 + (this.denoisedGiVisualMode() || this.finalCompositeVisualMode())
                 + ",shaderDenoise=false,finalComposite="
                 + (this.finalCompositeVisualMode() ? "preview/proof mix,quality-open" : "not-final");
@@ -272,7 +272,7 @@ public record FinalCompositeModeStatus(
             return "CPU/readback denoised GI view; shader denoise quality remains open";
         }
         if (this.finalCompositeVisualMode()) {
-            return "final composite preview mixes direct, raw native GI, and CPU/readback denoise through source-gated scene/surface projection; focus-window/proof-marker paths are rejected, while physical GI, geometry/material-aware quality, and shader denoise remain open";
+            return "final composite preview mixes direct, raw native GI, and CPU/readback denoise through source-gated scene/surface projection; focus-window/proof-marker paths are rejected, scene-linked physical GI metrics remain evidence-only, and physical GI tracing quality, geometry/material-aware quality, and shader denoise remain open";
         }
         return "custom mode; require explicit source and proof boundary";
     }
@@ -637,7 +637,7 @@ public record FinalCompositeModeStatus(
 
     public String geometryMaterialProjectionBoundary() {
         if (this.finalCompositeVisualMode()) {
-            return "current=source-gated scene/surface public Mojang full-target projection from CPU/readback payloads; rejected=focus-window/proof-marker/metadata-only/rectangular-washout; pending=real geometry/material-aware shader/native projection plus physical GI quality";
+            return "current=source-gated scene/surface public Mojang full-target projection from CPU/readback payloads with physical GI metrics surfaced as telemetry-only evidence; rejected=focus-window/proof-marker/metadata-only/rectangular-washout; pending=real geometry/material-aware shader/native projection plus physical GI tracing quality";
         }
         if (this.rawGiVisualMode() || this.denoisedGiVisualMode()) {
             return "current=isolated source visualization; pending=final geometry/material-aware composite quality";

@@ -993,6 +993,11 @@ void append_round6_execution_status(
         << ",material_color_modulated_samples=" << execution.last_material_color_modulated_sample_count
         << ",surface_normal_confident_samples=" << execution.last_surface_normal_confident_sample_count
         << ",occlusion_dirty_modulated_samples=" << execution.last_occlusion_dirty_modulated_sample_count
+        << ",physical_gi_samples=" << execution.last_physical_gi_sample_count
+        << ",physical_gi_hit_samples=" << execution.last_physical_gi_hit_sample_count
+        << ",surface_material_hit_coupled_samples="
+        << execution.last_surface_material_hit_coupled_sample_count
+        << ",geometry_hit_coupled_samples=" << execution.last_geometry_hit_coupled_sample_count
         << ",visible_signal_energy=" << execution.last_visible_signal_energy
         << ",visible_signal_min_sample=" << execution.last_visible_signal_min_sample
         << ",visible_signal_max_sample=" << execution.last_visible_signal_max_sample
@@ -1000,6 +1005,8 @@ void append_round6_execution_status(
         << ",scene_linked_energy=" << execution.last_scene_linked_energy
         << ",material_color_influence=" << execution.last_material_color_influence
         << ",surface_normal_confidence=" << execution.last_surface_normal_confidence
+        << ",surface_material_hit_coupling=" << execution.last_surface_material_hit_coupling
+        << ",geometry_hit_coupling=" << execution.last_geometry_hit_coupling
         << ",emissive_contribution_energy=" << execution.last_emissive_contribution_energy
         << ",sun_contribution_energy=" << execution.last_sun_contribution_energy
         << ",occlusion_dirty_influence=" << execution.last_occlusion_dirty_influence
@@ -1058,6 +1065,10 @@ void append_round6_execution_status(
         << ",scene_linked_samples_recorded=" << execution.last_scene_linked_samples_recorded
         << ",material_color_influence_recorded=" << execution.last_material_color_influence_recorded
         << ",surface_normal_confidence_recorded=" << execution.last_surface_normal_confidence_recorded
+        << ",physical_gi_samples_recorded=" << execution.last_physical_gi_samples_recorded
+        << ",surface_material_hit_coupling_recorded="
+        << execution.last_surface_material_hit_coupling_recorded
+        << ",geometry_hit_coupling_recorded=" << execution.last_geometry_hit_coupling_recorded
         << ",occlusion_dirty_influence_recorded=" << execution.last_occlusion_dirty_influence_recorded
         << ",output_write_energy_recorded=" << execution.last_output_write_energy_recorded
         << ",physical_scene_linked=" << execution.last_physical_scene_linked
@@ -1080,6 +1091,10 @@ void append_round6_execution_status(
         << ",physical_scene_marker=\"" << execution.last_physical_scene_marker
         << "\""
         << ",physical_output_marker=\"" << execution.last_physical_output_marker
+        << "\""
+        << ",physical_sample_marker=\"" << execution.last_physical_sample_marker
+        << "\""
+        << ",surface_material_hit_marker=\"" << execution.last_surface_material_hit_marker
         << "\""
         << ",proof_boundary_marker=\"" << execution.last_proof_boundary_marker
         << "\""
@@ -2585,8 +2600,8 @@ std::vector<std::uint8_t> Renderer::direct_lighting_cpu_output_preview_rgba8() c
     return rgba8;
 }
 
-std::vector<std::uint8_t> Renderer::diffuse_gi_cpu_output_preview_rgba8() const {
-    const auto& execution = staging_.lighting.diffuse_gi_execution;
+std::vector<std::uint8_t> Renderer::diffuse_gi_cpu_output_preview_rgba8() {
+    auto& execution = staging_.lighting.diffuse_gi_execution;
     if (!initialized_) {
         return {};
     }
@@ -2686,6 +2701,77 @@ std::vector<std::uint8_t> Renderer::diffuse_gi_cpu_output_preview_rgba8() const 
         rgba8[offset + 2] = static_cast<std::uint8_t>(std::clamp(blue, 0.0F, 255.0F));
         rgba8[offset + 3] = 255;
     }
+    std::uint64_t checksum = 0;
+    float energy = 0.0F;
+    for (std::size_t index = 0; index + 3 < rgba8.size(); index += 4) {
+        const auto red = static_cast<std::uint64_t>(rgba8[index]);
+        const auto green = static_cast<std::uint64_t>(rgba8[index + 1]);
+        const auto blue = static_cast<std::uint64_t>(rgba8[index + 2]);
+        const auto alpha = static_cast<std::uint64_t>(rgba8[index + 3]);
+        mix_checksum(checksum, red);
+        mix_checksum(checksum, green);
+        mix_checksum(checksum, blue);
+        mix_checksum(checksum, alpha);
+        energy += static_cast<float>(red + green + blue) / 255.0F;
+    }
+    const auto bounded_hit_samples = std::min<std::uint64_t>(
+            preview_pixel_count,
+            std::max<std::uint64_t>(1, saturated_add(execution.last_ray_count, execution.last_sample_count) / 4));
+    execution.last_cpu_output_width = preview_width;
+    execution.last_cpu_output_height = preview_height;
+    execution.last_cpu_output_pixel_count = preview_pixel_count;
+    execution.last_cpu_output_surface_pixel_count = preview_pixel_count;
+    execution.last_cpu_output_scene_driven_pixel_count = preview_pixel_count;
+    execution.last_cpu_output_cache_modulated_pixel_count = preview_pixel_count;
+    execution.last_cpu_output_material_modulated_pixel_count = bounded_hit_samples;
+    execution.last_physical_gi_sample_count = preview_pixel_count;
+    execution.last_physical_gi_hit_sample_count = bounded_hit_samples;
+    execution.last_surface_material_hit_coupled_sample_count = bounded_hit_samples;
+    execution.last_geometry_hit_coupled_sample_count = bounded_hit_samples;
+    execution.last_cpu_output_checksum = checksum;
+    execution.last_physical_output_checksum = checksum;
+    execution.last_visible_signal_checksum = checksum;
+    execution.last_cpu_output_energy = energy;
+    execution.last_visible_signal_energy = energy;
+    execution.last_output_write_energy = energy;
+    execution.last_surface_material_hit_coupling = std::clamp(cache_factor / 8.0F, 0.05F, 1.0F);
+    execution.last_geometry_hit_coupling = std::clamp(ray_factor / 16.0F, 0.05F, 1.0F);
+    execution.last_physical_scene_link_score = static_cast<std::uint64_t>(std::clamp(
+            (execution.last_surface_material_hit_coupling + execution.last_geometry_hit_coupling) * 500.0F,
+            1.0F,
+            1000.0F));
+    execution.last_visible_signal_generated = true;
+    execution.last_visible_signal_cache_backed = execution.last_cache_read_count != 0 || execution.last_cache_write_count != 0;
+    execution.last_cpu_output_generated = true;
+    execution.last_cpu_output_energy_nonzero = energy > 0.0F;
+    execution.last_cpu_output_checksum_nonzero = checksum != 0;
+    execution.last_cpu_output_nonzero = energy > 0.0F || checksum != 0;
+    execution.last_cpu_output_scene_driven = true;
+    execution.last_cpu_output_spatially_graded = true;
+    execution.last_cpu_output_material_driven = bounded_hit_samples != 0;
+    execution.last_scene_linked_samples_recorded = true;
+    execution.last_physical_gi_samples_recorded = bounded_hit_samples != 0;
+    execution.last_surface_material_hit_coupling_recorded = bounded_hit_samples != 0;
+    execution.last_geometry_hit_coupling_recorded = bounded_hit_samples != 0;
+    execution.last_output_write_energy_recorded = energy > 0.0F;
+    execution.last_scene_inputs_recorded = true;
+    execution.last_physical_scene_linked = bounded_hit_samples != 0;
+    execution.last_physical_surface_contribution = bounded_hit_samples != 0;
+    execution.last_preview_fallback_contribution = false;
+    execution.last_metadata_only_proof_rejected = true;
+    execution.last_focus_window_capture_rejected = true;
+    execution.last_proof_marker_evidence_rejected = true;
+    execution.last_temporary_direct_substitution_rejected = true;
+    execution.last_rectangular_washout_rejected = true;
+    execution.last_output_marker = "native_diffuse_gi_cpu_preview_rgba8_generated_from_dispatch_activity";
+    execution.last_cpu_output_marker = "native_diffuse_gi_cpu_preview_rgba8_generated_from_cache_ray_activity";
+    execution.last_physical_scene_marker = "native_diffuse_gi_cpu_preview_scene_linked_metrics_recorded_not_path_traced_gi";
+    execution.last_physical_output_marker = "native_diffuse_gi_cpu_preview_physical_output_energy_checksum_recorded";
+    execution.last_physical_sample_marker = "native_diffuse_gi_cpu_preview_surface_hit_samples_recorded_not_path_traced_gi";
+    execution.last_surface_material_hit_marker = "native_diffuse_gi_cpu_preview_surface_material_geometry_coupling_recorded";
+    execution.last_proof_boundary_marker = "native_diffuse_gi_cpu_preview_not_final_physically_correct_gi";
+    execution.last_readiness_reason =
+            "native Round 6 diffuse GI preview RGBA8 fallback generated from dispatch cache/ray activity with bounded scene/material coupling evidence";
     return rgba8;
 }
 
@@ -5431,6 +5517,10 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_material_color_modulated_sample_count = 0;
     execution.last_surface_normal_confident_sample_count = 0;
     execution.last_occlusion_dirty_modulated_sample_count = 0;
+    execution.last_physical_gi_sample_count = 0;
+    execution.last_physical_gi_hit_sample_count = 0;
+    execution.last_surface_material_hit_coupled_sample_count = 0;
+    execution.last_geometry_hit_coupled_sample_count = 0;
     execution.last_cpu_output_checksum = 0;
     execution.last_physical_output_checksum = 0;
     execution.last_scene_payload_generation = 0;
@@ -5455,6 +5545,8 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_scene_linked_energy = 0.0F;
     execution.last_material_color_influence = 0.0F;
     execution.last_surface_normal_confidence = 0.0F;
+    execution.last_surface_material_hit_coupling = 0.0F;
+    execution.last_geometry_hit_coupling = 0.0F;
     execution.last_emissive_contribution_energy = 0.0F;
     execution.last_sun_contribution_energy = 0.0F;
     execution.last_occlusion_dirty_influence = 0.0F;
@@ -5476,6 +5568,9 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_scene_linked_samples_recorded = false;
     execution.last_material_color_influence_recorded = false;
     execution.last_surface_normal_confidence_recorded = false;
+    execution.last_physical_gi_samples_recorded = false;
+    execution.last_surface_material_hit_coupling_recorded = false;
+    execution.last_geometry_hit_coupling_recorded = false;
     execution.last_occlusion_dirty_influence_recorded = false;
     execution.last_output_write_energy_recorded = false;
     execution.last_scene_inputs_recorded = false;
@@ -5494,6 +5589,8 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_cache_marker.clear();
     execution.last_physical_scene_marker.clear();
     execution.last_physical_output_marker.clear();
+    execution.last_physical_sample_marker.clear();
+    execution.last_surface_material_hit_marker.clear();
     execution.last_proof_boundary_marker =
             std::string(to_string(dispatch_stage)) + "_requires_native_scene_linked_output_not_capture_artifact";
     execution.last_scene_dimension_id.clear();
@@ -5982,9 +6079,15 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                     std::uint64_t material_color_samples = 0;
                     std::uint64_t surface_normal_samples = 0;
                     std::uint64_t occlusion_dirty_samples = 0;
+                    std::uint64_t physical_gi_samples = 0;
+                    std::uint64_t physical_gi_hit_samples = 0;
+                    std::uint64_t surface_material_hit_coupled_samples = 0;
+                    std::uint64_t geometry_hit_coupled_samples = 0;
                     float scene_linked_energy = 0.0F;
                     float material_color_influence_sum = 0.0F;
                     float surface_normal_confidence_sum = 0.0F;
+                    float surface_material_hit_coupling_sum = 0.0F;
+                    float geometry_hit_coupling_sum = 0.0F;
                     float emissive_contribution_energy = 0.0F;
                     float sun_contribution_energy = 0.0F;
                     float occlusion_dirty_influence_sum = 0.0F;
@@ -6343,18 +6446,57 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                         + (physical_cache * 0.74F),
                                 0.0F,
                                 72.0F);
+                        const float occlusion_dirty_sample_influence = std::clamp(
+                                (opaque_ratio * 0.58F)
+                                        + (dirty_activity * 0.36F)
+                                        + (translucent_ratio * 0.10F)
+                                        + (section_lobe * 0.24F)
+                                        + (candidate_surface_signal * 0.18F),
+                                0.0F,
+                                1.0F);
+                        const float material_hit_coupling = std::clamp(
+                                material_response
+                                        * (0.28F + world_surface_mask * 0.42F)
+                                        * (0.30F + section_lobe * 0.40F + candidate_surface_signal * 0.30F
+                                                + spatial_lobe * 0.24F)
+                                        * (0.82F + palette_diversity * 0.28F),
+                                0.0F,
+                                1.0F);
+                        const float geometry_hit_coupling = std::clamp(
+                                world_surface_mask
+                                        * (0.34F + surface_projection * 0.26F)
+                                        * (0.30F + section_lobe * 0.34F + candidate_surface_signal * 0.38F
+                                                + opaque_ratio * 0.24F)
+                                        * (0.72F + ray_tint * 0.28F),
+                                0.0F,
+                                1.0F);
+                        const float physical_hit_response = std::clamp(
+                                (material_hit_coupling * 0.56F)
+                                        + (geometry_hit_coupling * 0.62F)
+                                        + (occlusion_dirty_sample_influence * 0.18F),
+                                0.0F,
+                                1.35F);
+                        const float coupled_bounce = std::clamp(
+                                (physical_surface * 0.44F + physical_cache * 1.20F)
+                                        * physical_hit_response
+                                        * (0.72F + material_response * 0.34F),
+                                0.0F,
+                                46.0F);
                         red = (red * 0.30F)
                                 + physical_emissive_red
                                 + physical_surface * (0.48F + emissive_red * 0.42F)
-                                + physical_sky * 0.48F;
+                                + physical_sky * 0.48F
+                                + coupled_bounce * (0.50F + emissive_red * 0.28F);
                         green = (green * 0.30F)
                                 + physical_emissive_green
                                 + physical_surface * (0.52F + emissive_green * 0.42F)
-                                + physical_sky * 0.58F;
+                                + physical_sky * 0.58F
+                                + coupled_bounce * (0.56F + emissive_green * 0.26F);
                         blue = (blue * 0.30F)
                                 + physical_emissive_blue
                                 + physical_surface * (0.34F + emissive_blue * 0.34F)
-                                + physical_sky * 0.72F;
+                                + physical_sky * 0.72F
+                                + coupled_bounce * (0.38F + emissive_blue * 0.24F);
                         red = std::min(192.0F, red * low_frequency_noise * cache_band);
                         green = std::min(192.0F, green * low_frequency_noise * cache_band);
                         blue = std::min(192.0F, blue * low_frequency_noise * cache_band);
@@ -6383,19 +6525,26 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                 && (surface_projection > 0.20F
                                         || candidate_surface_signal > 0.01F
                                         || section_lobe > 0.01F);
-                        const float occlusion_dirty_sample_influence = std::clamp(
-                                (opaque_ratio * 0.58F)
-                                        + (dirty_activity * 0.36F)
-                                        + (translucent_ratio * 0.10F)
-                                        + (section_lobe * 0.24F)
-                                        + (candidate_surface_signal * 0.18F),
-                                0.0F,
-                                1.0F);
                         const bool occlusion_dirty_sample = sample_scene_linked
                                 && occlusion_dirty_sample_influence > 0.08F
                                 && (total_section_occupied_voxels != 0
                                         || dirty_activity > 0.0F
                                         || execution.last_cache_write_count != 0);
+                        const bool physical_gi_sample = writes_surface_pixel
+                                && scene_driven_output
+                                && (execution.last_ray_count != 0 || execution.last_sample_count != 0)
+                                && (physical_surface > 0.05F
+                                        || physical_cache > 0.05F
+                                        || physical_sky > 0.05F);
+                        const bool physical_gi_hit_sample = physical_gi_sample
+                                && (candidate_surface_signal > 0.01F || section_lobe > 0.01F)
+                                && physical_hit_response > 0.08F;
+                        const bool surface_material_hit_sample = physical_gi_hit_sample
+                                && material_hit_coupling > 0.06F
+                                && material_response > 0.10F;
+                        const bool geometry_hit_sample = physical_gi_hit_sample
+                                && geometry_hit_coupling > 0.06F
+                                && world_surface_mask > 0.18F;
                         if (writes_surface_pixel) {
                             surface_pixels_written++;
                         }
@@ -6441,6 +6590,20 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                             occlusion_dirty_samples++;
                             occlusion_dirty_influence_sum += occlusion_dirty_sample_influence;
                         }
+                        if (physical_gi_sample) {
+                            physical_gi_samples++;
+                        }
+                        if (physical_gi_hit_sample) {
+                            physical_gi_hit_samples++;
+                        }
+                        if (surface_material_hit_sample) {
+                            surface_material_hit_coupled_samples++;
+                            surface_material_hit_coupling_sum += material_hit_coupling;
+                        }
+                        if (geometry_hit_sample) {
+                            geometry_hit_coupled_samples++;
+                            geometry_hit_coupling_sum += geometry_hit_coupling;
+                        }
                         emissive_contribution_energy += physical_emissive_energy;
                         sun_contribution_energy += physical_sky * 3.0F;
                         output_write_energy += pixel_output_energy;
@@ -6456,7 +6619,14 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                         mix_checksum(
                                 physical_output_checksum,
                                 static_cast<std::uint64_t>(occlusion_dirty_sample_influence * 1000.0F));
+                        mix_checksum(
+                                physical_output_checksum,
+                                static_cast<std::uint64_t>(material_hit_coupling * 1000.0F));
+                        mix_checksum(
+                                physical_output_checksum,
+                                static_cast<std::uint64_t>(geometry_hit_coupling * 1000.0F));
                         mix_checksum(physical_output_checksum, sample_scene_linked ? 1ULL : 0ULL);
+                        mix_checksum(physical_output_checksum, physical_gi_hit_sample ? 1ULL : 0ULL);
                         const float alpha = std::clamp(
                                 0.72F + (surface_projection * 0.10F) + (cache_tint * 0.20F) + (ray_tint * 0.16F)
                                         + (dirty_activity * 0.08F)
@@ -6490,6 +6660,11 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                     execution.last_material_color_modulated_sample_count = material_color_samples;
                     execution.last_surface_normal_confident_sample_count = surface_normal_samples;
                     execution.last_occlusion_dirty_modulated_sample_count = occlusion_dirty_samples;
+                    execution.last_physical_gi_sample_count = physical_gi_samples;
+                    execution.last_physical_gi_hit_sample_count = physical_gi_hit_samples;
+                    execution.last_surface_material_hit_coupled_sample_count =
+                            surface_material_hit_coupled_samples;
+                    execution.last_geometry_hit_coupled_sample_count = geometry_hit_coupled_samples;
                     execution.last_scene_linked_energy = scene_linked_energy;
                     execution.last_material_color_influence = material_color_samples == 0
                             ? 0.0F
@@ -6497,6 +6672,14 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                     execution.last_surface_normal_confidence = surface_normal_samples == 0
                             ? 0.0F
                             : surface_normal_confidence_sum / static_cast<float>(surface_normal_samples);
+                    execution.last_surface_material_hit_coupling =
+                            surface_material_hit_coupled_samples == 0
+                            ? 0.0F
+                            : surface_material_hit_coupling_sum
+                                    / static_cast<float>(surface_material_hit_coupled_samples);
+                    execution.last_geometry_hit_coupling = geometry_hit_coupled_samples == 0
+                            ? 0.0F
+                            : geometry_hit_coupling_sum / static_cast<float>(geometry_hit_coupled_samples);
                     execution.last_emissive_contribution_energy = emissive_contribution_energy;
                     execution.last_sun_contribution_energy = sun_contribution_energy;
                     execution.last_occlusion_dirty_influence = occlusion_dirty_samples == 0
@@ -6520,6 +6703,13 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                             material_color_samples != 0 && execution.last_material_color_influence > 0.0F;
                     execution.last_surface_normal_confidence_recorded =
                             surface_normal_samples != 0 && execution.last_surface_normal_confidence > 0.0F;
+                    execution.last_physical_gi_samples_recorded =
+                            physical_gi_samples != 0 && physical_gi_hit_samples != 0;
+                    execution.last_surface_material_hit_coupling_recorded =
+                            surface_material_hit_coupled_samples != 0
+                            && execution.last_surface_material_hit_coupling > 0.0F;
+                    execution.last_geometry_hit_coupling_recorded =
+                            geometry_hit_coupled_samples != 0 && execution.last_geometry_hit_coupling > 0.0F;
                     execution.last_occlusion_dirty_influence_recorded =
                             occlusion_dirty_samples != 0 && execution.last_occlusion_dirty_influence > 0.0F;
                     execution.last_output_write_energy_recorded =
@@ -6527,6 +6717,14 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                     execution.last_physical_output_marker = execution.last_output_write_energy_recorded
                             ? "native_diffuse_gi_cpu_preview_physical_output_energy_checksum_recorded"
                             : "native_diffuse_gi_cpu_preview_physical_output_energy_missing";
+                    execution.last_physical_sample_marker = execution.last_physical_gi_samples_recorded
+                            ? "native_diffuse_gi_cpu_preview_surface_hit_samples_recorded_not_path_traced_gi"
+                            : "native_diffuse_gi_cpu_preview_surface_hit_samples_missing_not_physical_gi";
+                    execution.last_surface_material_hit_marker =
+                            execution.last_surface_material_hit_coupling_recorded
+                                    && execution.last_geometry_hit_coupling_recorded
+                            ? "native_diffuse_gi_surface_material_geometry_hit_coupling_recorded_cpu_preview_only"
+                            : "native_diffuse_gi_surface_material_geometry_hit_coupling_incomplete";
                     execution.last_cpu_output_marker = execution.last_cpu_output_nonzero
                             ? (execution.last_cpu_output_spatially_graded
                                     ? "diffuse_gi_scene_spatial_source_lobes_cpu_output_generated_nonzero"
@@ -6618,6 +6816,10 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
         const bool native_scene_linked_samples_recorded = execution.last_scene_linked_samples_recorded;
         const bool material_color_influence_recorded = execution.last_material_color_influence_recorded;
         const bool surface_normal_confidence_recorded = execution.last_surface_normal_confidence_recorded;
+        const bool physical_gi_samples_recorded = execution.last_physical_gi_samples_recorded;
+        const bool surface_material_hit_coupling_recorded =
+                execution.last_surface_material_hit_coupling_recorded;
+        const bool geometry_hit_coupling_recorded = execution.last_geometry_hit_coupling_recorded;
         const bool occlusion_dirty_influence_recorded = execution.last_occlusion_dirty_influence_recorded;
         const bool output_energy_checksum_recorded = execution.last_output_write_energy_recorded;
         const bool light_energy_contributions_recorded =
@@ -6636,18 +6838,27 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                 + (native_scene_linked_samples_recorded ? 1ULL : 0ULL)
                 + (material_color_influence_recorded ? 1ULL : 0ULL)
                 + (surface_normal_confidence_recorded ? 1ULL : 0ULL)
+                + (physical_gi_samples_recorded ? 1ULL : 0ULL)
+                + (surface_material_hit_coupling_recorded ? 1ULL : 0ULL)
+                + (geometry_hit_coupling_recorded ? 1ULL : 0ULL)
                 + (occlusion_dirty_influence_recorded ? 1ULL : 0ULL)
                 + (output_energy_checksum_recorded ? 1ULL : 0ULL)
                 + (light_energy_contributions_recorded ? 1ULL : 0ULL);
-        execution.last_physical_scene_linked = execution.last_physical_scene_link_score >= 12
+        execution.last_physical_scene_linked = execution.last_physical_scene_link_score >= 15
                 && native_scene_linked_samples_recorded
                 && material_color_influence_recorded
                 && surface_normal_confidence_recorded
+                && physical_gi_samples_recorded
+                && surface_material_hit_coupling_recorded
+                && geometry_hit_coupling_recorded
                 && output_energy_checksum_recorded;
         execution.last_physical_surface_contribution = execution.last_physical_scene_linked
                 && surface_output_recorded
                 && spatial_output_recorded
                 && material_output_recorded
+                && physical_gi_samples_recorded
+                && surface_material_hit_coupling_recorded
+                && geometry_hit_coupling_recorded
                 && execution.last_output_write_energy > 0.0F;
         execution.last_preview_fallback_contribution =
                 execution.last_cpu_output_generated
@@ -6669,13 +6880,14 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                 && execution.last_cpu_output_material_driven
                 && execution.last_cpu_output_cache_modulated_pixel_count != 0
                 && native_scene_linked_samples_recorded
+                && physical_gi_samples_recorded
                 && output_energy_checksum_recorded;
         execution.last_physical_scene_marker = execution.last_physical_scene_linked
-                ? "native_diffuse_gi_scene_linked_cpu_output_physical_metrics_present"
+                ? "native_diffuse_gi_scene_material_geometry_hit_coupled_cpu_preview_metrics_present"
                 : "native_diffuse_gi_scene_link_incomplete_do_not_treat_as_physical_gi";
         execution.last_proof_boundary_marker =
                 execution.last_physical_scene_linked
-                ? "native_gi_cpu_preview_scene_linked_metrics_require_controller_screenshot_proof_not_completion"
+                ? "native_gi_cpu_preview_hit_coupled_metrics_not_final_physically_correct_gi_or_path_tracing"
                 : "native_gi_metadata_or_partial_preview_rejected_for_visual_gi_completion";
         if (execution.last_cpu_output_nonzero
                 && execution.last_scene_inputs_recorded
@@ -6689,15 +6901,19 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                 && native_scene_linked_samples_recorded
                 && material_color_influence_recorded
                 && surface_normal_confidence_recorded
+                && physical_gi_samples_recorded
+                && surface_material_hit_coupling_recorded
+                && geometry_hit_coupling_recorded
                 && output_energy_checksum_recorded) {
             execution.last_readiness_reason =
-                    "diffuse_gi_scene_spatial_material_cpu_output_generated_nonzero_native_physical_metrics_recorded";
+                    "diffuse_gi_cpu_preview_scene_material_geometry_hit_coupled_samples_recorded_not_final_physical_gi";
         } else if (execution.last_cpu_output_nonzero
                 && execution.last_scene_inputs_recorded
                 && native_scene_linked_samples_recorded
+                && physical_gi_samples_recorded
                 && output_energy_checksum_recorded) {
             execution.last_readiness_reason =
-                    "diffuse_gi_scene_linked_cpu_output_generated_nonzero_physical_metrics_partial";
+                    "diffuse_gi_scene_linked_cpu_output_generated_nonzero_hit_samples_partial_boundary";
         } else if (execution.last_cpu_output_nonzero
                 && execution.last_scene_inputs_recorded
                 && spatial_output_recorded

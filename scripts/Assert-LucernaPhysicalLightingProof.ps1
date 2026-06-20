@@ -50,6 +50,14 @@ param(
 
     [double] $MinFocusMeanSignedLuma = 0.5,
 
+    [long] $MinPhysicalGiSamples = 1,
+
+    [long] $MinPhysicalGiHitSamples = 1,
+
+    [long] $MinSurfaceMaterialHitCoupledSamples = 1,
+
+    [long] $MinGeometryHitCoupledSamples = 1,
+
     [bool] $RequireInClientScreenshotProvenance = $true,
 
     [switch] $RequireLogProof,
@@ -60,7 +68,9 @@ param(
     [string[]] $PhysicalSourcePatterns = @(
         "(?:Lucerna physical lighting|lucerna\.physicalLighting|physical(?:Source|Lighting).*ready=true)",
         "(?:firstLighting|first-lighting|physicalSurface|physical-surface|surfaceLighting).*?(?:ready|enabled|source|marker)=",
-        "(?:PL-A|PL-C|physical-ish|physicalish).*?(?:source|lighting|surface)"
+        "(?:PL-A|PL-C|physical-ish|physicalish).*?(?:source|lighting|surface)",
+        "physical_scene_linked=true.*physical_surface_contribution=true",
+        "physicalGI sceneLinked=true surfaceContribution=true"
     ),
 
     [string[]] $RequiredExecutionPatterns = @(
@@ -94,6 +104,15 @@ param(
         "R7 proof",
         "proofMarkerSource=true",
         "cpuOutputProofMarker=true",
+        "metadata_only_proof_rejected=false",
+        "focus_window_capture_rejected=false",
+        "proof_marker_evidence_rejected=false",
+        "temporary_direct_substitution_rejected=false",
+        "physicalGiTracingQuality=(?!open)",
+        "physical GI .*production-quality",
+        "physicallyCorrectGi=true",
+        "realPhysicalGiTracing=true",
+        "realGpuGiTracing=true",
         "invalid descriptor",
         "VK_ERROR",
         "VK_[A-Z_]*ERROR",
@@ -143,6 +162,54 @@ function Test-Regex {
     )
 
     return [regex]::IsMatch($Text, $Pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)
+}
+
+function Get-MaxRegexNumber {
+    param(
+        [string] $Text,
+        [string] $Pattern
+    )
+
+    [decimal] $max = 0
+    foreach ($match in [regex]::Matches($Text, $Pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+        if ($match.Groups.Count -lt 2) {
+            continue
+        }
+        [decimal] $value = 0
+        if ([decimal]::TryParse(
+                $match.Groups[1].Value,
+                [System.Globalization.NumberStyles]::Integer,
+                [System.Globalization.CultureInfo]::InvariantCulture,
+                [ref]$value)) {
+            if ($value -gt $max) {
+                $max = $value
+            }
+        }
+    }
+    return $max
+}
+
+function Get-MaxRegexDouble {
+    param(
+        [string] $Text,
+        [string] $Pattern
+    )
+
+    $max = 0.0
+    foreach ($match in [regex]::Matches($Text, $Pattern, [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+        if ($match.Groups.Count -lt 2) {
+            continue
+        }
+        $value = 0.0
+        if ([double]::TryParse(
+                $match.Groups[1].Value,
+                [System.Globalization.NumberStyles]::Float,
+                [System.Globalization.CultureInfo]::InvariantCulture,
+                [ref]$value)) {
+            $max = [Math]::Max($max, $value)
+        }
+    }
+    return $max
 }
 
 function Invoke-DeltaHelper {
@@ -268,6 +335,30 @@ function Measure-LogProof {
     } else {
         $sourceMatches.Count -eq 0 -or $sourcePresentCount -gt 0
     }
+    $maxPhysicalGiSamples = Get-MaxRegexNumber $LogText "(?:physical_gi_samples|physicalGiSamples)=(\d+)"
+    $maxPhysicalGiHitSamples = Get-MaxRegexNumber $LogText "(?:physical_gi_hit_samples|physicalGiHitSamples)=(\d+)"
+    $maxSurfaceMaterialHitCoupledSamples = Get-MaxRegexNumber $LogText "(?:surface_material_hit_coupled_samples|surfaceMaterialHitCoupledSamples)=(\d+)"
+    $maxGeometryHitCoupledSamples = Get-MaxRegexNumber $LogText "(?:geometry_hit_coupled_samples|geometryHitCoupledSamples)=(\d+)"
+    $maxSurfaceMaterialHitCoupling = Get-MaxRegexDouble $LogText "(?:surface_material_hit_coupling|surfaceMaterialHitCoupling|surface_material_hit_coupled_samples|surfaceMaterialHitCoupledSamples)=([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)"
+    $maxGeometryHitCoupling = Get-MaxRegexDouble $LogText "(?:geometry_hit_coupling|geometryHitCoupling|geometry_hit_coupled_samples|geometryHitCoupledSamples)=([0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)"
+    $maxPhysicalSceneLinkScore = Get-MaxRegexNumber $LogText "(?:physical_scene_link_score|physicalSceneLinkScore|sceneScore)=(\d+)"
+    $maxPhysicalOutputChecksum = Get-MaxRegexNumber $LogText "(?:physical_output_checksum|physicalOutputChecksum|physicalChecksum)=(\d+)"
+    $physicalGiSampleMarkerPresent = Test-Regex $LogText "(?:physical_sample_marker|physicalSampleMarker)=`"?[^`"\r\n,}]+|physicalGI .*marker=(?!unknown)[^ `r`n]+"
+    $surfaceMaterialHitMarkerPresent = Test-Regex $LogText "(?:surface_material_hit_marker|surfaceMaterialHitMarker)=`"?[^`"\r\n,}]+"
+    $physicalSceneMarkerPresent = Test-Regex $LogText "(?:physical_scene_marker|physicalSceneMarker)=`"?[^`"\r\n,}]+|physicalGI .*marker=(?!unknown)[^ `r`n]+"
+    $physicalOutputMarkerPresent = Test-Regex $LogText "(?:physical_output_marker|physicalOutputMarker)=`"?[^`"\r\n,}]+|physicalGI .*outputMarker=(?!unknown)[^ `r`n]+"
+    $physicalSceneLinkedPresent = Test-Regex $LogText "(?:physical_scene_linked|physicalSceneLinked|physicalGI sceneLinked)=true"
+    $physicalSurfaceContributionPresent = Test-Regex $LogText "(?:physical_surface_contribution|physicalSurfaceContribution|physicalGI .*surfaceContribution)=true"
+    $previewFallbackContributionPresent = Test-Regex $LogText "(?:preview_fallback_contribution|previewFallback)=true"
+    $overclaimPresent = Test-Regex $LogText "physicalGiTracingQuality=(?!open)|physical GI .*production-quality|physicallyCorrectGi=true|realPhysicalGiTracing=true|realGpuGiTracing=true"
+    $physicalGiEvidencePresent = $physicalSceneLinkedPresent `
+        -and $physicalSurfaceContributionPresent `
+        -and ($maxPhysicalGiSamples -ge 1) `
+        -and ($maxPhysicalGiHitSamples -ge 1) `
+        -and ($maxSurfaceMaterialHitCoupledSamples -ge 1) `
+        -and ($maxGeometryHitCoupledSamples -ge 1) `
+        -and ($maxPhysicalOutputChecksum -ge 1) `
+        -and ($physicalGiSampleMarkerPresent -or $physicalSceneMarkerPresent -or $physicalOutputMarkerPresent)
 
     return [ordered]@{
         requiredPatterns = @($requiredMatches)
@@ -276,12 +367,33 @@ function Measure-LogProof {
         physicalSourcePatternRequirement = $PhysicalSourcePatternRequirement
         physicalSourcePassed = $sourcePassed
         forbiddenMatches = @($forbiddenMatches)
+        physicalGiEvidence = [ordered]@{
+            present = $physicalGiEvidencePresent
+            physicalGiSamples = $maxPhysicalGiSamples
+            physicalGiHitSamples = $maxPhysicalGiHitSamples
+            surfaceMaterialHitCoupledSamples = $maxSurfaceMaterialHitCoupledSamples
+            geometryHitCoupledSamples = $maxGeometryHitCoupledSamples
+            surfaceMaterialHitCoupling = $maxSurfaceMaterialHitCoupling
+            geometryHitCoupling = $maxGeometryHitCoupling
+            physicalSceneLinkScore = $maxPhysicalSceneLinkScore
+            physicalOutputChecksum = $maxPhysicalOutputChecksum
+            physicalGiSampleMarkerPresent = $physicalGiSampleMarkerPresent
+            surfaceMaterialHitMarkerPresent = $surfaceMaterialHitMarkerPresent
+            physicalSceneMarkerPresent = $physicalSceneMarkerPresent
+            physicalOutputMarkerPresent = $physicalOutputMarkerPresent
+            physicalSceneLinkedPresent = $physicalSceneLinkedPresent
+            physicalSurfaceContributionPresent = $physicalSurfaceContributionPresent
+            previewFallbackContributionPresent = $previewFallbackContributionPresent
+            overclaimPresent = $overclaimPresent
+        }
         markers = [ordered]@{
             proofMarkerPresent = Test-Regex $LogText "round5-direct-proof|R5 visual proof|round6-gi-proof|R6 GI proof|R7 proof|proofMarkerSource=true|cpuOutputProofMarker=true"
             focusWindowOnlyPresent = Test-Regex $LogText "sourceIdentity=native-direct-light-rgba8,focusWindowOnly=true|final-composite-direct-light-focus-window-additive|round6-diffuse-gi-focus-window-additive|focusWindowOnly(?:Submitted)?=true|focus_window_only=true"
             temporaryDirectLightSourcePresent = Test-Regex $LogText "temporarySourceReady=true|temporaryDirectLightSubstitution=true|using the current direct-light RGBA payload as the temporary visible source"
             metadataOnlyPresent = Test-Regex $LogText "Lucerna public Mojang final composite: .*metadataOnlyPreview=true|Lucerna Round 6 diffuse GI preview composite: .*metadata-only|physicalLighting.*metadata scaffold|physicalLighting.*no_render_output|Lucerna public Mojang final composite: .*metadata scaffold|Lucerna public Mojang final composite: .*no_render_output"
             nativeErrorPresent = Test-Regex $LogText "invalid descriptor|VK_ERROR|VK_[A-Z_]*ERROR|Lucerna native error|native error|Vulkan error"
+            physicalGiEvidencePresent = $physicalGiEvidencePresent
+            overclaimPresent = $overclaimPresent
         }
     }
 }
@@ -336,7 +448,13 @@ if ($RequireInClientScreenshotProvenance) {
         if ([string]::IsNullOrWhiteSpace($source)) {
             continue
         }
-        if ($source -ne "minecraft-in-client" -and $source -ne "minecraft-in-client-f2-repeat") {
+        $normalizedSource = switch -Regex ($source) {
+            '^InClient$' { "minecraft-in-client"; break }
+            '^MinecraftF2$' { "minecraft-f2"; break }
+            '^Window$' { "window"; break }
+            default { $source }
+        }
+        if ($normalizedSource -ne "minecraft-in-client" -and $normalizedSource -ne "minecraft-in-client-f2-repeat") {
             $failures.Add("Screenshot source '$source' is rejected for strict physical-lighting proof. Use -ScreenshotSource InClient and pass capture manifests from Invoke-LucernaVisualProof.")
         }
     }
@@ -351,6 +469,24 @@ if ($logProof) {
     }
     if (-not $logProof.physicalSourcePassed) {
         $failures.Add("Missing physical-ish source marker. requirement=$PhysicalSourcePatternRequirement patternCount=$($PhysicalSourcePatterns.Count)")
+    }
+    if ([long]$logProof.physicalGiEvidence.physicalGiSamples -lt $MinPhysicalGiSamples) {
+        $failures.Add("Physical GI sample count below threshold. actual=$($logProof.physicalGiEvidence.physicalGiSamples) expected>=$MinPhysicalGiSamples")
+    }
+    if ([long]$logProof.physicalGiEvidence.physicalGiHitSamples -lt $MinPhysicalGiHitSamples) {
+        $failures.Add("Physical GI hit sample count below threshold. actual=$($logProof.physicalGiEvidence.physicalGiHitSamples) expected>=$MinPhysicalGiHitSamples")
+    }
+    if ([long]$logProof.physicalGiEvidence.surfaceMaterialHitCoupledSamples -lt $MinSurfaceMaterialHitCoupledSamples) {
+        $failures.Add("Surface/material hit-coupled sample count below threshold. actual=$($logProof.physicalGiEvidence.surfaceMaterialHitCoupledSamples) expected>=$MinSurfaceMaterialHitCoupledSamples")
+    }
+    if ([long]$logProof.physicalGiEvidence.geometryHitCoupledSamples -lt $MinGeometryHitCoupledSamples) {
+        $failures.Add("Geometry hit-coupled sample count below threshold. actual=$($logProof.physicalGiEvidence.geometryHitCoupledSamples) expected>=$MinGeometryHitCoupledSamples")
+    }
+    if (-not $logProof.markers.physicalGiEvidencePresent) {
+        $failures.Add("Missing physical GI sample/coupling evidence markers: require scene-linked surface contribution, nonzero physical GI samples/hits, surface/material and geometry coupling, checksum, and a physical marker.")
+    }
+    if ($logProof.markers.overclaimPresent) {
+        $failures.Add("Log overclaims physical GI/tracing quality; strict proof must preserve the open physicalGiTracingQuality boundary.")
     }
     foreach ($forbidden in @($logProof.forbiddenMatches)) {
         $failures.Add("Forbidden physical-lighting log pattern matched: $($forbidden.pattern)")
@@ -380,6 +516,10 @@ $classification = if ($logProof -and $logProof.markers.proofMarkerPresent) {
     "temporary_direct_source_contaminated"
 } elseif ($logProof -and $logProof.markers.metadataOnlyPresent) {
     "metadata_only_contaminated"
+} elseif ($logProof -and $logProof.markers.overclaimPresent) {
+    "physical_gi_overclaim_contaminated"
+} elseif ($focusDeltaPassed -and $logProof -and $logProof.physicalSourcePassed -and $logProof.markers.physicalGiEvidencePresent -and $logProof.missingRequiredPatterns.Count -eq 0) {
+    "strict_physical_gi_surface_delta_passed"
 } elseif ($focusDeltaPassed -and $logProof -and $logProof.physicalSourcePassed -and $logProof.missingRequiredPatterns.Count -eq 0) {
     "strict_physical_surface_delta_passed"
 } elseif ($focusDeltaPassed) {
@@ -401,6 +541,10 @@ $result = [ordered]@{
         minFocusMeanSignedLuma = $MinFocusMeanSignedLuma
         changedPixelThreshold = $ChangedPixelThreshold
         brightPixelThreshold = $BrightPixelThreshold
+        minPhysicalGiSamples = $MinPhysicalGiSamples
+        minPhysicalGiHitSamples = $MinPhysicalGiHitSamples
+        minSurfaceMaterialHitCoupledSamples = $MinSurfaceMaterialHitCoupledSamples
+        minGeometryHitCoupledSamples = $MinGeometryHitCoupledSamples
         requireInClientScreenshotProvenance = $RequireInClientScreenshotProvenance
         requireLogProof = [bool]$RequireLogProof
         physicalSourcePatternRequirement = $PhysicalSourcePatternRequirement
@@ -447,6 +591,20 @@ if ($logProof) {
     Write-Host "temporaryDirectLightSourcePresent=$($logProof.markers.temporaryDirectLightSourcePresent)"
     Write-Host "metadataOnlyPresent=$($logProof.markers.metadataOnlyPresent)"
     Write-Host "nativeErrorPresent=$($logProof.markers.nativeErrorPresent)"
+    Write-Host "physicalGiEvidencePresent=$($logProof.markers.physicalGiEvidencePresent)"
+    Write-Host "physicalGiOverclaimPresent=$($logProof.markers.overclaimPresent)"
+    Write-Host "physicalSceneLinkedPresent=$($logProof.physicalGiEvidence.physicalSceneLinkedPresent)"
+    Write-Host "physicalSurfaceContributionPresent=$($logProof.physicalGiEvidence.physicalSurfaceContributionPresent)"
+    Write-Host "physicalGiSampleMarkerPresent=$($logProof.physicalGiEvidence.physicalGiSampleMarkerPresent)"
+    Write-Host "surfaceMaterialHitMarkerPresent=$($logProof.physicalGiEvidence.surfaceMaterialHitMarkerPresent)"
+    Write-Host "max.physicalGiSamples=$($logProof.physicalGiEvidence.physicalGiSamples)"
+    Write-Host "max.physicalGiHitSamples=$($logProof.physicalGiEvidence.physicalGiHitSamples)"
+    Write-Host "max.surfaceMaterialHitCoupledSamples=$($logProof.physicalGiEvidence.surfaceMaterialHitCoupledSamples)"
+    Write-Host "max.geometryHitCoupledSamples=$($logProof.physicalGiEvidence.geometryHitCoupledSamples)"
+    Write-Host "max.surfaceMaterialHitCoupling=$($logProof.physicalGiEvidence.surfaceMaterialHitCoupling)"
+    Write-Host "max.geometryHitCoupling=$($logProof.physicalGiEvidence.geometryHitCoupling)"
+    Write-Host "max.physicalSceneLinkScore=$($logProof.physicalGiEvidence.physicalSceneLinkScore)"
+    Write-Host "max.physicalOutputChecksum=$($logProof.physicalGiEvidence.physicalOutputChecksum)"
 }
 Write-Host "proof.classification=$($result.proofClarity.classification)"
 Write-Host "passed=$($result.passed)"

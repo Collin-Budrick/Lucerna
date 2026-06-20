@@ -239,7 +239,7 @@ public record Round7DenoisedGiVisualSource(
     }
 
     public String surfaceProjectionBoundary() {
-        return "current public shader path is scene-shaped full-target projection from denoised payload cues; real geometry/material-aware shader denoise and physically correct GI projection remain pending";
+        return "current public shader path is scene-shaped full-target projection from denoised payload cues; scene-linked physical GI metrics can be surfaced as evidence, but real geometry/material-aware shader denoise and physically correct GI projection remain pending";
     }
 
     public String temporalReadinessBoundary() {

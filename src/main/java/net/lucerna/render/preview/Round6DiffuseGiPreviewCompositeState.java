@@ -280,11 +280,12 @@ public record Round6DiffuseGiPreviewCompositeState(
 
     public String sourceBoundarySummary() {
         return "nativeSceneTiedGiCpuReadback=" + this.giOutputAuthenticNativeCpu
+                + ",physicalGiSceneLinkedCpuMetrics=" + this.readyForRealSurfaceOnlyProof()
                 + ",physicalGiTracingQuality=open"
                 + ",shaderGiOutput=" + this.realShaderGiOutput
                 + ",cpuReadbackDenoise=" + this.cpuDenoiseScaffoldOutput
                 + ",shaderDenoiseOutput=" + this.realDenoiseShaderOutput
-                + ",previewBoundary=not-production-quality-final-lighting";
+                + ",previewBoundary=scene-linked CPU/readback physical metrics require controller screenshot proof and are not production-quality final lighting";
     }
 
     private static String previewReason(

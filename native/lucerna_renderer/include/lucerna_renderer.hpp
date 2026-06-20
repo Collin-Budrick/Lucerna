@@ -627,6 +627,10 @@ struct NativeRound6DispatchExecutionTelemetry {
     std::uint64_t last_material_color_modulated_sample_count = 0;
     std::uint64_t last_surface_normal_confident_sample_count = 0;
     std::uint64_t last_occlusion_dirty_modulated_sample_count = 0;
+    std::uint64_t last_physical_gi_sample_count = 0;
+    std::uint64_t last_physical_gi_hit_sample_count = 0;
+    std::uint64_t last_surface_material_hit_coupled_sample_count = 0;
+    std::uint64_t last_geometry_hit_coupled_sample_count = 0;
     std::uint64_t last_cpu_output_checksum = 0;
     std::uint64_t last_physical_output_checksum = 0;
     std::uint64_t last_scene_payload_generation = 0;
@@ -651,6 +655,8 @@ struct NativeRound6DispatchExecutionTelemetry {
     float last_scene_linked_energy = 0.0F;
     float last_material_color_influence = 0.0F;
     float last_surface_normal_confidence = 0.0F;
+    float last_surface_material_hit_coupling = 0.0F;
+    float last_geometry_hit_coupling = 0.0F;
     float last_emissive_contribution_energy = 0.0F;
     float last_sun_contribution_energy = 0.0F;
     float last_occlusion_dirty_influence = 0.0F;
@@ -687,6 +693,9 @@ struct NativeRound6DispatchExecutionTelemetry {
     bool last_scene_linked_samples_recorded = false;
     bool last_material_color_influence_recorded = false;
     bool last_surface_normal_confidence_recorded = false;
+    bool last_physical_gi_samples_recorded = false;
+    bool last_surface_material_hit_coupling_recorded = false;
+    bool last_geometry_hit_coupling_recorded = false;
     bool last_occlusion_dirty_influence_recorded = false;
     bool last_output_write_energy_recorded = false;
     bool last_scene_inputs_recorded = false;
@@ -705,6 +714,8 @@ struct NativeRound6DispatchExecutionTelemetry {
     std::string last_cache_marker;
     std::string last_physical_scene_marker;
     std::string last_physical_output_marker;
+    std::string last_physical_sample_marker;
+    std::string last_surface_material_hit_marker;
     std::string last_proof_boundary_marker;
     std::string last_readiness_reason;
     std::string last_scene_dimension_id;
@@ -964,7 +975,7 @@ public:
     [[nodiscard]] std::string last_error() const;
     [[nodiscard]] std::string status() const;
     [[nodiscard]] std::vector<std::uint8_t> direct_lighting_cpu_output_preview_rgba8() const;
-    [[nodiscard]] std::vector<std::uint8_t> diffuse_gi_cpu_output_preview_rgba8() const;
+    [[nodiscard]] std::vector<std::uint8_t> diffuse_gi_cpu_output_preview_rgba8();
     [[nodiscard]] std::vector<std::uint8_t> denoised_diffuse_gi_cpu_output_preview_rgba8();
 
 private:

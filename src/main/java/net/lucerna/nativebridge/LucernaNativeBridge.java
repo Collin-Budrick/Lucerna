@@ -33,6 +33,7 @@ public final class LucernaNativeBridge {
     private long lastLoggedDirectLightingUploadGeneration;
     private long lastLoggedLightingDispatchGeneration;
     private String lastLoggedDirectLightingExecutionKey = "";
+    private String lastLoggedDiffuseGiExecutionKey = "";
     private String lastLoggedDenoiseExecutionKey = "";
     private boolean directLightingUploadUnavailableLogged;
     private boolean diffuseGiPreviewRgba8ExportUnavailable;
@@ -787,6 +788,7 @@ public final class LucernaNativeBridge {
             boolean accepted = this.invokeNative("renderLighting", LucernaNativeBridge::nativeRenderLighting, true);
             if (accepted) {
                 this.logDirectLightingExecutionStatus();
+                this.logDiffuseGiExecutionStatus();
                 this.logDenoiseExecutionStatus();
             }
         }
@@ -1170,6 +1172,63 @@ public final class LucernaNativeBridge {
                 denoise.realDenoiseShaderOutput(),
                 denoise.shaderDenoiseOutputImageCandidateMarker(),
                 denoise.shaderDenoiseOutputImageBlocker()
+        );
+    }
+
+    private void logDiffuseGiExecutionStatus() {
+        Round6DiffuseGiCpuOutputSnapshot diffuseGi = this.round6DiffuseGiCpuOutputSnapshot();
+        if (!diffuseGi.hasExecutionTelemetry()) {
+            return;
+        }
+
+        String key = diffuseGi.dispatchGeneration()
+                + "|" + diffuseGi.sampleCount()
+                + "|" + diffuseGi.rayCount()
+                + "|" + diffuseGi.cacheReadCount()
+                + "|" + diffuseGi.outputCount()
+                + "|" + diffuseGi.ready()
+                + "|" + diffuseGi.cpuOutputGenerated()
+                + "|" + diffuseGi.physicalGiSamples()
+                + "|" + diffuseGi.physicalGiHitSamples()
+                + "|" + diffuseGi.surfaceMaterialHitCoupledSamples()
+                + "|" + diffuseGi.geometryHitCoupledSamples()
+                + "|" + diffuseGi.physicalSceneLinked()
+                + "|" + diffuseGi.physicalSurfaceContribution()
+                + "|" + diffuseGi.physicalOutputChecksum()
+                + "|" + diffuseGi.physicalSampleMarker()
+                + "|" + diffuseGi.surfaceMaterialHitMarker()
+                + "|" + diffuseGi.proofBoundaryMarker();
+        if (key.equals(this.lastLoggedDiffuseGiExecutionKey)) {
+            return;
+        }
+
+        this.lastLoggedDiffuseGiExecutionKey = key;
+        Lucerna.LOGGER.info(
+                "Lucerna native diffuse GI physical execution: dispatchGeneration={} samples={} rays={} cacheReads={} outputs={} ready={} cpuOutput={} outputSize={}x{} outputPixels={} outputEnergy={} outputChecksum={} physical_gi_samples={} physical_gi_hit_samples={} surface_material_hit_coupled_samples={} geometry_hit_coupled_samples={} physical_scene_link_score={} physical_output_checksum={} physical_scene_linked={} physical_surface_contribution={} physical_sample_marker=\"{}\" surface_material_hit_marker=\"{}\" proof_boundary_marker=\"{}\" reason={}.",
+                diffuseGi.dispatchGeneration(),
+                diffuseGi.sampleCount(),
+                diffuseGi.rayCount(),
+                diffuseGi.cacheReadCount(),
+                diffuseGi.outputCount(),
+                diffuseGi.ready(),
+                diffuseGi.cpuOutputGenerated(),
+                diffuseGi.outputWidth(),
+                diffuseGi.outputHeight(),
+                diffuseGi.outputPixels(),
+                diffuseGi.outputEnergy(),
+                diffuseGi.outputChecksum(),
+                diffuseGi.physicalGiSamples(),
+                diffuseGi.physicalGiHitSamples(),
+                diffuseGi.surfaceMaterialHitCoupledSamples(),
+                diffuseGi.geometryHitCoupledSamples(),
+                diffuseGi.physicalSceneLinkScore(),
+                diffuseGi.physicalOutputChecksum(),
+                diffuseGi.physicalSceneLinked(),
+                diffuseGi.physicalSurfaceContribution(),
+                diffuseGi.physicalSampleMarker(),
+                diffuseGi.surfaceMaterialHitMarker(),
+                diffuseGi.proofBoundaryMarker(),
+                diffuseGi.readinessReason()
         );
     }
 

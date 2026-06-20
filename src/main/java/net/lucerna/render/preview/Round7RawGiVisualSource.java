@@ -84,7 +84,7 @@ public record Round7RawGiVisualSource(
     }
 
     public String sourceIdentity() {
-        return "native-diffuse-gi-rgba8/raw-gi";
+        return "native-diffuse-gi-rgba8/raw-gi;physical-scene-linked-cpu-metrics-only";
     }
 
     public String sourceClassLabel() {
@@ -96,12 +96,12 @@ public record Round7RawGiVisualSource(
     }
 
     public String surfaceProjectionBoundary() {
-        return "current public shader path is scene-shaped full-target projection from GI payload cues; geometry/material-aware physical GI projection remains pending controller/native-shader work";
+        return "current public shader path is scene-shaped full-target projection from GI payload cues; scene-linked physical GI metrics may be reported separately, but geometry/material-aware physical GI projection remains pending controller/native-shader work";
     }
 
     public String qualityReadinessBoundary() {
         return this.sourceReady
-                ? "raw GI source identity is ready; physical GI quality, temporal stability, denoise quality, and shader output remain pending"
+                ? "raw GI source identity is ready; physical GI tracing quality, temporal stability, denoise quality, and shader output remain pending"
                 : "raw GI source identity is not ready";
     }
 

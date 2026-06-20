@@ -24,9 +24,9 @@ const float SIGNAL_GAIN = 0.38;
 const float SIGNAL_FLOOR = 0.0025;
 const float EDGE_REJECT_BASE = 0.0075;
 const float EDGE_REJECT_SIGNAL_SCALE = 0.044;
-const float NEIGHBOR_MIN_WEIGHT = 0.080;
+const float NEIGHBOR_MIN_WEIGHT = 0.060;
 const float EDGE_CENTER_RESTORE = 0.78;
-const vec3 MAX_ADDITIVE_PER_DRAW = vec3(0.026, 0.023, 0.015);
+const vec3 MAX_ADDITIVE_PER_DRAW = vec3(0.023, 0.021, 0.014);
 
 vec2 safeTexelSize() {
     return 1.0 / max(vec2(textureSize(InSampler, 0)), vec2(1.0));
@@ -70,6 +70,30 @@ float localSignalGradient(vec2 uv) {
     return abs(right - left) + abs(down - up);
 }
 
+float diagonalSignalGradient(vec2 uv) {
+    vec2 texel = safeTexelSize();
+    float diagonalA = signalConfidence(sourceSample(uv + texel * vec2(1.5, 1.5)))
+            - signalConfidence(sourceSample(uv + texel * vec2(-1.5, -1.5)));
+    float diagonalB = signalConfidence(sourceSample(uv + texel * vec2(-1.5, 1.5)))
+            - signalConfidence(sourceSample(uv + texel * vec2(1.5, -1.5)));
+    return abs(diagonalA) + abs(diagonalB);
+}
+
+float localMaterialStructure(vec2 uv, vec4 center) {
+    vec2 texel = safeTexelSize();
+    vec4 horizontalA = sourceSample(uv + vec2(texel.x * 2.0, 0.0));
+    vec4 horizontalB = sourceSample(uv + vec2(-texel.x * 2.0, 0.0));
+    vec4 verticalA = sourceSample(uv + vec2(0.0, texel.y * 2.0));
+    vec4 verticalB = sourceSample(uv + vec2(0.0, -texel.y * 2.0));
+    float lumaStructure = abs(luminance(horizontalA.rgb) - luminance(horizontalB.rgb))
+            + abs(luminance(verticalA.rgb) - luminance(verticalB.rgb));
+    float chromaStructure = max(
+            length(max(horizontalA.rgb, vec3(0.0)) - max(horizontalB.rgb, vec3(0.0))),
+            length(max(verticalA.rgb, vec3(0.0)) - max(verticalB.rgb, vec3(0.0))));
+    float confidenceStructure = localSignalGradient(uv) + diagonalSignalGradient(uv) * 0.50;
+    return clamp(chromaSpan(center.rgb) * 0.75 + lumaStructure * 2.0 + chromaStructure * 0.55 + confidenceStructure, 0.0, 1.0);
+}
+
 float guidedNeighborWeight(vec4 center, vec4 neighbor, float baseWeight) {
     float centerConfidence = signalConfidence(center);
     float neighborConfidence = signalConfidence(neighbor);
@@ -77,7 +101,7 @@ float guidedNeighborWeight(vec4 center, vec4 neighbor, float baseWeight) {
     float edgeReject = 1.0 - smoothstep(threshold, threshold * 2.60, sampleDissimilarity(center, neighbor));
     float confidenceAgreement = 1.0 - smoothstep(0.045, 0.34, abs(centerConfidence - neighborConfidence));
     float lumaAgreement = 1.0 - smoothstep(0.010, 0.075, abs(luminance(center.rgb) - luminance(neighbor.rgb)));
-    float signalSupport = smoothstep(0.0015, 0.045, max(centerConfidence, neighborConfidence));
+    float signalSupport = smoothstep(0.0025, 0.052, max(centerConfidence, neighborConfidence));
     float supportWeight = mix(NEIGHBOR_MIN_WEIGHT, 1.0, signalSupport);
     return baseWeight * edgeReject * supportWeight * mix(0.24, 1.0, confidenceAgreement * lumaAgreement);
 }
@@ -112,8 +136,9 @@ vec4 denoisedSample(vec2 uv) {
 
     vec4 filtered = colorSum / max(weightSum, 0.0001);
     float edgeEnergy = smoothstep(0.014, 0.095, sampleDissimilarity(center, filtered));
-    float structureEnergy = smoothstep(0.025, 0.18, localSignalGradient(uv));
-    float restoreCenter = clamp(max(edgeEnergy * EDGE_CENTER_RESTORE, structureEnergy * 0.84), 0.0, 0.92);
+    float structureEnergy = smoothstep(0.025, 0.18, localSignalGradient(uv) + diagonalSignalGradient(uv) * 0.45);
+    float materialStructure = smoothstep(0.020, 0.18, localMaterialStructure(uv, center));
+    float restoreCenter = clamp(max(edgeEnergy * EDGE_CENTER_RESTORE, max(structureEnergy * 0.84, materialStructure * 0.70)), 0.0, 0.94);
     vec4 shaped = mix(filtered, center, restoreCenter);
     return mix(center, shaped, smoothstep(0.010, 0.090, weightSum - CENTER_WEIGHT));
 }
@@ -128,16 +153,17 @@ float sourceSurfaceMask(vec2 uv, vec4 center, vec4 denoised) {
     float xGradient = abs(right - left);
     float yGradient = abs(down - up);
     float neighborSupport = max(max(left, right), max(up, down));
-    float localStructure = localSignalGradient(uv) + xGradient + yGradient;
+    float localStructure = localSignalGradient(uv) + diagonalSignalGradient(uv) * 0.55 + xGradient + yGradient;
     float chromaCue = max(chromaSpan(center.rgb), chromaSpan(denoised.rgb));
+    float materialStructure = localMaterialStructure(uv, center);
     float sourceSupport = smoothstep(
             0.014,
             0.23,
-            max(centerConfidence, neighborSupport * 0.68) + chromaCue * 0.42 + localStructure * 0.30);
+            max(centerConfidence, neighborSupport * 0.68) + chromaCue * 0.42 + localStructure * 0.26 + materialStructure * 0.22);
     float flatWashoutReject = mix(
-            0.58,
+            0.44,
             1.0,
-            smoothstep(0.010, 0.075, chromaCue + localStructure + abs(centerConfidence - neighborSupport)));
+            smoothstep(0.012, 0.095, chromaCue + localStructure + materialStructure + abs(centerConfidence - neighborSupport)));
     float softEdgeGuard = smoothstep(0.004, 0.040, uv.x)
             * smoothstep(0.004, 0.040, uv.y)
             * (1.0 - smoothstep(0.960, 0.996, uv.x))
@@ -150,10 +176,11 @@ void main() {
     vec4 denoised = denoisedSample(texCoord);
     float confidence = clamp(max(signalConfidence(center), signalConfidence(denoised)), 0.0, 1.0);
     float surfaceMask = sourceSurfaceMask(texCoord, center, denoised);
+    float structureMask = mix(0.68, 1.0, smoothstep(0.018, 0.16, localMaterialStructure(texCoord, center)));
 
     vec3 shaped = denoised.rgb;
     shaped = max(shaped, vec3(SIGNAL_FLOOR) * confidence);
-    shaped *= SIGNAL_GAIN * confidence * surfaceMask;
+    shaped *= SIGNAL_GAIN * confidence * surfaceMask * structureMask;
 
     fragColor = vec4(min(max(shaped, vec3(0.0)), MAX_ADDITIVE_PER_DRAW), 1.0);
 }

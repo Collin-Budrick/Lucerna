@@ -25,6 +25,17 @@ public record Round6DiffuseGiCpuOutputSnapshot(
         long visibleSignalNonzeroPixels,
         boolean visibleSignalGenerated,
         boolean visibleSignalCacheBacked,
+        long physicalGiSamples,
+        long physicalGiHitSamples,
+        long surfaceMaterialHitCoupledSamples,
+        long geometryHitCoupledSamples,
+        long physicalSceneLinkScore,
+        String physicalOutputChecksum,
+        boolean physicalSceneLinked,
+        boolean physicalSurfaceContribution,
+        String physicalSampleMarker,
+        String surfaceMaterialHitMarker,
+        String proofBoundaryMarker,
         String outputMarker,
         String readinessReason
 ) {
@@ -43,6 +54,23 @@ public record Round6DiffuseGiCpuOutputSnapshot(
         visibleSignalPopulationCount = Math.max(0L, visibleSignalPopulationCount);
         visibleSignalSampledPixels = Math.max(0L, visibleSignalSampledPixels);
         visibleSignalNonzeroPixels = Math.max(0L, visibleSignalNonzeroPixels);
+        physicalGiSamples = Math.max(0L, physicalGiSamples);
+        physicalGiHitSamples = Math.max(0L, physicalGiHitSamples);
+        surfaceMaterialHitCoupledSamples = Math.max(0L, surfaceMaterialHitCoupledSamples);
+        geometryHitCoupledSamples = Math.max(0L, geometryHitCoupledSamples);
+        physicalSceneLinkScore = Math.max(0L, physicalSceneLinkScore);
+        physicalOutputChecksum = physicalOutputChecksum == null || physicalOutputChecksum.isBlank()
+                ? "0"
+                : physicalOutputChecksum;
+        physicalSampleMarker = physicalSampleMarker == null || physicalSampleMarker.isBlank()
+                ? "unknown"
+                : physicalSampleMarker;
+        surfaceMaterialHitMarker = surfaceMaterialHitMarker == null || surfaceMaterialHitMarker.isBlank()
+                ? "unknown"
+                : surfaceMaterialHitMarker;
+        proofBoundaryMarker = proofBoundaryMarker == null || proofBoundaryMarker.isBlank()
+                ? "unknown"
+                : proofBoundaryMarker;
         outputMarker = outputMarker == null || outputMarker.isBlank() ? "unknown" : outputMarker;
         readinessReason = readinessReason == null || readinessReason.isBlank() ? "unknown" : readinessReason;
     }
@@ -73,6 +101,17 @@ public record Round6DiffuseGiCpuOutputSnapshot(
                 0L,
                 false,
                 false,
+                0L,
+                0L,
+                0L,
+                0L,
+                0L,
+                "0",
+                false,
+                false,
+                "unknown",
+                "unknown",
+                "unknown",
                 "unknown",
                 reason
         );
@@ -110,6 +149,17 @@ public record Round6DiffuseGiCpuOutputSnapshot(
                     0L,
                     false,
                     false,
+                    0L,
+                    0L,
+                    0L,
+                    0L,
+                    0L,
+                    "0",
+                    false,
+                    false,
+                    "unknown",
+                    "unknown",
+                    "unknown",
                     "unknown",
                     "native diffuse GI execution status unavailable"
             );
@@ -184,6 +234,17 @@ public record Round6DiffuseGiCpuOutputSnapshot(
                 parseLong(extractField(diffuseGiExecution, "visible_signal_nonzero_pixels")),
                 visibleSignalGenerated,
                 parseBoolean(extractField(diffuseGiExecution, "visible_signal_cache_backed")),
+                parseLong(extractField(diffuseGiExecution, "physical_gi_samples")),
+                parseLong(extractField(diffuseGiExecution, "physical_gi_hit_samples")),
+                parseLong(extractField(diffuseGiExecution, "surface_material_hit_coupled_samples")),
+                parseLong(extractField(diffuseGiExecution, "geometry_hit_coupled_samples")),
+                parseLong(extractField(diffuseGiExecution, "physical_scene_link_score")),
+                extractField(diffuseGiExecution, "physical_output_checksum"),
+                parseBoolean(extractField(diffuseGiExecution, "physical_scene_linked")),
+                parseBoolean(extractField(diffuseGiExecution, "physical_surface_contribution")),
+                extractField(diffuseGiExecution, "physical_sample_marker"),
+                extractField(diffuseGiExecution, "surface_material_hit_marker"),
+                extractField(diffuseGiExecution, "proof_boundary_marker"),
                 extractField(diffuseGiExecution, "output_marker"),
                 extractField(diffuseGiExecution, "readiness_reason")
         );
@@ -241,6 +302,12 @@ public record Round6DiffuseGiCpuOutputSnapshot(
                 + " checksum=" + this.outputChecksum
                 + " visibleSignalGenerated=" + this.visibleSignalGenerated
                 + " visibleSignalNonzeroPixels=" + this.visibleSignalNonzeroPixels
+                + " physicalGiSamples=" + this.physicalGiSamples
+                + " physicalGiHitSamples=" + this.physicalGiHitSamples
+                + " surfaceMaterialHitCoupledSamples=" + this.surfaceMaterialHitCoupledSamples
+                + " geometryHitCoupledSamples=" + this.geometryHitCoupledSamples
+                + " physicalSceneLinked=" + this.physicalSceneLinked
+                + " physicalSurfaceContribution=" + this.physicalSurfaceContribution
                 + " outputMarker=" + this.outputMarker
                 + " reason=" + this.readinessReason;
     }
