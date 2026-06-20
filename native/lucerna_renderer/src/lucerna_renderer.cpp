@@ -1061,6 +1061,9 @@ void append_round6_execution_status(
         << ",occlusion_dirty_influence_recorded=" << execution.last_occlusion_dirty_influence_recorded
         << ",output_write_energy_recorded=" << execution.last_output_write_energy_recorded
         << ",physical_scene_linked=" << execution.last_physical_scene_linked
+        << ",physical_surface_contribution=" << execution.last_physical_surface_contribution
+        << ",preview_fallback_contribution=" << execution.last_preview_fallback_contribution
+        << ",focus_window_contribution=" << execution.last_focus_window_contribution
         << ",metadata_only_proof_rejected=" << execution.last_metadata_only_proof_rejected
         << ",focus_window_capture_rejected=" << execution.last_focus_window_capture_rejected
         << ",proof_marker_evidence_rejected=" << execution.last_proof_marker_evidence_rejected
@@ -1406,6 +1409,13 @@ void append_phase5_lighting_status(
         << ",output_min_sample=" << lighting.direct_execution.last_output_min_sample
         << ",output_max_sample=" << lighting.direct_execution.last_output_max_sample
         << ",output_checksum=" << lighting.direct_execution.last_output_checksum
+        << ",surface_payload_samples=" << lighting.direct_execution.last_surface_payload_sample_count
+        << ",surface_payload_pixels=" << lighting.direct_execution.last_surface_payload_pixel_count
+        << ",material_surface_pixels=" << lighting.direct_execution.last_material_surface_pixel_count
+        << ",preview_fallback_pixels=" << lighting.direct_execution.last_preview_fallback_pixel_count
+        << ",physical_surface_energy=" << lighting.direct_execution.last_physical_surface_energy
+        << ",preview_fallback_energy=" << lighting.direct_execution.last_preview_fallback_energy
+        << ",surface_payload_confidence=" << lighting.direct_execution.last_surface_payload_confidence
         << ",total_celestial=" << lighting.direct_execution.total_celestial_light_count
         << ",total_emissive=" << lighting.direct_execution.total_emissive_light_count
         << ",total_shadow_candidates=" << lighting.direct_execution.total_shadow_candidate_count
@@ -1433,6 +1443,9 @@ void append_phase5_lighting_status(
         << ",cpu_output_generated=" << lighting.direct_execution.last_cpu_output_generated
         << ",output_write_recorded=" << lighting.direct_execution.last_output_write_recorded
         << ",resolve_recorded=" << lighting.direct_execution.last_resolve_recorded
+        << ",physical_surface_contribution=" << lighting.direct_execution.last_physical_surface_contribution
+        << ",preview_fallback_contribution=" << lighting.direct_execution.last_preview_fallback_contribution
+        << ",focus_window_contribution=" << lighting.direct_execution.last_focus_window_contribution
         << ",output_marker=\"" << lighting.direct_execution.last_output_marker
         << "\""
         << ",readiness_reason=\"" << (lighting.direct_execution.last_readiness_reason.empty()
@@ -3245,6 +3258,13 @@ std::string Renderer::status() const {
         << ",output_min_sample=" << staging_.lighting.direct_execution.last_output_min_sample
         << ",output_max_sample=" << staging_.lighting.direct_execution.last_output_max_sample
         << ",output_checksum=" << staging_.lighting.direct_execution.last_output_checksum
+        << ",surface_payload_samples=" << staging_.lighting.direct_execution.last_surface_payload_sample_count
+        << ",surface_payload_pixels=" << staging_.lighting.direct_execution.last_surface_payload_pixel_count
+        << ",material_surface_pixels=" << staging_.lighting.direct_execution.last_material_surface_pixel_count
+        << ",preview_fallback_pixels=" << staging_.lighting.direct_execution.last_preview_fallback_pixel_count
+        << ",physical_surface_energy=" << staging_.lighting.direct_execution.last_physical_surface_energy
+        << ",preview_fallback_energy=" << staging_.lighting.direct_execution.last_preview_fallback_energy
+        << ",surface_payload_confidence=" << staging_.lighting.direct_execution.last_surface_payload_confidence
         << ",total_celestial=" << staging_.lighting.direct_execution.total_celestial_light_count
         << ",total_emissive=" << staging_.lighting.direct_execution.total_emissive_light_count
         << ",total_shadow_candidates=" << staging_.lighting.direct_execution.total_shadow_candidate_count
@@ -3259,6 +3279,9 @@ std::string Renderer::status() const {
         << ",cpu_output_generated=" << staging_.lighting.direct_execution.last_cpu_output_generated
         << ",output_write_recorded=" << staging_.lighting.direct_execution.last_output_write_recorded
         << ",resolve_recorded=" << staging_.lighting.direct_execution.last_resolve_recorded
+        << ",physical_surface_contribution=" << staging_.lighting.direct_execution.last_physical_surface_contribution
+        << ",preview_fallback_contribution=" << staging_.lighting.direct_execution.last_preview_fallback_contribution
+        << ",focus_window_contribution=" << staging_.lighting.direct_execution.last_focus_window_contribution
         << ",output_marker=\"" << staging_.lighting.direct_execution.last_output_marker
         << "\""
         << ",readiness_reason=\"" << (staging_.lighting.direct_execution.last_readiness_reason.empty()
@@ -4552,6 +4575,16 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
     execution.last_output_min_sample = 0.0F;
     execution.last_output_max_sample = 0.0F;
     execution.last_output_checksum = 0;
+    execution.last_surface_payload_sample_count = 0;
+    execution.last_surface_payload_pixel_count = 0;
+    execution.last_material_surface_pixel_count = 0;
+    execution.last_preview_fallback_pixel_count = 0;
+    execution.last_physical_surface_energy = 0.0F;
+    execution.last_preview_fallback_energy = 0.0F;
+    execution.last_surface_payload_confidence = 0.0F;
+    execution.last_physical_surface_contribution = false;
+    execution.last_preview_fallback_contribution = false;
+    execution.last_focus_window_contribution = false;
     execution.last_output_marker.clear();
 
     if (!direct_stage.enabled_this_packet) {
@@ -4603,6 +4636,9 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
         const auto celestial_count = static_cast<std::size_t>(last_direct_lighting_payload_packet_.celestial_light_count);
         const auto emissive_count = static_cast<std::size_t>(last_direct_lighting_payload_packet_.selected_emissive_count);
         const auto shadow_count = static_cast<std::size_t>(last_direct_lighting_payload_packet_.shadow_candidate_count);
+        const auto section_count = static_cast<std::size_t>(std::min<std::uint64_t>(
+                non_negative_u64(last_direct_lighting_payload_packet_.section_snapshot_count),
+                32));
         const float celestial_energy = sum_strided_float_field(
                 last_direct_lighting_payload_packet_.celestial_light_data,
                 celestial_count,
@@ -4682,6 +4718,146 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
             emissive_blue = 0.62F;
         }
 
+        NativeGiSceneBounds scene_bounds;
+        for (std::size_t light_index = 0; light_index < emissive_count; light_index++) {
+            include_native_gi_scene_point(
+                    scene_bounds,
+                    static_cast<float>(strided_int_or_zero(
+                            last_direct_lighting_payload_packet_.emissive_light_metadata,
+                            light_index,
+                            kDirectEmissiveLightMetadataStride,
+                            kDirectEmissiveBlockXOffset)) + 0.5F,
+                    static_cast<float>(strided_int_or_zero(
+                            last_direct_lighting_payload_packet_.emissive_light_metadata,
+                            light_index,
+                            kDirectEmissiveLightMetadataStride,
+                            kDirectEmissiveBlockYOffset)) + 0.5F,
+                    static_cast<float>(strided_int_or_zero(
+                            last_direct_lighting_payload_packet_.emissive_light_metadata,
+                            light_index,
+                            kDirectEmissiveLightMetadataStride,
+                            kDirectEmissiveBlockZOffset)) + 0.5F);
+        }
+        const auto candidate_bound_limit = std::min<std::size_t>(shadow_count, 64);
+        for (std::size_t candidate_index = 0; candidate_index < candidate_bound_limit; candidate_index++) {
+            include_native_gi_scene_point(
+                    scene_bounds,
+                    strided_float_raw_or_zero(
+                            last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                            candidate_index,
+                            kDirectShadowCandidateRayStride,
+                            kDirectShadowRayOriginXOffset),
+                    strided_float_raw_or_zero(
+                            last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                            candidate_index,
+                            kDirectShadowCandidateRayStride,
+                            kDirectShadowRayOriginYOffset),
+                    strided_float_raw_or_zero(
+                            last_direct_lighting_payload_packet_.shadow_candidate_rays,
+                            candidate_index,
+                            kDirectShadowCandidateRayStride,
+                            kDirectShadowRayOriginZOffset));
+        }
+        std::uint64_t total_section_occupied_voxels = 0;
+        std::uint64_t total_section_opaque_voxels = 0;
+        std::uint64_t total_section_translucent_voxels = 0;
+        std::uint64_t total_section_fluid_voxels = 0;
+        std::uint64_t total_section_emissive_voxels = 0;
+        std::uint64_t total_section_palette_entries = 0;
+        for (std::size_t section_index = 0; section_index < section_count; section_index++) {
+            const auto section_x = strided_int_or_zero(
+                    last_direct_lighting_payload_packet_.section_snapshot_metadata,
+                    section_index,
+                    kDirectSectionSnapshotMetadataStride,
+                    kDirectSectionXOffset);
+            const auto section_y = strided_int_or_zero(
+                    last_direct_lighting_payload_packet_.section_snapshot_metadata,
+                    section_index,
+                    kDirectSectionSnapshotMetadataStride,
+                    kDirectSectionYOffset);
+            const auto section_z = strided_int_or_zero(
+                    last_direct_lighting_payload_packet_.section_snapshot_metadata,
+                    section_index,
+                    kDirectSectionSnapshotMetadataStride,
+                    kDirectSectionZOffset);
+            include_native_gi_scene_point(
+                    scene_bounds,
+                    static_cast<float>(section_x) * 16.0F + 8.0F,
+                    static_cast<float>(section_y) * 16.0F + 8.0F,
+                    static_cast<float>(section_z) * 16.0F + 8.0F);
+            total_section_occupied_voxels = saturated_add(
+                    total_section_occupied_voxels,
+                    non_negative_u64(strided_int_or_zero(
+                            last_direct_lighting_payload_packet_.section_snapshot_metadata,
+                            section_index,
+                            kDirectSectionSnapshotMetadataStride,
+                            kDirectSectionOccupiedVoxelCountOffset)));
+            total_section_opaque_voxels = saturated_add(
+                    total_section_opaque_voxels,
+                    non_negative_u64(strided_int_or_zero(
+                            last_direct_lighting_payload_packet_.section_snapshot_metadata,
+                            section_index,
+                            kDirectSectionSnapshotMetadataStride,
+                            kDirectSectionOpaqueVoxelCountOffset)));
+            total_section_translucent_voxels = saturated_add(
+                    total_section_translucent_voxels,
+                    non_negative_u64(strided_int_or_zero(
+                            last_direct_lighting_payload_packet_.section_snapshot_metadata,
+                            section_index,
+                            kDirectSectionSnapshotMetadataStride,
+                            kDirectSectionTranslucentVoxelCountOffset)));
+            total_section_fluid_voxels = saturated_add(
+                    total_section_fluid_voxels,
+                    non_negative_u64(strided_int_or_zero(
+                            last_direct_lighting_payload_packet_.section_snapshot_metadata,
+                            section_index,
+                            kDirectSectionSnapshotMetadataStride,
+                            kDirectSectionFluidVoxelCountOffset)));
+            total_section_emissive_voxels = saturated_add(
+                    total_section_emissive_voxels,
+                    non_negative_u64(strided_int_or_zero(
+                            last_direct_lighting_payload_packet_.section_snapshot_metadata,
+                            section_index,
+                            kDirectSectionSnapshotMetadataStride,
+                            kDirectSectionEmissiveVoxelCountOffset)));
+            total_section_palette_entries = saturated_add(
+                    total_section_palette_entries,
+                    non_negative_u64(strided_int_or_zero(
+                            last_direct_lighting_payload_packet_.section_snapshot_metadata,
+                            section_index,
+                            kDirectSectionSnapshotMetadataStride,
+                            kDirectSectionMaterialPaletteSizeOffset)));
+        }
+        const float section_denominator = static_cast<float>(
+                std::max<std::uint64_t>(total_section_occupied_voxels, 1));
+        const float opaque_ratio = std::clamp(
+                static_cast<float>(total_section_opaque_voxels) / section_denominator,
+                0.0F,
+                1.0F);
+        const float translucent_ratio = std::clamp(
+                static_cast<float>(total_section_translucent_voxels + total_section_fluid_voxels)
+                        / section_denominator,
+                0.0F,
+                1.0F);
+        const float emissive_voxel_ratio = std::clamp(
+                static_cast<float>(total_section_emissive_voxels) / section_denominator,
+                0.0F,
+                1.0F);
+        const float palette_diversity = std::clamp(
+                static_cast<float>(total_section_palette_entries)
+                        / static_cast<float>(std::max<std::uint64_t>(
+                                static_cast<std::uint64_t>(section_count) * 16ULL,
+                                1ULL)),
+                0.0F,
+                1.0F);
+        const float material_response = std::clamp(
+                (opaque_ratio * 0.70F)
+                        + (translucent_ratio * 0.12F)
+                        + (emissive_voxel_ratio * 0.36F)
+                        + (palette_diversity * 0.22F),
+                section_count == 0 ? 0.0F : 0.06F,
+                1.0F);
+
         const float scene_anchor_u = std::clamp(
                 0.50F + std::sin((emissive_x * 0.071F) + (emissive_z * 0.037F)) * 0.18F,
                 0.24F,
@@ -4702,6 +4878,13 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
         float min_sample = 0.0F;
         float max_sample = 0.0F;
         bool has_sample = false;
+        std::uint64_t surface_payload_samples = 0;
+        std::uint64_t surface_payload_pixels = 0;
+        std::uint64_t material_surface_pixels = 0;
+        std::uint64_t preview_fallback_pixels = 0;
+        float physical_surface_energy = 0.0F;
+        float preview_fallback_energy = 0.0F;
+        float surface_payload_confidence_sum = 0.0F;
         std::uint64_t checksum = 1469598103934665603ULL;
         for (std::uint64_t pixel = 0; pixel < pixel_count; pixel++) {
             const auto offset = static_cast<std::size_t>(pixel * 4);
@@ -4748,6 +4931,37 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
             float green = celestial_base * 0.2F;
             float blue = celestial_base * 0.24F;
             float surface_mask = 0.0F;
+            const float projected_surface_u = scene_bounds.initialized
+                    ? project_native_gi_axis(
+                            (surface_x + surface_z) * 0.5F,
+                            (scene_bounds.min_x + scene_bounds.min_z) * 0.5F,
+                            (scene_bounds.max_x + scene_bounds.max_z) * 0.5F,
+                            0.5F)
+                    : 0.5F;
+            const float projected_surface_v = scene_bounds.initialized
+                    ? 1.0F - project_native_gi_axis(
+                            (surface_y * 0.70F) + (surface_z * 0.30F),
+                            (scene_bounds.min_y * 0.70F) + (scene_bounds.min_z * 0.30F),
+                            (scene_bounds.max_y * 0.70F) + (scene_bounds.max_z * 0.30F),
+                            0.5F)
+                    : 0.5F;
+            const float surface_radius = std::clamp(
+                    0.10F + (std::min(surface_weight, 3.0F) * 0.045F) + (material_response * 0.10F),
+                    0.12F,
+                    0.42F);
+            const float candidate_surface_lobe = shadow_count == 0
+                    ? 0.0F
+                    : native_gi_lobe(u, v, projected_surface_u, projected_surface_v, surface_radius);
+            const float lower_wall_surface = smooth_unit_response(
+                    1.0F - (std::abs(v - 0.62F) / 0.36F));
+            const float ground_surface = smooth_unit_response(
+                    1.0F - (std::abs(v - 0.78F) / 0.24F));
+            const float world_surface_mask = std::clamp(
+                    std::max(candidate_surface_lobe, lower_wall_surface * 0.58F)
+                            + (ground_surface * 0.28F)
+                            + (material_response * 0.16F),
+                    0.0F,
+                    1.0F);
             for (std::size_t light_index = 0; light_index < emissive_count; light_index++) {
                 const float light_x = static_cast<float>(strided_int_or_zero(
                         last_direct_lighting_payload_packet_.emissive_light_metadata,
@@ -4793,21 +5007,22 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
                         * surface_falloff
                         * surface_weight
                         * kDirectCpuEmissiveSurfaceScale;
+                const float material_lift = 0.78F + material_response * 0.52F + world_surface_mask * 0.36F;
                 red += strided_float_or_zero(
                         last_direct_lighting_payload_packet_.emissive_light_data,
                         light_index,
                         kDirectEmissiveLightDataStride,
-                        kDirectEmissiveColorRedOffset) * strength;
+                        kDirectEmissiveColorRedOffset) * strength * material_lift;
                 green += strided_float_or_zero(
                         last_direct_lighting_payload_packet_.emissive_light_data,
                         light_index,
                         kDirectEmissiveLightDataStride,
-                        kDirectEmissiveColorGreenOffset) * strength;
+                        kDirectEmissiveColorGreenOffset) * strength * material_lift;
                 blue += strided_float_or_zero(
                         last_direct_lighting_payload_packet_.emissive_light_data,
                         light_index,
                         kDirectEmissiveLightDataStride,
-                        kDirectEmissiveColorBlueOffset) * strength;
+                        kDirectEmissiveColorBlueOffset) * strength * material_lift;
             }
 
             const float du = (u - scene_anchor_u) / 0.34F;
@@ -4817,6 +5032,30 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
                     1.0F - std::sqrt((du * du) + (dv * dv))));
             const float broad_lobe = broad_surface_response(u, v) * 0.42F;
             const float emissive_projection = std::max(surface_mask, std::max(screen_lobe, broad_lobe));
+            const float physical_surface_signal = std::clamp(
+                    (candidate_surface_lobe * (42.0F + surface_weight * 20.0F))
+                            + (surface_mask * world_surface_mask * 34.0F)
+                            + (material_response * world_surface_mask * 18.0F)
+                            + (emissive_voxel_ratio * 22.0F),
+                    0.0F,
+                    112.0F);
+            if (physical_surface_signal > 0.01F) {
+                const float physical_red = physical_surface_signal * (0.52F + emissive_red * 0.58F);
+                const float physical_green = physical_surface_signal * (0.58F + emissive_green * 0.54F);
+                const float physical_blue = physical_surface_signal * (0.38F + emissive_blue * 0.46F);
+                red += physical_red;
+                green += physical_green;
+                blue += physical_blue;
+                physical_surface_energy += physical_red + physical_green + physical_blue;
+                surface_payload_samples++;
+                surface_payload_confidence_sum += std::clamp(
+                        (candidate_surface_lobe * 0.50F)
+                                + (surface_mask * 0.22F)
+                                + (material_response * 0.18F)
+                                + (opaque_ratio * 0.10F),
+                        0.0F,
+                        1.0F);
+            }
             if (emissive_projection > 0.0F) {
                 const float screen_strength = scene_emissive_energy
                         * emissive_projection
@@ -4824,6 +5063,9 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
                 red += emissive_red * screen_strength;
                 green += emissive_green * screen_strength;
                 blue += emissive_blue * screen_strength;
+                if (physical_surface_signal <= 0.01F) {
+                    preview_fallback_energy += screen_strength;
+                }
             }
 
             direct_lighting_cpu_output_[offset] = std::min(96.0F, red);
@@ -4839,6 +5081,14 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
             const float sample_energy = direct_lighting_cpu_output_[offset]
                     + direct_lighting_cpu_output_[offset + 1]
                     + direct_lighting_cpu_output_[offset + 2];
+            if (physical_surface_signal > 0.01F && sample_energy > 0.01F) {
+                surface_payload_pixels++;
+                if (material_response > 0.10F || opaque_ratio > 0.10F) {
+                    material_surface_pixels++;
+                }
+            } else if (emissive_projection > 0.0F && sample_energy > 0.01F) {
+                preview_fallback_pixels++;
+            }
             total_energy += sample_energy;
             min_sample = has_sample ? std::min(min_sample, sample_energy) : sample_energy;
             max_sample = std::max(max_sample, sample_energy);
@@ -4847,6 +5097,8 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
             mix_checksum(checksum, pixel);
             mix_checksum(checksum, surface_index);
             mix_checksum(checksum, last_direct_lighting_payload_packet_.emissive_generation);
+            mix_checksum(checksum, static_cast<std::uint64_t>(physical_surface_signal * 1000.0F));
+            mix_checksum(checksum, static_cast<std::uint64_t>(material_response * 1000.0F));
         }
 
         execution.last_output_width = output_width;
@@ -4856,8 +5108,24 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
         execution.last_output_min_sample = min_sample;
         execution.last_output_max_sample = max_sample;
         execution.last_output_checksum = checksum;
+        execution.last_surface_payload_sample_count = surface_payload_samples;
+        execution.last_surface_payload_pixel_count = surface_payload_pixels;
+        execution.last_material_surface_pixel_count = material_surface_pixels;
+        execution.last_preview_fallback_pixel_count = preview_fallback_pixels;
+        execution.last_physical_surface_energy = physical_surface_energy;
+        execution.last_preview_fallback_energy = preview_fallback_energy;
+        execution.last_surface_payload_confidence = surface_payload_samples == 0
+                ? 0.0F
+                : surface_payload_confidence_sum / static_cast<float>(surface_payload_samples);
+        execution.last_physical_surface_contribution =
+                surface_payload_pixels != 0
+                && physical_surface_energy > 0.0F
+                && execution.last_surface_payload_confidence > 0.0F;
+        execution.last_preview_fallback_contribution = preview_fallback_pixels != 0
+                || preview_fallback_energy > 0.0F;
+        execution.last_focus_window_contribution = false;
         execution.last_cpu_output_generated = true;
-        execution.last_metadata_only = false;
+        execution.last_metadata_only = !execution.last_physical_surface_contribution;
     } else {
         direct_lighting_cpu_output_.clear();
     }
@@ -4890,16 +5158,24 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
     }
 
     if (execution.last_cpu_output_generated) {
-        execution.last_output_marker = execution.last_output_write_recorded
-            ? "direct_light_emissive_candidate_output_write_resolve_recorded"
-            : "direct_light_emissive_candidate_cpu_output_without_resource_write";
+        if (execution.last_physical_surface_contribution) {
+            execution.last_output_marker = execution.last_output_write_recorded
+                ? "direct_light_physical_surface_payload_output_write_resolve_recorded"
+                : "direct_light_physical_surface_payload_cpu_output_without_resource_write";
+        } else {
+            execution.last_output_marker = execution.last_output_write_recorded
+                ? "direct_light_preview_fallback_output_write_resolve_recorded_metadata_only"
+                : "direct_light_preview_fallback_cpu_output_without_resource_write_metadata_only";
+        }
     } else {
         execution.last_output_marker = execution.last_output_write_recorded
             ? "direct_light_output_write_resolve_recorded_no_emissive_candidate_output"
             : "direct_light_resolve_recorded_without_output";
     }
     if (execution.last_cpu_output_generated) {
-        execution.last_readiness_reason = "direct_lighting_emissive_candidate_cpu_output_generated";
+        execution.last_readiness_reason = execution.last_physical_surface_contribution
+            ? "direct_lighting_scene_surface_payload_cpu_output_generated"
+            : "direct_lighting_cpu_output_generated_preview_fallback_only";
     } else {
         execution.last_readiness_reason = direct_stage.last_placeholder
             ? "direct_lighting_validated_placeholder_scaffold_executed_metadata_only"
@@ -5014,6 +5290,9 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_output_write_energy_recorded = false;
     execution.last_scene_inputs_recorded = false;
     execution.last_physical_scene_linked = false;
+    execution.last_physical_surface_contribution = false;
+    execution.last_preview_fallback_contribution = false;
+    execution.last_focus_window_contribution = false;
     execution.last_metadata_only_proof_rejected = true;
     execution.last_focus_window_capture_rejected = true;
     execution.last_proof_marker_evidence_rejected = true;
@@ -6175,6 +6454,15 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                 && material_color_influence_recorded
                 && surface_normal_confidence_recorded
                 && output_energy_checksum_recorded;
+        execution.last_physical_surface_contribution = execution.last_physical_scene_linked
+                && surface_output_recorded
+                && spatial_output_recorded
+                && material_output_recorded
+                && execution.last_output_write_energy > 0.0F;
+        execution.last_preview_fallback_contribution =
+                execution.last_cpu_output_generated
+                && !execution.last_physical_surface_contribution;
+        execution.last_focus_window_contribution = false;
         execution.last_metadata_only_proof_rejected =
                 !execution.last_physical_scene_linked || !execution.last_cpu_output_nonzero;
         execution.last_focus_window_capture_rejected = execution.last_cpu_output_surface_pixel_count != 0

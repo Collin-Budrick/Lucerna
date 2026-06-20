@@ -178,6 +178,15 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 || this.submittedRectangularWashoutRisk();
     }
 
+    public boolean submittedSourceGatedSurfaceProjection() {
+        String normalizedReason = this.reason.toLowerCase(Locale.ROOT);
+        return this.submitted
+                && (normalizedReason.contains("source-gated")
+                || normalizedReason.contains("source_gated")
+                || normalizedReason.contains("sourceboundary=full-target-source-gated")
+                || normalizedReason.contains("surfaceprojection=source-gated"));
+    }
+
     public boolean submittedDirectLightSource() {
         return this.submittedSourceIdentity().contains("native-direct-light-rgba8");
     }
@@ -224,7 +233,8 @@ public record PublicMojangFinalCompositeSubmissionResult(
         if (this.submittedDirectLightSource() && this.submittedRawGiSource() && this.submittedDenoisedGiSource()) {
             return "accepted:final-composite-direct-plus-raw-gi-plus-"
                     + this.denoiseSourceClassLabel()
-                    + "/source-separated";
+                    + "/source-separated/"
+                    + this.surfaceProjectionEvidenceLabel();
         }
         if (this.submittedDirectLightSource() && this.submittedRound7GiSource()) {
             return "accepted:partial-final-composite-direct-plus-gi";
@@ -267,7 +277,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
             return "not-ready:rectangular-washout-risk";
         }
         if (this.submittedDirectLightSource() && this.submittedRawGiSource() && this.submittedDenoisedGiSource()) {
-            return "ready-for-controller-final-direct-raw-denoised-geometry-material-aware-surface-delta";
+            return "ready-for-controller-final-direct-raw-denoised-"
+                    + this.surfaceProjectionEvidenceLabel()
+                    + "-surface-delta";
         }
         if (this.submittedDirectLightSource()) {
             return "ready-for-controller-direct-light-surface-delta";
@@ -301,7 +313,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
             return "visual proof should not pass because rectangular/full-screen washout is not geometry/material-aware surface projection";
         }
         if (this.submittedDirectLightSource() && this.submittedRawGiSource() && this.submittedDenoisedGiSource()) {
-            return "final visual proof can only pass if controller screenshots show stable source-separated direct plus raw GI plus denoised GI contribution projected onto scene geometry/material surfaces with HUD safety";
+            return "final visual proof can only pass if controller screenshots show stable source-separated direct plus raw GI plus denoised GI contribution projected as source-gated scene/surface lighting with HUD safety; focus windows, proof markers, metadata-only previews, and rectangular washout must fail";
         }
         if (this.submittedDirectLightSource()) {
             return "direct-light visual proof can only pass if controller screenshots show an emissive native direct-light surface delta";
@@ -368,6 +380,8 @@ public record PublicMojangFinalCompositeSubmissionResult(
         if (this.submittedDirectLightSource() && this.submittedRawGiSource() && this.submittedDenoisedGiSource()) {
             return "ready-for-controller-proof:source-separated-direct-raw-gi-"
                     + this.denoiseSourceClassLabel()
+                    + ";surfaceProjection="
+                    + this.surfaceProjectionEvidenceLabel()
                     + ";geometry-material-aware-quality=pending;temporal-stability=pending";
         }
         if (this.submittedRound7GiSource()) {
@@ -389,6 +403,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",sourceIdentity=" + this.submittedSourceIdentity()
                 + ",sourceReadinessMatrix=" + this.sourceReadinessMatrix()
                 + ",sourceAuthenticity=" + this.sourceAuthenticityLabel()
+                + ",surfaceProjectionEvidence=" + this.surfaceProjectionEvidenceLabel()
                 + ",geometryMaterialProjectionReadiness=" + this.geometryMaterialProjectionReadiness()
                 + ",temporalStabilityReadiness=" + this.temporalStabilityReadiness()
                 + ",focusWindowOnly=" + this.submittedFocusWindowOnly()
@@ -396,6 +411,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",proofMarkerSource=" + this.submittedProofMarkerSource()
                 + ",temporaryDirectLightSubstitution=" + this.submittedTemporaryDirectLightSubstitution()
                 + ",rectangularWashoutRisk=" + this.submittedRectangularWashoutRisk()
+                + ",sourceGatedSurfaceProjection=" + this.submittedSourceGatedSurfaceProjection()
                 + ",round7GiSource=" + this.submittedRound7GiSource()
                 + ",focusedRegionReadiness=" + this.focusedRegionReadiness()
                 + ",finalSurfaceProjectionQualityGate=" + this.finalSurfaceProjectionQualityGate()
@@ -409,7 +425,8 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",rawGI=" + readyState(this.submittedRawGiSource())
                 + ",cpuDenoisedGI=" + readyState(this.submittedCpuDenoisedGiSource())
                 + ",shaderDenoisedGI=" + readyState(this.submittedShaderDenoisedGiSource())
-                + ",previewEvidenceClean=" + readyState(!this.submittedPreviewOnlyEvidence());
+                + ",previewEvidenceClean=" + readyState(!this.submittedPreviewOnlyEvidence())
+                + ",sourceGatedSurfaceProjection=" + readyState(this.submittedSourceGatedSurfaceProjection());
     }
 
     public String geometryMaterialProjectionReadiness() {
@@ -423,7 +440,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
             return "not-ready:" + this.sourceAuthenticityLabel();
         }
         if (this.submittedDirectLightSource() && this.submittedRawGiSource() && this.submittedDenoisedGiSource()) {
-            return "candidate:source-separated-full-target;physical-geometry-material-quality=pending-controller-proof";
+            return "candidate:source-separated-full-target;"
+                    + this.surfaceProjectionEvidenceLabel()
+                    + ";physical-geometry-material-quality=pending-controller-proof";
         }
         if (this.submittedRound7GiSource()) {
             return "partial:gi-source-submitted;final-direct-plus-denoise-stack-incomplete";
@@ -452,6 +471,19 @@ public record PublicMojangFinalCompositeSubmissionResult(
             return "cpu-denoised-gi";
         }
         return "denoised-gi-missing";
+    }
+
+    public String surfaceProjectionEvidenceLabel() {
+        if (!this.submitted) {
+            return "not-submitted";
+        }
+        if (this.submittedPreviewOnlyEvidence()) {
+            return "rejected-preview-shortcut";
+        }
+        if (this.submittedSourceGatedSurfaceProjection()) {
+            return "source-gated-scene-shaped-preview";
+        }
+        return "unlabeled-requires-controller-proof";
     }
 
     private static void appendIdentity(StringBuilder identity, boolean present, String label) {

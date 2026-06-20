@@ -61,15 +61,6 @@ vec4 broadSurfaceSample(vec2 uv) {
     return center + nearField + surfaceSpread;
 }
 
-float surfaceBoundsMask(vec2 uv) {
-    float left = smoothstep(0.08, 0.22, uv.x);
-    float right = 1.0 - smoothstep(0.86, 0.98, uv.x);
-    float top = smoothstep(0.10, 0.22, uv.y);
-    float bottom = 1.0 - smoothstep(0.90, 1.0, uv.y);
-    float vertical = 0.58 + smoothstep(0.22, 0.74, uv.y) * 0.34;
-    return clamp(left * right * top * bottom * vertical, 0.0, 1.0);
-}
-
 float materialCueMask(vec2 uv, vec4 surfaceSample) {
     vec2 texel = 1.0 / max(vec2(textureSize(InSampler, 0)), vec2(1.0));
     float center = sampledSignal(surfaceSample);
@@ -82,6 +73,23 @@ float materialCueMask(vec2 uv, vec4 surfaceSample) {
             - min(min(surfaceSample.r, surfaceSample.g), surfaceSample.b);
     float materialCue = smoothstep(0.004, 0.055, center + chroma * 1.4);
     return clamp(materialCue * (0.62 + edgeCue * 0.38), 0.0, 1.0);
+}
+
+float sourceSupportMask(vec2 uv, float signal, vec4 surfaceSample) {
+    vec2 texel = 1.0 / max(vec2(textureSize(InSampler, 0)), vec2(1.0));
+    float left = sampledSignal(localSurfaceSample(uv + vec2(-texel.x * 4.0, 0.0)));
+    float right = sampledSignal(localSurfaceSample(uv + vec2(texel.x * 4.0, 0.0)));
+    float up = sampledSignal(localSurfaceSample(uv + vec2(0.0, -texel.y * 4.0)));
+    float down = sampledSignal(localSurfaceSample(uv + vec2(0.0, texel.y * 4.0)));
+    float neighborSupport = max(max(left, right), max(up, down));
+    float chroma = max(max(surfaceSample.r, surfaceSample.g), surfaceSample.b)
+            - min(min(surfaceSample.r, surfaceSample.g), surfaceSample.b);
+    float sourceDriven = smoothstep(0.018, 0.22, max(signal, neighborSupport * 0.72 + chroma * 0.55));
+    float softEdgeGuard = smoothstep(0.005, 0.045, uv.x)
+            * smoothstep(0.005, 0.045, uv.y)
+            * (1.0 - smoothstep(0.955, 0.995, uv.x))
+            * (1.0 - smoothstep(0.955, 0.995, uv.y));
+    return clamp(mix(0.18, 1.0, sourceDriven) * softEdgeGuard, 0.0, 1.0);
 }
 
 float organicSurfaceBreakup(vec2 uv, float signal) {
@@ -97,7 +105,7 @@ void main() {
     float localSignal = sampledSignal(nativeLighting);
     float broadSignal = sampledSignal(broadLighting);
     float signal = clamp(localSignal * 0.62 + broadSignal * 0.38, 0.0, 1.0);
-    float surfaceMask = surfaceBoundsMask(texCoord);
+    float surfaceMask = sourceSupportMask(texCoord, signal, broadLighting);
     float materialMask = materialCueMask(texCoord, broadLighting);
     float shapedProjection = surfaceMask * materialMask * organicSurfaceBreakup(texCoord, signal);
     vec3 sourceTint = max(max(broadLighting.rgb, vec3(0.0)), MIN_SURFACE_RADIANCE * signal);

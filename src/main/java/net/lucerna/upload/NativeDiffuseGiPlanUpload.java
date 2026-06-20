@@ -93,26 +93,54 @@ public record NativeDiffuseGiPlanUpload(
         int sourceMaterialUpdateCount,
         int sceneSurfaceSampleCount,
         int sceneColoredSurfaceSampleCount,
+        int sceneDistinctMaterialCount,
         int sceneSkylitSurfaceCount,
         int sceneSealedInteriorSurfaceCount,
+        int sceneDownwardFacingSurfaceCount,
+        int sceneVerticalSurfaceCount,
+        int sceneDirtySurfaceSampleCount,
         int sceneEmissiveProximitySignals,
         int sceneCacheSampleCountInput,
         boolean sceneCacheDirtyInput,
         int sceneRadianceSampleCount,
+        float sceneMaterialDiversityRatio,
         float sceneAverageAlbedoR,
         float sceneAverageAlbedoG,
         float sceneAverageAlbedoB,
         float sceneAverageAlbedoSaturation,
         float sceneColoredBounceInfluence,
+        float sceneMaterialColorInfluence,
         float sceneSkylightExposureRatio,
         float sceneSealedInteriorRatio,
+        float sceneDownwardFacingRatio,
+        float sceneVerticalSurfaceRatio,
+        float sceneOrientationBalance,
+        float sceneAverageSurfaceNormalX,
+        float sceneAverageSurfaceNormalY,
+        float sceneAverageSurfaceNormalZ,
+        float sceneAverageNormalLength,
+        float sceneSurfaceOrientationConfidence,
+        float sceneAverageSurfaceRoughness,
+        float sceneAverageSurfaceConfidence,
+        float sceneUsableSurfaceConfidenceRatio,
+        float sceneDirtySurfaceSampleRatio,
+        float sceneMaterialOpacityHint,
         float sceneEmissiveProximityScore,
+        float sceneEmissiveSourceCoupling,
+        float sceneCelestialSourceCoupling,
+        float sceneLightSourceSceneCoupling,
+        float sceneDirtyRegionInfluence,
+        float sceneOcclusionDirtyRegionInfluence,
         float sceneCacheConfidenceInput,
         float sceneCacheVarianceInput,
+        float sceneCachePhysicalConfidence,
         float sceneAverageRadianceR,
         float sceneAverageRadianceG,
         float sceneAverageRadianceB,
         float sceneRadianceEnergy,
+        float sceneRadianceDirectionConfidence,
+        float sceneMaterialGeometryCoupling,
+        float scenePhysicalGiInputScore,
         boolean sceneEmissiveProximityAvailable,
         boolean sceneAffectedSurfaceRegionAvailable,
         int sceneAffectedSurfaceMinBlockX,
@@ -246,6 +274,36 @@ public record NativeDiffuseGiPlanUpload(
     public static final int SCENE_AVERAGE_RADIANCE_G_OFFSET = 11;
     public static final int SCENE_AVERAGE_RADIANCE_B_OFFSET = 12;
     public static final int SCENE_RADIANCE_ENERGY_OFFSET = 13;
+    public static final int SCENE_SURFACE_MATERIAL_INTEGER_STRIDE = 4;
+    public static final int SCENE_DISTINCT_MATERIAL_COUNT_OFFSET = 0;
+    public static final int SCENE_DOWNWARD_FACING_SURFACE_COUNT_OFFSET = 1;
+    public static final int SCENE_VERTICAL_SURFACE_COUNT_OFFSET = 2;
+    public static final int SCENE_DIRTY_SURFACE_SAMPLE_COUNT_OFFSET = 3;
+    public static final int SCENE_SURFACE_MATERIAL_FLOAT_STRIDE = 24;
+    public static final int SCENE_MATERIAL_DIVERSITY_RATIO_OFFSET = 0;
+    public static final int SCENE_MATERIAL_COLOR_INFLUENCE_OFFSET = 1;
+    public static final int SCENE_DOWNWARD_FACING_RATIO_OFFSET = 2;
+    public static final int SCENE_VERTICAL_SURFACE_RATIO_OFFSET = 3;
+    public static final int SCENE_ORIENTATION_BALANCE_OFFSET = 4;
+    public static final int SCENE_AVERAGE_SURFACE_NORMAL_X_OFFSET = 5;
+    public static final int SCENE_AVERAGE_SURFACE_NORMAL_Y_OFFSET = 6;
+    public static final int SCENE_AVERAGE_SURFACE_NORMAL_Z_OFFSET = 7;
+    public static final int SCENE_AVERAGE_NORMAL_LENGTH_OFFSET = 8;
+    public static final int SCENE_SURFACE_ORIENTATION_CONFIDENCE_OFFSET = 9;
+    public static final int SCENE_AVERAGE_SURFACE_ROUGHNESS_OFFSET = 10;
+    public static final int SCENE_AVERAGE_SURFACE_CONFIDENCE_OFFSET = 11;
+    public static final int SCENE_USABLE_SURFACE_CONFIDENCE_RATIO_OFFSET = 12;
+    public static final int SCENE_DIRTY_SURFACE_SAMPLE_RATIO_OFFSET = 13;
+    public static final int SCENE_MATERIAL_OPACITY_HINT_OFFSET = 14;
+    public static final int SCENE_EMISSIVE_SOURCE_COUPLING_OFFSET = 15;
+    public static final int SCENE_CELESTIAL_SOURCE_COUPLING_OFFSET = 16;
+    public static final int SCENE_LIGHT_SOURCE_SCENE_COUPLING_OFFSET = 17;
+    public static final int SCENE_DIRTY_REGION_INFLUENCE_OFFSET = 18;
+    public static final int SCENE_OCCLUSION_DIRTY_REGION_INFLUENCE_OFFSET = 19;
+    public static final int SCENE_CACHE_PHYSICAL_CONFIDENCE_OFFSET = 20;
+    public static final int SCENE_RADIANCE_DIRECTION_CONFIDENCE_OFFSET = 21;
+    public static final int SCENE_MATERIAL_GEOMETRY_COUPLING_OFFSET = 22;
+    public static final int SCENE_PHYSICAL_GI_INPUT_SCORE_OFFSET = 23;
     public static final int SCENE_SURFACE_REGION_BOUNDS_STRIDE = 6;
     public static final int SCENE_SURFACE_REGION_MIN_BLOCK_X_OFFSET = 0;
     public static final int SCENE_SURFACE_REGION_MIN_BLOCK_Y_OFFSET = 1;
@@ -362,25 +420,53 @@ public record NativeDiffuseGiPlanUpload(
         requireNonNegative(sourceMaterialUpdateCount, "sourceMaterialUpdateCount");
         requireNonNegative(sceneSurfaceSampleCount, "sceneSurfaceSampleCount");
         requireNonNegative(sceneColoredSurfaceSampleCount, "sceneColoredSurfaceSampleCount");
+        requireNonNegative(sceneDistinctMaterialCount, "sceneDistinctMaterialCount");
         requireNonNegative(sceneSkylitSurfaceCount, "sceneSkylitSurfaceCount");
         requireNonNegative(sceneSealedInteriorSurfaceCount, "sceneSealedInteriorSurfaceCount");
+        requireNonNegative(sceneDownwardFacingSurfaceCount, "sceneDownwardFacingSurfaceCount");
+        requireNonNegative(sceneVerticalSurfaceCount, "sceneVerticalSurfaceCount");
+        requireNonNegative(sceneDirtySurfaceSampleCount, "sceneDirtySurfaceSampleCount");
         requireNonNegative(sceneEmissiveProximitySignals, "sceneEmissiveProximitySignals");
         requireNonNegative(sceneCacheSampleCountInput, "sceneCacheSampleCountInput");
         requireNonNegative(sceneRadianceSampleCount, "sceneRadianceSampleCount");
+        requireUnit(sceneMaterialDiversityRatio, "sceneMaterialDiversityRatio");
         requireUnit(sceneAverageAlbedoR, "sceneAverageAlbedoR");
         requireUnit(sceneAverageAlbedoG, "sceneAverageAlbedoG");
         requireUnit(sceneAverageAlbedoB, "sceneAverageAlbedoB");
         requireUnit(sceneAverageAlbedoSaturation, "sceneAverageAlbedoSaturation");
         requireUnit(sceneColoredBounceInfluence, "sceneColoredBounceInfluence");
+        requireUnit(sceneMaterialColorInfluence, "sceneMaterialColorInfluence");
         requireUnit(sceneSkylightExposureRatio, "sceneSkylightExposureRatio");
         requireUnit(sceneSealedInteriorRatio, "sceneSealedInteriorRatio");
+        requireUnit(sceneDownwardFacingRatio, "sceneDownwardFacingRatio");
+        requireUnit(sceneVerticalSurfaceRatio, "sceneVerticalSurfaceRatio");
+        requireUnit(sceneOrientationBalance, "sceneOrientationBalance");
+        requireFinite(sceneAverageSurfaceNormalX, "sceneAverageSurfaceNormalX");
+        requireFinite(sceneAverageSurfaceNormalY, "sceneAverageSurfaceNormalY");
+        requireFinite(sceneAverageSurfaceNormalZ, "sceneAverageSurfaceNormalZ");
+        requireUnit(sceneAverageNormalLength, "sceneAverageNormalLength");
+        requireUnit(sceneSurfaceOrientationConfidence, "sceneSurfaceOrientationConfidence");
+        requireUnit(sceneAverageSurfaceRoughness, "sceneAverageSurfaceRoughness");
+        requireUnit(sceneAverageSurfaceConfidence, "sceneAverageSurfaceConfidence");
+        requireUnit(sceneUsableSurfaceConfidenceRatio, "sceneUsableSurfaceConfidenceRatio");
+        requireUnit(sceneDirtySurfaceSampleRatio, "sceneDirtySurfaceSampleRatio");
+        requireUnit(sceneMaterialOpacityHint, "sceneMaterialOpacityHint");
         requireUnit(sceneEmissiveProximityScore, "sceneEmissiveProximityScore");
+        requireUnit(sceneEmissiveSourceCoupling, "sceneEmissiveSourceCoupling");
+        requireUnit(sceneCelestialSourceCoupling, "sceneCelestialSourceCoupling");
+        requireUnit(sceneLightSourceSceneCoupling, "sceneLightSourceSceneCoupling");
+        requireUnit(sceneDirtyRegionInfluence, "sceneDirtyRegionInfluence");
+        requireUnit(sceneOcclusionDirtyRegionInfluence, "sceneOcclusionDirtyRegionInfluence");
         requireUnit(sceneCacheConfidenceInput, "sceneCacheConfidenceInput");
         requireFiniteNonNegative(sceneCacheVarianceInput, "sceneCacheVarianceInput");
+        requireUnit(sceneCachePhysicalConfidence, "sceneCachePhysicalConfidence");
         requireFiniteNonNegative(sceneAverageRadianceR, "sceneAverageRadianceR");
         requireFiniteNonNegative(sceneAverageRadianceG, "sceneAverageRadianceG");
         requireFiniteNonNegative(sceneAverageRadianceB, "sceneAverageRadianceB");
         requireFiniteNonNegative(sceneRadianceEnergy, "sceneRadianceEnergy");
+        requireUnit(sceneRadianceDirectionConfidence, "sceneRadianceDirectionConfidence");
+        requireUnit(sceneMaterialGeometryCoupling, "sceneMaterialGeometryCoupling");
+        requireUnit(scenePhysicalGiInputScore, "scenePhysicalGiInputScore");
         if (!sceneAffectedSurfaceRegionAvailable) {
             requireZero(sceneAffectedSurfaceMinBlockX, "sceneAffectedSurfaceMinBlockX");
             requireZero(sceneAffectedSurfaceMinBlockY, "sceneAffectedSurfaceMinBlockY");
@@ -522,26 +608,54 @@ public record NativeDiffuseGiPlanUpload(
                 sourceSummary.materialUpdateCount(),
                 sceneInputs.surfaceSampleCount(),
                 sceneInputs.coloredSurfaceSampleCount(),
+                sceneInputs.distinctMaterialCount(),
                 sceneInputs.skylitSurfaceCount(),
                 sceneInputs.sealedInteriorSurfaceCount(),
+                sceneInputs.downwardFacingSurfaceCount(),
+                sceneInputs.verticalSurfaceCount(),
+                sceneInputs.dirtySurfaceSampleCount(),
                 sceneInputs.emissiveProximitySignals(),
                 sceneInputs.cacheSampleCountInput(),
                 sceneInputs.cacheDirtyInput(),
                 sceneInputs.radianceSampleCount(),
+                sceneInputs.materialDiversityRatio(),
                 sceneInputs.averageAlbedoR(),
                 sceneInputs.averageAlbedoG(),
                 sceneInputs.averageAlbedoB(),
                 sceneInputs.averageAlbedoSaturation(),
                 sceneInputs.coloredBounceInfluence(),
+                sceneInputs.materialColorInfluence(),
                 sceneInputs.skylightExposureRatio(),
                 sceneInputs.sealedInteriorRatio(),
+                sceneInputs.downwardFacingRatio(),
+                sceneInputs.verticalSurfaceRatio(),
+                sceneInputs.orientationBalance(),
+                sceneInputs.averageSurfaceNormalX(),
+                sceneInputs.averageSurfaceNormalY(),
+                sceneInputs.averageSurfaceNormalZ(),
+                sceneInputs.averageNormalLength(),
+                sceneInputs.surfaceOrientationConfidence(),
+                sceneInputs.averageSurfaceRoughness(),
+                sceneInputs.averageSurfaceConfidence(),
+                sceneInputs.usableSurfaceConfidenceRatio(),
+                sceneInputs.dirtySurfaceSampleRatio(),
+                sceneInputs.materialOpacityHint(),
                 sceneInputs.emissiveProximityScore(),
+                sceneInputs.emissiveSourceCoupling(),
+                sceneInputs.celestialSourceCoupling(),
+                sceneInputs.lightSourceSceneCoupling(),
+                sceneInputs.dirtyRegionInfluence(),
+                sceneInputs.occlusionDirtyRegionInfluence(),
                 sceneInputs.cacheConfidenceInput(),
                 sceneInputs.cacheVarianceInput(),
+                sceneInputs.cachePhysicalConfidence(),
                 sceneInputs.averageRadianceR(),
                 sceneInputs.averageRadianceG(),
                 sceneInputs.averageRadianceB(),
                 sceneInputs.radianceEnergy(),
+                sceneInputs.radianceDirectionConfidence(),
+                sceneInputs.materialGeometryCoupling(),
+                sceneInputs.physicalGiInputScore(),
                 sceneInputs.emissiveProximityAvailable(),
                 sceneInputs.affectedSurfaceRegionAvailable(),
                 sceneInputs.affectedSurfaceMinBlockX(),
@@ -739,6 +853,44 @@ public record NativeDiffuseGiPlanUpload(
         };
     }
 
+    public int[] sceneSurfaceMaterialIntegers() {
+        return new int[]{
+                this.sceneDistinctMaterialCount,
+                this.sceneDownwardFacingSurfaceCount,
+                this.sceneVerticalSurfaceCount,
+                this.sceneDirtySurfaceSampleCount
+        };
+    }
+
+    public float[] sceneSurfaceMaterialFloats() {
+        return new float[]{
+                this.sceneMaterialDiversityRatio,
+                this.sceneMaterialColorInfluence,
+                this.sceneDownwardFacingRatio,
+                this.sceneVerticalSurfaceRatio,
+                this.sceneOrientationBalance,
+                this.sceneAverageSurfaceNormalX,
+                this.sceneAverageSurfaceNormalY,
+                this.sceneAverageSurfaceNormalZ,
+                this.sceneAverageNormalLength,
+                this.sceneSurfaceOrientationConfidence,
+                this.sceneAverageSurfaceRoughness,
+                this.sceneAverageSurfaceConfidence,
+                this.sceneUsableSurfaceConfidenceRatio,
+                this.sceneDirtySurfaceSampleRatio,
+                this.sceneMaterialOpacityHint,
+                this.sceneEmissiveSourceCoupling,
+                this.sceneCelestialSourceCoupling,
+                this.sceneLightSourceSceneCoupling,
+                this.sceneDirtyRegionInfluence,
+                this.sceneOcclusionDirtyRegionInfluence,
+                this.sceneCachePhysicalConfidence,
+                this.sceneRadianceDirectionConfidence,
+                this.sceneMaterialGeometryCoupling,
+                this.scenePhysicalGiInputScore
+        };
+    }
+
     public int[] sceneSurfaceRegionBounds() {
         return new int[]{
                 this.sceneAffectedSurfaceMinBlockX,
@@ -860,6 +1012,13 @@ public record NativeDiffuseGiPlanUpload(
                 + " handHudExcludedHint=true"
                 + " affectedSurfaceRegion=\"" + sceneInputs.affectedSurfaceRegionLabel() + "\""
                 + " emissiveProximityAvailable=" + sceneInputs.emissiveProximityAvailable()
+                + " surfaceNormal=" + sceneInputs.averageSurfaceNormalX()
+                + "," + sceneInputs.averageSurfaceNormalY()
+                + "," + sceneInputs.averageSurfaceNormalZ()
+                + " roughness=" + sceneInputs.averageSurfaceRoughness()
+                + " surfaceCacheConfidence=" + sceneInputs.averageSurfaceConfidence()
+                + " materialOpacityHint=" + sceneInputs.materialOpacityHint()
+                + " physicalGiInputScore=" + sceneInputs.physicalGiInputScore()
                 + " giOutputSource=native-cpu-scaffold"
                 + " realShaderGiOutput=false"
                 + " denoiseOutput=cpu-scaffold"

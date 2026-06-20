@@ -161,7 +161,7 @@ public record FinalCompositeModeStatus(
         )
                 + ",denoisedGI=" + denoisedPolicyState()
                 + ",final=" + (this.finalLucernaComposite
-                ? "direct+rawGI+cpuDenoisedGI/composite-proof"
+                ? "direct+rawGI+cpuDenoisedGI/source-gated-surface-preview"
                 : "isolated")
                 + "," + this.shaderOutputStatusSummary();
     }
@@ -211,7 +211,7 @@ public record FinalCompositeModeStatus(
             return "CPU/readback denoised GI view; shader denoise quality remains open";
         }
         if (this.finalCompositeVisualMode()) {
-            return "final composite preview mixes direct, raw native GI, and CPU/readback denoise through scene-shaped full-target projection; physical GI, geometry/material-aware quality, and shader denoise remain open";
+            return "final composite preview mixes direct, raw native GI, and CPU/readback denoise through source-gated scene/surface projection; focus-window/proof-marker paths are rejected, while physical GI, geometry/material-aware quality, and shader denoise remain open";
         }
         return "custom mode; require explicit source and proof boundary";
     }
@@ -221,7 +221,7 @@ public record FinalCompositeModeStatus(
             return "baseline control; no Lucerna source";
         }
         if (this.finalLucernaComposite) {
-            return "reject marker/focus/metadata/substitution; direct/raw/denoised must be distinct ready sources";
+            return "reject proof-marker/focus-window/metadata/substitution; direct/raw/denoised must be distinct ready sources";
         }
         if (this.directLightingEnabled && !this.diffuseGiEnabled) {
             return "direct source must be accepted, candidate-backed, written, and resolved";
@@ -301,7 +301,7 @@ public record FinalCompositeModeStatus(
             return "direct-light/native-direct-light-rgba8";
         }
         if (this.finalCompositeVisualMode()) {
-            return "final-composite/direct-emissive-plus-raw-native-gi-plus-cpu-denoised-gi/source-separated-preview;shader-denoised-gi=not-current";
+            return "final-composite/direct-emissive-plus-raw-native-gi-plus-cpu-denoised-gi/source-gated-surface-preview;shader-denoised-gi=not-current";
         }
         return "custom/unspecified";
     }
@@ -333,7 +333,7 @@ public record FinalCompositeModeStatus(
             return "diagnostic-direct-light-only; not final emissive surface proof";
         }
         if (this.finalCompositeVisualMode()) {
-            return "submit full-target scene-shaped final composite preview; blend native direct emissive, scene-tied native raw GI, and CPU/readback-denoised GI when ready; raw-only fallback is degraded, rectangular washout is rejected by controller proof, and shader denoise remains open";
+            return "submit full-target source-gated scene/surface final composite preview; blend native direct emissive, scene-tied native raw GI, and CPU/readback-denoised GI when ready; focus-window/proof-marker evidence is rejected, raw-only fallback is degraded, rectangular washout is rejected by controller proof, and shader denoise remains open";
         }
         if (this.rawGiVisualMode() || this.denoisedGiVisualMode()) {
             return "submit isolated full-target " + this.selectedSourcePolicy();
@@ -411,7 +411,7 @@ public record FinalCompositeModeStatus(
             return "direct diagnostic mode; Round 7 raw/denoised/final visual proof should not pass from this source";
         }
         if (this.finalCompositeVisualMode()) {
-            return "requires distinct direct/raw-GI/denoised-GI source identities, submitted full-target scene-shaped draw, HUD-safe target, focused-surface delta, anti-rectangular-washout proof, and raw-vs-denoised quality comparison";
+            return "requires distinct direct/raw-GI/denoised-GI source identities, submitted full-target source-gated scene/surface draw, HUD-safe target, focused-surface delta, anti-rectangular-washout proof, proof-marker/focus-window rejection, and raw-vs-denoised quality comparison";
         }
         return "requires mode-specific controller screenshot delta; status alone is not visual proof";
     }
@@ -460,7 +460,7 @@ public record FinalCompositeModeStatus(
         }
         if (this.finalCompositeVisualMode()) {
             if (directSourceReady && giSourceReady && denoisedSourceReady) {
-                return "candidate:direct+raw-gi+cpu-denoised-gi-ready;requires-controller-geometry-material-aware-quality-proof";
+                return "candidate:direct+raw-gi+cpu-denoised-gi-ready;source-gated-surface-preview;requires-controller-geometry-material-aware-quality-proof";
             }
             return "blocked:final-source-missing direct=" + readyState(directSourceReady)
                     + ",raw-gi=" + readyState(giSourceReady)
@@ -518,7 +518,7 @@ public record FinalCompositeModeStatus(
             );
         }
         if (!geometryMaterialProjectionReady) {
-            return "candidate:source-separated-preview-ready;geometry-material-projection-quality=pending";
+            return "candidate:source-separated-source-gated-surface-preview-ready;geometry-material-projection-quality=pending";
         }
         if (!temporalStabilityReady) {
             return "candidate:geometry-material-projection-ready;temporal-stability=pending";
@@ -531,7 +531,7 @@ public record FinalCompositeModeStatus(
 
     public String geometryMaterialProjectionBoundary() {
         if (this.finalCompositeVisualMode()) {
-            return "current=scene-shaped public Mojang full-target projection from CPU/readback payloads; pending=real geometry/material-aware shader/native projection plus physical GI quality";
+            return "current=source-gated scene/surface public Mojang full-target projection from CPU/readback payloads; rejected=focus-window/proof-marker/metadata-only/rectangular-washout; pending=real geometry/material-aware shader/native projection plus physical GI quality";
         }
         if (this.rawGiVisualMode() || this.denoisedGiVisualMode()) {
             return "current=isolated source visualization; pending=final geometry/material-aware composite quality";

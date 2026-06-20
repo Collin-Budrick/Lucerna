@@ -25,8 +25,17 @@ public record DiffuseGiSceneInputSummary(
         float downwardFacingRatio,
         float verticalSurfaceRatio,
         float orientationBalance,
+        float averageSurfaceNormalX,
+        float averageSurfaceNormalY,
+        float averageSurfaceNormalZ,
         float averageNormalLength,
         float surfaceOrientationConfidence,
+        float averageSurfaceRoughness,
+        float averageSurfaceConfidence,
+        float usableSurfaceConfidenceRatio,
+        int dirtySurfaceSampleCount,
+        float dirtySurfaceSampleRatio,
+        float materialOpacityHint,
         float emissiveProximityScore,
         float emissiveSourceCoupling,
         float celestialSourceCoupling,
@@ -86,8 +95,17 @@ public record DiffuseGiSceneInputSummary(
         downwardFacingRatio = clampUnit(downwardFacingRatio);
         verticalSurfaceRatio = clampUnit(verticalSurfaceRatio);
         orientationBalance = clampUnit(orientationBalance);
+        averageSurfaceNormalX = finiteOrZero(averageSurfaceNormalX);
+        averageSurfaceNormalY = finiteOrZero(averageSurfaceNormalY);
+        averageSurfaceNormalZ = finiteOrZero(averageSurfaceNormalZ);
         averageNormalLength = clampUnit(averageNormalLength);
         surfaceOrientationConfidence = clampUnit(surfaceOrientationConfidence);
+        averageSurfaceRoughness = clampUnit(averageSurfaceRoughness);
+        averageSurfaceConfidence = clampUnit(averageSurfaceConfidence);
+        usableSurfaceConfidenceRatio = clampUnit(usableSurfaceConfidenceRatio);
+        dirtySurfaceSampleCount = Math.max(0, dirtySurfaceSampleCount);
+        dirtySurfaceSampleRatio = clampUnit(dirtySurfaceSampleRatio);
+        materialOpacityHint = clampUnit(materialOpacityHint);
         emissiveProximityScore = clampUnit(emissiveProximityScore);
         emissiveSourceCoupling = clampUnit(emissiveSourceCoupling);
         celestialSourceCoupling = clampUnit(celestialSourceCoupling);
@@ -141,7 +159,15 @@ public record DiffuseGiSceneInputSummary(
                 dirtyRegionInfluence,
                 occlusionDirtyRegionInfluence,
                 orientationBalance,
+                averageSurfaceNormalX,
+                averageSurfaceNormalY,
+                averageSurfaceNormalZ,
                 surfaceOrientationConfidence,
+                averageSurfaceRoughness,
+                averageSurfaceConfidence,
+                usableSurfaceConfidenceRatio,
+                dirtySurfaceSampleRatio,
+                materialOpacityHint,
                 radianceDirectionConfidence,
                 cacheConfidenceInput,
                 cacheVarianceInput,
@@ -173,6 +199,15 @@ public record DiffuseGiSceneInputSummary(
                 0.0F,
                 0.0F,
                 0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0,
                 0.0F,
                 0.0F,
                 0.0F,
@@ -232,6 +267,13 @@ public record DiffuseGiSceneInputSummary(
         int downwardCount = 0;
         int verticalCount = 0;
         float normalLengthTotal = 0.0F;
+        float normalXTotal = 0.0F;
+        float normalYTotal = 0.0F;
+        float normalZTotal = 0.0F;
+        float roughnessTotal = 0.0F;
+        float surfaceConfidenceTotal = 0.0F;
+        int usableConfidenceCount = 0;
+        int dirtySurfaceCount = 0;
         Set<Integer> materialIds = new HashSet<>();
         int minBlockX = Integer.MAX_VALUE;
         int minBlockY = Integer.MAX_VALUE;
@@ -255,7 +297,19 @@ public record DiffuseGiSceneInputSummary(
             albedoG += surface.albedoG();
             albedoB += surface.albedoB();
             materialIds.add(surface.materialId());
-            normalLengthTotal += clampUnit(vectorLength(surface.normalX(), surface.normalY(), surface.normalZ()));
+            float normalLength = clampUnit(vectorLength(surface.normalX(), surface.normalY(), surface.normalZ()));
+            normalLengthTotal += normalLength;
+            normalXTotal += surface.normalX();
+            normalYTotal += surface.normalY();
+            normalZTotal += surface.normalZ();
+            roughnessTotal += surface.roughness();
+            surfaceConfidenceTotal += surface.confidence().confidence();
+            if (surface.usable(resolvedConfidence.confidence())) {
+                usableConfidenceCount++;
+            }
+            if (surface.dirty()) {
+                dirtySurfaceCount++;
+            }
             float saturation = saturation(surface.albedoR(), surface.albedoG(), surface.albedoB());
             saturationTotal += saturation;
             float luma = luma(surface.albedoR(), surface.albedoG(), surface.albedoB());
@@ -298,11 +352,24 @@ public record DiffuseGiSceneInputSummary(
         float dominantOrientationRatio = Math.max(skylightRatio, Math.max(verticalRatio, downwardRatio));
         float orientationBalance = surfaceCount == 0 ? 0.0F : clampUnit(1.0F - dominantOrientationRatio);
         float averageNormalLength = normalLengthTotal * inverseSurfaceCount;
-        float surfaceOrientationConfidence = clampUnit(averageNormalLength * (0.65F + (orientationBalance * 0.35F)));
+        float averageSurfaceNormalX = normalXTotal * inverseSurfaceCount;
+        float averageSurfaceNormalY = normalYTotal * inverseSurfaceCount;
+        float averageSurfaceNormalZ = normalZTotal * inverseSurfaceCount;
+        float averageSurfaceRoughness = roughnessTotal * inverseSurfaceCount;
+        float averageSurfaceConfidence = surfaceConfidenceTotal * inverseSurfaceCount;
+        float usableSurfaceRatio = surfaceCount == 0 ? 0.0F : (float) usableConfidenceCount / surfaceCount;
+        float dirtySurfaceRatio = surfaceCount == 0 ? 0.0F : (float) dirtySurfaceCount / surfaceCount;
+        float materialOpacityHint = surfaceCount == 0 ? 0.0F : clampUnit((verticalRatio * 0.40F)
+                + (sealedRatio * 0.30F)
+                + ((1.0F - downwardRatio) * 0.15F)
+                + (averageNormalLength * 0.15F));
+        float surfaceOrientationConfidence = clampUnit(averageNormalLength
+                * (0.50F + (orientationBalance * 0.25F) + (usableSurfaceRatio * 0.25F)));
         float materialGeometryCoupling = clampUnit((materialColorInfluence * 0.45F)
-                + (surfaceOrientationConfidence * 0.30F)
+                + (surfaceOrientationConfidence * 0.22F)
                 + (skylightInteriorContrast * 0.15F)
-                + (materialDiversity * 0.10F));
+                + (materialDiversity * 0.08F)
+                + (materialOpacityHint * 0.10F));
 
         int radianceSamples = 0;
         float radianceR = 0.0F;
@@ -358,12 +425,14 @@ public record DiffuseGiSceneInputSummary(
         float occlusionDirtyInfluence = clampUnit((sealedRatio * 0.35F)
                 + (downwardRatio * 0.20F)
                 + (verticalRatio * 0.15F)
-                + (dirtyInfluence * 0.20F)
+                + (dirtyInfluence * 0.12F)
+                + (dirtySurfaceRatio * 0.08F)
                 + (resolvedConfidence.dirty() ? 0.10F : 0.0F));
         float cacheSampleWeight = clampUnit(resolvedConfidence.sampleCount() / 16.0F);
         float cachePhysicalConfidence = clampUnit(resolvedConfidence.confidence()
                 * (1.0F - clampUnit(resolvedConfidence.variance()))
                 * (0.35F + (cacheSampleWeight * 0.65F))
+                * (0.55F + (averageSurfaceConfidence * 0.30F) + (usableSurfaceRatio * 0.15F))
                 * (resolvedConfidence.dirty() ? 0.50F : 1.0F));
         float physicalGiInputScore = clampUnit((lightSourceSceneCoupling * 0.20F)
                 + (materialGeometryCoupling * 0.18F)
@@ -399,8 +468,17 @@ public record DiffuseGiSceneInputSummary(
                 downwardRatio,
                 verticalRatio,
                 orientationBalance,
+                averageSurfaceNormalX,
+                averageSurfaceNormalY,
+                averageSurfaceNormalZ,
                 averageNormalLength,
                 surfaceOrientationConfidence,
+                averageSurfaceRoughness,
+                averageSurfaceConfidence,
+                usableSurfaceRatio,
+                dirtySurfaceCount,
+                dirtySurfaceRatio,
+                materialOpacityHint,
                 emissiveProximity,
                 emissiveSourceCoupling,
                 celestialSourceCoupling,
@@ -504,8 +582,14 @@ public record DiffuseGiSceneInputSummary(
                 + " orientation=down:" + this.downwardFacingRatio
                 + "/vertical:" + this.verticalSurfaceRatio
                 + "/balance:" + this.orientationBalance
+                + "/normal:" + this.averageSurfaceNormalX + "," + this.averageSurfaceNormalY + "," + this.averageSurfaceNormalZ
                 + "/normalConfidence:" + this.averageNormalLength
                 + "/surfaceConfidence:" + this.surfaceOrientationConfidence
+                + " surfaceMaterial=roughness:" + this.averageSurfaceRoughness
+                + "/cacheConfidence:" + this.averageSurfaceConfidence
+                + "/usable:" + this.usableSurfaceConfidenceRatio
+                + "/dirty:" + this.dirtySurfaceSampleCount + "/" + this.dirtySurfaceSampleRatio
+                + "/opacityHint:" + this.materialOpacityHint
                 + " emissiveProximity=" + this.emissiveProximitySignals + "/" + this.emissiveProximityScore
                 + "/emissiveCoupling:" + this.emissiveSourceCoupling
                 + "/celestialCoupling:" + this.celestialSourceCoupling
@@ -555,6 +639,13 @@ public record DiffuseGiSceneInputSummary(
         return Math.max(0.0F, value);
     }
 
+    private static float finiteOrZero(float value) {
+        if (!Float.isFinite(value)) {
+            return 0.0F;
+        }
+        return value;
+    }
+
     private static String defaultLabel(
             int surfaceSampleCount,
             int coloredSurfaceSampleCount,
@@ -572,7 +663,15 @@ public record DiffuseGiSceneInputSummary(
             float dirtyRegionInfluence,
             float occlusionDirtyRegionInfluence,
             float orientationBalance,
+            float averageSurfaceNormalX,
+            float averageSurfaceNormalY,
+            float averageSurfaceNormalZ,
             float surfaceOrientationConfidence,
+            float averageSurfaceRoughness,
+            float averageSurfaceConfidence,
+            float usableSurfaceConfidenceRatio,
+            float dirtySurfaceSampleRatio,
+            float materialOpacityHint,
             float radianceDirectionConfidence,
             float cacheConfidenceInput,
             float cacheVarianceInput,
@@ -594,7 +693,13 @@ public record DiffuseGiSceneInputSummary(
                 + " dirtyInfluence=" + dirtyRegionInfluence
                 + "/occlusionDirty:" + occlusionDirtyRegionInfluence
                 + " orientationBalance=" + orientationBalance
+                + "/normal:" + averageSurfaceNormalX + "," + averageSurfaceNormalY + "," + averageSurfaceNormalZ
                 + "/surfaceConfidence:" + surfaceOrientationConfidence
+                + " materialSurface=roughness:" + averageSurfaceRoughness
+                + "/cacheConfidence:" + averageSurfaceConfidence
+                + "/usable:" + usableSurfaceConfidenceRatio
+                + "/dirty:" + dirtySurfaceSampleRatio
+                + "/opacityHint:" + materialOpacityHint
                 + " radianceDirectionConfidence=" + radianceDirectionConfidence
                 + " cache=" + cacheConfidenceInput + "/" + cacheVarianceInput
                 + "/physical:" + cachePhysicalConfidence

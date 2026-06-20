@@ -4,6 +4,7 @@ import net.lucerna.render.lighting.direct.DirectCelestialLight;
 import net.lucerna.render.lighting.direct.DirectCelestialLightSource;
 import net.lucerna.render.lighting.direct.DirectEmissiveBlockLight;
 import net.lucerna.render.lighting.direct.DirectLightingPlan;
+import net.lucerna.render.lighting.direct.DirectLightingSceneSummary;
 import net.lucerna.render.lighting.direct.DirectShadowRayCandidate;
 import net.lucerna.render.lighting.direct.DirectShadowRayPlan;
 import net.lucerna.render.lighting.direct.DirectShadowRaySource;
@@ -37,6 +38,25 @@ public record NativeDirectLightingUploadPacket(
         int shadowCandidateCount,
         int budgetedShadowCandidateCount,
         int sectionSnapshotCount,
+        int sceneSurfaceProbeCount,
+        int sceneSectionOccupiedVoxelCount,
+        int sceneSectionOpaqueVoxelCount,
+        int sceneSectionEmissiveVoxelCount,
+        int sceneEmissiveShadowCandidateCount,
+        float sceneAverageEmissiveIntensity,
+        float sceneAverageEmissiveRadius,
+        float sceneAverageEmissiveLuma,
+        float sceneEmissiveEnergyDensity,
+        float sceneEmissiveProximityScore,
+        float sceneAverageShadowDistance,
+        float sceneAverageSurfaceNormalX,
+        float sceneAverageSurfaceNormalY,
+        float sceneAverageSurfaceNormalZ,
+        float sceneSurfaceOrientationConfidence,
+        float sceneSectionOpacityHint,
+        float sceneSectionEmissiveDensity,
+        float sceneMaterialSourceCoupling,
+        String sceneSummaryLabel,
         int[] rayBudget,
         int[] celestialLightSources,
         int[] celestialLightFlags,
@@ -116,6 +136,28 @@ public record NativeDirectLightingUploadPacket(
     public static final int SHADOW_RAY_MAX_DISTANCE_OFFSET = 7;
     public static final int SHADOW_RAY_CONTRIBUTION_WEIGHT_OFFSET = 8;
 
+    public static final int SCENE_SUMMARY_INTEGER_STRIDE = 5;
+    public static final int SCENE_SURFACE_PROBE_COUNT_OFFSET = 0;
+    public static final int SCENE_SECTION_OCCUPIED_VOXEL_COUNT_OFFSET = 1;
+    public static final int SCENE_SECTION_OPAQUE_VOXEL_COUNT_OFFSET = 2;
+    public static final int SCENE_SECTION_EMISSIVE_VOXEL_COUNT_OFFSET = 3;
+    public static final int SCENE_EMISSIVE_SHADOW_CANDIDATE_COUNT_OFFSET = 4;
+
+    public static final int SCENE_SUMMARY_FLOAT_STRIDE = 13;
+    public static final int SCENE_AVERAGE_EMISSIVE_INTENSITY_OFFSET = 0;
+    public static final int SCENE_AVERAGE_EMISSIVE_RADIUS_OFFSET = 1;
+    public static final int SCENE_AVERAGE_EMISSIVE_LUMA_OFFSET = 2;
+    public static final int SCENE_EMISSIVE_ENERGY_DENSITY_OFFSET = 3;
+    public static final int SCENE_EMISSIVE_PROXIMITY_SCORE_OFFSET = 4;
+    public static final int SCENE_AVERAGE_SHADOW_DISTANCE_OFFSET = 5;
+    public static final int SCENE_AVERAGE_SURFACE_NORMAL_X_OFFSET = 6;
+    public static final int SCENE_AVERAGE_SURFACE_NORMAL_Y_OFFSET = 7;
+    public static final int SCENE_AVERAGE_SURFACE_NORMAL_Z_OFFSET = 8;
+    public static final int SCENE_SURFACE_ORIENTATION_CONFIDENCE_OFFSET = 9;
+    public static final int SCENE_SECTION_OPACITY_HINT_OFFSET = 10;
+    public static final int SCENE_SECTION_EMISSIVE_DENSITY_OFFSET = 11;
+    public static final int SCENE_MATERIAL_SOURCE_COUPLING_OFFSET = 12;
+
     public static final int SECTION_SNAPSHOT_METADATA_STRIDE = 15;
     public static final int SECTION_X_OFFSET = 0;
     public static final int SECTION_Y_OFFSET = 1;
@@ -178,6 +220,25 @@ public record NativeDirectLightingUploadPacket(
         requireNonNegative(shadowCandidateCount, "shadowCandidateCount");
         requireNonNegative(budgetedShadowCandidateCount, "budgetedShadowCandidateCount");
         requireNonNegative(sectionSnapshotCount, "sectionSnapshotCount");
+        requireNonNegative(sceneSurfaceProbeCount, "sceneSurfaceProbeCount");
+        requireNonNegative(sceneSectionOccupiedVoxelCount, "sceneSectionOccupiedVoxelCount");
+        requireNonNegative(sceneSectionOpaqueVoxelCount, "sceneSectionOpaqueVoxelCount");
+        requireNonNegative(sceneSectionEmissiveVoxelCount, "sceneSectionEmissiveVoxelCount");
+        requireNonNegative(sceneEmissiveShadowCandidateCount, "sceneEmissiveShadowCandidateCount");
+        requireNonNegativeFinite(sceneAverageEmissiveIntensity, "sceneAverageEmissiveIntensity");
+        requireNonNegativeFinite(sceneAverageEmissiveRadius, "sceneAverageEmissiveRadius");
+        requireNonNegativeFinite(sceneAverageEmissiveLuma, "sceneAverageEmissiveLuma");
+        requireUnit(sceneEmissiveEnergyDensity, "sceneEmissiveEnergyDensity");
+        requireUnit(sceneEmissiveProximityScore, "sceneEmissiveProximityScore");
+        requireNonNegativeFinite(sceneAverageShadowDistance, "sceneAverageShadowDistance");
+        requireFinite(sceneAverageSurfaceNormalX, "sceneAverageSurfaceNormalX");
+        requireFinite(sceneAverageSurfaceNormalY, "sceneAverageSurfaceNormalY");
+        requireFinite(sceneAverageSurfaceNormalZ, "sceneAverageSurfaceNormalZ");
+        requireUnit(sceneSurfaceOrientationConfidence, "sceneSurfaceOrientationConfidence");
+        requireUnit(sceneSectionOpacityHint, "sceneSectionOpacityHint");
+        requireUnit(sceneSectionEmissiveDensity, "sceneSectionEmissiveDensity");
+        requireUnit(sceneMaterialSourceCoupling, "sceneMaterialSourceCoupling");
+        sceneSummaryLabel = requireText(sceneSummaryLabel, "sceneSummaryLabel");
         if (celestialLightCount > 2) {
             throw new IllegalArgumentException("celestialLightCount cannot exceed sun and moon");
         }
@@ -239,6 +300,11 @@ public record NativeDirectLightingUploadPacket(
         List<DirectEmissiveBlockLight> emissiveLights = emissiveBlockList.selectedLights();
         List<DirectShadowRayCandidate> shadowCandidates = shadowRayPlan.rayCandidates();
         List<VoxelSectionSnapshotReference> sectionSnapshots = shadowRayPlan.sectionSnapshots();
+        DirectLightingSceneSummary sceneSummary = DirectLightingSceneSummary.from(
+                emissiveLights,
+                shadowCandidates,
+                sectionSnapshots
+        );
 
         int[] rayBudget = rayBudget(shadowRayPlan.rayBudget());
         int[] celestialLightSources = new int[celestialLights.size()];
@@ -347,6 +413,25 @@ public record NativeDirectLightingUploadPacket(
                 shadowCandidates.size(),
                 shadowRayPlan.budgetedCandidateCount(),
                 sectionSnapshots.size(),
+                sceneSummary.surfaceProbeCount(),
+                sceneSummary.sectionOccupiedVoxelCount(),
+                sceneSummary.sectionOpaqueVoxelCount(),
+                sceneSummary.sectionEmissiveVoxelCount(),
+                sceneSummary.emissiveShadowCandidateCount(),
+                sceneSummary.averageEmissiveIntensity(),
+                sceneSummary.averageEmissiveRadius(),
+                sceneSummary.averageEmissiveLuma(),
+                sceneSummary.emissiveEnergyDensity(),
+                sceneSummary.emissiveProximityScore(),
+                sceneSummary.averageShadowDistance(),
+                sceneSummary.averageSurfaceNormalX(),
+                sceneSummary.averageSurfaceNormalY(),
+                sceneSummary.averageSurfaceNormalZ(),
+                sceneSummary.surfaceOrientationConfidence(),
+                sceneSummary.sectionOpacityHint(),
+                sceneSummary.sectionEmissiveDensity(),
+                sceneSummary.materialSourceCoupling(),
+                sceneSummary.compactLabel(),
                 rayBudget,
                 celestialLightSources,
                 celestialLightFlags,
@@ -433,6 +518,34 @@ public record NativeDirectLightingUploadPacket(
     @Override
     public long[] emissiveLightGenerations() {
         return copy(this.emissiveLightGenerations, "emissiveLightGenerations");
+    }
+
+    public int[] sceneSummaryIntegers() {
+        return new int[]{
+                this.sceneSurfaceProbeCount,
+                this.sceneSectionOccupiedVoxelCount,
+                this.sceneSectionOpaqueVoxelCount,
+                this.sceneSectionEmissiveVoxelCount,
+                this.sceneEmissiveShadowCandidateCount
+        };
+    }
+
+    public float[] sceneSummaryFloats() {
+        return new float[]{
+                this.sceneAverageEmissiveIntensity,
+                this.sceneAverageEmissiveRadius,
+                this.sceneAverageEmissiveLuma,
+                this.sceneEmissiveEnergyDensity,
+                this.sceneEmissiveProximityScore,
+                this.sceneAverageShadowDistance,
+                this.sceneAverageSurfaceNormalX,
+                this.sceneAverageSurfaceNormalY,
+                this.sceneAverageSurfaceNormalZ,
+                this.sceneSurfaceOrientationConfidence,
+                this.sceneSectionOpacityHint,
+                this.sceneSectionEmissiveDensity,
+                this.sceneMaterialSourceCoupling
+        };
     }
 
     @Override
@@ -878,6 +991,13 @@ public record NativeDirectLightingUploadPacket(
         requireFinite(value, name);
         if (value < 0.0F) {
             throw new IllegalArgumentException(name + " must be non-negative");
+        }
+    }
+
+    private static void requireUnit(float value, String name) {
+        requireFinite(value, name);
+        if (value < 0.0F || value > 1.0F) {
+            throw new IllegalArgumentException(name + " must be between 0 and 1");
         }
     }
 

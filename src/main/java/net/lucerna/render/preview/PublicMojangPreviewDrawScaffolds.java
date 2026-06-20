@@ -18,26 +18,27 @@ import java.util.Optional;
 public final class PublicMojangPreviewDrawScaffolds {
     private static final String DIRECT_LIGHT_SOURCE_BINDING = "InSampler";
     private static final String NO_TEXTURE_BINDING = "none";
-    private static final String TEXTURED_FULLSCREEN_MODE = "surface-sample-masked-direct-light-additive";
-    private static final String FINAL_COMPOSITE_FULLSCREEN_MODE = "final-composite-native-direct-light-surface-additive";
+    private static final String TEXTURED_FULLSCREEN_MODE = "source-gated-direct-light-surface-additive";
+    private static final String FINAL_COMPOSITE_FULLSCREEN_MODE = "final-composite-native-direct-light-source-gated-additive";
     private static final String ROUND7_RAW_GI_FULLSCREEN_MODE =
             "round7-raw-gi-native-diffuse-source-additive";
     private static final String ROUND7_DENOISED_GI_FULLSCREEN_MODE =
             "round7-denoised-gi-first-practical-cpu-output-additive";
     private static final String ROUND7_FINAL_COMPOSITE_FULLSCREEN_MODE =
-            "round7-final-composite-raw-plus-denoised-surface-additive";
+            "round7-final-composite-source-separated-scene-surface-additive";
     private static final String RAW_GI_SOURCE_IDENTITY =
             "sourceIdentity=native-diffuse-gi-rgba8/raw-gi";
     private static final String DENOISED_GI_SOURCE_IDENTITY =
             "sourceIdentity=cpu-denoised-diffuse-gi-rgba8/denoised-gi";
     private static final String FINAL_COMPOSITE_SOURCE_BOUNDARY =
-            "sourceBoundary=full-target-scene-shaped-surface-projection,"
+            "sourceBoundary=full-target-source-gated-scene-surface-projection,"
                     + "metadataOnly=false,proofMarker=false,focusWindowOnly=false,"
                     + "temporaryDirectLightSubstitution=false,rectangularWashoutRejected=true,"
+                    + "physicalLightingEvidence=source-gated-surface-shaped-preview,"
                     + "cpuDenoisedSource=true,realDenoiseShaderOutput=false,"
                     + "geometryMaterialAwareProjection=pending-shader/native-quality";
     private static final String DIRECT_LIGHT_FINAL_COMPOSITE_SHADER =
-            "lucerna:core/round6_native_diffuse_gi_surface";
+            "lucerna:core/round7_denoised_gi_visual";
     private static final String ROUND6_DIFFUSE_GI_SURFACE_SHADER =
             "lucerna:core/round6_native_diffuse_gi_surface";
     private static final String ROUND7_DENOISED_GI_VISUAL_SHADER =
@@ -118,7 +119,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                     .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
                     .withFragmentShader(Identifier.fromNamespaceAndPath(
                             "lucerna",
-                            "core/round6_native_diffuse_gi_surface"
+                            "core/round7_denoised_gi_visual"
                     ))
                     .withBindGroupLayout(BindGroupLayouts.IN_SAMPLER)
                     .withColorTargetState(new ColorTargetState(
@@ -183,7 +184,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang surface-sample direct-light preview draw can bind a masked source texture and issue one bounded draw"
+                "public Mojang direct-light preview draw can bind a source-gated surface texture and issue one bounded HUD-safe draw"
         );
     }
 
@@ -225,7 +226,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang surface-sample masked direct-light preview draw issued"
+                "public Mojang source-gated direct-light surface preview draw issued; proofMarker=false,focusWindowOnly=false,metadataOnly=false"
         );
     }
 
@@ -259,7 +260,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang final composite can bind the native direct-light CPU payload texture and issue one full-target surface-source additive draw; shader="
+                "public Mojang final composite can bind the native direct-light CPU payload texture and issue one full-target source-gated surface additive draw; shader="
                         + DIRECT_LIGHT_FINAL_COMPOSITE_SHADER
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
         );
@@ -303,7 +304,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang final composite native direct-light surface-source additive draw issued; shader="
+                "public Mojang final composite native direct-light source-gated surface additive draw issued; proofMarker=false,focusWindowOnly=false,metadataOnly=false,shader="
                         + DIRECT_LIGHT_FINAL_COMPOSITE_SHADER
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
         );
@@ -342,8 +343,8 @@ public final class PublicMojangPreviewDrawScaffolds {
                 "public Mojang Round 7 RAW_GI visual mode can bind the native diffuse-GI RGBA8 source texture and issue a full-target raw-source additive draw; shader="
                         + ROUND6_DIFFUSE_GI_SURFACE_SHADER
                         + "," + RAW_GI_SOURCE_IDENTITY
-                        + ",surfaceProjection=scene-shaped-full-target"
-                        + ",metadataOnly=false,temporaryDirectLightSubstitution=false"
+                        + ",surfaceProjection=source-gated-scene-shaped-full-target"
+                        + ",metadataOnly=false,proofMarker=false,focusWindowOnly=false,temporaryDirectLightSubstitution=false"
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
         );
     }
@@ -391,8 +392,8 @@ public final class PublicMojangPreviewDrawScaffolds {
                 "public Mojang Round 7 RAW_GI native diffuse-GI source additive draw issued; shader="
                         + ROUND6_DIFFUSE_GI_SURFACE_SHADER
                         + "," + RAW_GI_SOURCE_IDENTITY
-                        + ",surfaceProjection=scene-shaped-full-target"
-                        + ",metadataOnly=false,temporaryDirectLightSubstitution=false"
+                        + ",surfaceProjection=source-gated-scene-shaped-full-target"
+                        + ",metadataOnly=false,proofMarker=false,focusWindowOnly=false,temporaryDirectLightSubstitution=false"
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
                         + ",javaOpaqueFallbackDrawRepeats=" + ROUND7_RAW_GI_DRAW_REPEATS
         );
@@ -431,8 +432,8 @@ public final class PublicMojangPreviewDrawScaffolds {
                 "public Mojang Round 7 DENOISED_GI visual mode can bind the denoised diffuse-GI RGBA8 CPU source texture and issue a stronger full-target denoised-source additive draw; shader="
                         + ROUND7_DENOISED_GI_VISUAL_SHADER
                         + "," + DENOISED_GI_SOURCE_IDENTITY
-                        + ",surfaceProjection=scene-shaped-full-target"
-                        + ",metadataOnly=false,temporaryDirectLightSubstitution=false"
+                        + ",surfaceProjection=source-gated-scene-shaped-full-target"
+                        + ",metadataOnly=false,proofMarker=false,focusWindowOnly=false,temporaryDirectLightSubstitution=false"
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
         );
     }

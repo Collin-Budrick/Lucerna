@@ -78,14 +78,31 @@ vec4 denoisedSample(vec2 uv) {
     return colorSum / max(weightSum, 0.0001);
 }
 
+float sourceSurfaceMask(vec2 uv, vec4 center, vec4 denoised) {
+    vec2 texel = safeTexelSize();
+    float centerConfidence = max(signalConfidence(center), signalConfidence(denoised));
+    float xGradient = abs(signalConfidence(sourceSample(uv + vec2(texel.x * 2.0, 0.0)))
+            - signalConfidence(sourceSample(uv + vec2(-texel.x * 2.0, 0.0))));
+    float yGradient = abs(signalConfidence(sourceSample(uv + vec2(0.0, texel.y * 2.0)))
+            - signalConfidence(sourceSample(uv + vec2(0.0, -texel.y * 2.0))));
+    float chromaCue = max(chromaSpan(center.rgb), chromaSpan(denoised.rgb));
+    float sourceSupport = smoothstep(0.012, 0.20, centerConfidence + chromaCue * 0.50 + (xGradient + yGradient) * 0.42);
+    float softEdgeGuard = smoothstep(0.004, 0.040, uv.x)
+            * smoothstep(0.004, 0.040, uv.y)
+            * (1.0 - smoothstep(0.960, 0.996, uv.x))
+            * (1.0 - smoothstep(0.960, 0.996, uv.y));
+    return clamp(sourceSupport * softEdgeGuard, 0.0, 1.0);
+}
+
 void main() {
     vec4 center = sourceSample(texCoord);
     vec4 denoised = denoisedSample(texCoord);
     float confidence = clamp(max(signalConfidence(center), signalConfidence(denoised)), 0.0, 1.0);
+    float surfaceMask = sourceSurfaceMask(texCoord, center, denoised);
 
     vec3 shaped = denoised.rgb;
     shaped = max(shaped, vec3(SIGNAL_FLOOR) * confidence);
-    shaped *= SIGNAL_GAIN * confidence;
+    shaped *= SIGNAL_GAIN * confidence * surfaceMask;
 
     fragColor = vec4(min(max(shaped, vec3(0.0)), MAX_ADDITIVE_PER_DRAW), 1.0);
 }

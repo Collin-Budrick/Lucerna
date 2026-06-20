@@ -87,6 +87,7 @@ public final class LucernaDebugOverlayLines {
             case FRAME_TIMINGS -> addTimingLines(lines, snapshot);
             case DIRECT_LIGHTING -> addDirectLightingLines(lines, snapshot);
             case FIRST_LIGHTING_QUALITY -> addFirstLightingQualityLines(lines, snapshot);
+            case FIRST_LIGHTING_PHYSICAL_PROOF -> addFirstLightingPhysicalProofLines(lines, snapshot);
             case NATIVE_QUEUE -> addNativeQueueLines(lines, snapshot);
             case ADAPTIVE_SAMPLING -> addAdaptiveSamplingLines(lines, snapshot);
             case RAY_BUDGET_HEATMAP -> addRayBudgetHeatmapLines(lines, snapshot);
@@ -142,6 +143,63 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Denoise source identity: " + qualityStatus.denoiseSourceIdentity()));
         lines.add(Component.literal("Rejected evidence: " + qualityStatus.rejectedEvidenceTypes()));
         lines.add(Component.literal("Quality proof gate: " + qualityStatus.readinessGate()));
+    }
+
+    private static void addFirstLightingPhysicalProofLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        LightingDispatchTelemetryStatus lightingDispatch = snapshot.lightingDispatchStatus();
+        LightingDispatchStageTelemetryStatus directStage = lightingDispatch.stages().get("direct_lighting");
+        LightingDispatchStageTelemetryStatus diffuseGiStage = firstStage(
+                lightingDispatch,
+                "diffuse_gi",
+                "low_res_gi",
+                "low_resolution_gi",
+                "gi"
+        );
+        LightingDispatchStageTelemetryStatus denoiseStage = firstStage(
+                lightingDispatch,
+                "denoise",
+                "diffuse_gi_denoise",
+                "denoised_gi",
+                "round7_denoise"
+        );
+        FinalCompositeModeStatus compositeStatus = currentCompositeModeStatus();
+
+        lines.add(Component.literal("Overlay scope: first-lighting source/status proof, not final image quality."));
+        if (!lightingDispatch.hasLightingDispatchStatus()) {
+            lines.add(Component.literal("Lighting dispatch: unavailable"));
+            lines.add(Component.literal("Reason: " + shorten(lightingDispatch.message(), 96)));
+            lines.add(Component.literal("Proof boundary: controller must validate screenshots/logs before any physical-lighting claim."));
+            return;
+        }
+
+        lines.add(Component.literal("Physical source: active=" + yesNoUnknown(physicalSourceActive(directStage))
+                + " directNative=" + stageNativeExecutionLabel(directStage)
+                + " giNative=" + stageNativeExecutionLabel(diffuseGiStage)));
+        lines.add(Component.literal("Scene/surface samples: directCandidates="
+                + countOrFallback(stageCandidateCount(directStage), stageSampleCount(directStage))
+                + " surface=" + stageSurfaceSampleLabel(directStage)
+                + " sections=" + stageSectionCountLabel(directStage)
+                + " giSamples=" + valueOrUnknown(stageSampleCount(diffuseGiStage))
+                + " giRays=" + valueOrUnknown(stageRayCount(diffuseGiStage))));
+        lines.add(Component.literal("Direct output: energy=" + stageOutputEnergyLabel(directStage)
+                + " checksum=" + stageOutputChecksumLabel(directStage)
+                + " cpu=" + yesNoUnknown(stageCpuOutputGenerated(directStage))));
+        lines.add(Component.literal("GI output: energy=" + stageOutputEnergyLabel(diffuseGiStage)
+                + " checksum=" + stageOutputChecksumLabel(diffuseGiStage)
+                + " denoiseEnergy=" + stageOutputEnergyLabel(denoiseStage)));
+        lines.add(Component.literal("Proof guards: metadataOnly(direct/gi/denoise)="
+                + stageMetadataOnlyLabel(directStage)
+                + "/"
+                + stageMetadataOnlyLabel(diffuseGiStage)
+                + "/"
+                + stageMetadataOnlyLabel(denoiseStage)
+                + " focusWindow=" + proofFlagLabel(directStage, diffuseGiStage, denoiseStage, "focus_window_only", "focus_window_source", "focus_only", "focus_window")
+                + " temporarySource=" + proofFlagLabel(directStage, diffuseGiStage, denoiseStage, "temporary_direct_source", "temporary_direct_light_source", "temporary_source_ready", "uses_direct_light_payload")));
+        lines.add(Component.literal("Surface proof hints: emissiveProximity="
+                + giEmissiveProximityLabel(diffuseGiStage)
+                + " region=" + giAffectedSurfaceRegionLabel(diffuseGiStage)
+                + " hudExcluded=" + giHandHudExcludedLabel(diffuseGiStage)));
+        lines.add(Component.literal("Proof boundary: " + firstLightingPhysicalProofBoundary(compositeStatus)));
     }
 
     public static List<Component> validationLines(LucernaStatusSnapshot snapshot) {
@@ -1873,6 +1931,118 @@ public final class LucernaDebugOverlayLines {
     private static String directOutputEvidenceLabel(LightingDispatchStageTelemetryStatus stage) {
         return "energy=" + evidenceValueLabel(stage.outputEnergy())
                 + " checksum=" + evidenceValueLabel(stage.outputChecksum());
+    }
+
+    private static Boolean physicalSourceActive(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null) {
+            return null;
+        }
+        if (Boolean.TRUE.equals(stage.payloadHasDirectWork())) {
+            return true;
+        }
+        if (parsePositive(stage.details().get("physical_source_active"))
+                || parsePositive(stage.details().get("physical_source_ready"))
+                || parsePositive(stage.details().get("source_active"))
+                || parsePositive(stage.details().get("source_ready"))
+                || hasPositive(stage.emissiveCount())
+                || hasPositive(stage.celestialCount())
+                || hasPositive(stage.candidateCount())
+                || hasPositive(stage.sampleCount())) {
+            return true;
+        }
+        if (Boolean.FALSE.equals(stage.enabled()) || Boolean.FALSE.equals(stage.payloadAccepted())) {
+            return false;
+        }
+        return null;
+    }
+
+    private static Long stageCandidateCount(LightingDispatchStageTelemetryStatus stage) {
+        return stage == null ? null : stage.candidateCount();
+    }
+
+    private static Long stageSampleCount(LightingDispatchStageTelemetryStatus stage) {
+        return stage == null ? null : stage.sampleCount();
+    }
+
+    private static Long stageRayCount(LightingDispatchStageTelemetryStatus stage) {
+        return stage == null ? null : stage.rayCount();
+    }
+
+    private static Boolean stageCpuOutputGenerated(LightingDispatchStageTelemetryStatus stage) {
+        return stage == null ? null : stage.cpuOutputGenerated();
+    }
+
+    private static String stageOutputEnergyLabel(LightingDispatchStageTelemetryStatus stage) {
+        return stage == null ? "missing" : evidenceValueLabel(stage.outputEnergy());
+    }
+
+    private static String stageOutputChecksumLabel(LightingDispatchStageTelemetryStatus stage) {
+        return stage == null ? "missing" : evidenceValueLabel(stage.outputChecksum());
+    }
+
+    private static String stageNativeExecutionLabel(LightingDispatchStageTelemetryStatus stage) {
+        return stage == null ? "not_reported" : nativeExecutionLabel(stage);
+    }
+
+    private static String stageMetadataOnlyLabel(LightingDispatchStageTelemetryStatus stage) {
+        return stage == null ? "?" : yesNoUnknown(stage.metadataOnly());
+    }
+
+    private static String stageSectionCountLabel(LightingDispatchStageTelemetryStatus stage) {
+        return stage == null ? "?" : valueOrUnknown(stage.sectionSnapshotCount());
+    }
+
+    private static String stageSurfaceSampleLabel(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null) {
+            return "?";
+        }
+        String explicit = firstDetailOrUnknown(
+                stage,
+                "surface_sample_count",
+                "surface_samples",
+                "opaque_surface_samples",
+                "extracted_surface_samples",
+                "scene_surface_samples"
+        );
+        if (!"?".equals(explicit)) {
+            return explicit;
+        }
+        return valueOrUnknown(stage.sampleCount());
+    }
+
+    private static String proofFlagLabel(LightingDispatchStageTelemetryStatus first,
+                                         LightingDispatchStageTelemetryStatus second,
+                                         LightingDispatchStageTelemetryStatus third,
+                                         String... keys) {
+        String value = firstNonUnknownDetail(first, second, third, keys);
+        if ("?".equals(value)) {
+            return "?";
+        }
+        return isTruthy(value) || parsePositive(value) ? "yes" : value;
+    }
+
+    private static String firstNonUnknownDetail(LightingDispatchStageTelemetryStatus first,
+                                                LightingDispatchStageTelemetryStatus second,
+                                                LightingDispatchStageTelemetryStatus third,
+                                                String... keys) {
+        String firstValue = firstDetailOrUnknown(first, keys);
+        if (!"?".equals(firstValue)) {
+            return firstValue;
+        }
+        String secondValue = firstDetailOrUnknown(second, keys);
+        if (!"?".equals(secondValue)) {
+            return secondValue;
+        }
+        return firstDetailOrUnknown(third, keys);
+    }
+
+    private static boolean hasPositive(Long value) {
+        return value != null && value > 0L;
+    }
+
+    private static String firstLightingPhysicalProofBoundary(FinalCompositeModeStatus compositeStatus) {
+        return "requires controller screenshot delta and logs; "
+                + shorten(compositeStatus.visualProofBoundarySummary(), 96);
     }
 
     private static String evidenceValueLabel(String value) {

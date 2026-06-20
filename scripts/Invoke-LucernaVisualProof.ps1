@@ -2,7 +2,7 @@ param(
     [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalStable", "TemporalMoved", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay", "VoxelRayDebug", "RtEntityDebug", "HybridHitDebug", "DirectReservoirDebug", "GiReservoirDebug", "ReservoirReuseDebug", "DirectBruteBaseline", "RestirDirectEnabled", "RestirTemporalStable", "RestirTemporalMoved", "RestirExecutionDebug")]
     [string] $Mode,
 
-    [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round7DenoiseComposite", "Round7CompositeStability", "Round7EmissiveGiSurface", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry", "Round10HybridTracing", "Round11Restir")]
+    [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round56PhysicalLighting", "Round7DenoiseComposite", "Round7CompositeStability", "Round7EmissiveGiSurface", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry", "Round10HybridTracing", "Round11Restir")]
     [string] $ValidationProfile = "Round5Direct",
 
     [string] $WorldName = "New World",
@@ -58,6 +58,10 @@ param(
     [string] $CaptureManifestJsonPath = "",
 
     [switch] $RejectWindowScreenshotSource,
+
+    [string[]] $PhysicalLightingRequiredLogPattern = @(),
+
+    [string[]] $PhysicalLightingForbiddenLogPattern = @(),
 
     [ValidateSet("MinecraftF2", "Window", "InClient")]
     [string] $ScreenshotSource = "MinecraftF2"
@@ -249,6 +253,52 @@ function Get-Round7CaptureIntent {
         }
         default {
             throw "Unsupported Round 7 capture mode: $CaptureMode"
+        }
+    }
+}
+
+function Get-Round56PhysicalLightingCaptureIntent {
+    param([string] $CaptureMode)
+
+    $enabledPatterns = @(
+        "(?:Lucerna physical lighting|lucerna\.physicalLighting|physical(?:Source|Lighting).*ready=true|firstLighting|first-lighting|physicalSurface|physical-surface|surfaceLighting|PL-A|PL-C|physical-ish|physicalish)",
+        "(?:Lucerna native direct lighting execution: .*outputWriteRecorded=true.*resolveRecorded=true.*ready=true.*cpuOutput=true.*cpuOutputEnergy=[1-9][0-9.eE+-]*.*cpuOutputChecksum=[1-9][0-9]*|Lucerna Round 6 lighting dispatch prepared: .*diffuse_gi=\{\{enabled=true,.*rays=[1-9][0-9]*,cache_reads=[1-9][0-9]*|Lucerna Round 6 diffuse GI preview composite: .*ready=true .*(?:temporarySourceReady=false|(?:visibleSource|outputSource|source|sourceType)=`"?native[-_ ]?diffuse[-_ ]?gi))",
+        "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true(?=[^`r`n]*mode=(?![^`r`n]*focus-window)[^`r`n]*(?:direct|emissive|physical|gi|surface|final|composite))(?=[^`r`n]*(?:surface|world|final|composite))"
+    )
+
+    switch ($CaptureMode) {
+        "Baseline" {
+            return [ordered]@{
+                rendererEnabled = $false
+                debugOverlay = "OFF"
+                compositeMode = "BASE_VANILLA_ONLY"
+                artifactRole = "physical-lighting-baseline-disabled"
+                requiredPatterns = @(
+                    "Using graphics backend Vulkan",
+                    "Lucerna backend status: SODIUM_VULKAN"
+                )
+            }
+        }
+        "Enabled" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "physical-lighting-enabled"
+                requiredPatterns = @($enabledPatterns)
+            }
+        }
+        "Debug" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "FIRST_LIGHTING_PHYSICAL_PROOF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "physical-lighting-debug"
+                requiredPatterns = @($enabledPatterns)
+            }
+        }
+        default {
+            throw "Unsupported Round 5/6 physical-lighting capture mode: $CaptureMode"
         }
     }
 }
@@ -953,6 +1003,7 @@ function Send-MinecraftChatCommand {
 
 function Clear-MinecraftChat {
     Focus-MinecraftWindow | Out-Null
+    Send-MinecraftKeys "{ESC}"
     if (-not ("LucernaValidationKeyboard" -as [type])) {
         Add-Type @"
 using System;
@@ -973,6 +1024,8 @@ public static class LucernaValidationKeyboard {
     [LucernaValidationKeyboard]::keybd_event(0x44, 0, $keyUp, [UIntPtr]::Zero)
     Start-Sleep -Milliseconds 80
     [LucernaValidationKeyboard]::keybd_event(0x72, 0, $keyUp, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 120
+    Send-MinecraftKeys "{ESC}"
     Start-Sleep -Milliseconds 500
 }
 
@@ -1383,7 +1436,9 @@ if (-not (Test-Path -LiteralPath $gradlew)) {
 }
 
 $scenario = if ([string]::IsNullOrWhiteSpace($ScenarioName)) {
-    if ($ValidationProfile -eq "Round7DenoiseComposite") {
+    if ($ValidationProfile -eq "Round56PhysicalLighting") {
+        "round56-physical-lighting-$($Mode.ToLowerInvariant())"
+    } elseif ($ValidationProfile -eq "Round7DenoiseComposite") {
         "round7-denoise-composite-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round7CompositeStability") {
         "round7-composite-stability-$($Mode.ToLowerInvariant())"
@@ -1431,7 +1486,19 @@ try {
     $round9CaptureIntent = $null
     $round10CaptureIntent = $null
     $round11CaptureIntent = $null
-    if ($ValidationProfile -eq "Round7DenoiseComposite") {
+    $round56PhysicalLightingCaptureIntent = $null
+    if ($ValidationProfile -eq "Round56PhysicalLighting") {
+        if ($ScreenshotSource -ne "InClient") {
+            throw "Round56PhysicalLighting requires -ScreenshotSource InClient so capture provenance comes from the Minecraft client screenshot hook."
+        }
+        $RejectWindowScreenshotSource = $true
+        $round56PhysicalLightingCaptureIntent = Get-Round56PhysicalLightingCaptureIntent $Mode
+        Write-LucernaConfig `
+            $root `
+            ([bool]$round56PhysicalLightingCaptureIntent.rendererEnabled) `
+            ([string]$round56PhysicalLightingCaptureIntent.debugOverlay) `
+            ([string]$round56PhysicalLightingCaptureIntent.compositeMode)
+    } elseif ($ValidationProfile -eq "Round7DenoiseComposite") {
         $round7CaptureIntent = Get-Round7CaptureIntent $Mode
         Write-LucernaConfig `
             $root `
@@ -1530,8 +1597,14 @@ try {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
-    if ($ValidationProfile -eq "Round5DirectSurface" -or $ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing" -or $ValidationProfile -eq "Round11Restir") {
+    if ($ValidationProfile -eq "Round5DirectSurface" -or $ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round56PhysicalLighting" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing" -or $ValidationProfile -eq "Round11Restir") {
         $psi.Environment["LUCERNA_HIDE_PROOF_OVERLAYS"] = "true"
+    }
+    if ($ValidationProfile -eq "Round56PhysicalLighting") {
+        $psi.Environment["LUCERNA_PHYSICAL_LIGHTING_CAPTURE_MODE"] = [string]$round56PhysicalLightingCaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_PHYSICAL_LIGHTING_ARTIFACT_ROLE"] = [string]$round56PhysicalLightingCaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_PHYSICAL_LIGHTING_VISUAL_PROOF_OWNER"] = "controller"
+        $psi.Environment["LUCERNA_PHYSICAL_LIGHTING_STRICT_PROOF"] = "true"
     }
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
         $psi.Environment["LUCERNA_ROUND7_CAPTURE_MODE"] = [string]$round7CaptureIntent.artifactRole
@@ -1613,7 +1686,13 @@ try {
         "Lucerna backend status: SODIUM_VULKAN",
         "joined the game"
     )
-    $enabledPatterns = if ($ValidationProfile -eq "Round7DenoiseComposite") {
+    $enabledPatterns = if ($ValidationProfile -eq "Round56PhysicalLighting") {
+        if ($PhysicalLightingRequiredLogPattern.Count -gt 0) {
+            @($PhysicalLightingRequiredLogPattern)
+        } else {
+            @($round56PhysicalLightingCaptureIntent.requiredPatterns)
+        }
+    } elseif ($ValidationProfile -eq "Round7DenoiseComposite") {
         @($round7CaptureIntent.requiredPatterns)
     } elseif ($ValidationProfile -eq "Round7CompositeStability") {
         @($round7StabilityCaptureIntent.requiredPatterns)
@@ -1662,7 +1741,37 @@ try {
         "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*mode=final-composite-direct-light-focus-window-additive"
         )
     }
-    $forbiddenPatterns = if ($ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface") {
+    $forbiddenPatterns = if ($ValidationProfile -eq "Round56PhysicalLighting") {
+        @(
+            "temporarySourceReady=true",
+            "temporaryDirectLightSubstitution=true",
+            "using the current direct-light RGBA payload as the temporary visible source",
+            "Lucerna public Mojang final composite: .*metadataOnlyPreview=true",
+            "Lucerna Round 6 diffuse GI preview composite: .*metadata-only",
+            "physicalLighting.*metadata scaffold",
+            "physicalLighting.*no_render_output",
+            "Lucerna public Mojang final composite: .*metadata scaffold",
+            "Lucerna public Mojang final composite: .*no_render_output",
+            "round6-diffuse-gi-focus-window-additive",
+            "final-composite-direct-light-focus-window-additive",
+            "sourceIdentity=native-direct-light-rgba8,focusWindowOnly=true",
+            "focusWindowOnly(?:Submitted)?=true",
+            "focus_window_only=true",
+            "round5-direct-proof",
+            "R5 visual proof",
+            "round6-gi-proof",
+            "R6 GI proof",
+            "R7 proof",
+            "proofMarkerSource=true",
+            "cpuOutputProofMarker=true",
+            "invalid descriptor",
+            "VK_ERROR",
+            "VK_[A-Z_]*ERROR",
+            "Lucerna native error",
+            "native error",
+            "Vulkan error"
+        ) + @($PhysicalLightingForbiddenLogPattern)
+    } elseif ($ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface") {
         @(
             "temporarySourceReady=true",
             "using the current direct-light RGBA payload as the temporary visible source",
@@ -1814,7 +1923,7 @@ try {
     if ($enabledPatterns.Count -gt 0) {
         Wait-LatestLogPattern $markerLog $enabledPatterns $deadline $earlyFailureLogPaths $forbiddenPatterns
     }
-    if (($ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing" -or $ValidationProfile -eq "Round11Restir") -and -not $SetupScene) {
+    if (($ValidationProfile -eq "Round56PhysicalLighting" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing" -or $ValidationProfile -eq "Round11Restir") -and -not $SetupScene) {
         Start-Sleep -Seconds 8
     }
 
@@ -1975,6 +2084,14 @@ try {
         Write-Host "round7SurfaceCompositeMode=$($round7SurfaceCaptureIntent.compositeMode)"
         Write-Host "round7SurfaceHudHiddenForScreenshot=$hudHiddenForScreenshot"
         Write-Host "round7SurfaceMeasuredRegion=fixed-upper-mid-world-surface"
+    }
+    if ($round56PhysicalLightingCaptureIntent) {
+        Write-Host "physicalLightingArtifactRole=$($round56PhysicalLightingCaptureIntent.artifactRole)"
+        Write-Host "physicalLightingCompositeMode=$($round56PhysicalLightingCaptureIntent.compositeMode)"
+        Write-Host "physicalLightingDebugOverlay=$($round56PhysicalLightingCaptureIntent.debugOverlay)"
+        Write-Host "physicalLightingStrictProof=true"
+        Write-Host "physicalLightingRequiredPatternCount=$($enabledPatterns.Count)"
+        Write-Host "physicalLightingForbiddenPatternCount=$($forbiddenPatterns.Count)"
     }
     if ($round8CaptureIntent) {
         Write-Host "round8ArtifactRole=$($round8CaptureIntent.artifactRole)"

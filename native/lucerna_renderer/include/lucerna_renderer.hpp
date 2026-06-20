@@ -526,6 +526,10 @@ struct NativeDirectLightingExecutionTelemetry {
     std::uint64_t last_output_height = 0;
     std::uint64_t last_output_pixel_count = 0;
     std::uint64_t last_output_checksum = 0;
+    std::uint64_t last_surface_payload_sample_count = 0;
+    std::uint64_t last_surface_payload_pixel_count = 0;
+    std::uint64_t last_material_surface_pixel_count = 0;
+    std::uint64_t last_preview_fallback_pixel_count = 0;
     std::uint64_t total_celestial_light_count = 0;
     std::uint64_t total_emissive_light_count = 0;
     std::uint64_t total_shadow_candidate_count = 0;
@@ -544,6 +548,9 @@ struct NativeDirectLightingExecutionTelemetry {
     float last_output_energy = 0.0F;
     float last_output_min_sample = 0.0F;
     float last_output_max_sample = 0.0F;
+    float last_physical_surface_energy = 0.0F;
+    float last_preview_fallback_energy = 0.0F;
+    float last_surface_payload_confidence = 0.0F;
     std::uint32_t last_payload_flags = 0;
     bool last_payload_accepted = false;
     bool last_payload_validated = false;
@@ -557,6 +564,9 @@ struct NativeDirectLightingExecutionTelemetry {
     bool last_resolve_recorded = false;
     bool last_ray_budget_valid = false;
     bool last_ray_budget_ingested = false;
+    bool last_physical_surface_contribution = false;
+    bool last_preview_fallback_contribution = false;
+    bool last_focus_window_contribution = false;
     std::string last_payload_dimension_id;
     std::string last_output_marker;
     std::string last_readiness_reason;
@@ -681,6 +691,9 @@ struct NativeRound6DispatchExecutionTelemetry {
     bool last_output_write_energy_recorded = false;
     bool last_scene_inputs_recorded = false;
     bool last_physical_scene_linked = false;
+    bool last_physical_surface_contribution = false;
+    bool last_preview_fallback_contribution = false;
+    bool last_focus_window_contribution = false;
     bool last_metadata_only_proof_rejected = true;
     bool last_focus_window_capture_rejected = true;
     bool last_proof_marker_evidence_rejected = true;

@@ -41,6 +41,7 @@ import net.lucerna.render.lighting.gi.GiCacheSnapshot;
 import net.lucerna.render.lighting.gi.LowResDiffuseGiPlan;
 import net.lucerna.render.lighting.gi.LowResDiffuseGiPlanner;
 import net.lucerna.render.lighting.gi.SparseVoxelRadianceCacheSnapshotAdapter;
+import net.lucerna.render.lighting.physical.PhysicalLightingProofStatus;
 import net.lucerna.render.lighting.post.PostProcessingPipelinePlan;
 import net.lucerna.render.lighting.post.PostProcessingPlanBuilder;
 import net.lucerna.render.mixin.PublicMojangPreviewPassSubmissionResult;
@@ -1309,6 +1310,10 @@ public final class LucernaController {
                 result.submittedFocusWindowOnly(),
                 result.submittedDirectLightSource()
         );
+        PhysicalLightingProofStatus physicalProof = PhysicalLightingProofStatus.from(
+                LucernaStatusSnapshot.capture(this),
+                result
+        );
         String logKey = result.attempted()
                 + "|"
                 + result.submitted()
@@ -1329,6 +1334,8 @@ public final class LucernaController {
                 + "|"
                 + substitutionBoundary
                 + "|"
+                + physicalProof.logFields()
+                + "|"
                 + result.reason();
         if (logKey.equals(this.lastLoggedPublicMojangFinalCompositeKey)) {
             return;
@@ -1338,7 +1345,7 @@ public final class LucernaController {
         Lucerna.LOGGER.info(
                 "Lucerna public Mojang final composite: attempted={} submitted={} drawCalls={} javaOpaque={} targetStatus={} "
                         + "{} round7.finalCompositeHudSafe={} round7.finalCompositeSourceMix={} "
-                        + "round7.finalCompositeSourceIdentity={} {} round7.finalCompositeSubmission={} reason={}.",
+                        + "round7.finalCompositeSourceIdentity={} {} {} round7.finalCompositeSubmission={} reason={}.",
                 result.attempted(),
                 result.submitted(),
                 result.drawCallsIssued(),
@@ -1349,6 +1356,7 @@ public final class LucernaController {
                 sourceMix,
                 result.submittedSourceIdentity(),
                 substitutionBoundary,
+                physicalProof.logFields(),
                 result.summary(),
                 result.reason()
         );
