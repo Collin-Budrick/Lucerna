@@ -16,8 +16,52 @@ public record EntityTransformUpdate(
         float scaleZ,
         long transformGeneration,
         boolean visible,
-        boolean transformChanged
+        boolean transformChanged,
+        boolean movementMarker,
+        boolean spawnReady,
+        boolean despawnReady
 ) {
+    public EntityTransformUpdate(
+            String entityKey,
+            String entityType,
+            int instanceIndex,
+            double worldX,
+            double worldY,
+            double worldZ,
+            float rotationX,
+            float rotationY,
+            float rotationZ,
+            float rotationW,
+            float scaleX,
+            float scaleY,
+            float scaleZ,
+            long transformGeneration,
+            boolean visible,
+            boolean transformChanged
+    ) {
+        this(
+                entityKey,
+                entityType,
+                instanceIndex,
+                worldX,
+                worldY,
+                worldZ,
+                rotationX,
+                rotationY,
+                rotationZ,
+                rotationW,
+                scaleX,
+                scaleY,
+                scaleZ,
+                transformGeneration,
+                visible,
+                transformChanged,
+                transformChanged,
+                true,
+                false
+        );
+    }
+
     public EntityTransformUpdate {
         entityKey = clean(entityKey, "unknown-entity");
         entityType = clean(entityType, "unknown");
@@ -60,12 +104,18 @@ public record EntityTransformUpdate(
                 1.0F,
                 transformGeneration,
                 true,
-                true
+                true,
+                true,
+                true,
+                false
         );
     }
 
     public String compactLabel() {
-        return this.entityType + "#" + this.instanceIndex + "@" + this.transformGeneration;
+        return this.entityType + "#" + this.instanceIndex + "@" + this.transformGeneration
+                + ",moveMarker=" + this.movementMarker
+                + ",spawnReady=" + this.spawnReady
+                + ",despawnReady=" + this.despawnReady;
     }
 
     private static String clean(String value, String fallback) {

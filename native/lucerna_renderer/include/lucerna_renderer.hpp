@@ -352,8 +352,15 @@ struct NativeVirtualChunkGeometryTelemetry {
     std::uint64_t traversal_palette_entry_count = 0;
     std::uint64_t traversal_fallback_sections = 0;
     std::uint64_t traversal_generation_counter = 0;
+    std::uint64_t entity_movement_marker_count = 0;
+    std::uint64_t chunk_churn_marker_count = 0;
+    std::uint64_t section_lifecycle_marker_count = 0;
     bool traversal_mask_bits_ready = false;
     bool traversal_material_lookup_ready = false;
+    bool world_leave_seen = false;
+    bool shutdown_safe = false;
+    bool real_gpu_traversal_executed = false;
+    bool hardware_rt_executed = false;
     bool gpu_culling_executed = false;
     bool gpu_culling_prerequisites_ready = false;
     bool gpu_frustum_culling_ready = false;
@@ -375,6 +382,11 @@ struct NativeVirtualChunkGeometryTelemetry {
     std::string traversal_mask_bit_source;
     std::string traversal_material_lookup_source;
     std::string traversal_blocker_reason;
+    std::string stress_marker;
+    std::string entity_movement_marker;
+    std::string chunk_churn_marker;
+    std::string section_lifecycle_marker;
+    std::string shutdown_safe_marker;
 };
 
 struct NativeGBufferStagingTelemetry {

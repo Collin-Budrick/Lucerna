@@ -69,6 +69,10 @@ public record VoxelTraversalRequest(
         return maxSnapshotGeneration(this.sectionSnapshots);
     }
 
+    public VoxelSectionLifecycleStatus sectionLifecycleStatus() {
+        return VoxelSectionLifecycleStatus.fromSectionSnapshots(this.sectionSnapshots);
+    }
+
     public boolean requiresSectionPayload() {
         return this.requireOccupancyMasks || this.requireMaterialPalette;
     }

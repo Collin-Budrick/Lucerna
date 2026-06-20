@@ -790,6 +790,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Overlay scope: Round 10 voxel traversal CPU metadata/debug status."));
         lines.add(Component.literal("Voxel ray debug visible: yes | source=native round10_voxel_traversal status"));
         addRoundTenTraversalValidationLines(lines, snapshot);
+        addRoundTenStressLines(lines, snapshot);
         lines.add(Component.literal("Round 10 hybrid hits: " + status.summary()));
         lines.add(Component.literal("Round 10 source counts: " + status.sourceCountsLine()));
         lines.add(Component.literal("Round 10 readiness: " + status.readinessLine()));
@@ -801,6 +802,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Overlay scope: Round 10 Vulkan RT entity path status."));
         lines.add(Component.literal("RT entity debug visible: yes | BLAS/TLAS status is fallback-safe until native RT telemetry exists."));
         addRoundTenTraversalValidationLines(lines, snapshot);
+        addRoundTenStressLines(lines, snapshot);
         lines.add(Component.literal("Round 10 fallback: " + status.fallbackLine()));
         lines.add(Component.literal("Round 10 priority: " + status.priorityLine()));
         lines.add(Component.literal("Round 10 material: " + status.materialConsistencyLine()));
@@ -812,6 +814,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Overlay scope: Round 10 hybrid hit resolver status."));
         lines.add(Component.literal("Hybrid hit debug visible: yes | " + status.summary()));
         addRoundTenTraversalValidationLines(lines, snapshot);
+        addRoundTenStressLines(lines, snapshot);
         lines.add(Component.literal("Hybrid source counts: " + status.sourceCountsLine()));
         lines.add(Component.literal("Hybrid priority: " + status.priorityLine()));
         lines.add(Component.literal("Hybrid material consistency: " + status.materialConsistencyLine()));
@@ -878,6 +881,102 @@ public final class LucernaDebugOverlayLines {
                 "traversal_backend",
                 "voxel_traversal_backend"
         ), 54) + " realGpuTraversalExecuted=" + roundTenRealGpuTraversalExecuted(snapshot)));
+    }
+
+    private static void addRoundTenStressLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        lines.add(Component.literal("R10 stress: entityMove=" + roundTenTraversalReadyValue(
+                snapshot,
+                "entity_movement_marker",
+                "entityMovementMarker",
+                "entity_movement_seen",
+                "entityMovementSeen",
+                "moving_entity_marker",
+                "movingEntityMarker",
+                "entity_churn_marker",
+                "entityChurnMarker"
+        ) + " chunkChurn=" + roundTenTraversalReadyValue(
+                snapshot,
+                "chunk_churn_marker",
+                "chunkChurnMarker",
+                "chunk_churn_seen",
+                "chunkChurnSeen",
+                "chunk_load_unload_marker",
+                "chunkLoadUnloadMarker"
+        ) + " sectionLife=" + roundTenTraversalReadyValue(
+                snapshot,
+                "section_lifecycle_marker",
+                "sectionLifecycleMarker",
+                "section_lifecycle_seen",
+                "sectionLifecycleSeen",
+                "section_load_unload_marker",
+                "sectionLoadUnloadMarker"
+        ) + " worldLeave=" + roundTenTraversalReadyValue(
+                snapshot,
+                "world_leave_shutdown_marker",
+                "worldLeaveShutdownMarker",
+                "world_leave_marker",
+                "worldLeaveMarker",
+                "shutdown_marker",
+                "shutdownMarker",
+                "world_shutdown_marker",
+                "worldShutdownMarker"
+        )));
+        lines.add(Component.literal("R10 stress detail: entity=" + shorten(roundTenTraversalValue(
+                snapshot,
+                "entity_movement_detail",
+                "entityMovementDetail",
+                "entity_movement_status",
+                "entityMovementStatus",
+                "entity_movement_reason",
+                "entityMovementReason"
+        ), 32) + " chunk=" + shorten(roundTenTraversalValue(
+                snapshot,
+                "chunk_churn_detail",
+                "chunkChurnDetail",
+                "chunk_churn_status",
+                "chunkChurnStatus",
+                "chunk_churn_reason",
+                "chunkChurnReason"
+        ), 32) + " section=" + shorten(roundTenTraversalValue(
+                snapshot,
+                "section_lifecycle_detail",
+                "sectionLifecycleDetail",
+                "section_lifecycle_status",
+                "sectionLifecycleStatus",
+                "section_lifecycle_reason",
+                "sectionLifecycleReason"
+        ), 32)));
+        lines.add(Component.literal("R10 GPU/RT boundary: realGpuTraversal="
+                + roundTenRealGpuTraversalExecuted(snapshot)
+                + " realHardwareRt=" + roundTenTraversalReadyValue(
+                snapshot,
+                "real_hardware_rt_executed",
+                "realHardwareRtExecuted",
+                "hardware_rt_executed",
+                "hardwareRtExecuted",
+                "rt_hardware_acceleration_executed",
+                "rtHardwareAccelerationExecuted"
+        ) + " rtBackend=" + shorten(roundTenTraversalValue(
+                snapshot,
+                "rt_backend",
+                "rtBackend",
+                "rt_entity_backend",
+                "rtEntityBackend",
+                "hardware_rt_backend",
+                "hardwareRtBackend",
+                "blas_tlas_backend",
+                "blasTlasBackend"
+        ), 30) + " blocker=" + shorten(roundTenTraversalValue(
+                snapshot,
+                "rt_blocker_reason",
+                "rtBlockerReason",
+                "hardware_rt_blocker_reason",
+                "hardwareRtBlockerReason",
+                "gpu_rt_blocker",
+                "gpuRtBlocker",
+                "rt_boundary",
+                "rtBoundary"
+        ), 42)));
     }
 
     private static void addRoundElevenDirectReservoirLines(List<Component> lines, LucernaStatusSnapshot snapshot) {

@@ -170,6 +170,25 @@ param(
         "round10\.emptySectionSkipSafe=true"
     ),
 
+    [string[]] $SectionLifecyclePatterns = @(
+        "sectionLifecycle(?:Marker|Ready|Observed)?=true",
+        "section_lifecycle(?:_marker|_ready|_observed)?=true",
+        "round10\.sectionLifecycle(?:Marker|Ready|Observed)?=true",
+        "sectionLifecycleCount=([1-9][0-9]*)",
+        "section_lifecycle_count=([1-9][0-9]*)",
+        "section_lifecycle_marker_count=([1-9][0-9]*)",
+        "round10\.sectionLifecycleCount=([1-9][0-9]*)"
+    ),
+
+    [string[]] $LifecycleShutdownPatterns = @(
+        "worldLeaveSeen=(?:true|false)",
+        "world_leave_seen=(?:true|false)",
+        "round10\.worldLeaveSeen=(?:true|false)",
+        "shutdownSafe=(?:true|false)",
+        "shutdown_safe=(?:true|false)",
+        "round10\.shutdownSafe=(?:true|false)"
+    ),
+
     [string[]] $TraversalBackendPatterns = @(
         "traversalBackend=(?:cpu|native-cpu|gpu-boundary|fallback|voxel-cpu)",
         "traversal_backend=(?:cpu|native-cpu|gpu-boundary|fallback|voxel-cpu)",
@@ -223,10 +242,24 @@ param(
         "round10\.entityMovement(?:Marker|Ready|Observed)?=true"
     ),
 
+    [string[]] $EntityMovementCountPatterns = @(
+        "entityMovementCount=([1-9][0-9]*)",
+        "entity_movement_count=([1-9][0-9]*)",
+        "entity_movement_marker_count=([1-9][0-9]*)",
+        "round10\.entityMovementCount=([1-9][0-9]*)"
+    ),
+
     [string[]] $ChunkChurnPatterns = @(
         "chunkChurn(?:Marker|Ready|Observed)?=true",
         "chunk_churn(?:_marker|_ready|_observed)?=true",
         "round10\.chunkChurn(?:Marker|Ready|Observed)?=true"
+    ),
+
+    [string[]] $ChunkChurnCountPatterns = @(
+        "chunkChurnCount=([1-9][0-9]*)",
+        "chunk_churn_count=([1-9][0-9]*)",
+        "chunk_churn_marker_count=([1-9][0-9]*)",
+        "round10\.chunkChurnCount=([1-9][0-9]*)"
     ),
 
     [string[]] $HybridVoxelHitPatterns = @(
@@ -256,6 +289,48 @@ param(
         "metadataOnly(?:Tracing|Rt|Traversal)?=",
         "hardwareRtExecution(?:Proven|Ready)?=",
         "tracingBoundary="
+    ),
+
+    [string[]] $SourceStabilityPatterns = @(
+        "srcStable=(?:true|stable|selected|consistent)",
+        "sourceStable=(?:true|stable|selected|consistent)",
+        "selectedSourceStable=(?:true|stable|selected|consistent)",
+        "source_stable=(?:true|stable|selected|consistent)",
+        "selected_source_stability=(?:true|stable|selected|consistent)",
+        "round10\.sourceStability=(?:true|stable|selected|consistent)"
+    ),
+
+    [string[]] $ChunkChurnMaterialConsistencyPatterns = @(
+        "chunkChurnMaterialConsistent=true",
+        "chunk_churn_material_consistent=true",
+        "materialConsistentDuringChunkChurn=true",
+        "material_consistent_during_chunk_churn=true",
+        "chunk_churn_material_stable=true",
+        "round10\.chunkChurnMaterialConsistent=true"
+    ),
+
+    [string[]] $EntityMovementMaterialConsistencyPatterns = @(
+        "entityMoveMaterialConsistent=true",
+        "entity_move_material_consistent=true",
+        "materialConsistentDuringEntityMovement=true",
+        "material_consistent_during_entity_movement=true",
+        "entity_movement_material_stable=true",
+        "round10\.entityMoveMaterialConsistent=true"
+    ),
+
+    [string[]] $RealTracedLightingConsumedFalsePatterns = @(
+        "realTracedLightingConsumed=false",
+        "real_traced_lighting_consumed=false",
+        "traced_lighting_consumed=false",
+        "round10\.realTracedLightingConsumed=false"
+    ),
+
+    [string[]] $TracedLightingNoOverclaimPatterns = @(
+        "tracedLightingNoOverclaim=true",
+        "traced_lighting_no_overclaim=true",
+        "round10\.tracedLightingNoOverclaim=true",
+        "realTracedLightingConsumed=false[^`r`n]*(?:open|boundary|not[-_ ]?consumed|no[-_ ]?overclaim)",
+        "real_traced_lighting_consumed=false[^`r`n]*(?:open|boundary|not[-_ ]?consumed|no[-_ ]?overclaim)"
     ),
 
     [switch] $RequireLogProof
@@ -439,9 +514,12 @@ function Measure-Round10LogProof {
     $openSkyMisses = Get-CapturedNumbers $log $OpenSkyMissPatterns
     $glassWaterMaterialHits = Get-CapturedNumbers $log $GlassWaterMaterialHitPatterns
     $opaqueMaterialHits = Get-CapturedNumbers $log $OpaqueMaterialHitPatterns
+    $sectionLifecycleCounts = Get-CapturedNumbers $log $SectionLifecyclePatterns
     $hybridVoxelHits = Get-CapturedNumbers $log $HybridVoxelHitPatterns
     $hybridRtHits = Get-CapturedNumbers $log $HybridRtHitPatterns
     $hybridScreenSpaceHits = Get-CapturedNumbers $log $HybridScreenSpaceHitPatterns
+    $entityMovementCounts = Get-CapturedNumbers $log $EntityMovementCountPatterns
+    $chunkChurnCounts = Get-CapturedNumbers $log $ChunkChurnCountPatterns
 
     return [ordered]@{
         logPaths = @($ResolvedLogPaths)
@@ -464,6 +542,8 @@ function Measure-Round10LogProof {
             maskBitsReadyPresent = Test-AnyRegex $log $MaskBitsReadyPatterns
             maskBitsSourcePresent = Test-AnyRegex $log $MaskBitsSourcePatterns
             emptySectionSkipSafePresent = Test-AnyRegex $log $EmptySectionSkipSafePatterns
+            sectionLifecyclePresent = Test-AnyRegex $log $SectionLifecyclePatterns
+            lifecycleShutdownPresent = Test-AnyRegex $log $LifecycleShutdownPatterns
             traversalBackendPresent = Test-AnyRegex $log $TraversalBackendPatterns
             realGpuTraversalBoundaryPresent = Test-AnyRegex $log $RealGpuTraversalBoundaryPatterns
             blasStatusPresent = Test-AnyRegex $log $BlasStatusPatterns
@@ -477,13 +557,21 @@ function Measure-Round10LogProof {
             hybridRtHitPresent = Test-AnyRegex $log $HybridRtHitPatterns
             hybridScreenSpaceHitPresent = Test-AnyRegex $log $HybridScreenSpaceHitPatterns
             entityMovementPresent = Test-AnyRegex $log $EntityMovementPatterns
+            entityMovementCountPresent = Test-AnyRegex $log $EntityMovementCountPatterns
             chunkChurnPresent = Test-AnyRegex $log $ChunkChurnPatterns
+            chunkChurnCountPresent = Test-AnyRegex $log $ChunkChurnCountPatterns
             boundaryLabelPresent = Test-AnyRegex $log $BoundaryLabelPatterns
+            sourceStabilityPresent = Test-AnyRegex $log $SourceStabilityPatterns
+            chunkChurnMaterialConsistencyPresent = Test-AnyRegex $log $ChunkChurnMaterialConsistencyPatterns
+            entityMovementMaterialConsistencyPresent = Test-AnyRegex $log $EntityMovementMaterialConsistencyPatterns
+            realTracedLightingConsumedFalsePresent = Test-AnyRegex $log $RealTracedLightingConsumedFalsePatterns
+            tracedLightingNoOverclaimPresent = Test-AnyRegex $log $TracedLightingNoOverclaimPatterns
             invalidTracingValuesPresent = Test-Regex $log "invalid(?:VoxelRay|Traversal|HybridHit|RtEntity|Material|MaskBits)(?:Count|s)?=true|negative (?:voxel ray|traversal|hybrid|BLAS|TLAS|material|wall|open sky)|(?:voxelRay(?:Count|s)?|hybridHit(?:Count|s)?|traversal(?:Step|Steps|StepCount)|wallHit(?:Count|s)?|openSkyMiss(?:Count|s)?|materialHit(?:Count|s)?).*(?:NaN|Infinity)"
             proofMarkerPresent = Test-Regex $log "round10\.(?:proofMarker|focusWindowOnly)=true|Round 10 .*proof marker|Round 10 .*focus-window-only"
             temporaryDirectLightSourcePresent = Test-Regex $log "round10\.temporaryDirectLightSource=true|Round 10 .*temporary direct-light|Round 10 .*current direct-light RGBA payload"
             gpuTraversalOverclaimPresent = Test-Regex $log "realGpuTraversalExecuted=false[^`r`n]*(?:realGpuTraversal(?:Proven|Ready)|gpuTraversalOutputReady)=true|real_gpu_traversal_executed=false[^`r`n]*(?:real_gpu_traversal_(?:proven|ready)|gpu_traversal_output_ready)=true"
             hardwareRtOverclaimPresent = Test-Regex $log "hardwareRtExecutionProven=false[^`r`n]*(?:realHardwareRt(?:Proven|Ready)|rtOutputReady)=true|hardware_rt_execution_proven=false[^`r`n]*(?:real_hardware_rt_(?:proven|ready)|rt_output_ready)=true"
+            tracedLightingConsumptionOverclaimPresent = Test-Regex $log "(?:realTracedLightingConsumed|real_traced_lighting_consumed|traced_lighting_consumed|round10\.realTracedLightingConsumed)=true"
             nativeErrorPresent = Test-Regex $log "invalid descriptor|VK_ERROR|Lucerna native error|native error"
         }
         counts = [ordered]@{
@@ -496,9 +584,12 @@ function Measure-Round10LogProof {
             openSkyMisses = @($openSkyMisses)
             glassWaterMaterialHits = @($glassWaterMaterialHits)
             opaqueMaterialHits = @($opaqueMaterialHits)
+            sectionLifecycleCounts = @($sectionLifecycleCounts)
             hybridVoxelHits = @($hybridVoxelHits)
             hybridRtHits = @($hybridRtHits)
             hybridScreenSpaceHits = @($hybridScreenSpaceHits)
+            entityMovementCounts = @($entityMovementCounts)
+            chunkChurnCounts = @($chunkChurnCounts)
             maxRayCount = Get-MaxNumber $rayCounts
             maxHitCount = Get-MaxNumber $hitCounts
             maxMissCount = Get-MaxNumber $missCounts
@@ -508,9 +599,12 @@ function Measure-Round10LogProof {
             maxOpenSkyMisses = Get-MaxNumber $openSkyMisses
             maxGlassWaterMaterialHits = Get-MaxNumber $glassWaterMaterialHits
             maxOpaqueMaterialHits = Get-MaxNumber $opaqueMaterialHits
+            maxSectionLifecycleCount = Get-MaxNumber $sectionLifecycleCounts
             maxHybridVoxelHits = Get-MaxNumber $hybridVoxelHits
             maxHybridRtHits = Get-MaxNumber $hybridRtHits
             maxHybridScreenSpaceHits = Get-MaxNumber $hybridScreenSpaceHits
+            maxEntityMovementCount = Get-MaxNumber $entityMovementCounts
+            maxChunkChurnCount = Get-MaxNumber $chunkChurnCounts
         }
         patterns = [ordered]@{
             round10MarkerPatterns = @($Round10MarkerPatterns)
@@ -531,6 +625,8 @@ function Measure-Round10LogProof {
             maskBitsReadyPatterns = @($MaskBitsReadyPatterns)
             maskBitsSourcePatterns = @($MaskBitsSourcePatterns)
             emptySectionSkipSafePatterns = @($EmptySectionSkipSafePatterns)
+            sectionLifecyclePatterns = @($SectionLifecyclePatterns)
+            lifecycleShutdownPatterns = @($LifecycleShutdownPatterns)
             traversalBackendPatterns = @($TraversalBackendPatterns)
             realGpuTraversalBoundaryPatterns = @($RealGpuTraversalBoundaryPatterns)
             blasStatusPatterns = @($BlasStatusPatterns)
@@ -542,8 +638,15 @@ function Measure-Round10LogProof {
             hybridRtHitPatterns = @($HybridRtHitPatterns)
             hybridScreenSpaceHitPatterns = @($HybridScreenSpaceHitPatterns)
             entityMovementPatterns = @($EntityMovementPatterns)
+            entityMovementCountPatterns = @($EntityMovementCountPatterns)
             chunkChurnPatterns = @($ChunkChurnPatterns)
+            chunkChurnCountPatterns = @($ChunkChurnCountPatterns)
             boundaryLabelPatterns = @($BoundaryLabelPatterns)
+            sourceStabilityPatterns = @($SourceStabilityPatterns)
+            chunkChurnMaterialConsistencyPatterns = @($ChunkChurnMaterialConsistencyPatterns)
+            entityMovementMaterialConsistencyPatterns = @($EntityMovementMaterialConsistencyPatterns)
+            realTracedLightingConsumedFalsePatterns = @($RealTracedLightingConsumedFalsePatterns)
+            tracedLightingNoOverclaimPatterns = @($TracedLightingNoOverclaimPatterns)
         }
     }
 }
@@ -633,6 +736,12 @@ if ($logProof) {
     if (-not $logProof.markers.emptySectionSkipSafePresent) {
         $failures.Add("Missing Round 10 empty-section skip safety marker.")
     }
+    if (-not $logProof.markers.sectionLifecyclePresent -or $null -eq $logProof.counts.maxSectionLifecycleCount -or [double]$logProof.counts.maxSectionLifecycleCount -le 0) {
+        $failures.Add("Missing nonzero Round 10 section lifecycle stress marker/count.")
+    }
+    if (-not $logProof.markers.lifecycleShutdownPresent) {
+        $failures.Add("Missing Round 10 world-leave or shutdown-safe lifecycle exposure marker.")
+    }
     if (-not $logProof.markers.traversalBackendPresent) {
         $failures.Add("Missing Round 10 traversal backend marker.")
     }
@@ -680,14 +789,38 @@ if ($logProof) {
     if (-not $logProof.markers.entityMovementPresent) {
         $failures.Add("Missing Round 10 entity movement scene/control marker.")
     }
+    if (-not $logProof.markers.entityMovementCountPresent -or $null -eq $logProof.counts.maxEntityMovementCount -or [double]$logProof.counts.maxEntityMovementCount -le 0) {
+        $failures.Add("Missing nonzero Round 10 entity movement stress count marker.")
+    }
     if (-not $logProof.markers.chunkChurnPresent) {
         $failures.Add("Missing Round 10 chunk churn scene/control marker.")
+    }
+    if (-not $logProof.markers.chunkChurnCountPresent -or $null -eq $logProof.counts.maxChunkChurnCount -or [double]$logProof.counts.maxChunkChurnCount -le 0) {
+        $failures.Add("Missing nonzero Round 10 chunk churn stress count marker.")
+    }
+    if (-not $logProof.markers.sourceStabilityPresent) {
+        $failures.Add("Missing Round 10 source stability stress marker.")
+    }
+    if (-not $logProof.markers.chunkChurnMaterialConsistencyPresent) {
+        $failures.Add("Missing Round 10 chunk-churn material consistency stress marker.")
+    }
+    if (-not $logProof.markers.entityMovementMaterialConsistencyPresent) {
+        $failures.Add("Missing Round 10 entity-movement material consistency stress marker.")
+    }
+    if (-not $logProof.markers.realTracedLightingConsumedFalsePresent) {
+        $failures.Add("Missing explicit Round 10 realTracedLightingConsumed=false boundary marker.")
+    }
+    if (-not $logProof.markers.tracedLightingNoOverclaimPresent) {
+        $failures.Add("Missing Round 10 traced-lighting no-overclaim marker.")
     }
     if ($logProof.markers.gpuTraversalOverclaimPresent) {
         $failures.Add("Log overclaims real GPU traversal despite realGpuTraversalExecuted=false.")
     }
     if ($logProof.markers.hardwareRtOverclaimPresent) {
         $failures.Add("Log overclaims hardware RT output despite hardwareRtExecutionProven=false.")
+    }
+    if ($logProof.markers.tracedLightingConsumptionOverclaimPresent) {
+        $failures.Add("Log overclaims real traced lighting consumption; Round 10 stress proof requires realTracedLightingConsumed=false.")
     }
     if ($logProof.markers.nativeErrorPresent) {
         $failures.Add("Log contains native/Vulkan error markers.")
@@ -769,6 +902,17 @@ $result = [ordered]@{
                 maskBitsReadyPresent = if ($logProof) { [bool]$logProof.markers.maskBitsReadyPresent } else { $null }
                 maskBitsSourcePresent = if ($logProof) { [bool]$logProof.markers.maskBitsSourcePresent } else { $null }
             }
+            stressLifecycle = [ordered]@{
+                sectionLifecyclePresent = if ($logProof) { [bool]$logProof.markers.sectionLifecyclePresent } else { $null }
+                maxSectionLifecycleCount = if ($logProof) { $logProof.counts.maxSectionLifecycleCount } else { $null }
+                lifecycleShutdownPresent = if ($logProof) { [bool]$logProof.markers.lifecycleShutdownPresent } else { $null }
+                entityMovementPresent = if ($logProof) { [bool]$logProof.markers.entityMovementPresent } else { $null }
+                entityMovementCountPresent = if ($logProof) { [bool]$logProof.markers.entityMovementCountPresent } else { $null }
+                maxEntityMovementCount = if ($logProof) { $logProof.counts.maxEntityMovementCount } else { $null }
+                chunkChurnPresent = if ($logProof) { [bool]$logProof.markers.chunkChurnPresent } else { $null }
+                chunkChurnCountPresent = if ($logProof) { [bool]$logProof.markers.chunkChurnCountPresent } else { $null }
+                maxChunkChurnCount = if ($logProof) { $logProof.counts.maxChunkChurnCount } else { $null }
+            }
             rtEntity = [ordered]@{
                 rtEntityDebugOverlayPresent = if ($logProof) { [bool]$logProof.markers.rtEntityDebugOverlayPresent } else { $null }
                 blasStatusPresent = if ($logProof) { [bool]$logProof.markers.blasStatusPresent } else { $null }
@@ -790,8 +934,11 @@ $result = [ordered]@{
             }
             proofBoundary = [ordered]@{
                 boundaryLabelPresent = if ($logProof) { [bool]$logProof.markers.boundaryLabelPresent } else { $null }
-                entityMovementPresent = if ($logProof) { [bool]$logProof.markers.entityMovementPresent } else { $null }
-                chunkChurnPresent = if ($logProof) { [bool]$logProof.markers.chunkChurnPresent } else { $null }
+                sourceStabilityPresent = if ($logProof) { [bool]$logProof.markers.sourceStabilityPresent } else { $null }
+                chunkChurnMaterialConsistencyPresent = if ($logProof) { [bool]$logProof.markers.chunkChurnMaterialConsistencyPresent } else { $null }
+                entityMovementMaterialConsistencyPresent = if ($logProof) { [bool]$logProof.markers.entityMovementMaterialConsistencyPresent } else { $null }
+                realTracedLightingConsumedFalsePresent = if ($logProof) { [bool]$logProof.markers.realTracedLightingConsumedFalsePresent } else { $null }
+                tracedLightingNoOverclaimPresent = if ($logProof) { [bool]$logProof.markers.tracedLightingNoOverclaimPresent } else { $null }
                 classification = "round10_overlay_and_telemetry_scaffold_not_physical_quality_claim"
             }
             rejectionMarkers = [ordered]@{
@@ -800,6 +947,7 @@ $result = [ordered]@{
                 proofMarkerPresent = if ($logProof) { [bool]$logProof.markers.proofMarkerPresent } else { $null }
                 gpuTraversalOverclaimPresent = if ($logProof) { [bool]$logProof.markers.gpuTraversalOverclaimPresent } else { $null }
                 hardwareRtOverclaimPresent = if ($logProof) { [bool]$logProof.markers.hardwareRtOverclaimPresent } else { $null }
+                tracedLightingConsumptionOverclaimPresent = if ($logProof) { [bool]$logProof.markers.tracedLightingConsumptionOverclaimPresent } else { $null }
                 nativeErrorPresent = if ($logProof) { [bool]$logProof.markers.nativeErrorPresent } else { $null }
             }
         }
@@ -848,6 +996,9 @@ if ($logProof) {
     Write-Host "maskBitsReadyPresent=$($logProof.markers.maskBitsReadyPresent)"
     Write-Host "maskBitsSourcePresent=$($logProof.markers.maskBitsSourcePresent)"
     Write-Host "emptySectionSkipSafePresent=$($logProof.markers.emptySectionSkipSafePresent)"
+    Write-Host "sectionLifecyclePresent=$($logProof.markers.sectionLifecyclePresent)"
+    Write-Host "maxSectionLifecycleCount=$($logProof.counts.maxSectionLifecycleCount)"
+    Write-Host "lifecycleShutdownPresent=$($logProof.markers.lifecycleShutdownPresent)"
     Write-Host "traversalBackendPresent=$($logProof.markers.traversalBackendPresent)"
     Write-Host "realGpuTraversalBoundaryPresent=$($logProof.markers.realGpuTraversalBoundaryPresent)"
     Write-Host "blasStatusPresent=$($logProof.markers.blasStatusPresent)"
@@ -861,11 +1012,21 @@ if ($logProof) {
     Write-Host "hybridRtHitPresent=$($logProof.markers.hybridRtHitPresent)"
     Write-Host "hybridScreenSpaceHitPresent=$($logProof.markers.hybridScreenSpaceHitPresent)"
     Write-Host "entityMovementPresent=$($logProof.markers.entityMovementPresent)"
+    Write-Host "entityMovementCountPresent=$($logProof.markers.entityMovementCountPresent)"
+    Write-Host "maxEntityMovementCount=$($logProof.counts.maxEntityMovementCount)"
     Write-Host "chunkChurnPresent=$($logProof.markers.chunkChurnPresent)"
+    Write-Host "chunkChurnCountPresent=$($logProof.markers.chunkChurnCountPresent)"
+    Write-Host "maxChunkChurnCount=$($logProof.counts.maxChunkChurnCount)"
     Write-Host "boundaryLabelPresent=$($logProof.markers.boundaryLabelPresent)"
+    Write-Host "sourceStabilityPresent=$($logProof.markers.sourceStabilityPresent)"
+    Write-Host "chunkChurnMaterialConsistencyPresent=$($logProof.markers.chunkChurnMaterialConsistencyPresent)"
+    Write-Host "entityMovementMaterialConsistencyPresent=$($logProof.markers.entityMovementMaterialConsistencyPresent)"
+    Write-Host "realTracedLightingConsumedFalsePresent=$($logProof.markers.realTracedLightingConsumedFalsePresent)"
+    Write-Host "tracedLightingNoOverclaimPresent=$($logProof.markers.tracedLightingNoOverclaimPresent)"
     Write-Host "invalidTracingValuesPresent=$($logProof.markers.invalidTracingValuesPresent)"
     Write-Host "gpuTraversalOverclaimPresent=$($logProof.markers.gpuTraversalOverclaimPresent)"
     Write-Host "hardwareRtOverclaimPresent=$($logProof.markers.hardwareRtOverclaimPresent)"
+    Write-Host "tracedLightingConsumptionOverclaimPresent=$($logProof.markers.tracedLightingConsumptionOverclaimPresent)"
     Write-Host "proofMarkerPresent=$($logProof.markers.proofMarkerPresent)"
     Write-Host "temporaryDirectLightSourcePresent=$($logProof.markers.temporaryDirectLightSourcePresent)"
     Write-Host "nativeErrorPresent=$($logProof.markers.nativeErrorPresent)"

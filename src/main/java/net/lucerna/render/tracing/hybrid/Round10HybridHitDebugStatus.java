@@ -21,6 +21,14 @@ public record Round10HybridHitDebugStatus(
         String maskBitsSource,
         String traversalBackend,
         boolean realGpuTraversalExecuted,
+        String srcStable,
+        String srcStableReason,
+        String chunkChurnMaterialConsistent,
+        String entityMoveMaterialConsistent,
+        String fallbackSourceReason,
+        boolean realTracedLightingConsumed,
+        String stressLine,
+        String tracedLightingBoundaryLine,
         String sourceCountsLine,
         String priorityLine,
         String materialConsistencyLine,
@@ -39,6 +47,16 @@ public record Round10HybridHitDebugStatus(
         maskBitsReady = clean(maskBitsReady, "false");
         maskBitsSource = clean(maskBitsSource, "unknown");
         traversalBackend = clean(traversalBackend, "unknown");
+        srcStable = clean(srcStable, "unknown");
+        srcStableReason = clean(srcStableReason, "awaiting stress telemetry");
+        chunkChurnMaterialConsistent = clean(chunkChurnMaterialConsistent, "unknown");
+        entityMoveMaterialConsistent = clean(entityMoveMaterialConsistent, "unknown");
+        fallbackSourceReason = clean(fallbackSourceReason, "awaiting fallback-source telemetry");
+        stressLine = clean(stressLine, "Hybrid stress: unavailable");
+        tracedLightingBoundaryLine = clean(
+                tracedLightingBoundaryLine,
+                "Hybrid traced lighting boundary: realTracedLightingConsumed=false; open until native traced-light output is consumed"
+        );
         sourceCountsLine = clean(sourceCountsLine, "Hybrid source counts: unavailable");
         priorityLine = clean(priorityLine, "Hybrid priority: unavailable");
         materialConsistencyLine = clean(materialConsistencyLine, "Hybrid material consistency: unavailable");
@@ -73,6 +91,14 @@ public record Round10HybridHitDebugStatus(
                 "unknown",
                 "unknown",
                 false,
+                "unknown",
+                "awaiting stress telemetry",
+                "unknown",
+                "unknown",
+                "awaiting fallback-source telemetry",
+                false,
+                "Hybrid stress: unavailable",
+                "Hybrid traced lighting boundary: realTracedLightingConsumed=false; open until native traced-light output is consumed",
                 sourceCountsLine,
                 priorityLine,
                 materialConsistencyLine,
@@ -311,6 +337,64 @@ public record Round10HybridHitDebugStatus(
                 "real_gpu_voxel_traversal"
         );
         boolean realGpuTraversalExecuted = truthy(realGpuTraversalExecutedValue);
+        String srcStable = firstValue(
+                hybridStage,
+                nativeHybridDetails,
+                nativePasses,
+                "src_stable",
+                "source_stable",
+                "selected_source_stable",
+                "selected_source_stability"
+        );
+        String srcStableReason = firstValue(
+                hybridStage,
+                nativeHybridDetails,
+                nativePasses,
+                "src_stable_reason",
+                "source_stability_reason",
+                "selected_source_stability_reason",
+                "selected_source_churn_reason"
+        );
+        String chunkChurnMaterialConsistent = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativeVoxelDetails,
+                nativePasses,
+                "chunk_churn_material_consistent",
+                "material_consistent_during_chunk_churn",
+                "chunk_churn_material_match",
+                "chunk_churn_material_stable"
+        );
+        String entityMoveMaterialConsistent = firstValue(
+                hybridStage,
+                rtStage,
+                nativeHybridDetails,
+                nativePasses,
+                "entity_move_material_consistent",
+                "material_consistent_during_entity_movement",
+                "entity_movement_material_match",
+                "entity_move_material_stable"
+        );
+        String fallbackSourceReason = firstValue(
+                hybridStage,
+                nativeHybridDetails,
+                nativePasses,
+                "fallback_source_reason",
+                "fallback_src_reason",
+                "fallback_selected_source_reason",
+                "source_fallback_reason"
+        );
+        String realTracedLightingConsumedValue = firstValue(
+                hybridStage,
+                nativeHybridDetails,
+                nativePasses,
+                "real_traced_lighting_consumed",
+                "traced_lighting_consumed",
+                "real_lighting_consumed",
+                "rt_lighting_consumed"
+        );
+        boolean realTracedLightingConsumed = truthy(realTracedLightingConsumedValue);
 
         boolean hasTelemetry = hasAny(
                 screenCount,
@@ -327,6 +411,7 @@ public record Round10HybridHitDebugStatus(
                 fallbackActive,
                 fallbackReason
         );
+        String fallbackSourceReasonResolved = firstNonBlank(fallbackSourceReason, fallbackReason);
         String summary = "selected=" + valueOrUnknown(selectedSource)
                 + ",screen=" + valueOrUnknown(screenCount)
                 + ",voxel=" + valueOrUnknown(voxelCount)
@@ -339,6 +424,10 @@ public record Round10HybridHitDebugStatus(
                 + ",materialIdConsistency=" + valueOrUnknown(materialIdConsistency)
                 + ",traversalBackend=" + valueOrUnknown(traversalBackend)
                 + ",realGpuTraversalExecuted=" + yesNo(realGpuTraversalExecuted)
+                + ",srcStable=" + valueOrUnknown(srcStable)
+                + ",chunkChurnMaterialConsistent=" + valueOrUnknown(chunkChurnMaterialConsistent)
+                + ",entityMoveMaterialConsistent=" + valueOrUnknown(entityMoveMaterialConsistent)
+                + ",realTracedLightingConsumed=" + yesNo(realTracedLightingConsumed)
                 + ",fallback=" + valueOrUnknown(fallbackActive);
         String countsLine = "Hybrid source counts: screen=" + valueOrUnknown(screenCount)
                 + " voxel=" + valueOrUnknown(voxelCount)
@@ -360,6 +449,17 @@ public record Round10HybridHitDebugStatus(
                 + " voxelAvailable=" + valueOrUnknown(voxelAvailable)
                 + " hardwareRtAvailable=" + valueOrUnknown(rtAvailable)
                 + " reason=" + valueOrUnknown(fallbackReason, "awaiting native/controller telemetry");
+        String stressLine = "Hybrid stress: srcStable=" + valueOrUnknown(srcStable)
+                + " srcReason=" + valueOrUnknown(srcStableReason, "awaiting stress telemetry")
+                + " chunkChurnMaterial=" + valueOrUnknown(chunkChurnMaterialConsistent)
+                + " entityMoveMaterial=" + valueOrUnknown(entityMoveMaterialConsistent)
+                + " fallbackSourceReason=" + valueOrUnknown(
+                        fallbackSourceReasonResolved,
+                        "awaiting fallback-source telemetry"
+                );
+        String tracedLightingBoundaryLine = realTracedLightingConsumed
+                ? "Hybrid traced lighting boundary: realTracedLightingConsumed=true from telemetry; controller proof still required"
+                : "Hybrid traced lighting boundary: realTracedLightingConsumed=false; open until native traced-light output is consumed";
         String readinessLine = "Round 10 hybrid readiness: telemetry=" + yesNo(hasTelemetry)
                 + " sources=" + readinessFrom(screenCount, voxelCount, rtCount, skyCount, missCount)
                 + " priority=" + readinessFrom(selectedSource)
@@ -376,10 +476,21 @@ public record Round10HybridHitDebugStatus(
                 + " traversalBackend=" + valueOrUnknown(traversalBackend)
                 + " realGpuTraversalExecuted=" + yesNo(realGpuTraversalExecuted)
                 + " emptySectionSkipSafe=" + valueOrUnknown(emptySectionSkipSafe, "false")
+                + " stress=" + readinessFrom(
+                        srcStable,
+                        srcStableReason,
+                        chunkChurnMaterialConsistent,
+                        entityMoveMaterialConsistent,
+                        fallbackSourceReasonResolved
+                )
+                + " realTracedLightingConsumed=" + yesNo(realTracedLightingConsumed)
                 + " fallback=" + readinessFrom(fallbackActive, voxelAvailable, rtAvailable, fallbackReason);
         String boundaryLine = realGpuTraversalExecuted
                 ? "Round 10 evidence boundary: Java/status resolver reports GPU traversal execution from native telemetry; controller proof remains required"
                 : "Round 10 evidence boundary: Java/status resolver only; realGpuTraversalExecuted=false, voxel traversal remains CPU/status boundary unless native telemetry proves otherwise";
+        if (!realTracedLightingConsumed) {
+            boundaryLine += "; realTracedLightingConsumed=false, traced lighting consumption remains open";
+        }
 
         return new Round10HybridHitDebugStatus(
                 hasTelemetry,
@@ -394,6 +505,14 @@ public record Round10HybridHitDebugStatus(
                 maskBitsSource,
                 traversalBackend,
                 realGpuTraversalExecuted,
+                srcStable,
+                srcStableReason,
+                chunkChurnMaterialConsistent,
+                entityMoveMaterialConsistent,
+                fallbackSourceReasonResolved,
+                realTracedLightingConsumed,
+                stressLine,
+                tracedLightingBoundaryLine,
                 countsLine,
                 priorityLine,
                 materialLine,

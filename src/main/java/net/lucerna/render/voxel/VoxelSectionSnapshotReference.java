@@ -303,6 +303,10 @@ public record VoxelSectionSnapshotReference(
         return Math.max(this.generation.combinedGeneration(), Math.max(this.occupancyMaskGeneration, this.materialGeneration));
     }
 
+    public boolean sectionSnapshotGenerationObserved() {
+        return this.combinedGeneration() > 0L;
+    }
+
     public boolean hasOccupiedVoxels() {
         return this.occupiedVoxelCount > 0;
     }

@@ -1717,6 +1717,11 @@ void Renderer::shutdown() {
     end_frame_without_lighting_count_ = 0;
     reset_pass_counters();
     reset_staging_telemetry();
+    staging_.virtual_geometry.shutdown_safe = true;
+    staging_.virtual_geometry.shutdown_safe_marker =
+            "round10_native_shutdown_safe_seen_resources_released_and_cpu_status_only";
+    staging_.virtual_geometry.real_gpu_traversal_executed = false;
+    staging_.virtual_geometry.hardware_rt_executed = false;
     clear_error();
 }
 
@@ -3491,8 +3496,16 @@ std::string Renderer::status() const {
         << ",palette_entry_count=" << staging_.virtual_geometry.traversal_palette_entry_count
         << ",fallback_sections=" << staging_.virtual_geometry.traversal_fallback_sections
         << ",generation_counter=" << staging_.virtual_geometry.traversal_generation_counter
+        << ",entity_movement_marker_count=" << staging_.virtual_geometry.entity_movement_marker_count
+        << ",chunk_churn_marker_count=" << staging_.virtual_geometry.chunk_churn_marker_count
+        << ",section_lifecycle_marker_count=" << staging_.virtual_geometry.section_lifecycle_marker_count
         << ",mask_bits_ready=" << (staging_.virtual_geometry.traversal_mask_bits_ready ? "true" : "false")
         << ",material_lookup_ready=" << (staging_.virtual_geometry.traversal_material_lookup_ready ? "true" : "false")
+        << ",world_leave_seen=" << (staging_.virtual_geometry.world_leave_seen ? "true" : "false")
+        << ",shutdown_safe=" << (staging_.virtual_geometry.shutdown_safe ? "true" : "false")
+        << ",real_gpu_traversal_executed="
+        << (staging_.virtual_geometry.real_gpu_traversal_executed ? "true" : "false")
+        << ",hardware_rt_executed=" << (staging_.virtual_geometry.hardware_rt_executed ? "true" : "false")
         << ",backend=\"" << (staging_.virtual_geometry.traversal_backend.empty()
             ? "round10_voxel_traversal_backend_not_recorded"
             : staging_.virtual_geometry.traversal_backend)
@@ -3520,6 +3533,26 @@ std::string Renderer::status() const {
         << ",boundary=\"" << (staging_.virtual_geometry.traversal_boundary.empty()
             ? "round10_voxel_traversal_boundary_not_recorded"
             : staging_.virtual_geometry.traversal_boundary)
+        << "\""
+        << ",stress_marker=\"" << (staging_.virtual_geometry.stress_marker.empty()
+            ? "round10_stress_marker_not_recorded"
+            : staging_.virtual_geometry.stress_marker)
+        << "\""
+        << ",entity_movement_marker=\"" << (staging_.virtual_geometry.entity_movement_marker.empty()
+            ? "round10_entity_movement_marker_not_recorded"
+            : staging_.virtual_geometry.entity_movement_marker)
+        << "\""
+        << ",chunk_churn_marker=\"" << (staging_.virtual_geometry.chunk_churn_marker.empty()
+            ? "round10_chunk_churn_marker_not_recorded"
+            : staging_.virtual_geometry.chunk_churn_marker)
+        << "\""
+        << ",section_lifecycle_marker=\"" << (staging_.virtual_geometry.section_lifecycle_marker.empty()
+            ? "round10_section_lifecycle_marker_not_recorded"
+            : staging_.virtual_geometry.section_lifecycle_marker)
+        << "\""
+        << ",shutdown_safe_marker=\"" << (staging_.virtual_geometry.shutdown_safe_marker.empty()
+            ? "round10_shutdown_safe_marker_not_recorded"
+            : staging_.virtual_geometry.shutdown_safe_marker)
         << "\""
         << "},gbuffer={frames_planned=" << staging_.gbuffer.frames_planned
         << ",staging_packets=" << staging_.gbuffer.staging_packets
@@ -4183,9 +4216,15 @@ void Renderer::track_virtual_chunk_geometry_metadata(const SectionUploadPacket& 
     telemetry.traversal_palette_entry_count = palette_entry_count;
     telemetry.traversal_fallback_sections = fallback_sections;
     telemetry.traversal_generation_counter = packet.generation;
+    telemetry.entity_movement_marker_count = 0;
+    telemetry.chunk_churn_marker_count = saturated_add(empty_section_skips, fallback_sections);
+    telemetry.section_lifecycle_marker_count = saturated_add(payload_sections, empty_section_skips);
     telemetry.traversal_mask_bits_ready = occupancy_mask_sections != 0 && occupancy_mask_words != 0
             && occupancy_mask_bits != 0;
     telemetry.traversal_material_lookup_ready = palette_entry_count != 0 && traversal_material_hits != 0;
+    telemetry.world_leave_seen = false;
+    telemetry.real_gpu_traversal_executed = false;
+    telemetry.hardware_rt_executed = false;
     telemetry.cluster_marker = cluster_count == 0
             ? "round9_virtual_chunk_geometry_no_section_clusters"
             : "round9_virtual_chunk_geometry_cluster_metadata_recorded";
@@ -4223,6 +4262,19 @@ void Renderer::track_virtual_chunk_geometry_metadata(const SectionUploadPacket& 
     telemetry.traversal_backend = "cpu_metadata_dda_scaffold_no_gpu_dispatch_no_hardware_rt";
     telemetry.traversal_boundary =
             "round10_cpu_status_metadata_driven_voxel_traversal_evidence_not_real_gpu_traversal_not_hardware_rt";
+    telemetry.stress_marker =
+            "round10_stress_native_status_stub_cpu_metadata_only_no_gpu_traversal_no_hardware_rt";
+    telemetry.entity_movement_marker =
+            "round10_entity_movement_native_source_absent_marker_count_zero";
+    telemetry.chunk_churn_marker = telemetry.chunk_churn_marker_count == 0
+            ? "round10_chunk_churn_native_stub_no_churn_markers"
+            : "round10_chunk_churn_native_stub_section_empty_or_fallback_markers_recorded";
+    telemetry.section_lifecycle_marker = telemetry.section_lifecycle_marker_count == 0
+            ? "round10_section_lifecycle_native_stub_no_section_markers"
+            : "round10_section_lifecycle_native_stub_section_payload_markers_recorded";
+    telemetry.shutdown_safe_marker = telemetry.shutdown_safe
+            ? "round10_native_shutdown_safe_seen"
+            : "round10_native_shutdown_safe_not_seen_current_session_active";
     telemetry.traversal_material_hit_source = traversal_material_hits == 0
             ? "material_palette_metadata_missing_or_no_hits"
             : "section_material_palette_metadata";

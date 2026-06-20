@@ -8,10 +8,38 @@ public record VulkanRtPathStatus(
         boolean fallbackActive,
         String fallbackReason,
         boolean hardwareRtExecutionClaimed,
+        boolean realHardwareRtExecutionExecuted,
+        String hardwareRtExecutionStatus,
         String evidenceBoundary
 ) {
     private static final String DEFAULT_BOUNDARY =
             "Round 10 RT path is status/contract scaffolding; hardware RT execution requires native telemetry.";
+    private static final String DEFAULT_HARDWARE_RT_STATUS =
+            "hardwareRtExecution=false; Java status contracts are ready but real RT execution is not proven.";
+
+    public VulkanRtPathStatus(
+            VulkanRtCapabilityStatus capabilityStatus,
+            BlasBuildStatus blasStatus,
+            TlasBuildStatus tlasStatus,
+            EntityAccelerationStructureUpdateSummary entityUpdateSummary,
+            boolean fallbackActive,
+            String fallbackReason,
+            boolean hardwareRtExecutionClaimed,
+            String evidenceBoundary
+    ) {
+        this(
+                capabilityStatus,
+                blasStatus,
+                tlasStatus,
+                entityUpdateSummary,
+                fallbackActive,
+                fallbackReason,
+                hardwareRtExecutionClaimed,
+                false,
+                DEFAULT_HARDWARE_RT_STATUS,
+                evidenceBoundary
+        );
+    }
 
     public VulkanRtPathStatus {
         if (capabilityStatus == null) {
@@ -42,6 +70,13 @@ public record VulkanRtPathStatus(
                 && blasStatus.hardwareRtExecutionClaimed()
                 && tlasStatus.hardwareRtExecutionClaimed()
                 && hardwareRtExecutionClaimed;
+        realHardwareRtExecutionExecuted = hardwareRtExecutionClaimed && realHardwareRtExecutionExecuted;
+        hardwareRtExecutionStatus = clean(
+                hardwareRtExecutionStatus,
+                realHardwareRtExecutionExecuted
+                        ? "hardwareRtExecution=true; native telemetry explicitly reported RT entity execution."
+                        : DEFAULT_HARDWARE_RT_STATUS
+        );
         evidenceBoundary = clean(evidenceBoundary, DEFAULT_BOUNDARY);
     }
 
@@ -55,6 +90,8 @@ public record VulkanRtPathStatus(
                 true,
                 reason,
                 false,
+                false,
+                DEFAULT_HARDWARE_RT_STATUS,
                 DEFAULT_BOUNDARY
         );
     }
@@ -65,7 +102,10 @@ public record VulkanRtPathStatus(
                 + ",tlas=" + this.tlasStatus.state()
                 + ",entityAs={" + this.entityUpdateSummary.summary() + "}"
                 + ",fallback=" + this.fallbackActive
-                + ",hardwareRtExecutionClaimed=" + this.hardwareRtExecutionClaimed;
+                + ",fallbackReason=" + this.fallbackReason
+                + ",hardwareRtExecutionClaimed=" + this.hardwareRtExecutionClaimed
+                + ",realHardwareRtExecutionExecuted=" + this.realHardwareRtExecutionExecuted
+                + ",hardwareRtExecutionStatus=" + this.hardwareRtExecutionStatus;
     }
 
     private static String clean(String value, String fallback) {
