@@ -66,8 +66,8 @@ public record Round6DiffuseGiPreviewCompositeState(
                     && cacheReadCount > 0
                     && cacheRecordCount > 0
                     && sourceDirectLightingReady
-                    ? "Round 6 diffuse GI output-source metadata is ready for final-composite preview"
-                    : "Round 6 diffuse GI output-source metadata is not ready for final-composite preview";
+                    ? "Round 6 diffuse GI scene-tied CPU/readback source is ready for final-composite preview"
+                    : "Round 6 diffuse GI scene-tied CPU/readback source is not ready for final-composite preview";
         } else {
             reason = reason.trim();
         }
@@ -202,7 +202,7 @@ public record Round6DiffuseGiPreviewCompositeState(
     }
 
     public String round7RawGiSourceLabel() {
-        return "Round 7 RAW_GI visual source: native diffuse-GI RGBA8 payload";
+        return "Round 7 RAW_GI visual source: native scene-tied diffuse-GI RGBA8 CPU/readback payload";
     }
 
     public String round7RawGiReadinessReason(Round6DiffuseGiCpuOutputPayload sourcePayload) {
@@ -210,13 +210,13 @@ public record Round6DiffuseGiPreviewCompositeState(
             return "Round 7 RAW_GI visual source is not ready: " + this.reason;
         }
         if (sourcePayload == null) {
-            return "Round 7 RAW_GI visual source metadata is ready, but no native diffuse-GI RGBA8 payload is available";
+            return "Round 7 RAW_GI visual source metadata is ready, but no native scene-tied diffuse-GI RGBA8 CPU/readback payload is available";
         }
         if (!sourcePayload.readyForPreviewDraw()) {
-            return "Round 7 RAW_GI visual source metadata is ready, but the native diffuse-GI RGBA8 payload is not displayable: "
+            return "Round 7 RAW_GI visual source metadata is ready, but the native scene-tied diffuse-GI RGBA8 CPU/readback payload is not displayable: "
                     + sourcePayload.previewReadinessReason();
         }
-        return "Round 7 RAW_GI visual source can draw the native diffuse-GI RGBA8 payload as a raw source view";
+        return "Round 7 RAW_GI visual source can draw the native scene-tied diffuse-GI RGBA8 CPU/readback payload as a raw source view";
     }
 
     public String finalCompositeReadinessReason(Round6DiffuseGiCpuOutputPayload sourcePayload) {
@@ -224,13 +224,13 @@ public record Round6DiffuseGiPreviewCompositeState(
             return this.reason;
         }
         if (sourcePayload == null) {
-            return "Round 6 diffuse GI output-source metadata is ready, but no native diffuse GI RGBA8 payload is available";
+            return "Round 6 diffuse GI output-source metadata is ready, but no native scene-tied diffuse GI RGBA8 CPU/readback payload is available";
         }
         if (!sourcePayload.readyForPreviewDraw()) {
-            return "Round 6 diffuse GI output-source metadata is ready, but the native diffuse GI RGBA8 payload is not displayable: "
+            return "Round 6 diffuse GI output-source metadata is ready, but the native scene-tied diffuse GI RGBA8 CPU/readback payload is not displayable: "
                     + sourcePayload.previewReadinessReason();
         }
-        return "Round 6 diffuse GI output-source metadata and native diffuse GI RGBA8 payload are ready for diffuse-GI final-composite preview";
+        return "Round 6 diffuse GI output-source metadata and native scene-tied diffuse GI RGBA8 CPU/readback payload are ready for diffuse-GI final-composite preview";
     }
 
     public String summary() {
@@ -274,7 +274,17 @@ public record Round6DiffuseGiPreviewCompositeState(
         return "giOutputAuthenticNativeCpu=" + this.giOutputAuthenticNativeCpu
                 + ",realShaderGiOutput=" + this.realShaderGiOutput
                 + ",cpuDenoiseScaffoldOutput=" + this.cpuDenoiseScaffoldOutput
-                + ",realDenoiseShaderOutput=" + this.realDenoiseShaderOutput;
+                + ",realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
+                + "," + this.sourceBoundarySummary();
+    }
+
+    public String sourceBoundarySummary() {
+        return "nativeSceneTiedGiCpuReadback=" + this.giOutputAuthenticNativeCpu
+                + ",physicalGiTracingQuality=open"
+                + ",shaderGiOutput=" + this.realShaderGiOutput
+                + ",cpuReadbackDenoise=" + this.cpuDenoiseScaffoldOutput
+                + ",shaderDenoiseOutput=" + this.realDenoiseShaderOutput
+                + ",previewBoundary=not-production-quality-final-lighting";
     }
 
     private static String previewReason(
@@ -301,9 +311,9 @@ public record Round6DiffuseGiPreviewCompositeState(
                     + (sourceDebugLabel == null || sourceDebugLabel.isBlank() ? "unavailable" : sourceDebugLabel.trim());
         }
         if (!cacheEnabled) {
-            return "Round 6 diffuse GI metadata is preview-ready with nonzero grid, rays, and source-input readiness; sparse cache record/write proof remains separate";
+            return "Round 6 diffuse GI scene-tied CPU/readback source is preview-ready with nonzero grid, rays, and source-input readiness; sparse cache record/write proof remains separate";
         }
-        return "Round 6 diffuse GI/cache metadata is enabled with nonzero grid, rays, sparse cache records, and source-input readiness";
+        return "Round 6 diffuse GI/cache scene-tied CPU/readback source is enabled with nonzero grid, rays, sparse cache records, and source-input readiness";
     }
 
     private static boolean[] proofFlags(NativeDiffuseGiPlanUpload plan) {

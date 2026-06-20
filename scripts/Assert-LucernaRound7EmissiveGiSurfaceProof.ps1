@@ -64,6 +64,30 @@ param(
 
     [double] $MaxRegionBottomPercent = 72.0,
 
+    [ValidateRange(1, 256)]
+    [int] $TileColumns = 16,
+
+    [ValidateRange(1, 256)]
+    [int] $TileRows = 9,
+
+    [ValidateRange(0.0, 100.0)]
+    [double] $ActiveTileChangedPercentThreshold = 0.25,
+
+    [ValidateRange(0.0, 100.0)]
+    [double] $MaxFullImageChangedPixelPercent = 85.0,
+
+    [ValidateRange(0.0, 100.0)]
+    [double] $MaxFullImageChangedBoundingBoxAreaPercent = 92.0,
+
+    [ValidateRange(0.0, 100.0)]
+    [double] $MaxFullImageActiveTilePercent = 85.0,
+
+    [ValidateRange(0.0, 100.0)]
+    [double] $MaxFullImageEdgeActiveTilePercent = 35.0,
+
+    [ValidateRange(0.0, 100.0)]
+    [double] $MinFixedChangedPixelShareOfFull = 4.0,
+
     [switch] $RequireLogProof,
 
     [switch] $RequireHiddenGuiLogProof,
@@ -160,7 +184,8 @@ function Invoke-DeltaHelper {
 function Invoke-ImageDiagnosticsHelper {
     param(
         [string] $BaselinePath,
-        [string] $EnabledPath
+        [string] $EnabledPath,
+        [object] $FocusRegion = $null
     )
 
     $diagnosticsScript = Join-Path $PSScriptRoot "Get-LucernaVisualProofImageDiagnostics.ps1"
@@ -169,15 +194,31 @@ function Invoke-ImageDiagnosticsHelper {
     }
 
     $tempJson = Join-Path ([System.IO.Path]::GetTempPath()) ("lucerna-round7-emissive-gi-surface-diagnostics-{0}.json" -f ([guid]::NewGuid().ToString("N")))
+    $diagnosticRegionLeftPercent = $RegionLeftPercent
+    $diagnosticRegionTopPercent = $RegionTopPercent
+    $diagnosticRegionWidthPercent = $RegionWidthPercent
+    $diagnosticRegionHeightPercent = $RegionHeightPercent
+    if ($AutoFocusRegion -and $FocusRegion) {
+        $diagnosticRegionLeftPercent = [double]$FocusRegion.leftPercent
+        $diagnosticRegionTopPercent = [double]$FocusRegion.topPercent
+        $diagnosticRegionWidthPercent = [double]$FocusRegion.widthPercent
+        $diagnosticRegionHeightPercent = [double]$FocusRegion.heightPercent
+    }
     $diagnosticsArgs = @{
         BaselineImagePath = $BaselinePath
         EnabledImagePath = $EnabledPath
-        FixedRegionLeftPercent = $RegionLeftPercent
-        FixedRegionTopPercent = $RegionTopPercent
-        FixedRegionWidthPercent = $RegionWidthPercent
-        FixedRegionHeightPercent = $RegionHeightPercent
+        FixedRegionLeftPercent = $diagnosticRegionLeftPercent
+        FixedRegionTopPercent = $diagnosticRegionTopPercent
+        FixedRegionWidthPercent = $diagnosticRegionWidthPercent
+        FixedRegionHeightPercent = $diagnosticRegionHeightPercent
         ChangedPixelThreshold = $ChangedPixelThreshold
         BrightPixelThreshold = $BrightPixelThreshold
+        TileColumns = $TileColumns
+        TileRows = $TileRows
+        ActiveTileChangedPercentThreshold = $ActiveTileChangedPercentThreshold
+        WashoutBoundingBoxAreaPercentThreshold = $MaxFullImageChangedBoundingBoxAreaPercent
+        WashoutActiveTilePercentThreshold = $MaxFullImageActiveTilePercent
+        WashoutEdgeActiveTilePercentThreshold = $MaxFullImageEdgeActiveTilePercent
         OutputJsonPath = $tempJson
     }
     if ($IncludeBandDiagnostics) {
@@ -302,7 +343,7 @@ $baselineDimensions = Get-ImageDimensions $baselineResolved
 $enabledDimensions = Get-ImageDimensions $enabledResolved
 $debugDimensions = if ([string]::IsNullOrWhiteSpace($debugResolved)) { $null } else { Get-ImageDimensions $debugResolved }
 $delta = Invoke-DeltaHelper $baselineResolved $enabledResolved
-$imageDiagnostics = Invoke-ImageDiagnosticsHelper $baselineResolved $enabledResolved
+$imageDiagnostics = Invoke-ImageDiagnosticsHelper $baselineResolved $enabledResolved $delta.focusRegion
 $sceneVariance = [ordered]@{
     baseline = Measure-SceneColorVariance $baselineResolved
     enabled = Measure-SceneColorVariance $enabledResolved
@@ -354,6 +395,32 @@ if ($imageDiagnostics.fileIdentity.identicalBySha256) {
 if (-not $imageDiagnostics.classification.anyScreenRegionChangedAboveThreshold) {
     $failures.Add("Full-image diagnostics found no pixels changed above threshold; no draw affected any measured screen region.")
 }
+$fullMetrics = $imageDiagnostics.regions.fullImage.metrics
+$fixedMetrics = $imageDiagnostics.regions.fixedWorldSurfaceCrop.metrics
+$fullShape = $imageDiagnostics.regions.fullImage.shape
+$fixedChangedShareOfFull = if ([double]$fullMetrics.changedPixels -le 0.0) {
+    0.0
+} else {
+    [Math]::Round(100.0 * [double]$fixedMetrics.changedPixels / [double]$fullMetrics.changedPixels, 4)
+}
+if ([double]$fullMetrics.changedPixelPercent -gt $MaxFullImageChangedPixelPercent) {
+    $failures.Add("Full-screen changed-pixel coverage is too high for localized scene-tied surface evidence. actual=$($fullMetrics.changedPixelPercent) max=$MaxFullImageChangedPixelPercent")
+}
+if ([double]$fullShape.changedBoundingBoxAreaPercent -gt $MaxFullImageChangedBoundingBoxAreaPercent) {
+    $failures.Add("Changed-pixel bounding box covers too much of the screen; reject rectangular/full-screen washout. actual=$($fullShape.changedBoundingBoxAreaPercent) max=$MaxFullImageChangedBoundingBoxAreaPercent")
+}
+if ([double]$fullShape.tileMetrics.activeTilePercent -gt $MaxFullImageActiveTilePercent) {
+    $failures.Add("Changed pixels are spread across too many screen tiles; reject uniform washout. actual=$($fullShape.tileMetrics.activeTilePercent) max=$MaxFullImageActiveTilePercent")
+}
+if ([double]$fullShape.tileMetrics.edgeActiveTilePercent -gt $MaxFullImageEdgeActiveTilePercent) {
+    $failures.Add("Changed pixels reach too many screen-edge tiles; reject frame-wide/rectangular proof-like lighting. actual=$($fullShape.tileMetrics.edgeActiveTilePercent) max=$MaxFullImageEdgeActiveTilePercent")
+}
+if ([double]$fixedChangedShareOfFull -lt $MinFixedChangedPixelShareOfFull) {
+    $failures.Add("Fixed scene-surface crop owns too little of the total changed-pixel evidence. actual=$fixedChangedShareOfFull expected>=$MinFixedChangedPixelShareOfFull")
+}
+if ($imageDiagnostics.classification.fullScreenOrRectangularWashoutSuspect) {
+    $failures.Add("Image diagnostics classify the delta as full-screen or rectangular washout; Round 7 surface proof requires localized scene-shaped evidence.")
+}
 if ($RequireLogProof -and $logResolved.Count -eq 0) {
     $failures.Add("Log proof was required but no -LogPath was provided.")
 }
@@ -404,6 +471,14 @@ $result = [ordered]@{
         changedPixelThreshold = $ChangedPixelThreshold
         brightPixelThreshold = $BrightPixelThreshold
         maxRegionBottomPercent = $MaxRegionBottomPercent
+        tileColumns = $TileColumns
+        tileRows = $TileRows
+        activeTileChangedPercentThreshold = $ActiveTileChangedPercentThreshold
+        maxFullImageChangedPixelPercent = $MaxFullImageChangedPixelPercent
+        maxFullImageChangedBoundingBoxAreaPercent = $MaxFullImageChangedBoundingBoxAreaPercent
+        maxFullImageActiveTilePercent = $MaxFullImageActiveTilePercent
+        maxFullImageEdgeActiveTilePercent = $MaxFullImageEdgeActiveTilePercent
+        minFixedChangedPixelShareOfFull = $MinFixedChangedPixelShareOfFull
         focusRegionSelection = if ($AutoFocusRegion) { "auto-upper-mid-world-surface" } else { "fixed-upper-mid-world-surface" }
         bandDiagnosticsIncluded = [bool]$IncludeBandDiagnostics
         requireLogProof = [bool]$RequireLogProof
@@ -438,8 +513,13 @@ $result = [ordered]@{
             fixedWorldSurfaceCropChangedAboveThreshold = [bool]$imageDiagnostics.classification.fixedWorldSurfaceCropChangedAboveThreshold
             changedOutsideFixedWorldSurfaceCrop = [bool]$imageDiagnostics.classification.changedOutsideFixedWorldSurfaceCrop
             onlyFileEncodingOrMetadataChanged = [bool]$imageDiagnostics.classification.onlyFileEncodingOrMetadataChanged
+            fullScreenOrRectangularWashoutSuspect = [bool]$imageDiagnostics.classification.fullScreenOrRectangularWashoutSuspect
+            localizedSceneShapedDeltaPresent = [bool]$imageDiagnostics.classification.localizedSceneShapedDeltaPresent
+            fixedChangedPixelShareOfFull = $fixedChangedShareOfFull
             fullImage = $imageDiagnostics.regions.fullImage.metrics
+            fullImageShape = $imageDiagnostics.regions.fullImage.shape
             fixedWorldSurfaceCrop = $imageDiagnostics.regions.fixedWorldSurfaceCrop.metrics
+            fixedWorldSurfaceCropShape = $imageDiagnostics.regions.fixedWorldSurfaceCrop.shape
             bands = if ($IncludeBandDiagnostics) {
                 [ordered]@{
                     top = $imageDiagnostics.regions.topBand.metrics
@@ -489,8 +569,14 @@ Write-Host "hash.baselineSha256=$($imageDiagnostics.fileIdentity.baseline.sha256
 Write-Host "hash.enabledSha256=$($imageDiagnostics.fileIdentity.enabled.sha256)"
 Write-Host "full.changedPixelPercent=$($imageDiagnostics.regions.fullImage.metrics.changedPixelPercent)"
 Write-Host "full.brighterPixelPercent=$($imageDiagnostics.regions.fullImage.metrics.brighterPixelPercent)"
+Write-Host "full.changedBoundingBoxAreaPercent=$($imageDiagnostics.regions.fullImage.shape.changedBoundingBoxAreaPercent)"
+Write-Host "full.activeTilePercent=$($imageDiagnostics.regions.fullImage.shape.tileMetrics.activeTilePercent)"
+Write-Host "full.edgeActiveTilePercent=$($imageDiagnostics.regions.fullImage.shape.tileMetrics.edgeActiveTilePercent)"
 Write-Host "fixed.changedPixelPercent=$($imageDiagnostics.regions.fixedWorldSurfaceCrop.metrics.changedPixelPercent)"
 Write-Host "fixed.brighterPixelPercent=$($imageDiagnostics.regions.fixedWorldSurfaceCrop.metrics.brighterPixelPercent)"
+Write-Host "fixed.changedPixelShareOfFull=$fixedChangedShareOfFull"
+Write-Host "classification.fullScreenOrRectangularWashoutSuspect=$($imageDiagnostics.classification.fullScreenOrRectangularWashoutSuspect)"
+Write-Host "classification.localizedSceneShapedDeltaPresent=$($imageDiagnostics.classification.localizedSceneShapedDeltaPresent)"
 if ($IncludeBandDiagnostics) {
     Write-Host "top.changedPixelPercent=$($imageDiagnostics.regions.topBand.metrics.changedPixelPercent)"
     Write-Host "middle.changedPixelPercent=$($imageDiagnostics.regions.middleBand.metrics.changedPixelPercent)"

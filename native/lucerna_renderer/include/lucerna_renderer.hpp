@@ -587,6 +587,9 @@ struct NativeRound6DispatchExecutionTelemetry {
     std::uint64_t last_cpu_output_surface_pixel_count = 0;
     std::uint64_t last_cpu_output_scene_driven_pixel_count = 0;
     std::uint64_t last_cpu_output_emissive_driven_pixel_count = 0;
+    std::uint64_t last_cpu_output_spatial_lobe_pixel_count = 0;
+    std::uint64_t last_cpu_output_cache_modulated_pixel_count = 0;
+    std::uint64_t last_cpu_output_material_modulated_pixel_count = 0;
     std::uint64_t last_cpu_output_checksum = 0;
     std::uint64_t last_scene_payload_generation = 0;
     std::uint64_t last_scene_celestial_generation = 0;
@@ -605,6 +608,8 @@ struct NativeRound6DispatchExecutionTelemetry {
     float last_cpu_output_energy = 0.0F;
     float last_scene_celestial_light_energy = 0.0F;
     float last_scene_emissive_light_energy = 0.0F;
+    float last_cpu_output_cache_response = 0.0F;
+    float last_cpu_output_material_response = 0.0F;
     float last_visible_signal_cache_factor = 0.0F;
     float last_visible_signal_ray_factor = 0.0F;
     std::uint32_t last_flags = 0;
@@ -631,6 +636,8 @@ struct NativeRound6DispatchExecutionTelemetry {
     bool last_cpu_output_marker_recorded = false;
     bool last_cpu_output_scene_driven = false;
     bool last_cpu_output_emissive_driven = false;
+    bool last_cpu_output_spatially_graded = false;
+    bool last_cpu_output_material_driven = false;
     bool last_scene_inputs_recorded = false;
     std::string last_marker;
     std::string last_output_marker;

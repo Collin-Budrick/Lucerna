@@ -60,6 +60,7 @@ public final class LucernaDebugOverlayLines {
         );
         lines.add(Component.literal("Round 7 mix: " + compositeStatus.compactSourceMixPolicy()));
         lines.add(Component.literal("Round 7 denoise: " + compositeStatus.denoiseSourcePolicy()));
+        lines.add(Component.literal("Round 7 boundary: " + compositeStatus.lightingStackBoundary()));
         lines.add(Component.literal("First-light quality: " + qualityStatus.summaryLine()));
         Round8AdaptiveDebugStatus round8 = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("Round 8 adaptive debug: " + round8.summary()));
@@ -108,6 +109,8 @@ public final class LucernaDebugOverlayLines {
                 + " | " + compositeStatus.signalIsolationLabel()));
         lines.add(Component.literal("Round 7 mix: " + compositeStatus.compactSourceMixPolicy()));
         lines.add(Component.literal("Round 7 denoise: " + compositeStatus.denoiseSourcePolicy()));
+        lines.add(Component.literal("Round 7 stack boundary: " + compositeStatus.lightingStackBoundary()));
+        lines.add(Component.literal("Round 7 final boundary: " + compositeStatus.finalCompositeBoundary()));
         lines.add(Component.literal("Round 7 source guard: " + compositeStatus.compactAuthenticityPolicy()));
         lines.add(Component.literal("Round 7 proof gate: " + compositeStatus.firstLightingMilestoneGate()));
         lines.add(Component.literal("Round 7 evidence: " + compositeStatus.controllerEvidenceLine()));
@@ -157,6 +160,8 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("round7.compositeValidation=" + compositeStatus.validationSummary()));
         lines.add(Component.literal("round7.compactSourceMix=" + compositeStatus.compactSourceMixPolicy()));
         lines.add(Component.literal("round7.denoiseSourcePolicy=" + compositeStatus.denoiseSourcePolicy()));
+        lines.add(Component.literal("round7.lightingStackBoundary=" + compositeStatus.lightingStackBoundary()));
+        lines.add(Component.literal("round7.finalCompositeBoundary=" + compositeStatus.finalCompositeBoundary()));
         lines.add(Component.literal("round7.firstLightingMilestoneGate="
                 + compositeStatus.firstLightingMilestoneGate()));
         FirstLightingQualityProofStatus qualityStatus = FirstLightingQualityProofStatus.fromSnapshot(
@@ -480,6 +485,8 @@ public final class LucernaDebugOverlayLines {
 
         lines.add(Component.literal("Round 6 GI/cache status: " + roundSixSummary(snapshot)));
         lines.add(Component.literal("Round 7 mix policy: " + compositeStatus.compactSourceMixPolicy()));
+        lines.add(Component.literal("Round 7 stack boundary: " + compositeStatus.lightingStackBoundary()));
+        lines.add(Component.literal("Round 7 final boundary: " + compositeStatus.finalCompositeBoundary()));
         if (!lightingDispatch.hasLightingDispatchStatus()) {
             lines.add(Component.literal("Round 6 source: lighting dispatch telemetry unavailable"));
             lines.add(Component.literal("Round 6 reason: " + shorten(lightingDispatch.message(), 96)));
@@ -502,11 +509,11 @@ public final class LucernaDebugOverlayLines {
             lines.add(Component.literal("Low-res GI IO: " + valueOrUnknown(diffuseGiStage.ioCounts())
                     + " | inputs=" + firstDetailOrUnknown(diffuseGiStage, "inputs", "input_count", "last_input_count")
                     + " outputs=" + firstDetailOrUnknown(diffuseGiStage, "outputs", "output_count", "last_output_count")));
-            lines.add(Component.literal("Low-res GI output: source=" + giOutputSourceLabel(diffuseGiStage)
+            lines.add(Component.literal("Native scene-tied GI CPU/readback: source=" + giOutputSourceLabel(diffuseGiStage)
                     + " generated=" + yesNoUnknown(diffuseGiStage.cpuOutputGenerated())
                     + " size=" + valueOrUnknown(diffuseGiStage.outputDimensions())
                     + " pixels=" + valueOrUnknown(diffuseGiStage.outputPixelCount())));
-            lines.add(Component.literal("Low-res GI evidence: energy=" + evidenceValueLabel(diffuseGiStage.outputEnergy())
+            lines.add(Component.literal("Native scene-tied GI evidence: energy=" + evidenceValueLabel(diffuseGiStage.outputEnergy())
                     + " checksum=" + evidenceValueLabel(diffuseGiStage.outputChecksum())
                     + " temporaryDirectSource=" + giTemporaryDirectSourceLabel(diffuseGiStage)));
             lines.add(Component.literal("Low-res GI proof hints: emissiveProximity="
@@ -514,6 +521,10 @@ public final class LucernaDebugOverlayLines {
                     + " surfaceRegion=" + giAffectedSurfaceRegionLabel(diffuseGiStage)
                     + " handHudExcluded=" + giHandHudExcludedLabel(diffuseGiStage)
                     + " surfaceOnlyEligible=" + giSurfaceOnlyProofEligibleLabel(diffuseGiStage)));
+            lines.add(Component.literal("Native GI boundary: sceneTiedCpuReadback="
+                    + giAuthenticOutputLabel(diffuseGiStage)
+                    + " shaderGI=" + realGiShaderLabel(diffuseGiStage)
+                    + " physicalTracingQuality=open"));
             lines.add(Component.literal("Low-res GI authenticity: cpuScaffold="
                     + giCpuScaffoldOutputLabel(diffuseGiStage)
                     + " realShaderGI=" + realGiShaderLabel(diffuseGiStage)
@@ -522,19 +533,20 @@ public final class LucernaDebugOverlayLines {
         }
 
         if (denoiseStage == null) {
-            lines.add(Component.literal("Denoised GI source: not reported; CPU fallback/shader state unknown"));
+            lines.add(Component.literal("CPU/readback denoise: not reported; shader denoise state unknown"));
         } else {
-            lines.add(Component.literal("Denoised GI source: " + denoiseSourceLabel(denoiseStage)
-                    + " realShader=" + realDenoiseShaderLabel(denoiseStage)
-                    + " cpuFallback=" + cpuDenoiseFallbackLabel(denoiseStage)));
-            lines.add(Component.literal("Denoised GI evidence: generated="
+            lines.add(Component.literal("CPU/readback denoise source: " + denoiseSourceLabel(denoiseStage)
+                    + " cpuFallback=" + cpuDenoiseFallbackLabel(denoiseStage)
+                    + " shaderDenoise=" + realDenoiseShaderLabel(denoiseStage)));
+            lines.add(Component.literal("CPU/readback denoise evidence: generated="
                     + yesNoUnknown(denoiseStage.cpuOutputGenerated())
                     + " size=" + valueOrUnknown(denoiseStage.outputDimensions())
                     + " energy=" + evidenceValueLabel(denoiseStage.outputEnergy())
                     + " checksum=" + evidenceValueLabel(denoiseStage.outputChecksum())));
-            lines.add(Component.literal("Denoised GI shader boundary: cpuScaffold="
+            lines.add(Component.literal("Denoise boundary: cpuReadback="
                     + cpuDenoiseFallbackLabel(denoiseStage)
-                    + " realShader=" + realDenoiseShaderLabel(denoiseStage)));
+                    + " shaderDenoise=" + realDenoiseShaderLabel(denoiseStage)
+                    + " shaderQualityGate=open"));
         }
 
         if (cacheStage == null) {

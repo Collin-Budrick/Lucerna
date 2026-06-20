@@ -143,9 +143,14 @@ public record FinalCompositeModeStatus(
 
     public String compactSourceMixPolicy() {
         return "direct=" + sourcePolicyState(this.directLightingEnabled, "native-direct")
-                + ",rawGI=" + sourcePolicyState(this.diffuseGiEnabled || this.rawGiVisualMode(), "native-raw")
+                + ",rawGI=" + sourcePolicyState(
+                this.diffuseGiEnabled || this.rawGiVisualMode(),
+                "native-scene-tied-cpu/readback"
+        )
                 + ",denoisedGI=" + denoisedPolicyState()
-                + ",final=" + (this.finalLucernaComposite ? "direct+rawGI+denoisedGI/real-sources" : "isolated")
+                + ",final=" + (this.finalLucernaComposite
+                ? "direct+rawGI+cpuDenoisedGI/composite-proof"
+                : "isolated")
                 + "," + this.shaderOutputStatusSummary();
     }
 
@@ -160,17 +165,43 @@ public record FinalCompositeModeStatus(
             return "excluded:direct-only-control";
         }
         if (this.denoisedGiVisualMode() || this.finalLucernaComposite) {
-            return "prefer real shader; current acceptable fallback=CPU denoised RGBA8 with explicit realShader=false";
+            return "current=CPU/readback denoised RGBA8; real shader denoise must report realShader=true";
         }
         return "mode-specific; require explicit shader-vs-CPU source label";
     }
 
     public String shaderOutputStatusSummary() {
-        return "realShaderGiOutput=false"
+        return "nativeSceneTiedGiOutput=CPU/readback,physicalGiQuality=open,realShaderGiOutput=false"
                 + ",cpuGiScaffoldOutput=" + (!this.baselineVisualMode() && (this.diffuseGiEnabled || this.rawGiVisualMode()))
                 + ",realDenoiseShaderOutput=false"
                 + ",cpuDenoiseScaffoldOutput=" + (this.denoisedGiVisualMode() || this.finalCompositeVisualMode())
                 + ",shaderQualityGate=open";
+    }
+
+    public String lightingStackBoundary() {
+        return "nativeSceneTiedGI=CPU/readback signal,shaderGI=false,cpuDenoise="
+                + (this.denoisedGiVisualMode() || this.finalCompositeVisualMode())
+                + ",shaderDenoise=false,finalComposite="
+                + (this.finalCompositeVisualMode() ? "preview/proof mix,quality-open" : "not-final");
+    }
+
+    public String finalCompositeBoundary() {
+        if (this.baselineVisualMode()) {
+            return "baseline control; no Lucerna lighting composite";
+        }
+        if (this.directLightingEnabled && !this.diffuseGiEnabled) {
+            return "direct-only diagnostic; does not prove GI, denoise, or final quality";
+        }
+        if (this.rawGiVisualMode()) {
+            return "raw native GI view; proves source/display path only, not denoise or final quality";
+        }
+        if (this.denoisedGiVisualMode()) {
+            return "CPU/readback denoised GI view; shader denoise quality remains open";
+        }
+        if (this.finalCompositeVisualMode()) {
+            return "final composite preview mixes direct, raw native GI, and CPU/readback denoise; physical GI and shader denoise quality remain open";
+        }
+        return "custom mode; require explicit source and proof boundary";
     }
 
     public String compactAuthenticityPolicy() {
@@ -249,16 +280,16 @@ public record FinalCompositeModeStatus(
             return "baseline-control/no-lucerna-source";
         }
         if (this.rawGiVisualMode()) {
-            return "raw-gi/native-diffuse-gi-rgba8";
+            return "raw-gi/native-scene-tied-diffuse-gi-rgba8-cpu/readback";
         }
         if (this.denoisedGiVisualMode()) {
-            return "denoised-gi/cpu-denoised-diffuse-gi-rgba8";
+            return "denoised-gi/cpu/readback-denoised-diffuse-gi-rgba8";
         }
         if (this.directLightingEnabled && !this.diffuseGiEnabled) {
             return "direct-light/native-direct-light-rgba8";
         }
         if (this.finalCompositeVisualMode()) {
-            return "final-composite/direct-emissive-plus-raw-gi-plus-denoised-gi/real-sources-only";
+            return "final-composite/direct-emissive-plus-raw-native-gi-plus-cpu-denoised-gi/source-separated-preview";
         }
         return "custom/unspecified";
     }
@@ -271,7 +302,7 @@ public record FinalCompositeModeStatus(
             return "diagnostic-direct-light-only; not final emissive surface proof";
         }
         if (this.finalCompositeVisualMode()) {
-            return "submit full-target final composite; blend native direct emissive, native raw GI, and CPU-denoised GI when each real source is ready; raw-only fallback is a degraded GI path, not final quality";
+            return "submit full-target final composite preview; blend native direct emissive, scene-tied native raw GI, and CPU/readback-denoised GI when ready; raw-only fallback is degraded and shader denoise remains open";
         }
         if (this.rawGiVisualMode() || this.denoisedGiVisualMode()) {
             return "submit isolated full-target " + this.selectedSourcePolicy();
