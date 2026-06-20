@@ -14,6 +14,7 @@ public record DiffuseGiSceneInputSummary(
         float averageAlbedoB,
         float averageAlbedoSaturation,
         float coloredBounceInfluence,
+        float materialColorInfluence,
         int skylitSurfaceCount,
         int sealedInteriorSurfaceCount,
         int downwardFacingSurfaceCount,
@@ -24,19 +25,23 @@ public record DiffuseGiSceneInputSummary(
         float verticalSurfaceRatio,
         float orientationBalance,
         float averageNormalLength,
+        float surfaceOrientationConfidence,
         float emissiveProximityScore,
         int emissiveProximitySignals,
         float dirtyRegionInfluence,
+        float occlusionDirtyRegionInfluence,
         float cacheConfidenceInput,
         float cacheVarianceInput,
         int cacheSampleCountInput,
         boolean cacheDirtyInput,
+        float cachePhysicalConfidence,
         int radianceSampleCount,
         float averageRadianceR,
         float averageRadianceG,
         float averageRadianceB,
         float radianceEnergy,
         float radianceDirectionConfidence,
+        float physicalGiInputScore,
         boolean emissiveProximityAvailable,
         boolean affectedSurfaceRegionAvailable,
         int affectedSurfaceMinBlockX,
@@ -65,6 +70,7 @@ public record DiffuseGiSceneInputSummary(
         averageAlbedoB = clampUnit(averageAlbedoB);
         averageAlbedoSaturation = clampUnit(averageAlbedoSaturation);
         coloredBounceInfluence = clampUnit(coloredBounceInfluence);
+        materialColorInfluence = clampUnit(materialColorInfluence);
         skylitSurfaceCount = Math.max(0, skylitSurfaceCount);
         sealedInteriorSurfaceCount = Math.max(0, sealedInteriorSurfaceCount);
         downwardFacingSurfaceCount = Math.max(0, downwardFacingSurfaceCount);
@@ -75,18 +81,22 @@ public record DiffuseGiSceneInputSummary(
         verticalSurfaceRatio = clampUnit(verticalSurfaceRatio);
         orientationBalance = clampUnit(orientationBalance);
         averageNormalLength = clampUnit(averageNormalLength);
+        surfaceOrientationConfidence = clampUnit(surfaceOrientationConfidence);
         emissiveProximityScore = clampUnit(emissiveProximityScore);
         emissiveProximitySignals = Math.max(0, emissiveProximitySignals);
         dirtyRegionInfluence = clampUnit(dirtyRegionInfluence);
+        occlusionDirtyRegionInfluence = clampUnit(occlusionDirtyRegionInfluence);
         cacheConfidenceInput = clampUnit(cacheConfidenceInput);
         cacheVarianceInput = finiteNonNegative(cacheVarianceInput);
         cacheSampleCountInput = Math.max(0, cacheSampleCountInput);
+        cachePhysicalConfidence = clampUnit(cachePhysicalConfidence);
         radianceSampleCount = Math.max(0, radianceSampleCount);
         averageRadianceR = finiteNonNegative(averageRadianceR);
         averageRadianceG = finiteNonNegative(averageRadianceG);
         averageRadianceB = finiteNonNegative(averageRadianceB);
         radianceEnergy = finiteNonNegative(radianceEnergy);
         radianceDirectionConfidence = clampUnit(radianceDirectionConfidence);
+        physicalGiInputScore = clampUnit(physicalGiInputScore);
         if (!affectedSurfaceRegionAvailable) {
             affectedSurfaceMinBlockX = 0;
             affectedSurfaceMinBlockY = 0;
@@ -110,14 +120,19 @@ public record DiffuseGiSceneInputSummary(
                 distinctMaterialCount,
                 materialDiversityRatio,
                 coloredBounceInfluence,
+                materialColorInfluence,
                 skylightExposureRatio,
                 sealedInteriorRatio,
                 emissiveProximityScore,
                 dirtyRegionInfluence,
+                occlusionDirtyRegionInfluence,
                 orientationBalance,
+                surfaceOrientationConfidence,
                 radianceDirectionConfidence,
                 cacheConfidenceInput,
-                cacheVarianceInput
+                cacheVarianceInput,
+                cachePhysicalConfidence,
+                physicalGiInputScore
         ));
     }
 
@@ -132,24 +147,29 @@ public record DiffuseGiSceneInputSummary(
                 0.0F,
                 0.0F,
                 0.0F,
+                0.0F,
+                0,
                 0,
                 0,
                 0,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
+                0.0F,
                 0,
                 0.0F,
-                0.0F,
-                0.0F,
-                0.0F,
-                0.0F,
-                0.0F,
-                0.0F,
-                0,
                 0.0F,
                 0.0F,
                 1.0F,
                 0,
                 false,
+                0.0F,
                 0,
+                0.0F,
                 0.0F,
                 0.0F,
                 0.0F,
@@ -243,15 +263,21 @@ public record DiffuseGiSceneInputSummary(
         float averageSaturation = saturationTotal * inverseSurfaceCount;
         float coloredRatio = surfaceCount == 0 ? 0.0F : (float) coloredCount / surfaceCount;
         float coloredInfluence = clampUnit((averageSaturation * 0.65F) + (coloredRatio * 0.35F));
+        float averageAlbedoLuma = luma(averageAlbedoR, averageAlbedoG, averageAlbedoB);
         float skylightRatio = surfaceCount == 0 ? 0.0F : (float) skylitCount / surfaceCount;
         float sealedRatio = surfaceCount == 0 ? 0.0F : (float) sealedCount / surfaceCount;
         int distinctMaterials = materialIds.size();
         float materialDiversity = surfaceCount == 0 ? 0.0F : (float) distinctMaterials / surfaceCount;
+        float materialColorInfluence = clampUnit((materialDiversity * 0.35F)
+                + (coloredInfluence * 0.35F)
+                + (averageSaturation * 0.20F)
+                + (averageAlbedoLuma * 0.10F));
         float downwardRatio = surfaceCount == 0 ? 0.0F : (float) downwardCount / surfaceCount;
         float verticalRatio = surfaceCount == 0 ? 0.0F : (float) verticalCount / surfaceCount;
         float dominantOrientationRatio = Math.max(skylightRatio, Math.max(verticalRatio, downwardRatio));
         float orientationBalance = surfaceCount == 0 ? 0.0F : clampUnit(1.0F - dominantOrientationRatio);
         float averageNormalLength = normalLengthTotal * inverseSurfaceCount;
+        float surfaceOrientationConfidence = clampUnit(averageNormalLength * (0.65F + (orientationBalance * 0.35F)));
 
         int radianceSamples = 0;
         float radianceR = 0.0F;
@@ -296,6 +322,22 @@ public record DiffuseGiSceneInputSummary(
                 + resolvedSource.dirtyRegionCount() * 0.10F) / Math.max(1.0F, surfaceCount + proximitySignals));
         float dirtyInfluence = clampUnit((resolvedSource.dirtyRegionCount() + (resolvedSource.materialUpdateCount() * 0.5F))
                 / Math.max(1.0F, surfaceCount + resolvedSource.dirtyRegionCount() + resolvedSource.materialUpdateCount()));
+        float occlusionDirtyInfluence = clampUnit((sealedRatio * 0.35F)
+                + (downwardRatio * 0.20F)
+                + (verticalRatio * 0.15F)
+                + (dirtyInfluence * 0.20F)
+                + (resolvedConfidence.dirty() ? 0.10F : 0.0F));
+        float cacheSampleWeight = clampUnit(resolvedConfidence.sampleCount() / 16.0F);
+        float cachePhysicalConfidence = clampUnit(resolvedConfidence.confidence()
+                * (1.0F - clampUnit(resolvedConfidence.variance()))
+                * (0.35F + (cacheSampleWeight * 0.65F))
+                * (resolvedConfidence.dirty() ? 0.50F : 1.0F));
+        float physicalGiInputScore = clampUnit((emissiveProximity * 0.22F)
+                + (materialColorInfluence * 0.20F)
+                + (surfaceOrientationConfidence * 0.18F)
+                + (occlusionDirtyInfluence * 0.16F)
+                + (cachePhysicalConfidence * 0.14F)
+                + (radianceDirectionConfidence * 0.10F));
         boolean hasSurfaceRegion = surfaceCount > 0;
         boolean hasEmissiveProximity = resolvedSource.emissiveLightCount() > 0
                 || resolvedSource.budgetedShadowCandidateCount() > 0
@@ -311,6 +353,7 @@ public record DiffuseGiSceneInputSummary(
                 averageAlbedoB,
                 averageSaturation,
                 coloredInfluence,
+                materialColorInfluence,
                 skylitCount,
                 sealedCount,
                 downwardCount,
@@ -321,19 +364,23 @@ public record DiffuseGiSceneInputSummary(
                 verticalRatio,
                 orientationBalance,
                 averageNormalLength,
+                surfaceOrientationConfidence,
                 emissiveProximity,
                 proximitySignals,
                 dirtyInfluence,
+                occlusionDirtyInfluence,
                 resolvedConfidence.confidence(),
                 resolvedConfidence.variance(),
                 resolvedConfidence.sampleCount(),
                 resolvedConfidence.dirty(),
+                cachePhysicalConfidence,
                 radianceSamples,
                 averageRadianceR,
                 averageRadianceG,
                 averageRadianceB,
                 radianceEnergy,
                 radianceDirectionConfidence,
+                physicalGiInputScore,
                 hasEmissiveProximity,
                 hasSurfaceRegion,
                 hasSurfaceRegion ? minBlockX : 0,
@@ -369,24 +416,48 @@ public record DiffuseGiSceneInputSummary(
                 && (this.emissiveProximityAvailable || this.radianceSampleCount > 0 || this.cacheSampleCountInput > 0);
     }
 
+    public boolean hasPhysicalGiEvidence() {
+        return this.surfaceSampleCount > 0
+                && this.affectedSurfaceRegionAvailable
+                && this.surfaceOrientationConfidence >= 0.35F
+                && this.materialColorInfluence > 0.03F
+                && this.physicalGiInputScore >= 0.18F
+                && (this.emissiveProximityAvailable || this.radianceEnergy > 0.0F || this.cachePhysicalConfidence > 0.05F);
+    }
+
+    public String physicalReadinessLabel() {
+        return "physicalEvidence=" + this.hasPhysicalGiEvidence()
+                + " score=" + this.physicalGiInputScore
+                + " emissiveProximity=" + this.emissiveProximityScore
+                + " materialColor=" + this.materialColorInfluence
+                + " orientationConfidence=" + this.surfaceOrientationConfidence
+                + " occlusionDirty=" + this.occlusionDirtyRegionInfluence
+                + " cachePhysical=" + this.cachePhysicalConfidence;
+    }
+
     public String compactLabel() {
         return "surfaces=" + this.surfaceSampleCount
                 + " colored=" + this.coloredSurfaceSampleCount + "/" + this.coloredBounceInfluence
                 + " materials=" + this.distinctMaterialCount + "/" + this.materialDiversityRatio
+                + "/colorInfluence:" + this.materialColorInfluence
                 + " skylight=" + this.skylitSurfaceCount + "/" + this.skylightExposureRatio
                 + " sealed=" + this.sealedInteriorSurfaceCount + "/" + this.sealedInteriorRatio
                 + " orientation=down:" + this.downwardFacingRatio
                 + "/vertical:" + this.verticalSurfaceRatio
                 + "/balance:" + this.orientationBalance
                 + "/normalConfidence:" + this.averageNormalLength
+                + "/surfaceConfidence:" + this.surfaceOrientationConfidence
                 + " emissiveProximity=" + this.emissiveProximitySignals + "/" + this.emissiveProximityScore
                 + " dirtyInfluence=" + this.dirtyRegionInfluence
+                + "/occlusionDirty:" + this.occlusionDirtyRegionInfluence
                 + "/available:" + this.emissiveProximityAvailable
                 + " affectedSurfaceRegion=\"" + this.affectedSurfaceRegionLabel + "\""
                 + " surfaceOnlyProofReady=" + this.readyForSurfaceOnlyProof()
                 + " cacheInput=" + this.cacheConfidenceInput + "/" + this.cacheVarianceInput
+                + "/physical:" + this.cachePhysicalConfidence
                 + " radianceEnergy=" + this.radianceEnergy
-                + " radianceDirectionConfidence=" + this.radianceDirectionConfidence;
+                + " radianceDirectionConfidence=" + this.radianceDirectionConfidence
+                + " " + this.physicalReadinessLabel();
     }
 
     private static float saturation(float red, float green, float blue) {
@@ -427,25 +498,35 @@ public record DiffuseGiSceneInputSummary(
             int distinctMaterialCount,
             float materialDiversityRatio,
             float coloredBounceInfluence,
+            float materialColorInfluence,
             float skylightExposureRatio,
             float sealedInteriorRatio,
             float emissiveProximityScore,
             float dirtyRegionInfluence,
+            float occlusionDirtyRegionInfluence,
             float orientationBalance,
+            float surfaceOrientationConfidence,
             float radianceDirectionConfidence,
             float cacheConfidenceInput,
-            float cacheVarianceInput
+            float cacheVarianceInput,
+            float cachePhysicalConfidence,
+            float physicalGiInputScore
     ) {
         return "surfaces=" + surfaceSampleCount
                 + " colored=" + coloredSurfaceSampleCount + "/" + coloredBounceInfluence
                 + " materials=" + distinctMaterialCount + "/" + materialDiversityRatio
+                + "/colorInfluence:" + materialColorInfluence
                 + " skylightRatio=" + skylightExposureRatio
                 + " sealedRatio=" + sealedInteriorRatio
                 + " emissiveProximity=" + emissiveProximityScore
                 + " dirtyInfluence=" + dirtyRegionInfluence
+                + "/occlusionDirty:" + occlusionDirtyRegionInfluence
                 + " orientationBalance=" + orientationBalance
+                + "/surfaceConfidence:" + surfaceOrientationConfidence
                 + " radianceDirectionConfidence=" + radianceDirectionConfidence
-                + " cache=" + cacheConfidenceInput + "/" + cacheVarianceInput;
+                + " cache=" + cacheConfidenceInput + "/" + cacheVarianceInput
+                + "/physical:" + cachePhysicalConfidence
+                + " physicalGiInputScore=" + physicalGiInputScore;
     }
 
     private static String defaultSurfaceRegionLabel(

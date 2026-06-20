@@ -349,11 +349,67 @@ public record LightingDispatchStageTelemetryStatus(
         return label.toString();
     }
 
+    public String compactStageStatusLine() {
+        return this.stageDisplayName()
+                + " enabled=" + booleanOrUnknown(this.enabled)
+                + " ready=" + booleanOrUnknown(this.readyForNativeExecution)
+                + " recorded=" + booleanOrUnknown(this.recordedThisFrame)
+                + " frame=" + valueOrUnknown(this.frameIndex)
+                + " " + this.stageTimingStatusLine();
+    }
+
+    public String stageTimingStatusLine() {
+        return "CPU=" + firstDetailOrFallback(
+                "pending(no CPU stage scope)",
+                "cpu_ms",
+                "cpu_millis",
+                "cpu_time_ms",
+                "native_cpu_ms",
+                "stage_cpu_ms"
+        ) + " GPU=" + firstDetailOrFallback(
+                "unavailable(native/Vulkan GPU timestamp not reported)",
+                "gpu_ms",
+                "gpu_millis",
+                "gpu_time_ms",
+                "native_gpu_ms",
+                "stage_gpu_ms"
+        );
+    }
+
+    public String stageWorkStatusLine() {
+        return "samples=" + valueOrUnknown(this.sampleCount)
+                + " candidates=" + valueOrUnknown(this.candidateCount)
+                + " rays=" + valueOrUnknown(this.rayCount)
+                + " cache=" + this.cacheLabel()
+                + " output=" + outputStatusLabel();
+    }
+
+    public String explicitMeasurementBoundaryLine() {
+        String cpuBoundary = hasAnyDetail(
+                "cpu_ms",
+                "cpu_millis",
+                "cpu_time_ms",
+                "native_cpu_ms",
+                "stage_cpu_ms"
+        ) ? "stage CPU timing reported" : "CPU timing pending";
+        String gpuBoundary = hasAnyDetail(
+                "gpu_ms",
+                "gpu_millis",
+                "gpu_time_ms",
+                "native_gpu_ms",
+                "stage_gpu_ms"
+        ) ? "real GPU timing reported" : "GPU timing pending/unavailable";
+        return this.stageDisplayName() + ": " + cpuBoundary + ", " + gpuBoundary;
+    }
+
     public Map<String, String> validationFields(String prefix) {
         String normalizedPrefix = clean(prefix, "lighting.dispatch.stage." + sanitizeKey(this.stageId));
         Map<String, String> fields = new LinkedHashMap<>();
         fields.put(normalizedPrefix + ".present", "true");
         fields.put(normalizedPrefix + ".summary", this.compactLabel());
+        fields.put(normalizedPrefix + ".statusLine", this.compactStageStatusLine());
+        fields.put(normalizedPrefix + ".workStatus", this.stageWorkStatusLine());
+        fields.put(normalizedPrefix + ".timingBoundary", this.explicitMeasurementBoundaryLine());
         if (this.enabled != null) {
             fields.put(normalizedPrefix + ".enabled", Boolean.toString(this.enabled));
         }
@@ -471,6 +527,70 @@ public record LightingDispatchStageTelemetryStatus(
         return Collections.unmodifiableMap(fields);
     }
 
+    private String stageDisplayName() {
+        return switch (this.stageId) {
+            case "direct_lighting" -> "Direct";
+            case "diffuse_gi", "low_res_gi", "low_resolution_gi", "gi" -> "GI";
+            case "denoise" -> "Denoise";
+            case "composite", "final_composite" -> "Composite";
+            case "cache", "radiance_cache", "sparse_radiance_cache", "sparse_voxel_radiance_cache" -> "Cache";
+            case "adaptive_sampling", "ray_budget", "variance", "history_confidence" -> "Adaptive";
+            default -> this.stageId;
+        };
+    }
+
+    private String outputStatusLabel() {
+        if (Boolean.TRUE.equals(this.cpuOutputGenerated)) {
+            return "CPU=" + outputEvidenceLabel();
+        }
+        if (Boolean.FALSE.equals(this.cpuOutputGenerated)) {
+            return "CPU=not_generated";
+        }
+        return "CPU=unreported";
+    }
+
+    private String outputEvidenceLabel() {
+        StringBuilder label = new StringBuilder("generated");
+        if (!this.outputDimensions.isBlank()) {
+            label.append(" size=").append(this.outputDimensions);
+        }
+        if (this.outputPixelCount != null) {
+            label.append(" pixels=").append(this.outputPixelCount);
+        }
+        if (!this.outputEnergy.isBlank()) {
+            label.append(" energy=").append(shorten(this.outputEnergy, 24));
+        }
+        if (this.outputChecksum != null) {
+            label.append(" checksum=").append(this.outputChecksum);
+        }
+        return label.toString();
+    }
+
+    private String firstDetailOrFallback(String fallback, String... keys) {
+        if (keys != null) {
+            for (String key : keys) {
+                String value = this.details.get(normalizeFieldKey(key));
+                if (value != null && !value.isBlank()) {
+                    return stripQuotes(value);
+                }
+            }
+        }
+        return fallback;
+    }
+
+    private boolean hasAnyDetail(String... keys) {
+        if (keys == null) {
+            return false;
+        }
+        for (String key : keys) {
+            String value = this.details.get(normalizeFieldKey(key));
+            if (value != null && !value.isBlank()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private String cacheLabel() {
         if (this.cacheReadCount == null && this.cacheWriteCount == null) {
             return "";
@@ -488,6 +608,17 @@ public record LightingDispatchStageTelemetryStatus(
 
     private static String valueOrUnknown(Long value) {
         return value == null ? "?" : Long.toString(value);
+    }
+
+    private static String booleanOrUnknown(Boolean value) {
+        return value == null ? "?" : Boolean.toString(value);
+    }
+
+    private static String shorten(String value, int maxLength) {
+        if (value == null || value.isBlank() || value.length() <= maxLength) {
+            return value == null || value.isBlank() ? "unreported" : value;
+        }
+        return value.substring(0, Math.max(0, maxLength - 3)) + "...";
     }
 
     private static Map<String, String> normalizeFields(Map<String, String> fields) {

@@ -388,12 +388,12 @@ function Measure-Round7LogProof {
     $denoisedGiOutputPresent = Test-AnyRegex $log $DenoisedGiOutputPatterns
     $finalCompositePresent = (Test-AnyRegex $log $FinalCompositePatterns) -or $acceptedFinalCompositePresent
     $hudSafeFinalCompositePresent = Test-AnyRegex $log $HudSafeFinalCompositePatterns
-    $temporaryDirectLightSourcePresent = Test-Regex $log "temporarySourceReady=true|temporary direct-light|current direct-light RGBA payload"
+    $temporaryDirectLightSourcePresent = Test-Regex $log "temporarySourceReady=true|temporaryDirectLightSubstitution=true|using the current direct-light RGBA payload as the temporary visible source"
     $metadataOnlyPreviewPresent = (Test-Regex $log "metadata-only|metadata scaffold|signal_separated_denoise_metadata_scaffold_no_render_output|no_render_output") -and -not $acceptedFinalCompositePresent
     $firstPracticalCpuOutputPresent = Test-Regex $log "first_practical_cpu_denoised_diffuse_gi_rgba8_generated|denoisedCpuOutputGenerated=true|denoised_cpu_output_generated=true"
-    $realDenoiseShaderOutputPresent = Test-Regex $log "realDenoiseShaderOutput=true|real_denoise_shader_output=true"
+    $realDenoiseShaderOutputPresent = Test-Regex $log "(?:^|[\s,;])(?:realDenoiseShaderOutput|real_denoise_shader_output)=true(?:[,;]|$)"
     $realDenoiseShaderOutputFalsePresent = Test-Regex $log "realDenoiseShaderOutput=false|real_denoise_shader_output=false"
-    $proofMarkerPresent = Test-Regex $log "proof marker|R6 GI proof|R7 proof|CPU output proof"
+    $proofMarkerPresent = Test-Regex $log "proofMarkerSource=true|cpuOutputProofMarker=true|round6-gi-proof|round7-proof-marker|R6 GI proof|R7 proof|CPU output proof"
     $submittedFocusWindowOnlyPresent = Test-Regex $log "sourceIdentity=native-direct-light-rgba8,focusWindowOnly=true|mode=final-composite-direct-light-focus-window-additive"
     $submittedRound7GiSourcePresent = Test-Regex $log "sourceIdentity=native-denoised-diffuse-gi-rgba8,focusWindowOnly=false,round7GiSource=true|mode=round7-final-composite"
     $focusWindowOnlyPresent = $submittedFocusWindowOnlyPresent -and -not $submittedRound7GiSourcePresent

@@ -288,6 +288,11 @@ public final class LowResDiffuseGiPlanner {
                     "$.sceneInputs",
                     "Scene-tied GI metadata will be populated from cache surface/radiance records when available"
             ));
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_PHYSICAL_EVIDENCE_PENDING",
+                    "$.sceneInputs.physicalReadiness",
+                    "Reject metadata-only, proof-marker, and focus-window evidence as physical GI; " + sceneInputs.physicalReadinessLabel()
+            ));
             return;
         }
         if (sceneInputs.surfaceSampleCount() == 0) {
@@ -304,11 +309,25 @@ public final class LowResDiffuseGiPlanner {
                     "Surface inputs currently represent one material; treat GI response as weakly material-tied"
             ));
         }
+        if (sceneInputs.surfaceSampleCount() > 0 && sceneInputs.materialColorInfluence() < 0.08F) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_MATERIAL_COLOR_INFLUENCE_LOW",
+                    "$.sceneInputs.materialColorInfluence",
+                    "Diffuse GI has weak material/color input; do not claim colored bounce response from proof-only evidence"
+            ));
+        }
         if (sceneInputs.surfaceSampleCount() > 0 && sceneInputs.averageNormalLength() < 0.5F) {
             findings.add(DiffuseGiValidationFinding.warning(
                     "GI_SURFACE_NORMAL_CONFIDENCE_LOW",
                     "$.sceneInputs.averageNormalLength",
                     "Surface normal vectors are weak; physical GI direction/orientation claims should be withheld"
+            ));
+        }
+        if (sceneInputs.surfaceSampleCount() > 0 && sceneInputs.surfaceOrientationConfidence() < 0.35F) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_SURFACE_ORIENTATION_CONFIDENCE_LOW",
+                    "$.sceneInputs.surfaceOrientationConfidence",
+                    "Surface orientation input is too weak to distinguish physically linked bounce lighting from screen-space proof shaping"
             ));
         }
         if (sceneInputs.surfaceSampleCount() >= 4 && sceneInputs.orientationBalance() < 0.12F) {
@@ -330,6 +349,27 @@ public final class LowResDiffuseGiPlanner {
                     "GI_DIRTY_REGION_INFLUENCE_HIGH",
                     "$.sceneInputs.dirtyRegionInfluence",
                     "Dirty regions dominate current GI inputs; cache-backed physical claims need fresh controller proof"
+            ));
+        }
+        if (sceneInputs.cacheSampleCountInput() > 0 && sceneInputs.cachePhysicalConfidence() < 0.08F) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_CACHE_PHYSICAL_CONFIDENCE_LOW",
+                    "$.sceneInputs.cachePhysicalConfidence",
+                    "Cache confidence, variance, dirty state, or sample count is too weak for physical GI evidence"
+            ));
+        }
+        if (sceneInputs.readyForSurfaceOnlyProof() && !sceneInputs.hasPhysicalGiEvidence()) {
+            findings.add(DiffuseGiValidationFinding.warning(
+                    "GI_SURFACE_PROOF_NOT_PHYSICAL",
+                    "$.sceneInputs.physicalGiInputScore",
+                    "Surface-only or screenshot-visible proof is not physical GI until emissive, material/color, orientation, occlusion/dirty, and cache signals are all scene-linked"
+            ));
+        }
+        if (!sceneInputs.hasPhysicalGiEvidence()) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_PHYSICAL_EVIDENCE_PENDING",
+                    "$.sceneInputs.physicalReadiness",
+                    "Reject metadata-only, proof-marker, and focus-window evidence as physical GI; " + sceneInputs.physicalReadinessLabel()
             ));
         }
     }

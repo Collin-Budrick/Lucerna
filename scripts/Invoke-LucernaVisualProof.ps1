@@ -55,6 +55,10 @@ param(
 
     [string] $TemporalCaptureLabel = "",
 
+    [string] $CaptureManifestJsonPath = "",
+
+    [switch] $RejectWindowScreenshotSource,
+
     [ValidateSet("MinecraftF2", "Window", "InClient")]
     [string] $ScreenshotSource = "MinecraftF2"
 )
@@ -931,7 +935,26 @@ function Wait-NewScreenshot {
         if ($null -ne $candidate) {
             return $candidate
         }
+        $timestampCandidate = Get-ChildItem -LiteralPath $ScreenshotDir -Filter "*.png" -ErrorAction SilentlyContinue |
+                Where-Object { $_.LastWriteTime -gt $afterWithTolerance } |
+                Sort-Object LastWriteTime -Descending |
+                Select-Object -First 1
+        if ($null -ne $timestampCandidate) {
+            return $timestampCandidate
+        }
         Start-Sleep -Milliseconds 500
+    }
+    $launchWindowStart = if ($script:LucernaMinecraftLaunchStart) {
+        $script:LucernaMinecraftLaunchStart.AddSeconds(-5)
+    } else {
+        $After.AddMinutes(-2)
+    }
+    $launchCandidate = Get-ChildItem -LiteralPath $ScreenshotDir -Filter "*.png" -ErrorAction SilentlyContinue |
+            Where-Object { $_.LastWriteTime -gt $launchWindowStart } |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+    if ($null -ne $launchCandidate) {
+        return $launchCandidate
     }
     throw "Timed out waiting for a new Minecraft screenshot."
 }
@@ -1270,11 +1293,12 @@ try {
             "using the current direct-light RGBA payload as the temporary visible source",
             "round6-diffuse-gi-focus-window-additive",
             "final-composite-direct-light-focus-window-additive",
-            "focus-window-only",
+            "focusWindowOnly(?:Submitted)?=true",
+            "focus_window_only=true",
             "round6-gi-proof",
             "R6 GI proof",
-            "proof marker",
-            "CPU output proof"
+            "proofMarkerSource=true",
+            "cpuOutputProofMarker=true"
         )
     } elseif ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
         @(
@@ -1284,8 +1308,8 @@ try {
             "round6-gi-proof",
             "R6 GI proof",
             "R7 proof",
-            "proof marker",
-            "CPU output proof",
+            "proofMarkerSource=true",
+            "cpuOutputProofMarker=true",
             "invalidRayBudget=true",
             "invalid_budget_values=true",
             "negative ray budget",
@@ -1300,8 +1324,8 @@ try {
             "R6 GI proof",
             "R7 proof",
             "R8 proof",
-            "proof marker",
-            "CPU output proof",
+            "proofMarkerSource=true",
+            "cpuOutputProofMarker=true",
             "invalidCluster(?:Count|s)?=true",
             "negative cluster",
             "cluster(?:Count|s)?=.*(?:NaN|Infinity)",
@@ -1314,8 +1338,8 @@ try {
             "round6-diffuse-gi-focus-window-additive",
             "round6-gi-proof",
             "R6 GI proof",
-            "proof marker",
-            "CPU output proof"
+            "proofMarkerSource=true",
+            "cpuOutputProofMarker=true"
         )
     } elseif ($ValidationProfile -eq "Round5DirectSurface") {
         @(
@@ -1325,14 +1349,15 @@ try {
             "current direct-light RGBA payload",
             "sourceIdentity=native-direct-light-rgba8,focusWindowOnly=true",
             "final-composite-direct-light-focus-window-additive",
-            "focus-window-only",
+            "focusWindowOnly(?:Submitted)?=true",
+            "focus_window_only=true",
             "round5-direct-proof",
             "R5 visual proof",
             "round6-gi-proof",
             "R6 GI proof",
             "R7 proof",
-            "proof marker",
-            "CPU output proof"
+            "proofMarkerSource=true",
+            "cpuOutputProofMarker=true"
         )
     } else {
         @()
@@ -1436,7 +1461,7 @@ try {
                 $capturedScreenshotSource = "window"
             } elseif ($ScreenshotSource -eq "InClient") {
                 $screenshotDeadline = (Get-Date).AddSeconds(90)
-                $screenshot = Wait-NewScreenshot $screenshotDir @() $script:LucernaMinecraftLaunchStart $screenshotDeadline
+                $screenshot = Wait-NewScreenshot $screenshotDir $existingScreenshotNames $beforeScreenshot $screenshotDeadline
                 Copy-Item -LiteralPath $screenshot.FullName -Destination $captureArchivePath -Force
                 $capturedScreenshotSource = "minecraft-in-client"
             } else {
@@ -1451,6 +1476,9 @@ try {
                     $capturedScreenshotSource = "window-fallback"
                 }
             }
+            if ($RejectWindowScreenshotSource -and $capturedScreenshotSource -match "^(?:window|window-fallback)$") {
+                throw "Screenshot source '$capturedScreenshotSource' is rejected for visual proof. Use MinecraftF2 or InClient capture, preferably InClient for temporal/flicker evidence."
+            }
             $capturedScreenshotPaths.Add($captureArchivePath) | Out-Null
             $capturedScreenshotSources.Add($capturedScreenshotSource) | Out-Null
         }
@@ -1462,8 +1490,36 @@ try {
     }
 
     $logPath = Copy-FreshLatestLog $root $validationDir $scenario $stamp $markerLog
+    $captureManifest = [ordered]@{
+        validationProfile = $ValidationProfile
+        mode = $Mode
+        scenario = $scenario
+        stamp = $stamp
+        screenshotSourceRequested = $ScreenshotSource
+        rejectWindowScreenshotSource = [bool]$RejectWindowScreenshotSource
+        temporalCaptureRequestedCount = $TemporalCaptureCount
+        temporalCaptureEffectiveCount = $effectiveCaptureCount
+        temporalCaptureIntervalSeconds = $TemporalCaptureIntervalSeconds
+        temporalCaptureLabel = $captureLabelSafe
+        screenshots = @(for ($index = 0; $index -lt $capturedScreenshotPaths.Count; $index++) {
+            [ordered]@{
+                index = $index
+                path = $capturedScreenshotPaths[$index]
+                source = $capturedScreenshotSources[$index]
+            }
+        })
+        latestLog = $logPath
+    }
+    if (-not [string]::IsNullOrWhiteSpace($CaptureManifestJsonPath)) {
+        $manifestParent = Split-Path -Parent $CaptureManifestJsonPath
+        if (-not [string]::IsNullOrWhiteSpace($manifestParent)) {
+            New-Item -ItemType Directory -Force -Path $manifestParent | Out-Null
+        }
+        $captureManifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $CaptureManifestJsonPath -Encoding UTF8
+    }
     Write-Host "screenshot=$archivePath"
     Write-Host "screenshotSource=$($capturedScreenshotSources[0])"
+    Write-Host "captureManifestJson=$CaptureManifestJsonPath"
     if ($temporalRepeatEnabled) {
         Write-Host "temporalCaptureCount=$effectiveCaptureCount"
         Write-Host "temporalCaptureIntervalSeconds=$TemporalCaptureIntervalSeconds"

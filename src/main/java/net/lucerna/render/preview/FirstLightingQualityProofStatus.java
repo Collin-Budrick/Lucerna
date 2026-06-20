@@ -15,13 +15,15 @@ public record FirstLightingQualityProofStatus(
         String temporalHistoryState,
         String denoiseSourceIdentity,
         String rejectedEvidenceTypes,
+        String geometryMaterialProjectionState,
         String readinessGate,
         boolean finalCompositeStableReady,
         boolean particleTranslucencyProofReady,
         boolean temporalHistoryReady,
         boolean realShaderDenoiseOutput,
         boolean cpuDenoiseFallback,
-        boolean rejectedEvidenceClean
+        boolean rejectedEvidenceClean,
+        boolean geometryMaterialProjectionCandidateReady
 ) {
     public FirstLightingQualityProofStatus {
         selectedMode = normalize(selectedMode, "unknown");
@@ -30,6 +32,7 @@ public record FirstLightingQualityProofStatus(
         temporalHistoryState = normalize(temporalHistoryState, "unreported");
         denoiseSourceIdentity = normalize(denoiseSourceIdentity, "unreported");
         rejectedEvidenceTypes = normalize(rejectedEvidenceTypes, "unreported");
+        geometryMaterialProjectionState = normalize(geometryMaterialProjectionState, "unreported");
         readinessGate = normalize(readinessGate, "unreported");
     }
 
@@ -145,10 +148,34 @@ public record FirstLightingQualityProofStatus(
                 "using_direct_light_payload",
                 "direct_light_payload_source"
         );
+        String rectangularWashoutEvidence = firstDetail(
+                compositeStage,
+                giStage,
+                denoiseStage,
+                "rectangular_washout",
+                "rectangularWashout",
+                "hard_rectangle",
+                "full_screen_washout"
+        );
+        String antiRectangularWashoutPassed = firstDetail(
+                compositeStage,
+                giStage,
+                denoiseStage,
+                "washout_rejected",
+                "anti_rectangular_washout_passed"
+        );
+        boolean rectangularWashoutClean = !truthyOrUnknown(rectangularWashoutEvidence)
+                || truthy(antiRectangularWashoutPassed);
         boolean rejectedEvidenceClean = !truthyOrUnknown(focusWindowEvidence)
                 && !truthyOrUnknown(proofMarkerEvidence)
                 && !truthyOrUnknown(metadataPreviewEvidence)
-                && !truthyOrUnknown(directSubstitutionEvidence);
+                && !truthyOrUnknown(directSubstitutionEvidence)
+                && rectangularWashoutClean;
+        boolean geometryMaterialProjectionCandidateReady = finalCompositeStableReady
+                && rejectedEvidenceClean
+                && sourceReady(directStage)
+                && sourceReady(giStage)
+                && sourceReady(denoiseStage);
 
         String finalCompositeStability = "mode=" + compositeStatus.statusKey()
                 + " framePassAttachable=" + yesNo(snapshot.frameLifecycle().framePassAttachable())
@@ -202,13 +229,43 @@ public record FirstLightingQualityProofStatus(
                 + " focusWindowOnly=" + valueOrUnknown(focusWindowEvidence)
                 + " proofMarker=" + valueOrUnknown(proofMarkerEvidence)
                 + " directSubstitution=" + valueOrUnknown(directSubstitutionEvidence)
+                + " rectangularWashout=" + valueOrUnknown(rectangularWashoutEvidence)
+                + " antiRectangularWashoutPassed=" + valueOrUnknown(antiRectangularWashoutPassed)
                 + " clean=" + yesNo(rejectedEvidenceClean);
+        String geometryMaterialProjectionState = "candidateReady=" + yesNo(geometryMaterialProjectionCandidateReady)
+                + " boundary=\"" + compositeStatus.geometryMaterialProjectionBoundary() + "\""
+                + " surfaceProjection=" + valueOrUnknown(firstDetail(
+                compositeStage,
+                giStage,
+                denoiseStage,
+                "surface_projection",
+                "surfaceProjection",
+                "geometry_material_projection",
+                "geometryMaterialProjection"
+        )) + " materialAware=" + valueOrUnknown(firstDetail(
+                compositeStage,
+                giStage,
+                denoiseStage,
+                "material_aware",
+                "materialAware",
+                "material_response",
+                "materialResponse"
+        )) + " geometryAware=" + valueOrUnknown(firstDetail(
+                compositeStage,
+                giStage,
+                denoiseStage,
+                "geometry_aware",
+                "geometryAware",
+                "surface_samples",
+                "surfaceSamples"
+        )) + " quality=pending-controller-proof";
         String readinessGate = "ready=" + yesNo(finalCompositeStableReady
                 && particleTranslucencyProofReady
                 && temporalHistoryReady
                 && rejectedEvidenceClean)
                 + " requires=stable-final-composite,particle-translucency-preservation,temporal-history,"
-                + "explicit-shader-vs-cpu-denoise-source,rejected-preview-evidence";
+                + "explicit-shader-vs-cpu-denoise-source,rejected-preview-evidence,"
+                + "scene-shaped-geometry-material-aware-surface-proof";
 
         return new FirstLightingQualityProofStatus(
                 compositeStatus.statusKey(),
@@ -217,13 +274,15 @@ public record FirstLightingQualityProofStatus(
                 temporalHistoryState,
                 denoiseSourceIdentity,
                 rejectedEvidenceTypes,
+                geometryMaterialProjectionState,
                 readinessGate,
                 finalCompositeStableReady,
                 particleTranslucencyProofReady,
                 temporalHistoryReady,
                 realShaderDenoiseOutput,
                 cpuDenoiseFallback,
-                rejectedEvidenceClean
+                rejectedEvidenceClean,
+                geometryMaterialProjectionCandidateReady
         );
     }
 
@@ -234,7 +293,8 @@ public record FirstLightingQualityProofStatus(
                 + " temporalHistory=" + yesNo(this.temporalHistoryReady)
                 + " realShaderDenoise=" + yesNo(this.realShaderDenoiseOutput)
                 + " cpuFallback=" + yesNo(this.cpuDenoiseFallback)
-                + " rejectedEvidenceClean=" + yesNo(this.rejectedEvidenceClean);
+                + " rejectedEvidenceClean=" + yesNo(this.rejectedEvidenceClean)
+                + " geometryMaterialProjectionCandidate=" + yesNo(this.geometryMaterialProjectionCandidateReady);
     }
 
     public Map<String, String> validationFields(String prefix) {
@@ -247,6 +307,7 @@ public record FirstLightingQualityProofStatus(
         fields.put(normalizedPrefix + ".temporalHistoryState", this.temporalHistoryState);
         fields.put(normalizedPrefix + ".denoiseSourceIdentity", this.denoiseSourceIdentity);
         fields.put(normalizedPrefix + ".rejectedEvidenceTypes", this.rejectedEvidenceTypes);
+        fields.put(normalizedPrefix + ".geometryMaterialProjectionState", this.geometryMaterialProjectionState);
         fields.put(normalizedPrefix + ".readinessGate", this.readinessGate);
         fields.put(normalizedPrefix + ".finalCompositeStableReady", Boolean.toString(this.finalCompositeStableReady));
         fields.put(normalizedPrefix + ".particleTranslucencyProofReady", Boolean.toString(this.particleTranslucencyProofReady));
@@ -254,6 +315,7 @@ public record FirstLightingQualityProofStatus(
         fields.put(normalizedPrefix + ".realShaderDenoiseOutput", Boolean.toString(this.realShaderDenoiseOutput));
         fields.put(normalizedPrefix + ".cpuDenoiseFallback", Boolean.toString(this.cpuDenoiseFallback));
         fields.put(normalizedPrefix + ".rejectedEvidenceClean", Boolean.toString(this.rejectedEvidenceClean));
+        fields.put(normalizedPrefix + ".geometryMaterialProjectionCandidateReady", Boolean.toString(this.geometryMaterialProjectionCandidateReady));
         return Collections.unmodifiableMap(fields);
     }
 

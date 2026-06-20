@@ -46,6 +46,32 @@ public record FrameTimingTelemetryStatus(
         return this.hasCpuTimings() || this.hasGpuTimings();
     }
 
+    public String cpuTimingAvailabilityLabel() {
+        if (this.hasCpuTimings()) {
+            return "reported(" + this.cpuScopeDurationsMillis.size() + " scopes)";
+        }
+        if (this.activeCpuScopeCount > 0) {
+            return "pending(" + this.activeCpuScopeCount + " active)";
+        }
+        return "pending(no completed CPU scopes)";
+    }
+
+    public String gpuTimingAvailabilityLabel() {
+        if (this.hasGpuTimings()) {
+            return "reported(" + this.gpuScopeDurationsMillis.size() + " scopes)";
+        }
+        return "unavailable(native/Vulkan GPU timestamps not reported)";
+    }
+
+    public String compactStageTimingLine(String stageLabel, String... scopeAliases) {
+        String label = cleanLabel(stageLabel, "stage");
+        Double cpuMillis = firstMatchingDuration(this.cpuScopeDurationsMillis, scopeAliases);
+        Double gpuMillis = firstMatchingDuration(this.gpuScopeDurationsMillis, scopeAliases);
+        return label
+                + " CPU=" + durationOrPending(cpuMillis, this.cpuTimingAvailabilityLabel())
+                + " GPU=" + durationOrUnavailable(gpuMillis, this.gpuTimingAvailabilityLabel());
+    }
+
     public double totalCpuMillis() {
         return totalMillis(this.cpuScopeDurationsMillis);
     }
@@ -67,5 +93,62 @@ public record FrameTimingTelemetryStatus(
             return Collections.emptyMap();
         }
         return Collections.unmodifiableMap(new LinkedHashMap<>(source));
+    }
+
+    private static Double firstMatchingDuration(Map<String, Double> timings, String... aliases) {
+        if (timings == null || timings.isEmpty() || aliases == null) {
+            return null;
+        }
+
+        for (String alias : aliases) {
+            String normalizedAlias = normalize(alias);
+            if (normalizedAlias.isBlank()) {
+                continue;
+            }
+            for (Map.Entry<String, Double> entry : timings.entrySet()) {
+                String normalizedKey = normalize(entry.getKey());
+                if (normalizedKey.equals(normalizedAlias)
+                        || normalizedKey.contains(normalizedAlias)
+                        || normalizedAlias.contains(normalizedKey)) {
+                    return entry.getValue();
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String durationOrPending(Double durationMillis, String fallback) {
+        if (durationMillis != null) {
+            return formatMillis(durationMillis);
+        }
+        return fallback.startsWith("reported(") ? "pending(no matching scope)" : fallback;
+    }
+
+    private static String durationOrUnavailable(Double durationMillis, String fallback) {
+        if (durationMillis != null) {
+            return formatMillis(durationMillis);
+        }
+        return fallback.startsWith("reported(") ? "pending(no matching scope)" : fallback;
+    }
+
+    private static String formatMillis(double millis) {
+        return String.format(java.util.Locale.ROOT, "%.3fms", millis);
+    }
+
+    private static String cleanLabel(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value.trim();
+    }
+
+    private static String normalize(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        return value.trim().toLowerCase(java.util.Locale.ROOT)
+                .replace('-', '_')
+                .replace('.', '_')
+                .replace(' ', '_');
     }
 }

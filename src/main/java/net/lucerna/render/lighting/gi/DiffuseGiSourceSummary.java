@@ -123,12 +123,51 @@ public record DiffuseGiSourceSummary(
         return this.worldInputAvailable && this.materialInputAvailable && this.sectionInputAvailable;
     }
 
+    public float emissiveWorkScore() {
+        int signals = this.emissiveLightCount
+                + this.shadowCandidateCount
+                + this.budgetedShadowCandidateCount
+                + this.celestialLightCount;
+        if (!this.directLightingReady || signals == 0) {
+            return 0.0F;
+        }
+        return clampUnit((this.emissiveLightCount * 0.35F
+                + this.budgetedShadowCandidateCount * 0.30F
+                + this.shadowCandidateCount * 0.20F
+                + this.celestialLightCount * 0.15F) / Math.max(1.0F, signals));
+    }
+
+    public float sceneMutationScore() {
+        int signals = this.dirtyRegionCount + this.materialUpdateCount + this.sectionSnapshotCount;
+        if (signals == 0) {
+            return 0.0F;
+        }
+        return clampUnit((this.dirtyRegionCount * 0.45F
+                + this.materialUpdateCount * 0.35F
+                + this.sectionSnapshotCount * 0.20F) / Math.max(1.0F, signals));
+    }
+
+    public float sourceCouplingScore() {
+        float worldMaterialScore = this.hasWorldMaterialInputs() ? 1.0F : 0.0F;
+        return clampUnit((this.emissiveWorkScore() * 0.45F)
+                + (worldMaterialScore * 0.35F)
+                + (this.sceneMutationScore() * 0.20F));
+    }
+
+    public String physicalSourceLabel() {
+        return "sourceCoupling=" + this.sourceCouplingScore()
+                + " emissiveWork=" + this.emissiveWorkScore()
+                + " sceneMutation=" + this.sceneMutationScore()
+                + " worldMaterialInputs=" + this.hasWorldMaterialInputs();
+    }
+
     public String compactLabel() {
         return "direct=" + (this.directLightingReady ? "ready" : "pending")
                 + " emissive=" + this.emissiveLightCount
                 + " shadows=" + this.shadowCandidateCount + "/" + this.budgetedShadowCandidateCount
                 + " sections=" + this.sectionSnapshotCount
-                + " dirty=" + this.dirtyRegionCount;
+                + " dirty=" + this.dirtyRegionCount
+                + " " + this.physicalSourceLabel();
     }
 
     private static long maxNonNegative(long first, long second, long third, long fourth, long fifth, long sixth) {
@@ -157,5 +196,12 @@ public record DiffuseGiSourceSummary(
             return resolvedFallback;
         }
         return value.trim();
+    }
+
+    private static float clampUnit(float value) {
+        if (!Float.isFinite(value)) {
+            return 0.0F;
+        }
+        return Math.max(0.0F, Math.min(1.0F, value));
     }
 }

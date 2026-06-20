@@ -33,7 +33,16 @@ param(
 
     [int] $ChangedPixelThreshold = 8,
 
-    [int] $BrightPixelThreshold = 6
+    [int] $BrightPixelThreshold = 6,
+
+    [ValidateRange(1, 256)]
+    [int] $TileColumns = 16,
+
+    [ValidateRange(1, 256)]
+    [int] $TileRows = 9,
+
+    [ValidateRange(0.0, 100.0)]
+    [double] $ActiveTileChangedPercentThreshold = 0.25
 )
 
 $ErrorActionPreference = "Stop"
@@ -107,6 +116,42 @@ function Add-AccumulatorValues {
     $Target.sumSquaredLuma += $Source.sumSquaredLuma
     $Target.maxAbsLuma = [Math]::Max($Target.maxAbsLuma, $Source.maxAbsLuma)
     $Target.maxAbsChannel = [Math]::Max($Target.maxAbsChannel, $Source.maxAbsChannel)
+}
+
+function Complete-TileMetrics {
+    param(
+        [object[]] $TileAccumulators
+    )
+
+    $activeTiles = 0
+    $sumChangedPercent = 0.0
+    $sumSquaredChangedPercent = 0.0
+    $maxChangedPercent = 0.0
+    foreach ($tile in $TileAccumulators) {
+        $metrics = Complete-Metrics $tile.accumulator
+        $changedPercent = [double]$metrics.changedPixelPercent
+        if ($changedPercent -ge $ActiveTileChangedPercentThreshold) {
+            $activeTiles++
+        }
+        $sumChangedPercent += $changedPercent
+        $sumSquaredChangedPercent += ($changedPercent * $changedPercent)
+        $maxChangedPercent = [Math]::Max($maxChangedPercent, $changedPercent)
+    }
+
+    $tileCount = [Math]::Max(1.0, [double]$TileAccumulators.Count)
+    $mean = $sumChangedPercent / $tileCount
+    $variance = [Math]::Max(0.0, ($sumSquaredChangedPercent / $tileCount) - ($mean * $mean))
+    return [ordered]@{
+        tileColumns = $TileColumns
+        tileRows = $TileRows
+        tileCount = [int]$TileAccumulators.Count
+        activeTileChangedPercentThreshold = $ActiveTileChangedPercentThreshold
+        activeTiles = $activeTiles
+        activeTilePercent = [Math]::Round(100.0 * [double]$activeTiles / $tileCount, 4)
+        meanTileChangedPixelPercent = [Math]::Round($mean, 4)
+        stdDevTileChangedPixelPercent = [Math]::Round([Math]::Sqrt($variance), 4)
+        maxTileChangedPixelPercent = [Math]::Round($maxChangedPercent, 4)
+    }
 }
 
 function Add-PixelDelta {
@@ -386,6 +431,18 @@ function Measure-LucernaImageDelta {
         }
         $full = New-Accumulator
         $focus = New-Accumulator
+        $effectiveTileColumns = [Math]::Max(1, [Math]::Min($TileColumns, [int]$region.width))
+        $effectiveTileRows = [Math]::Max(1, [Math]::Min($TileRows, [int]$region.height))
+        $focusTileAccumulators = New-Object System.Collections.Generic.List[object]
+        for ($row = 0; $row -lt $effectiveTileRows; $row++) {
+            for ($column = 0; $column -lt $effectiveTileColumns; $column++) {
+                $focusTileAccumulators.Add([ordered]@{
+                    row = $row
+                    column = $column
+                    accumulator = New-Accumulator
+                }) | Out-Null
+            }
+        }
 
         for ($y = 0; $y -lt $height; $y++) {
             for ($x = 0; $x -lt $width; $x++) {
@@ -395,6 +452,12 @@ function Measure-LucernaImageDelta {
 
                 if ($x -ge $region.left -and $x -lt $region.rightExclusive -and $y -ge $region.top -and $y -lt $region.bottomExclusive) {
                     Add-PixelDelta $focus $baselinePixel $enabledPixel $ChangedPixelThreshold $BrightPixelThreshold
+                    $relativeX = [Math]::Max(0, [Math]::Min([int]$region.width - 1, $x - [int]$region.left))
+                    $relativeY = [Math]::Max(0, [Math]::Min([int]$region.height - 1, $y - [int]$region.top))
+                    $tileColumn = [Math]::Min($effectiveTileColumns - 1, [int][Math]::Floor([double]$relativeX * [double]$effectiveTileColumns / [double]$region.width))
+                    $tileRow = [Math]::Min($effectiveTileRows - 1, [int][Math]::Floor([double]$relativeY * [double]$effectiveTileRows / [double]$region.height))
+                    $tileIndex = ($tileRow * $effectiveTileColumns) + $tileColumn
+                    Add-PixelDelta $focusTileAccumulators[$tileIndex].accumulator $baselinePixel $enabledPixel $ChangedPixelThreshold $BrightPixelThreshold
                 }
                 if ($AutoFocusRegion -and $x -ge $autoSearchRegion.left -and $x -lt $autoSearchRegion.rightExclusive -and $y -ge $autoSearchRegion.top -and $y -lt $autoSearchRegion.bottomExclusive) {
                     $cellColumn = [Math]::Min($AutoRegionColumns - 1, [Math]::Max(0, [int][Math]::Floor(($x - $autoSearchRegion.left) * $AutoRegionColumns / [double]$autoSearchRegion.width)))
@@ -415,6 +478,30 @@ function Measure-LucernaImageDelta {
             $focus = $selected.accumulator
             $selectionMode = "auto"
             $autoSelection = $selected.diagnostics
+            $effectiveTileColumns = [Math]::Max(1, [Math]::Min($TileColumns, [int]$region.width))
+            $effectiveTileRows = [Math]::Max(1, [Math]::Min($TileRows, [int]$region.height))
+            $focusTileAccumulators = New-Object System.Collections.Generic.List[object]
+            for ($row = 0; $row -lt $effectiveTileRows; $row++) {
+                for ($column = 0; $column -lt $effectiveTileColumns; $column++) {
+                    $focusTileAccumulators.Add([ordered]@{
+                        row = $row
+                        column = $column
+                        accumulator = New-Accumulator
+                    }) | Out-Null
+                }
+            }
+            for ($y = [int]$region.top; $y -lt [int]$region.bottomExclusive; $y++) {
+                for ($x = [int]$region.left; $x -lt [int]$region.rightExclusive; $x++) {
+                    $baselinePixel = $baselineImage.GetPixel($x, $y)
+                    $enabledPixel = $enabledImage.GetPixel($x, $y)
+                    $relativeX = [Math]::Max(0, [Math]::Min([int]$region.width - 1, $x - [int]$region.left))
+                    $relativeY = [Math]::Max(0, [Math]::Min([int]$region.height - 1, $y - [int]$region.top))
+                    $tileColumn = [Math]::Min($effectiveTileColumns - 1, [int][Math]::Floor([double]$relativeX * [double]$effectiveTileColumns / [double]$region.width))
+                    $tileRow = [Math]::Min($effectiveTileRows - 1, [int][Math]::Floor([double]$relativeY * [double]$effectiveTileRows / [double]$region.height))
+                    $tileIndex = ($tileRow * $effectiveTileColumns) + $tileColumn
+                    Add-PixelDelta $focusTileAccumulators[$tileIndex].accumulator $baselinePixel $enabledPixel $ChangedPixelThreshold $BrightPixelThreshold
+                }
+            }
         }
 
         return [ordered]@{
@@ -431,6 +518,9 @@ function Measure-LucernaImageDelta {
             focusRegion = Get-RegionOutput $region $width $height $selectionMode $autoSelection
             fullImage = Complete-Metrics $full
             focusRegionMetrics = Complete-Metrics $focus
+            focusRegionShape = [ordered]@{
+                tileMetrics = Complete-TileMetrics $focusTileAccumulators.ToArray()
+            }
         }
     } finally {
         $baselineImage.Dispose()
@@ -464,6 +554,8 @@ Write-Host "focus.meanAbsLuma=$($result.focusRegionMetrics.meanAbsLuma)"
 Write-Host "focus.meanSignedLuma=$($result.focusRegionMetrics.meanSignedLuma)"
 Write-Host "focus.changedPixelPercent=$($result.focusRegionMetrics.changedPixelPercent)"
 Write-Host "focus.brighterPixelPercent=$($result.focusRegionMetrics.brighterPixelPercent)"
+Write-Host "focus.tile.activeTilePercent=$($result.focusRegionShape.tileMetrics.activeTilePercent)"
+Write-Host "focus.tile.stdDevChangedPixelPercent=$($result.focusRegionShape.tileMetrics.stdDevTileChangedPixelPercent)"
 if (-not [string]::IsNullOrWhiteSpace($OutputJsonPath)) {
     Write-Host "json=$OutputJsonPath"
 }

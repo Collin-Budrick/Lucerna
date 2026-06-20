@@ -3,6 +3,7 @@ package net.lucerna.render.lighting.post;
 import net.lucerna.lighting.DenoiseEdgeRejectionInputs;
 import net.lucerna.lighting.DenoiseOutputContract;
 import net.lucerna.lighting.DenoiseSignalInputContract;
+import net.lucerna.lighting.ShaderDenoiseOutputContract;
 import net.lucerna.lighting.SignalSeparatedDenoiseContract;
 import net.lucerna.render.GBufferDescriptor;
 import net.lucerna.render.resources.ShaderPassId;
@@ -15,6 +16,7 @@ public record DenoisePassPlan(
         HistoryRejectionPlan historyRejection,
         DenoiseInputContract inputs,
         SignalSeparatedDenoiseContract signalContract,
+        ShaderDenoiseOutputContract shaderOutputContract,
         long outputGeneration,
         PostProcessingValidationReport validationReport
 ) {
@@ -30,6 +32,14 @@ public record DenoisePassPlan(
                     outputGeneration,
                     settings.enabled(),
                     historyRejection.writesRejectionMask(),
+                    historyRejection
+            );
+        }
+        if (shaderOutputContract == null) {
+            shaderOutputContract = buildShaderOutputContract(
+                    settings.enabled(),
+                    inputs,
+                    outputGeneration,
                     historyRejection
             );
         }
@@ -60,10 +70,11 @@ public record DenoisePassPlan(
                 historyRejectionSettings,
                 resolvedInputs
         );
+        long resolvedOutputGeneration = Math.max(0L, outputGeneration);
         SignalSeparatedDenoiseContract signalContract = buildSignalContract(
                 resolvedSettings.enabled(),
                 resolvedInputs,
-                outputGeneration,
+                resolvedOutputGeneration,
                 resolvedSettings.enabled(),
                 historyRejection.writesRejectionMask(),
                 historyRejection
@@ -73,12 +84,18 @@ public record DenoisePassPlan(
                 historyRejection,
                 resolvedInputs,
                 signalContract,
-                outputGeneration,
+                buildShaderOutputContract(
+                        resolvedSettings.enabled(),
+                        resolvedInputs,
+                        resolvedOutputGeneration,
+                        historyRejection
+                ),
+                resolvedOutputGeneration,
                 PostProcessingValidator.validateDenoise(
                         resolvedSettings,
                         historyRejection,
                         resolvedInputs,
-                        outputGeneration
+                        resolvedOutputGeneration
                 )
         );
     }
@@ -117,6 +134,30 @@ public record DenoisePassPlan(
         return this.signalContract.denoisedDiffuseOutputIntended();
     }
 
+    public boolean shaderDenoiseContractReady() {
+        return this.shaderOutputContract.contractReady();
+    }
+
+    public boolean shaderDenoiseDispatchPathImplemented() {
+        return this.shaderOutputContract.dispatchPathImplemented();
+    }
+
+    public boolean realDenoiseShaderOutput() {
+        return this.shaderOutputContract.realDenoiseShaderOutput();
+    }
+
+    public boolean readyForControllerShaderDenoiseProof() {
+        return this.shaderOutputContract.readyForControllerShaderProof();
+    }
+
+    public String shaderDenoiseReadinessReason() {
+        return this.shaderOutputContract.readinessReason();
+    }
+
+    public String shaderDenoiseStatusSummary() {
+        return this.shaderOutputContract.statusSummary();
+    }
+
     public boolean edgeRejectionMetadataAvailable() {
         return this.signalContract.edgeRejectionMetadataAvailable();
     }
@@ -139,6 +180,39 @@ public record DenoisePassPlan(
 
     public List<String> writeResources() {
         return this.enabled() ? PostProcessingResourceContract.DENOISE_WRITES : List.of();
+    }
+
+    private static ShaderDenoiseOutputContract buildShaderOutputContract(
+            boolean enabled,
+            DenoiseInputContract inputs,
+            long outputGeneration,
+            HistoryRejectionPlan historyRejection
+    ) {
+        DenoiseInputContract resolvedInputs = inputs == null ? DenoiseInputContract.empty() : inputs;
+        HistoryRejectionPlan resolvedHistoryRejection = historyRejection == null
+                ? HistoryRejectionPlan.from(HistoryRejectionSettings.disabled(), resolvedInputs)
+                : historyRejection;
+        GBufferDescriptor gBuffer = resolvedInputs.gBuffer();
+        boolean contractReady = enabled
+                && resolvedInputs.hasRequiredDenoiseInputs()
+                && outputGeneration >= resolvedInputs.maxInputGeneration();
+        boolean temporalInputsBound = resolvedInputs.hasHistoryInputs()
+                && resolvedHistoryRejection.temporalReuseAllowed();
+        boolean varianceInputsBound = resolvedInputs.cacheConfidenceAvailable()
+                || resolvedInputs.varianceMapInputsAvailable();
+        String pendingReason = contractReady
+                ? "shader-side denoise dispatch/output path is pending; CPU/readback denoise evidence remains separate"
+                : "shader-side denoise contract awaits enabled settings, required inputs, and fresh output generation";
+        return ShaderDenoiseOutputContract.contractOnly(
+                contractReady,
+                resolvedInputs.hasEdgeAwareInputs(),
+                temporalInputsBound,
+                varianceInputsBound,
+                outputGeneration,
+                gBuffer.width(),
+                gBuffer.height(),
+                pendingReason
+        );
     }
 
     private static SignalSeparatedDenoiseContract buildSignalContract(
@@ -219,7 +293,7 @@ public record DenoisePassPlan(
                 output,
                 "Round 8 variance/history confidence contract; "
                         + historySummary.compactSummary()
-                        + "; realDenoiseShaderOutput=false"
+                        + "; realDenoiseShaderOutput=false; shaderDenoiseDispatchPath=pending"
         );
     }
 }

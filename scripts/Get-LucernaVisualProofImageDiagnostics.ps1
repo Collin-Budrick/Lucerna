@@ -366,6 +366,35 @@ function Get-ImageFileIdentity {
     }
 }
 
+function Measure-ImageLumaStats {
+    param([System.Drawing.Bitmap] $Image)
+
+    $sampleCount = 0
+    $sum = 0.0
+    $sumSq = 0.0
+    $stepX = [Math]::Max(1, [int][Math]::Floor($Image.Width / 64))
+    $stepY = [Math]::Max(1, [int][Math]::Floor($Image.Height / 36))
+    for ($y = 0; $y -lt $Image.Height; $y += $stepY) {
+        for ($x = 0; $x -lt $Image.Width; $x += $stepX) {
+            $pixel = $Image.GetPixel($x, $y)
+            $luma = (0.2126 * [int]$pixel.R) + (0.7152 * [int]$pixel.G) + (0.0722 * [int]$pixel.B)
+            $sampleCount++
+            $sum += $luma
+            $sumSq += ($luma * $luma)
+        }
+    }
+    if ($sampleCount -le 0) {
+        throw "Cannot measure luma statistics for an empty image."
+    }
+    $mean = $sum / [double]$sampleCount
+    $variance = [Math]::Max(0.0, ($sumSq / [double]$sampleCount) - ($mean * $mean))
+    return [ordered]@{
+        sampleCount = $sampleCount
+        meanLuma = [Math]::Round($mean, 4)
+        stdDevLuma = [Math]::Round([Math]::Sqrt($variance), 4)
+    }
+}
+
 function Get-LucernaVisualProofImageDiagnostics {
     param(
         [string] $BaselinePath,
@@ -406,6 +435,8 @@ function Get-LucernaVisualProofImageDiagnostics {
         $hashIdentical = ([string]$baselineIdentity.sha256 -eq [string]$enabledIdentity.sha256)
         $fullChangedPixels = [int64]$regionResults["fullImage"].metrics.changedPixels
         $fixedChangedPixels = [int64]$regionResults["fixedWorldSurfaceCrop"].metrics.changedPixels
+        $baselineLumaStats = Measure-ImageLumaStats $baselineImage
+        $enabledLumaStats = Measure-ImageLumaStats $enabledImage
 
         return [ordered]@{
             baselineImage = $baselineResolved
@@ -430,6 +461,10 @@ function Get-LucernaVisualProofImageDiagnostics {
                 identicalBySha256 = $hashIdentical
                 sameByteLength = ([int64]$baselineIdentity.byteLength -eq [int64]$enabledIdentity.byteLength)
             }
+            imageLumaStats = [ordered]@{
+                baseline = $baselineLumaStats
+                enabled = $enabledLumaStats
+            }
             regions = $regionResults
             classification = [ordered]@{
                 screenshotsIdenticalByHash = $hashIdentical
@@ -437,6 +472,8 @@ function Get-LucernaVisualProofImageDiagnostics {
                 fixedWorldSurfaceCropChangedAboveThreshold = ($fixedChangedPixels -gt 0)
                 changedOutsideFixedWorldSurfaceCrop = (($fullChangedPixels -gt 0) -and ($fixedChangedPixels -eq 0))
                 onlyFileEncodingOrMetadataChanged = ((-not $hashIdentical) -and ($fullChangedPixels -eq 0))
+                baselineBlankOrWrongSurfaceSuspect = ([double]$baselineLumaStats.stdDevLuma -lt 8.0)
+                enabledBlankOrWrongSurfaceSuspect = ([double]$enabledLumaStats.stdDevLuma -lt 8.0)
                 bandDiagnosticsIncluded = [bool]$IncludeBands
                 fullScreenOrRectangularWashoutSuspect = (
                     ([double]$regionResults["fullImage"].shape.changedBoundingBoxAreaPercent -ge $WashoutBoundingBoxAreaPercentThreshold) -and
@@ -472,6 +509,8 @@ Write-Host "dimensions=$($result.dimensions.width)x$($result.dimensions.height)"
 Write-Host "hash.identicalBySha256=$($result.fileIdentity.identicalBySha256)"
 Write-Host "hash.baselineSha256=$($result.fileIdentity.baseline.sha256)"
 Write-Host "hash.enabledSha256=$($result.fileIdentity.enabled.sha256)"
+Write-Host "baseline.stdDevLuma=$($result.imageLumaStats.baseline.stdDevLuma)"
+Write-Host "enabled.stdDevLuma=$($result.imageLumaStats.enabled.stdDevLuma)"
 Write-Host "full.changedPixelPercent=$($result.regions["fullImage"].metrics.changedPixelPercent)"
 Write-Host "full.brighterPixelPercent=$($result.regions["fullImage"].metrics.brighterPixelPercent)"
 Write-Host "full.changedBoundingBoxAreaPercent=$($result.regions["fullImage"].shape.changedBoundingBoxAreaPercent)"
@@ -488,6 +527,8 @@ if ($IncludeBands) {
 }
 Write-Host "classification.anyScreenRegionChangedAboveThreshold=$($result.classification.anyScreenRegionChangedAboveThreshold)"
 Write-Host "classification.changedOutsideFixedWorldSurfaceCrop=$($result.classification.changedOutsideFixedWorldSurfaceCrop)"
+Write-Host "classification.baselineBlankOrWrongSurfaceSuspect=$($result.classification.baselineBlankOrWrongSurfaceSuspect)"
+Write-Host "classification.enabledBlankOrWrongSurfaceSuspect=$($result.classification.enabledBlankOrWrongSurfaceSuspect)"
 Write-Host "classification.fullScreenOrRectangularWashoutSuspect=$($result.classification.fullScreenOrRectangularWashoutSuspect)"
 Write-Host "classification.localizedSceneShapedDeltaPresent=$($result.classification.localizedSceneShapedDeltaPresent)"
 if (-not [string]::IsNullOrWhiteSpace($OutputJsonPath)) {

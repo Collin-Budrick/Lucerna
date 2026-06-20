@@ -45,4 +45,16 @@ public record PostProcessingPipelinePlan(
     public boolean denoiseScheduled() {
         return this.denoisePlan.readyForScheduling();
     }
+
+    public boolean shaderDenoiseContractReady() {
+        return this.denoisePlan.shaderDenoiseContractReady();
+    }
+
+    public boolean realDenoiseShaderOutput() {
+        return this.denoisePlan.realDenoiseShaderOutput();
+    }
+
+    public String shaderDenoiseStatusSummary() {
+        return this.denoisePlan.shaderDenoiseStatusSummary();
+    }
 }

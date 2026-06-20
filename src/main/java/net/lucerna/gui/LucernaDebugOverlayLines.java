@@ -173,6 +173,35 @@ public final class LucernaDebugOverlayLines {
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> Component.literal(entry.getKey() + "=" + entry.getValue()))
                 .forEach(lines::add);
+        lines.add(Component.literal("round7.timing.cpuAvailability="
+                + snapshot.frameTimings().cpuTimingAvailabilityLabel()));
+        lines.add(Component.literal("round7.timing.gpuAvailability="
+                + snapshot.frameTimings().gpuTimingAvailabilityLabel()));
+        lines.add(Component.literal("round7.timing.gi=" + snapshot.frameTimings().compactStageTimingLine(
+                "GI",
+                "diffuse_gi",
+                "low_res_gi",
+                "low_resolution_gi",
+                "gi"
+        )));
+        lines.add(Component.literal("round7.timing.denoise=" + snapshot.frameTimings().compactStageTimingLine(
+                "Denoise",
+                "denoise",
+                "diffuse_denoise",
+                "edge_aware_denoise"
+        )));
+        lines.add(Component.literal("round7.timing.composite=" + snapshot.frameTimings().compactStageTimingLine(
+                "Composite",
+                "composite",
+                "final_composite"
+        )));
+        lines.add(Component.literal("round8.timing.adaptive=" + snapshot.frameTimings().compactStageTimingLine(
+                "Adaptive",
+                "adaptive_sampling",
+                "ray_budget",
+                "variance",
+                "history_confidence"
+        )));
         Round8AdaptiveDebugStatus round8 = Round8AdaptiveDebugStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("round8.adaptiveDebugSummary=" + round8.summary()));
         lines.add(Component.literal("round8.adaptiveSampling=" + round8.adaptiveSamplingLine()));
@@ -248,6 +277,9 @@ public final class LucernaDebugOverlayLines {
     }
 
     private static void addTimingLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        lines.add(Component.literal("Timing availability: CPU=" + snapshot.frameTimings().cpuTimingAvailabilityLabel()
+                + " | GPU=" + snapshot.frameTimings().gpuTimingAvailabilityLabel()));
+        addLightingStageTimingSummaryLines(lines, snapshot);
         if (!snapshot.frameTimings().hasAnyTimings()) {
             lines.add(Component.literal("No completed frame timings yet."));
             if (snapshot.activeCpuScopeCount() > 0) {
@@ -271,10 +303,46 @@ public final class LucernaDebugOverlayLines {
             for (Map.Entry<String, Double> timing : snapshot.gpuScopeDurationsMillis().entrySet()) {
                 lines.add(Component.literal("GPU " + timing.getKey() + ": " + formatMillis(timing.getValue())));
             }
+        } else {
+            lines.add(Component.literal("GPU total: unavailable (native/Vulkan timestamp queries not wired)."));
         }
         if (snapshot.activeCpuScopeCount() > 0) {
             lines.add(Component.literal("Active CPU scopes: " + String.join(", ", snapshot.frameTimings().activeCpuScopeNames())));
         }
+    }
+
+    private static void addLightingStageTimingSummaryLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        lines.add(Component.literal("Stage timing GI: " + snapshot.frameTimings().compactStageTimingLine(
+                "GI",
+                "diffuse_gi",
+                "low_res_gi",
+                "low_resolution_gi",
+                "gi"
+        )));
+        lines.add(Component.literal("Stage timing denoise: " + snapshot.frameTimings().compactStageTimingLine(
+                "Denoise",
+                "denoise",
+                "diffuse_denoise",
+                "edge_aware_denoise"
+        )));
+        lines.add(Component.literal("Stage timing composite: " + snapshot.frameTimings().compactStageTimingLine(
+                "Composite",
+                "composite",
+                "final_composite"
+        )));
+        lines.add(Component.literal("Stage timing adaptive: " + snapshot.frameTimings().compactStageTimingLine(
+                "Adaptive",
+                "adaptive_sampling",
+                "ray_budget",
+                "variance",
+                "history_confidence"
+        )));
+        lines.add(Component.literal("Stage timing final: " + snapshot.frameTimings().compactStageTimingLine(
+                "Final",
+                "final_composite",
+                "present",
+                "submit"
+        )));
     }
 
     private static void addAdaptiveSamplingLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
@@ -804,6 +872,9 @@ public final class LucernaDebugOverlayLines {
 
         for (LightingDispatchStageTelemetryStatus stage : lightingDispatch.stages().values()) {
             lines.add(Component.literal("Lighting stage: " + stage.compactLabel()));
+            lines.add(Component.literal("Stage status: " + stage.compactStageStatusLine()));
+            lines.add(Component.literal("Stage work: " + stage.stageWorkStatusLine()));
+            lines.add(Component.literal("Timing boundary: " + stage.explicitMeasurementBoundaryLine()));
         }
     }
 

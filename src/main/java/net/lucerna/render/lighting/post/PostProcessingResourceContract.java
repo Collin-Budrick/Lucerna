@@ -14,15 +14,19 @@ public final class PostProcessingResourceContract {
     public static final String DIRECT_LIGHTING = "lucerna.lighting.direct";
     public static final String DIFFUSE_GI = "lucerna.lighting.diffuseGi";
     public static final String CACHE_CONFIDENCE = "lucerna.lighting.cacheConfidence";
+    public static final String VARIANCE = "lucerna.lighting.variance";
+    public static final String RAY_BUDGET = "lucerna.lighting.rayBudget";
     public static final String DENOISED_DIFFUSE = "lucerna.denoise.diffuse";
     public static final String REJECTION_MASK = "lucerna.denoise.rejectionMask";
     public static final String WORLD_COLOR = "lucerna.composite.worldColor";
     public static final String DEBUG_OVERLAY = "lucerna.debug.overlay";
+    public static final String DENOISE_SHADER_RESOURCE = "lucerna:denoise/diffuse_edge_aware_contract";
 
     public static final String PREVIOUS_DEPTH = "PreviousDepth";
     public static final String PREVIOUS_NORMAL_ROUGHNESS = "PreviousNormalRoughness";
     public static final String PREVIOUS_LIGHTING = "PreviousLighting";
     public static final String MOTION_HISTORY = "MotionHistory";
+    public static final String VARIANCE_CONFIDENCE = "VarianceConfidence";
 
     public static final List<String> DENOISE_READS = List.of(
             GBufferTargetContract.DEPTH,
@@ -31,10 +35,13 @@ public final class PostProcessingResourceContract {
             DIRECT_LIGHTING,
             DIFFUSE_GI,
             CACHE_CONFIDENCE,
+            VARIANCE,
+            RAY_BUDGET,
             PREVIOUS_DEPTH,
             PREVIOUS_NORMAL_ROUGHNESS,
             PREVIOUS_LIGHTING,
-            MOTION_HISTORY
+            MOTION_HISTORY,
+            VARIANCE_CONFIDENCE
     );
 
     public static final List<String> DENOISE_WRITES = List.of(

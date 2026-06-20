@@ -83,9 +83,19 @@ param(
 
     [double] $MaxMovedTemporalFlickerMeanAbsLuma = 8.0,
 
+    [double] $MaxStableTemporalRoughnessScore = 2.0,
+
+    [double] $MaxMovedTemporalRoughnessScore = 9.0,
+
     [double] $MinSceneColorVariance = 8.0,
 
+    [double] $MinSequenceSceneColorVariance = 8.0,
+
     [double] $MaxRegionBottomPercent = 72.0,
+
+    [switch] $RejectWindowScreenshotSources,
+
+    [string[]] $ScreenshotSource = @(),
 
     [switch] $RequireLogProof,
 
@@ -261,6 +271,11 @@ function Measure-TemporalSequenceDrift {
     $maxChangedPixelPercent = 0.0
     $maxMeanAbsLuma = 0.0
     $maxRmseLuma = 0.0
+    $sumChangedPixelPercent = 0.0
+    $sumMeanAbsLuma = 0.0
+    $sumRmseLuma = 0.0
+    $sumTileStdDev = 0.0
+    $maxTileStdDev = 0.0
 
     for ($index = 1; $index -lt $Paths.Count; $index++) {
         $previousLabel = Get-TemporalCaptureLabel ($index - 1) $LabelPrefix
@@ -270,6 +285,16 @@ function Measure-TemporalSequenceDrift {
         $maxChangedPixelPercent = [Math]::Max($maxChangedPixelPercent, [double]$metrics.changedPixelPercent)
         $maxMeanAbsLuma = [Math]::Max($maxMeanAbsLuma, [double]$metrics.meanAbsLuma)
         $maxRmseLuma = [Math]::Max($maxRmseLuma, [double]$metrics.rmseLuma)
+        $tileStdDev = if ($delta.focusRegionShape -and $delta.focusRegionShape.tileMetrics) {
+            [double]$delta.focusRegionShape.tileMetrics.stdDevTileChangedPixelPercent
+        } else {
+            0.0
+        }
+        $sumChangedPixelPercent += [double]$metrics.changedPixelPercent
+        $sumMeanAbsLuma += [double]$metrics.meanAbsLuma
+        $sumRmseLuma += [double]$metrics.rmseLuma
+        $sumTileStdDev += $tileStdDev
+        $maxTileStdDev = [Math]::Max($maxTileStdDev, $tileStdDev)
         $comparisons.Add([ordered]@{
             fromLabel = $previousLabel
             toLabel = $currentLabel
@@ -279,15 +304,28 @@ function Measure-TemporalSequenceDrift {
         }) | Out-Null
     }
 
+    $pairCount = [Math]::Max(1.0, [double]$comparisons.Count)
+    $averageChangedPixelPercent = $sumChangedPixelPercent / $pairCount
+    $averageMeanAbsLuma = $sumMeanAbsLuma / $pairCount
+    $averageRmseLuma = $sumRmseLuma / $pairCount
+    $averageTileStdDev = $sumTileStdDev / $pairCount
+    $roughnessScore = $averageRmseLuma + ($maxTileStdDev * 0.1) + ($averageChangedPixelPercent * 0.05)
+    $labels = @(for ($index = 0; $index -lt $Paths.Count; $index++) {
+        Get-TemporalCaptureLabel $index $LabelPrefix
+    })
+
     return [ordered]@{
         captureCount = $Paths.Count
-        labels = @(for ($index = 0; $index -lt $Paths.Count; $index++) { Get-TemporalCaptureLabel $index $LabelPrefix })
-        imagePaths = @($Paths)
         pairCount = $comparisons.Count
         maxChangedPixelPercent = [Math]::Round($maxChangedPixelPercent, 4)
         maxMeanAbsLuma = [Math]::Round($maxMeanAbsLuma, 4)
         maxRmseLuma = [Math]::Round($maxRmseLuma, 4)
-        consecutiveComparisons = @($comparisons)
+        averageChangedPixelPercent = [Math]::Round($averageChangedPixelPercent, 4)
+        averageMeanAbsLuma = [Math]::Round($averageMeanAbsLuma, 4)
+        averageRmseLuma = [Math]::Round($averageRmseLuma, 4)
+        averageTileChangedPixelStdDev = [Math]::Round($averageTileStdDev, 4)
+        maxTileChangedPixelStdDev = [Math]::Round($maxTileStdDev, 4)
+        roughnessScore = [Math]::Round($roughnessScore, 4)
     }
 }
 
@@ -379,9 +417,10 @@ function Measure-Round7CompositeStabilityLogProof {
     $temporalMovedScenePresent = Test-Regex $log "historyMovedSceneMarker=true|movedCameraTemporalPair=true|sceneState=(?:moved|disoccluded|moved-disoccluded)"
     $particleScenePresent = Test-AnyRegex $log $ParticleScenePatterns
     $translucencyScenePresent = Test-AnyRegex $log $TranslucencyScenePatterns
-    $temporaryDirectLightSourcePresent = Test-Regex $log "temporarySourceReady=true|temporary direct-light|current direct-light RGBA payload|using the current direct-light RGBA payload as the temporary visible source"
-    $proofMarkerPresent = Test-Regex $log "proof marker|round5-direct-proof|R5 visual proof|round6-gi-proof|R6 GI proof|R7 proof|CPU output proof"
-    $focusWindowOnlyPresent = Test-Regex $log "focus-window-only|sourceIdentity=native-direct-light-rgba8,focusWindowOnly=true|mode=final-composite-direct-light-focus-window-additive|round6-diffuse-gi-focus-window-additive"
+    $temporaryDirectLightSourcePresent = Test-Regex $log "temporarySourceReady=true|temporaryDirectLightSubstitution=true|using the current direct-light RGBA payload as the temporary visible source"
+    $proofMarkerPresent = Test-Regex $log "proofMarkerSource=true|cpuOutputProofMarker=true|round5-direct-proof|round6-gi-proof|round7-proof-marker|R5 visual proof|R6 GI proof|R7 proof|CPU output proof"
+    $focusWindowOnlyPresent = Test-Regex $log "focusWindowOnly(?:Submitted)?=true|focus_window_only=true|sourceIdentity=native-direct-light-rgba8,focusWindowOnly=true|mode=final-composite-direct-light-focus-window-additive|round6-diffuse-gi-focus-window-additive"
+    $wrongWindowScreenshotPresent = Test-Regex $log "screenshotSource=(?:window|window-fallback)|temporalCaptureSources=[^`r`n]*(?:window|window-fallback)"
     $nativeErrorPresent = Test-Regex $log "invalid descriptor|VK_ERROR|VK_[A-Z_]*ERROR|Lucerna native error|native error|Vulkan error"
 
     return [ordered]@{
@@ -396,6 +435,7 @@ function Measure-Round7CompositeStabilityLogProof {
             temporaryDirectLightSourcePresent = $temporaryDirectLightSourcePresent
             proofMarkerPresent = $proofMarkerPresent
             focusWindowOnlyPresent = $focusWindowOnlyPresent
+            wrongWindowScreenshotPresent = $wrongWindowScreenshotPresent
             nativeErrorPresent = $nativeErrorPresent
         }
         patterns = [ordered]@{
@@ -414,8 +454,14 @@ $translucentBaselineResolved = Resolve-ExistingFile $TranslucentBaselineImagePat
 $translucentFinalResolved = Resolve-ExistingFile $TranslucentFinalCompositeImagePath "Translucent final-composite image"
 $temporalStableResolved = Resolve-ExistingFile $TemporalStableImagePath "Temporal stable image"
 $temporalMovedResolved = Resolve-ExistingFile $TemporalMovedImagePath "Temporal moved image"
-$temporalStableSequenceResolved = Resolve-TemporalSequenceFiles $TemporalStableSequenceImagePath $temporalStableResolved "Temporal stable sequence image"
-$temporalMovedSequenceResolved = Resolve-TemporalSequenceFiles $TemporalMovedSequenceImagePath $temporalMovedResolved "Temporal moved sequence image"
+$temporalStableSequenceResolved = Resolve-TemporalSequenceFiles `
+    -Paths $TemporalStableSequenceImagePath `
+    -FirstPath $temporalStableResolved `
+    -Label "Temporal stable sequence image"
+$temporalMovedSequenceResolved = Resolve-TemporalSequenceFiles `
+    -Paths $TemporalMovedSequenceImagePath `
+    -FirstPath $temporalMovedResolved `
+    -Label "Temporal moved sequence image"
 $logResolved = Resolve-OptionalFiles $LogPath "Log"
 
 $particleBaselineDimensions = Get-ImageDimensions $particleBaselineResolved
@@ -428,8 +474,16 @@ $temporalMovedDimensions = Get-ImageDimensions $temporalMovedResolved
 $particleDelta = Invoke-DeltaHelper $particleBaselineResolved $particleFinalResolved "particles"
 $translucentDelta = Invoke-DeltaHelper $translucentBaselineResolved $translucentFinalResolved "translucency"
 $temporalDelta = Invoke-DeltaHelper $temporalStableResolved $temporalMovedResolved "temporal-motion"
-$stableTemporalDrift = if ($temporalStableSequenceResolved.Count -ge 2) { Measure-TemporalSequenceDrift $temporalStableSequenceResolved "temporal-stable" } else { $null }
-$movedTemporalFlicker = if ($temporalMovedSequenceResolved.Count -ge 2) { Measure-TemporalSequenceDrift $temporalMovedSequenceResolved "temporal-moved" } else { $null }
+$stableTemporalDrift = if ($temporalStableSequenceResolved.Count -ge 2) {
+    Measure-TemporalSequenceDrift -Paths $temporalStableSequenceResolved -LabelPrefix "temporal-stable"
+} else {
+    $null
+}
+$movedTemporalFlicker = if ($temporalMovedSequenceResolved.Count -ge 2) {
+    Measure-TemporalSequenceDrift -Paths $temporalMovedSequenceResolved -LabelPrefix "temporal-moved"
+} else {
+    $null
+}
 
 $sceneVariance = [ordered]@{
     particleBaseline = Measure-SceneColorVariance $particleBaselineResolved
@@ -438,6 +492,22 @@ $sceneVariance = [ordered]@{
     translucentFinalComposite = Measure-SceneColorVariance $translucentFinalResolved
     temporalStable = Measure-SceneColorVariance $temporalStableResolved
     temporalMoved = Measure-SceneColorVariance $temporalMovedResolved
+}
+$sequenceSceneVariance = [ordered]@{
+    temporalStableSequence = @(for ($index = 0; $index -lt $temporalStableSequenceResolved.Count; $index++) {
+        [ordered]@{
+            index = $index
+            image = $temporalStableSequenceResolved[$index]
+            variance = Measure-SceneColorVariance $temporalStableSequenceResolved[$index]
+        }
+    })
+    temporalMovedSequence = @(for ($index = 0; $index -lt $temporalMovedSequenceResolved.Count; $index++) {
+        [ordered]@{
+            index = $index
+            image = $temporalMovedSequenceResolved[$index]
+            variance = Measure-SceneColorVariance $temporalMovedSequenceResolved[$index]
+        }
+    })
 }
 
 $logProof = if ($logResolved.Count -eq 0) { $null } else { Measure-Round7CompositeStabilityLogProof $logResolved }
@@ -477,6 +547,19 @@ foreach ($entry in $sceneVariance.GetEnumerator()) {
         $failures.Add("$($entry.Key) image appears too flat or blank. stdDevLuma=$($entry.Value.stdDevLuma) expected>=$MinSceneColorVariance")
     }
 }
+foreach ($entry in @($sequenceSceneVariance.temporalStableSequence + $sequenceSceneVariance.temporalMovedSequence)) {
+    if ([double]$entry.variance.stdDevLuma -lt $MinSequenceSceneColorVariance) {
+        $failures.Add("Temporal sequence image appears too flat or blank/wrong-surface. image=$($entry.image) stdDevLuma=$($entry.variance.stdDevLuma) expected>=$MinSequenceSceneColorVariance")
+    }
+}
+foreach ($source in $ScreenshotSource) {
+    if ([string]::IsNullOrWhiteSpace($source)) {
+        continue
+    }
+    if ($RejectWindowScreenshotSources -and $source -match "^(?:window|window-fallback)$") {
+        $failures.Add("Screenshot source '$source' is rejected for temporal/flicker proof. Use Minecraft F2 or in-client capture, preferably in-client.")
+    }
+}
 
 if ([double]$particleDelta.focusRegionMetrics.changedPixelPercent -lt $MinParticleChangedPixelPercent) {
     $failures.Add("Particle final-composite focused-region changed pixels below threshold. actual=$($particleDelta.focusRegionMetrics.changedPixelPercent) expected>=$MinParticleChangedPixelPercent")
@@ -497,6 +580,9 @@ if ($stableTemporalDrift) {
     if ([double]$stableTemporalDrift.maxMeanAbsLuma -gt $MaxStableTemporalDriftMeanAbsLuma) {
         $failures.Add("Stable temporal repeated-capture mean absolute luma exceeds flicker threshold. actual=$($stableTemporalDrift.maxMeanAbsLuma) expected<=$MaxStableTemporalDriftMeanAbsLuma")
     }
+    if ([double]$stableTemporalDrift.roughnessScore -gt $MaxStableTemporalRoughnessScore) {
+        $failures.Add("Stable temporal repeated-capture roughness score exceeds threshold. actual=$($stableTemporalDrift.roughnessScore) expected<=$MaxStableTemporalRoughnessScore")
+    }
 }
 if ($movedTemporalFlicker) {
     if ([double]$movedTemporalFlicker.maxChangedPixelPercent -gt $MaxMovedTemporalFlickerChangedPixelPercent) {
@@ -504,6 +590,9 @@ if ($movedTemporalFlicker) {
     }
     if ([double]$movedTemporalFlicker.maxMeanAbsLuma -gt $MaxMovedTemporalFlickerMeanAbsLuma) {
         $failures.Add("Moved temporal repeated-capture mean absolute luma exceeds flicker threshold. actual=$($movedTemporalFlicker.maxMeanAbsLuma) expected<=$MaxMovedTemporalFlickerMeanAbsLuma")
+    }
+    if ([double]$movedTemporalFlicker.roughnessScore -gt $MaxMovedTemporalRoughnessScore) {
+        $failures.Add("Moved temporal repeated-capture roughness score exceeds threshold. actual=$($movedTemporalFlicker.roughnessScore) expected<=$MaxMovedTemporalRoughnessScore")
     }
 }
 if ($RequireLogProof -and $logResolved.Count -eq 0) {
@@ -540,6 +629,9 @@ if ($logProof) {
     if ($logProof.markers.focusWindowOnlyPresent) {
         $failures.Add("Log contains focus-window marker; composite stability proof must not rely on focus-window-only brightness.")
     }
+    if ($RejectWindowScreenshotSources -and $logProof.markers.wrongWindowScreenshotPresent) {
+        $failures.Add("Log contains window or window-fallback screenshot source marker; temporal/flicker proof must use Minecraft-owned capture.")
+    }
     if ($logProof.markers.nativeErrorPresent) {
         $failures.Add("Log contains native/Vulkan error markers.")
     }
@@ -554,6 +646,7 @@ $result = [ordered]@{
     temporalMovedImage = $temporalMovedResolved
     temporalStableSequenceImages = @($temporalStableSequenceResolved)
     temporalMovedSequenceImages = @($temporalMovedSequenceResolved)
+    screenshotSources = @($ScreenshotSource)
     logPaths = @($logResolved)
     thresholds = [ordered]@{
         minParticleChangedPixelPercent = $MinParticleChangedPixelPercent
@@ -564,11 +657,15 @@ $result = [ordered]@{
         maxStableTemporalDriftMeanAbsLuma = $MaxStableTemporalDriftMeanAbsLuma
         maxMovedTemporalFlickerChangedPixelPercent = $MaxMovedTemporalFlickerChangedPixelPercent
         maxMovedTemporalFlickerMeanAbsLuma = $MaxMovedTemporalFlickerMeanAbsLuma
+        maxStableTemporalRoughnessScore = $MaxStableTemporalRoughnessScore
+        maxMovedTemporalRoughnessScore = $MaxMovedTemporalRoughnessScore
         minSceneColorVariance = $MinSceneColorVariance
+        minSequenceSceneColorVariance = $MinSequenceSceneColorVariance
         changedPixelThreshold = $ChangedPixelThreshold
         brightPixelThreshold = $BrightPixelThreshold
         maxRegionBottomPercent = $MaxRegionBottomPercent
         focusRegionSelection = if ($AutoFocusRegion -and -not $DisableAutoFocusRegion) { "auto-upper-mid-world-surface" } else { "fixed-upper-mid-world-surface" }
+        rejectWindowScreenshotSources = [bool]$RejectWindowScreenshotSources
         requireLogProof = [bool]$RequireLogProof
     }
     screenshots = [ordered]@{
@@ -579,6 +676,7 @@ $result = [ordered]@{
         temporalStableDimensions = $temporalStableDimensions
         temporalMovedDimensions = $temporalMovedDimensions
         sceneVariance = $sceneVariance
+        sequenceSceneVariance = $sequenceSceneVariance
     }
     imageDelta = [ordered]@{
         particleBaselineToFinalComposite = $particleDelta
@@ -606,13 +704,20 @@ $result = [ordered]@{
         )
         stableTemporalDriftEvidencePresent = if ($stableTemporalDrift) {
             ([double]$stableTemporalDrift.maxChangedPixelPercent -le $MaxStableTemporalDriftChangedPixelPercent) -and
-            ([double]$stableTemporalDrift.maxMeanAbsLuma -le $MaxStableTemporalDriftMeanAbsLuma)
+            ([double]$stableTemporalDrift.maxMeanAbsLuma -le $MaxStableTemporalDriftMeanAbsLuma) -and
+            ([double]$stableTemporalDrift.roughnessScore -le $MaxStableTemporalRoughnessScore)
         } else {
             $null
         }
         movedTemporalFlickerEvidencePresent = if ($movedTemporalFlicker) {
             ([double]$movedTemporalFlicker.maxChangedPixelPercent -le $MaxMovedTemporalFlickerChangedPixelPercent) -and
-            ([double]$movedTemporalFlicker.maxMeanAbsLuma -le $MaxMovedTemporalFlickerMeanAbsLuma)
+            ([double]$movedTemporalFlicker.maxMeanAbsLuma -le $MaxMovedTemporalFlickerMeanAbsLuma) -and
+            ([double]$movedTemporalFlicker.roughnessScore -le $MaxMovedTemporalRoughnessScore)
+        } else {
+            $null
+        }
+        screenshotSourceEvidenceAccepted = if ($ScreenshotSource.Count -gt 0) {
+            -not (@($ScreenshotSource | Where-Object { $_ -match "^(?:window|window-fallback)$" }).Count -gt 0 -and $RejectWindowScreenshotSources)
         } else {
             $null
         }
@@ -627,6 +732,7 @@ $result = [ordered]@{
             temporaryDirectLightSourcePresent = if ($logProof) { [bool]$logProof.markers.temporaryDirectLightSourcePresent } else { $null }
             proofMarkerPresent = if ($logProof) { [bool]$logProof.markers.proofMarkerPresent } else { $null }
             focusWindowOnlyPresent = if ($logProof) { [bool]$logProof.markers.focusWindowOnlyPresent } else { $null }
+            wrongWindowScreenshotPresent = if ($logProof) { [bool]$logProof.markers.wrongWindowScreenshotPresent } else { $null }
             nativeErrorPresent = if ($logProof) { [bool]$logProof.markers.nativeErrorPresent } else { $null }
         }
     }
@@ -651,6 +757,7 @@ Write-Host "temporalStableImage=$($result.temporalStableImage)"
 Write-Host "temporalMovedImage=$($result.temporalMovedImage)"
 Write-Host "temporalStableSequenceImages=$(@($result.temporalStableSequenceImages) -join ';')"
 Write-Host "temporalMovedSequenceImages=$(@($result.temporalMovedSequenceImages) -join ';')"
+Write-Host "screenshotSources=$(@($result.screenshotSources) -join ';')"
 Write-Host "logPaths=$(@($result.logPaths) -join ';')"
 Write-Host "particle.focus.changedPixelPercent=$($particleDelta.focusRegionMetrics.changedPixelPercent)"
 Write-Host "translucency.focus.changedPixelPercent=$($translucentDelta.focusRegionMetrics.changedPixelPercent)"
@@ -660,11 +767,15 @@ if ($stableTemporalDrift) {
     Write-Host "temporal.stable.sequence.captureCount=$($stableTemporalDrift.captureCount)"
     Write-Host "temporal.stable.sequence.maxChangedPixelPercent=$($stableTemporalDrift.maxChangedPixelPercent)"
     Write-Host "temporal.stable.sequence.maxMeanAbsLuma=$($stableTemporalDrift.maxMeanAbsLuma)"
+    Write-Host "temporal.stable.sequence.maxRmseLuma=$($stableTemporalDrift.maxRmseLuma)"
+    Write-Host "temporal.stable.sequence.roughnessScore=$($stableTemporalDrift.roughnessScore)"
 }
 if ($movedTemporalFlicker) {
     Write-Host "temporal.moved.sequence.captureCount=$($movedTemporalFlicker.captureCount)"
     Write-Host "temporal.moved.sequence.maxChangedPixelPercent=$($movedTemporalFlicker.maxChangedPixelPercent)"
     Write-Host "temporal.moved.sequence.maxMeanAbsLuma=$($movedTemporalFlicker.maxMeanAbsLuma)"
+    Write-Host "temporal.moved.sequence.maxRmseLuma=$($movedTemporalFlicker.maxRmseLuma)"
+    Write-Host "temporal.moved.sequence.roughnessScore=$($movedTemporalFlicker.roughnessScore)"
 }
 Write-Host "focus.regionSelection=$($result.thresholds.focusRegionSelection)"
 if ($logProof) {
@@ -678,6 +789,7 @@ if ($logProof) {
     Write-Host "temporaryDirectLightSourcePresent=$($logProof.markers.temporaryDirectLightSourcePresent)"
     Write-Host "proofMarkerPresent=$($logProof.markers.proofMarkerPresent)"
     Write-Host "focusWindowOnlyPresent=$($logProof.markers.focusWindowOnlyPresent)"
+    Write-Host "wrongWindowScreenshotPresent=$($logProof.markers.wrongWindowScreenshotPresent)"
     Write-Host "nativeErrorPresent=$($logProof.markers.nativeErrorPresent)"
 }
 Write-Host "proof.classification=$($result.proofClarity.classification)"

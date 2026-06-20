@@ -65,6 +65,8 @@ public record Round7DenoisedGiVisualSource(
                 + ",evidence=" + this.evidenceLabel
                 + ",shader=" + this.shaderLabel
                 + ",sourceIdentity=" + this.sourceIdentity()
+                + ",sourceAuthenticity=\"" + this.sourceAuthenticityBoundary() + "\""
+                + ",projectionBoundary=\"" + this.surfaceProjectionBoundary() + "\""
                 + ",qualityBoundary=\"" + this.qualityBoundary() + "\""
                 + ",focusedRegionProof=\"" + this.focusedRegionProofExpectation() + "\""
                 + ",ready=" + this.sourceReady
@@ -83,9 +85,17 @@ public record Round7DenoisedGiVisualSource(
         return "CPU denoised RGBA8 source readiness is not real shader denoise quality unless realDenoiseShaderOutput=true and controller raw-vs-denoised proof improves";
     }
 
+    public String sourceAuthenticityBoundary() {
+        return "denoised GI source must be CPU denoised diffuse-GI RGBA8 output from the denoise stage; reject raw metadata, proof markers, focus-window-only sources, and direct-light substitution";
+    }
+
+    public String surfaceProjectionBoundary() {
+        return "current public shader path is scene-shaped full-target projection from denoised payload cues; real geometry/material-aware shader denoise and physically correct GI projection remain pending";
+    }
+
     public String focusedRegionProofExpectation() {
         return this.sourceReady
-                ? "source-ready only; controller still needs focused-surface screenshot delta and raw-vs-denoised quality comparison"
+                ? "source-ready only; controller still needs focused-surface screenshot delta, anti-rectangular-washout proof, and raw-vs-denoised quality comparison"
                 : "not ready; visual proof should not pass";
     }
 

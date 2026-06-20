@@ -853,6 +853,7 @@ void append_round6_execution_status(
         << ",cpu_output_material_response=" << execution.last_cpu_output_material_response
         << ",visible_signal_cache_factor=" << execution.last_visible_signal_cache_factor
         << ",visible_signal_ray_factor=" << execution.last_visible_signal_ray_factor
+        << ",physical_scene_link_score=" << execution.last_physical_scene_link_score
         << ",visible_signal_checksum=" << execution.last_visible_signal_checksum
         << ",cpu_output_checksum=" << execution.last_cpu_output_checksum
         << ",scene_inputs={recorded=" << execution.last_scene_inputs_recorded
@@ -898,6 +899,12 @@ void append_round6_execution_status(
         << ",cpu_output_emissive_driven=" << execution.last_cpu_output_emissive_driven
         << ",cpu_output_spatially_graded=" << execution.last_cpu_output_spatially_graded
         << ",cpu_output_material_driven=" << execution.last_cpu_output_material_driven
+        << ",physical_scene_linked=" << execution.last_physical_scene_linked
+        << ",metadata_only_proof_rejected=" << execution.last_metadata_only_proof_rejected
+        << ",focus_window_capture_rejected=" << execution.last_focus_window_capture_rejected
+        << ",proof_marker_evidence_rejected=" << execution.last_proof_marker_evidence_rejected
+        << ",temporary_direct_substitution_rejected=" << execution.last_temporary_direct_substitution_rejected
+        << ",rectangular_washout_rejected=" << execution.last_rectangular_washout_rejected
         << ",marker=\"" << execution.last_marker
         << "\""
         << ",output_marker=\"" << execution.last_output_marker
@@ -905,6 +912,10 @@ void append_round6_execution_status(
         << ",cpu_output_marker=\"" << execution.last_cpu_output_marker
         << "\""
         << ",cache_marker=\"" << execution.last_cache_marker
+        << "\""
+        << ",physical_scene_marker=\"" << execution.last_physical_scene_marker
+        << "\""
+        << ",proof_boundary_marker=\"" << execution.last_proof_boundary_marker
         << "\""
         << ",readiness_reason=\"" << (execution.last_readiness_reason.empty()
             ? "round6_stage_not_evaluated"
@@ -982,6 +993,12 @@ void append_denoise_execution_status(
         << ",edge_normal_available=" << execution.last_edge_normal_available
         << ",edge_material_available=" << execution.last_edge_material_available
         << ",history_confidence_available=" << execution.last_history_confidence_available
+        << ",shader_boundary_explicit=" << execution.last_shader_boundary_explicit
+        << ",metadata_only_proof_rejected=" << execution.last_metadata_only_proof_rejected
+        << ",focus_window_capture_rejected=" << execution.last_focus_window_capture_rejected
+        << ",proof_marker_evidence_rejected=" << execution.last_proof_marker_evidence_rejected
+        << ",temporary_direct_substitution_rejected=" << execution.last_temporary_direct_substitution_rejected
+        << ",rectangular_washout_rejected=" << execution.last_rectangular_washout_rejected
         << ",output_marker=\"" << execution.last_output_marker
         << "\""
         << ",raw_input_marker=\"" << execution.last_raw_input_marker
@@ -993,6 +1010,12 @@ void append_denoise_execution_status(
         << ",history_acceptance_reason=\"" << execution.last_history_acceptance_reason
         << "\""
         << ",history_rejection_reason=\"" << execution.last_history_rejection_reason
+        << "\""
+        << ",shader_boundary_marker=\"" << execution.last_shader_boundary_marker
+        << "\""
+        << ",temporal_history_marker=\"" << execution.last_temporal_history_marker
+        << "\""
+        << ",proof_boundary_marker=\"" << execution.last_proof_boundary_marker
         << "\""
         << ",quality_marker=\"" << execution.last_quality_marker
         << "\""
@@ -4236,6 +4259,7 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_cpu_output_material_response = 0.0F;
     execution.last_visible_signal_cache_factor = 0.0F;
     execution.last_visible_signal_ray_factor = 0.0F;
+    execution.last_physical_scene_link_score = 0;
     execution.last_visible_signal_generated = false;
     execution.last_visible_signal_cache_backed = false;
     execution.last_cpu_output_generated = false;
@@ -4248,10 +4272,19 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_cpu_output_spatially_graded = false;
     execution.last_cpu_output_material_driven = false;
     execution.last_scene_inputs_recorded = false;
+    execution.last_physical_scene_linked = false;
+    execution.last_metadata_only_proof_rejected = true;
+    execution.last_focus_window_capture_rejected = true;
+    execution.last_proof_marker_evidence_rejected = true;
+    execution.last_temporary_direct_substitution_rejected = true;
+    execution.last_rectangular_washout_rejected = true;
     execution.last_marker.clear();
     execution.last_output_marker.clear();
     execution.last_cpu_output_marker.clear();
     execution.last_cache_marker.clear();
+    execution.last_physical_scene_marker.clear();
+    execution.last_proof_boundary_marker =
+            std::string(to_string(dispatch_stage)) + "_requires_native_scene_linked_output_not_capture_artifact";
     execution.last_scene_dimension_id.clear();
     if (dispatch_stage == NativeLightingDispatchStage::DiffuseGi) {
         diffuse_gi_cpu_output_.clear();
@@ -5253,6 +5286,37 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
         const bool emissive_output_recorded = execution.last_cpu_output_emissive_driven;
         const bool spatial_output_recorded = execution.last_cpu_output_spatially_graded;
         const bool material_output_recorded = execution.last_cpu_output_material_driven;
+        execution.last_physical_scene_link_score =
+                (execution.last_cpu_output_nonzero ? 1ULL : 0ULL)
+                + (execution.last_scene_inputs_recorded ? 1ULL : 0ULL)
+                + (cache_inputs_recorded ? 1ULL : 0ULL)
+                + (lighting_inputs_recorded ? 1ULL : 0ULL)
+                + (surface_inputs_recorded ? 1ULL : 0ULL)
+                + (surface_output_recorded ? 1ULL : 0ULL)
+                + (emissive_output_recorded ? 1ULL : 0ULL)
+                + (spatial_output_recorded ? 1ULL : 0ULL)
+                + (material_output_recorded ? 1ULL : 0ULL);
+        execution.last_physical_scene_linked = execution.last_physical_scene_link_score >= 7;
+        execution.last_metadata_only_proof_rejected =
+                !execution.last_physical_scene_linked || !execution.last_cpu_output_nonzero;
+        execution.last_focus_window_capture_rejected = execution.last_cpu_output_surface_pixel_count != 0
+                && execution.last_cpu_output_surface_pixel_count < execution.last_cpu_output_pixel_count;
+        execution.last_proof_marker_evidence_rejected = execution.last_cpu_output_nonzero
+                && execution.last_scene_inputs_recorded;
+        execution.last_temporary_direct_substitution_rejected = execution.last_cpu_output_emissive_driven
+                && execution.last_cpu_output_scene_driven
+                && (execution.last_cache_read_count != 0 || execution.last_cache_write_count != 0);
+        execution.last_rectangular_washout_rejected =
+                execution.last_cpu_output_spatially_graded
+                && execution.last_cpu_output_material_driven
+                && execution.last_cpu_output_cache_modulated_pixel_count != 0;
+        execution.last_physical_scene_marker = execution.last_physical_scene_linked
+                ? "native_diffuse_gi_scene_linked_cpu_output_physical_inputs_present"
+                : "native_diffuse_gi_scene_link_incomplete_do_not_treat_as_physical_gi";
+        execution.last_proof_boundary_marker =
+                execution.last_physical_scene_linked
+                ? "native_gi_cpu_preview_scene_linked_requires_controller_screenshot_proof"
+                : "native_gi_metadata_or_partial_preview_rejected_for_visual_gi_completion";
         if (execution.last_cpu_output_nonzero
                 && execution.last_scene_inputs_recorded
                 && cache_inputs_recorded
@@ -5366,6 +5430,14 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
     execution.last_edge_material_available = denoise_stage.last_input_count >= 3;
     execution.last_history_confidence_available = denoise_stage.last_temporal_history
             || has_lighting_flag(denoise_stage.last_flags, kLightingDispatchFlagTemporalHistory);
+    execution.last_shader_boundary_explicit = true;
+    execution.last_metadata_only_proof_rejected = !execution.last_raw_gi_input_available
+            || !execution.last_denoised_output_intent;
+    execution.last_focus_window_capture_rejected = false;
+    execution.last_proof_marker_evidence_rejected = execution.last_raw_gi_input_available;
+    execution.last_temporary_direct_substitution_rejected = execution.last_raw_gi_input_available
+            && execution.last_raw_direct_input_available;
+    execution.last_rectangular_washout_rejected = execution.last_edge_inputs_available;
     execution.last_metadata_dispatch_recorded = denoise_stage.recorded_this_frame;
     execution.last_accepted = false;
     execution.last_resource_marker_recorded = false;
@@ -5390,6 +5462,13 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
     execution.last_history_rejection_reason = execution.last_temporal_history
             ? "native_temporal_history_not_evaluated"
             : "temporal_history_not_requested";
+    execution.last_shader_boundary_marker =
+            "native_denoise_shader_output_absent_cpu_fallback_only_real_shader_output_false";
+    execution.last_temporal_history_marker = execution.last_temporal_history
+            ? "temporal_history_requested_waiting_for_cpu_history_metrics"
+            : "temporal_history_not_requested";
+    execution.last_proof_boundary_marker =
+            "denoise_requires_real_shader_output_or_controller_cpu_fallback_visual_proof_not_metadata_only";
     execution.last_quality_marker =
             "cpu_fallback_quality_metrics=false;real_shader_output=false;quality_metrics_not_generated";
 
@@ -5439,6 +5518,28 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
     execution.last_denoised_output_marker = denoised_output_generated
             ? "denoised_diffuse_gi_cpu_rgba8_output_generated_from_raw_gi"
             : execution.last_denoised_output_marker;
+    execution.last_metadata_only_proof_rejected = !denoised_output_generated;
+    execution.last_focus_window_capture_rejected = denoised_output_generated
+            && execution.last_denoised_output_changed_pixels != 0
+            && execution.last_denoised_output_changed_pixels < execution.last_denoised_output_pixels;
+    execution.last_proof_marker_evidence_rejected = denoised_output_generated
+            && execution.last_raw_gi_input_available
+            && execution.last_denoised_output_differs_from_raw;
+    execution.last_temporary_direct_substitution_rejected = denoised_output_generated
+            && execution.last_raw_gi_input_available
+            && execution.last_denoised_output_differs_from_raw;
+    execution.last_rectangular_washout_rejected = denoised_output_generated
+            && execution.last_noise_reduction_percent != 0
+            && execution.last_edge_preserved != 0;
+    execution.last_shader_boundary_marker = denoised_output_generated
+            ? "native_cpu_denoise_output_generated_real_shader_output_false"
+            : execution.last_shader_boundary_marker;
+    execution.last_temporal_history_marker = denoise_stage.last_temporal_history
+            ? "temporal_history_requested_cpu_history_metrics_recorded_or_pending"
+            : "temporal_history_not_requested";
+    execution.last_proof_boundary_marker = denoised_output_generated
+            ? "cpu_fallback_denoise_visual_proof_allowed_but_shader_denoise_remains_open"
+            : "denoise_metadata_only_rejected_no_output_generated";
     execution.last_readiness_reason = denoised_output_generated
             ? "first practical CPU edge-aware denoise foundation generated from native diffuse GI; no final shader quality claim"
             : (validated_placeholder_metadata

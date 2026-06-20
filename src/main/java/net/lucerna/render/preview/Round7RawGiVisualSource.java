@@ -74,6 +74,8 @@ public record Round7RawGiVisualSource(
                 + ",evidence=" + this.evidenceLabel
                 + ",shader=" + this.shaderLabel
                 + ",sourceIdentity=" + this.sourceIdentity()
+                + ",sourceAuthenticity=\"" + this.sourceAuthenticityBoundary() + "\""
+                + ",projectionBoundary=\"" + this.surfaceProjectionBoundary() + "\""
                 + ",focusedRegionProof=\"" + this.focusedRegionProofExpectation() + "\""
                 + ",ready=" + this.sourceReady
                 + ",reason=\"" + this.reason + "\"";
@@ -83,9 +85,17 @@ public record Round7RawGiVisualSource(
         return "native-diffuse-gi-rgba8/raw-gi";
     }
 
+    public String sourceAuthenticityBoundary() {
+        return "raw GI source must be native diffuse-GI RGBA8 CPU/readback output; reject metadata-only, proof-marker, focus-window-only, and temporary direct-light substitution";
+    }
+
+    public String surfaceProjectionBoundary() {
+        return "current public shader path is scene-shaped full-target projection from GI payload cues; geometry/material-aware physical GI projection remains pending controller/native-shader work";
+    }
+
     public String focusedRegionProofExpectation() {
         return this.sourceReady
-                ? "source-ready only; controller still needs focused-surface screenshot delta"
+                ? "source-ready only; controller still needs focused-surface screenshot delta and anti-rectangular-washout proof"
                 : "not ready; visual proof should not pass";
     }
 

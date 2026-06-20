@@ -26,6 +26,15 @@ public final class PublicMojangPreviewDrawScaffolds {
             "round7-denoised-gi-first-practical-cpu-output-additive";
     private static final String ROUND7_FINAL_COMPOSITE_FULLSCREEN_MODE =
             "round7-final-composite-raw-plus-denoised-surface-additive";
+    private static final String RAW_GI_SOURCE_IDENTITY =
+            "sourceIdentity=native-diffuse-gi-rgba8/raw-gi";
+    private static final String DENOISED_GI_SOURCE_IDENTITY =
+            "sourceIdentity=cpu-denoised-diffuse-gi-rgba8/denoised-gi";
+    private static final String FINAL_COMPOSITE_SOURCE_BOUNDARY =
+            "sourceBoundary=full-target-scene-shaped-surface-projection,"
+                    + "metadataOnly=false,proofMarker=false,focusWindowOnly=false,"
+                    + "temporaryDirectLightSubstitution=false,rectangularWashoutRejected=true,"
+                    + "geometryMaterialAwareProjection=pending-shader/native-quality";
     private static final String DIRECT_LIGHT_FINAL_COMPOSITE_SHADER =
             "lucerna:core/round6_native_diffuse_gi_surface";
     private static final String ROUND6_DIFFUSE_GI_SURFACE_SHADER =
@@ -331,6 +340,9 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FIRST_INSTANCE,
                 "public Mojang Round 7 RAW_GI visual mode can bind the native diffuse-GI RGBA8 source texture and issue a full-target raw-source additive draw; shader="
                         + ROUND6_DIFFUSE_GI_SURFACE_SHADER
+                        + "," + RAW_GI_SOURCE_IDENTITY
+                        + ",surfaceProjection=scene-shaped-full-target"
+                        + ",metadataOnly=false,temporaryDirectLightSubstitution=false"
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
         );
     }
@@ -377,6 +389,9 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FIRST_INSTANCE,
                 "public Mojang Round 7 RAW_GI native diffuse-GI source additive draw issued; shader="
                         + ROUND6_DIFFUSE_GI_SURFACE_SHADER
+                        + "," + RAW_GI_SOURCE_IDENTITY
+                        + ",surfaceProjection=scene-shaped-full-target"
+                        + ",metadataOnly=false,temporaryDirectLightSubstitution=false"
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
                         + ",javaOpaqueFallbackDrawRepeats=" + ROUND7_RAW_GI_DRAW_REPEATS
         );
@@ -414,6 +429,9 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FIRST_INSTANCE,
                 "public Mojang Round 7 DENOISED_GI visual mode can bind the denoised diffuse-GI RGBA8 CPU source texture and issue a stronger full-target denoised-source additive draw; shader="
                         + ROUND7_DENOISED_GI_VISUAL_SHADER
+                        + "," + DENOISED_GI_SOURCE_IDENTITY
+                        + ",surfaceProjection=scene-shaped-full-target"
+                        + ",metadataOnly=false,temporaryDirectLightSubstitution=false"
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
         );
     }
@@ -460,6 +478,9 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FIRST_INSTANCE,
                 "public Mojang Round 7 DENOISED_GI denoised diffuse-GI CPU output additive draw issued; shader="
                         + ROUND7_DENOISED_GI_VISUAL_SHADER
+                        + "," + DENOISED_GI_SOURCE_IDENTITY
+                        + ",surfaceProjection=scene-shaped-full-target"
+                        + ",metadataOnly=false,temporaryDirectLightSubstitution=false"
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
                         + ",javaOpaqueFallbackDrawRepeats=" + ROUND7_DENOISED_GI_DRAW_REPEATS
         );
@@ -522,6 +543,9 @@ public final class PublicMojangPreviewDrawScaffolds {
                         + (rawSourceBound ? "raw native diffuse-GI plus " : "")
                         + "denoised diffuse-GI sources; shader="
                         + ROUND7_DENOISED_GI_VISUAL_SHADER
+                        + "," + (rawSourceBound ? RAW_GI_SOURCE_IDENTITY + "," : "")
+                        + DENOISED_GI_SOURCE_IDENTITY
+                        + "," + FINAL_COMPOSITE_SOURCE_BOUNDARY
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
                         + ",rawDrawRepeats=" + (rawSourceBound ? ROUND7_FINAL_RAW_GI_DRAW_REPEATS : 0)
                         + ",denoisedDrawRepeats=" + ROUND7_FINAL_DENOISED_GI_DRAW_REPEATS
