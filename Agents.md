@@ -2,7 +2,7 @@
 
 ## Progress Audit
 
-Current controller estimate: **about 99.80% complete against this file**.
+Current controller estimate: **about 99.82% complete against this file**.
 
 This percentage is conservative:
 - Rounds 0-3 are mostly implemented and controller-validated.
@@ -13,6 +13,7 @@ This percentage is conservative:
 - Latest controller work restores the launchable native DLL path after the unvalidated native spatialization generated an Application Control-blocked DLL, then moves the Round 5 visible proof into a final-composite-only focus-window shader. Sodium + Iris + Vulkan now loads the native DLL, submits the focus-window final composite, and screenshot delta proves visible brightening in the focused wall region while preserving the HUD.
 - Latest controller work adds Round 9 virtualized chunk geometry metadata contracts, native CPU/conservative culling telemetry, real indirect-count status, a Round 9 debug overlay/status path, and a controller proof harness. Sodium + Iris + Vulkan captures flat/open, interior/wall-facing, and high-distance/open terrain overlay screenshots with clean shutdown and log proof for cluster counts, visible counts, culled/offscreen counts, upload bytes, generation counters, culling mode/reason, and real indirect draw counts. Boundary: this is still conservative CPU/status culling, not a real GPU frustum/occlusion culling path.
 - Latest controller work adds Round 10 voxel traversal status contracts, native CPU metadata traversal counters, Vulkan RT entity fallback/status contracts, hybrid hit resolver contracts, Round 10 overlay modes, and a controller proof harness. Sodium + Iris + Vulkan captures voxel-ray, RT-entity, and hybrid-hit debug overlay screenshots with clean shutdown and log proof for ray/hit/miss counts, traversal steps, skipped-section counters, BLAS/TLAS fallback status, hybrid hit-source counts, and evidence-boundary labels. Boundary: this validates status/debug scaffolding and fallback-safe contracts, not real GPU voxel traversal, hardware RT acceleration structures, or physically correct hybrid hit lighting yet.
+- Latest controller work adds six-agent Round 11 ReSTIR DI/GI/PT-style reuse metadata scaffolding: Java contracts for direct reservoirs, many-light candidate sampling, direct temporal/spatial reuse, GI path reservoirs, native `round11_restir` status telemetry, Round 11 overlay modes, and a controller assertion helper. Sodium + Iris + Vulkan captures direct reservoir, GI reservoir, and reuse debug overlay screenshots with clean shutdown and log proof for reservoir counts, candidate counts, temporal/spatial reuse counts, path reuse counts, invalidation counts, confidence fields, and metadata-only/no-real-ReSTIR boundary markers. Boundary: this validates reservoir metadata/debug scaffolding, not cheaper many-light rendering, actual ReSTIR DI/PT reuse, or flicker/stability improvement yet.
 - Current Round 6 preparation has controller-validated Java/cache scaffolding for GI source summaries, native diffuse-GI upload metadata, dirty-region listener hooks, sparse voxel radiance cache records/confidence/invalidation/debug status, Round 6 debug overlay presentation, native Round 6 dispatch telemetry, a bounded native diffuse-GI visible-signal telemetry marker, a GI-labeled final-composite preview path, and a screenshot-delta proof for a Round 6 GI-gated preview. Sodium + Iris + Vulkan launch validation proves low-res GI dispatch metadata can become enabled with nonzero rays/cache reads, a separate cache proof validates nonzero cache records/writes, and the GI preview path produces a focused screenshot difference. The native diffuse-GI output-source replacement is now controller-validated with signed local native staging and a stricter source proof that rejects the temporary direct-light RGBA payload. True native low-res GI output/tracing remains open because the proof still validates a metadata-backed native preview source, not physical GI tracing.
 - Latest controller work adds Round 7 signal-separated denoise contracts, final composite mode/status controls, native denoise scaffold telemetry, first-practical CPU denoised diffuse-GI RGBA8 output, controller-selectable baseline/direct/raw-GI/denoised-GI/final/debug modes, a controller-only Round 7 proof helper, native surface-response strengthening, a distinct final direct-plus-raw-plus-denoised composite draw path, auto-selected affected-surface proof crops, clearer final-mode source telemetry, particle/translucency/temporal composite-stability capture modes, scene-tied GI metadata DTOs, native CPU denoise quality telemetry, and first-lighting quality overlay/status lines. Build/native/signing and Sodium + Iris + Vulkan world-join launches validate raw-GI metadata, CPU denoised-output generation/readback, composite placeholder metadata, explicit `realDenoiseShaderOutput=false`, HUD-safe selected-mode screenshots, a passing focused-region direct/raw/denoised/final visual proof, and a passing particle/translucency/temporal final-composite stability proof.
 - Latest controller work fixes the root cause behind the "looks like default Minecraft" screenshots: Lucerna was calling Mojang `RenderPass.draw(...)` with the wrong argument order, so the submitted fullscreen draw had an effective vertex count of zero. The public Mojang draw path now uses Mojang's `draw(vertexCount, instanceCount, firstVertex, firstInstance)` order, and a capped Round 7 surface proof validates a visible source-gated wall-surface composite delta with baseline/enabled/debug screenshots, no proof marker, no focus-window-only fallback, no temporary direct-light substitution, and no native errors. Boundary: this proves the Java/public final-composite draw path and CPU/readback preview contribution are screenshot-visible; it is still not real shader denoise quality or physically correct GI.
@@ -846,68 +847,72 @@ Add practical sample reuse.
 
 Start with direct-light ReSTIR for many emissive blocks, then move into GI/path reuse.
 
-Agent AD: ReSTIR DI For Many Emissives
+Agent AD: ReSTIR DI For Many Emissives **PARTIAL**
 
 Owns:
 
-Direct light reservoirs.
-Emissive candidate sampling.
-Temporal and spatial reuse for direct light.
-Reservoir debug overlay.
+~~Direct light reservoir metadata contracts.~~ **DONE/VALIDATED**
+~~Emissive/many-light candidate sampling metadata contracts.~~ **DONE/VALIDATED**
+~~Temporal and spatial reuse status contracts for direct light.~~ **DONE/VALIDATED**
+~~Reservoir debug overlay.~~ **DONE/VALIDATED for metadata/status overlay**
 
 Deliverable:
 
-Many-light scenes are cheaper and more stable than brute-force sampling.
+Many-light scenes are cheaper and more stable than brute-force sampling. **OPEN: current work validates metadata/status only, not real ReSTIR DI execution or stability improvement**
 
 Validation by controller:
 
 Create a test scene with many torches/glowstone/redstone lamps.
 Capture screenshot with brute/direct baseline.
-Capture screenshot with ReSTIR DI enabled.
+~~Capture screenshot with ReSTIR DI reservoir debug overlay enabled.~~ **DONE/VALIDATED**
 Validate:
 lighting remains plausible,
 fewer shadow/light candidates are needed,
 no obvious flicker when camera moves slowly.
 Validate logs contain:
-reservoir count,
-candidate count,
-selected light IDs/regions,
-temporal reuse count,
-spatial reuse count.
-Agent AE: ReSTIR GI / PT-Style Path Reuse
+~~reservoir count,~~ **DONE/VALIDATED**
+~~candidate count,~~ **DONE/VALIDATED**
+~~selected light IDs/regions,~~ **DONE/VALIDATED as metadata contracts and selected-light telemetry**
+~~temporal reuse count,~~ **DONE/VALIDATED**
+~~spatial reuse count.~~ **DONE/VALIDATED**
+Agent AD evidence:
+- ~~Six parallel agents added direct ReSTIR reservoir contracts, many-light sampling contracts, direct temporal/spatial reuse contracts, native Round 11 telemetry, and direct reservoir overlay proof.~~ **DONE/VALIDATED in `run/validation-screenshots/round11-restir-direct-20260620-050309-20260620-050309-DirectReservoirDebug.png`, `run/validation-logs/latest-round11-restir-direct-20260620-050309-20260620-050309.log`, and `run/validation-logs/round11-restir-overlay-proof-20260620-050504.json`; boundary: reservoir metadata/debug status only, no real ReSTIR DI lighting execution claim.**
+Agent AE: ReSTIR GI / PT-Style Path Reuse **PARTIAL**
 
 Owns:
 
-GI reservoirs.
-Path candidate reuse.
-Path length metadata.
-Reservoir confidence for denoiser/adaptive sampling.
+~~GI reservoir metadata contracts.~~ **DONE/VALIDATED**
+~~Path candidate reuse metadata/status contracts.~~ **DONE/VALIDATED**
+~~Path length metadata.~~ **DONE/VALIDATED**
+~~Reservoir confidence fields for denoiser/adaptive sampling.~~ **DONE/VALIDATED as telemetry/status fields**
 
 Deliverable:
 
-GI converges faster and flickers less in indirect lighting scenes.
+GI converges faster and flickers less in indirect lighting scenes. **OPEN: current work validates metadata/status only, not real GI path reuse or convergence/flicker improvement**
 
 Validation by controller:
 
 Join a test cave/interior with indirect lighting.
 Capture raw GI without path reuse.
-Capture GI with path reuse enabled.
+~~Capture GI reservoir and reuse debug overlays.~~ **DONE/VALIDATED**
 Move camera slowly and record screenshots at fixed intervals.
 Validate:
 faster apparent convergence,
 less flicker/noise,
 no severe ghosting from invalid reuse.
 Validate logs contain:
-GI reservoir count,
-path reuse count,
-invalidated reservoir count,
-confidence statistics.
+~~GI reservoir count,~~ **DONE/VALIDATED**
+~~path reuse count,~~ **DONE/VALIDATED**
+~~invalidated reservoir count,~~ **DONE/VALIDATED**
+~~confidence statistics.~~ **DONE/VALIDATED as native status fields/log markers; overlay still labels this as metadata-only**
+Agent AE evidence:
+- ~~Six parallel agents added GI/PT-style path reservoir contracts, native Round 11 metadata telemetry, GI reservoir/reuse overlay modes, and a controller-only Round 11 assertion helper.~~ **DONE/VALIDATED in `run/validation-screenshots/round11-restir-gi-20260620-050406-20260620-050406-GiReservoirDebug.png`, `run/validation-screenshots/round11-restir-reuse-20260620-050504-20260620-050504-ReservoirReuseDebug.png`, `run/validation-logs/latest-round11-restir-gi-20260620-050406-20260620-050406.log`, `run/validation-logs/latest-round11-restir-reuse-20260620-050504-20260620-050504.log`, and `run/validation-logs/round11-restir-overlay-proof-20260620-050504.json`; key metrics include `giReservoir.focus.changedPixelPercent=55.8431`, `reservoirReuse.focus.changedPixelPercent=55.8431`, `maxReservoirCount=426584`, `maxCandidateCount=426584`, `temporalReuseCountPresent=True`, `spatialReuseCountPresent=True`, `pathReuseCountPresent=True`, `invalidationCountPresent=True`, `confidenceStatsPresent=True`, `invalidReservoirValuesPresent=False`, `proofMarkerPresent=False`, `temporaryDirectLightSourcePresent=False`, and `nativeErrorPresent=False`. Boundary: this validates GI/reuse metadata and debug overlays, not real ReSTIR PT execution or visible quality improvement.**
 Round 11 Acceptance Criteria
-Direct many-light sampling is reservoir-based.
-GI path reuse exists.
-Reservoir metadata feeds denoising/adaptive sampling.
-Screenshots show stability/quality improvement.
-Logs prove candidate reuse and reservoir invalidation behavior.
+Direct many-light sampling is reservoir-based. **OPEN for real execution; metadata contracts and debug telemetry are validated**
+GI path reuse exists. **OPEN for real execution; metadata contracts and debug telemetry are validated**
+~~Reservoir metadata feeds denoising/adaptive sampling contracts/status.~~ **DONE/VALIDATED as metadata scaffolding**
+Screenshots show stability/quality improvement. **OPEN: screenshots show debug overlays, not stability/quality improvement**
+~~Logs prove candidate reuse and reservoir invalidation metadata behavior.~~ **DONE/VALIDATED for status telemetry only**
 
 ## Controller Test Responsibilities
 
@@ -925,6 +930,7 @@ Logs prove candidate reuse and reservoir invalidation behavior.
 - ~~No sub-agent is allowed to "verify" fixes by running tests or build-like checks. They patch, explain, and wait for controller feedback.~~ **DONE/ONGOING**
 
 Latest strong validation evidence:
+- ~~Sodium + Iris + Vulkan Round 11 ReSTIR reservoir validation now captures direct-reservoir, GI-reservoir, and reservoir-reuse debug overlay screenshots with real Minecraft screenshot provenance, clean shutdown logs, and a combined assertion proof. The controller assertion passes with log proof for reservoir count, candidate count, temporal/spatial reuse count, path reuse count, invalidated reservoir count, confidence stats, and metadata-only boundary markers, while rejecting Round 11 proof-marker/temporary-source contamination.~~ **DONE/VALIDATED in `run/validation-logs/round11-restir-overlay-proof-20260620-050504.json`, `run/validation-logs/latest-round11-restir-direct-20260620-050309-20260620-050309.log`, `run/validation-logs/latest-round11-restir-gi-20260620-050406-20260620-050406.log`, `run/validation-logs/latest-round11-restir-reuse-20260620-050504-20260620-050504.log`, `run/validation-screenshots/round11-restir-direct-20260620-050309-20260620-050309-DirectReservoirDebug.png`, `run/validation-screenshots/round11-restir-gi-20260620-050406-20260620-050406-GiReservoirDebug.png`, and `run/validation-screenshots/round11-restir-reuse-20260620-050504-20260620-050504-ReservoirReuseDebug.png`; key metrics include `giReservoir.focus.changedPixelPercent=55.8431`, `reservoirReuse.focus.changedPixelPercent=55.8431`, `maxReservoirCount=426584`, `maxCandidateCount=426584`, `temporalReuseCountPresent=True`, `spatialReuseCountPresent=True`, `pathReuseCountPresent=True`, `invalidationCountPresent=True`, `confidenceStatsPresent=True`, `invalidReservoirValuesPresent=False`, `proofMarkerPresent=False`, `temporaryDirectLightSourcePresent=False`, and `nativeErrorPresent=False`. Boundary: this validates Round 11 reservoir metadata/debug scaffolding and native status telemetry, not cheaper many-light rendering, actual ReSTIR DI/PT execution, or flicker/stability improvement.**
 - ~~Sodium + Iris + Vulkan Round 10 hybrid tracing overlay validation now captures voxel-ray, RT-entity, and hybrid-hit debug overlay screenshots with real Minecraft screenshot provenance, clean shutdown logs, and a combined assertion proof. The controller assertion passes with log proof for voxel ray counts, hit/miss counts, average traversal steps, skipped sections, BLAS/TLAS fallback status, RT fallback status, hybrid source counts, and boundary labels.~~ **DONE/VALIDATED in `run/validation-logs/round10-hybrid-tracing-overlay-proof-20260620-043749.json`, `run/validation-logs/latest-round10-hybrid-tracing-20260620-040656-20260620-040657.log`, `run/validation-logs/latest-round10-rt-entity-recapture-20260620-043616-20260620-043616.log`, `run/validation-logs/latest-round10-hybrid-hit-recapture-20260620-043749-20260620-043749.log`, `run/validation-screenshots/round10-hybrid-tracing-20260620-040656-20260620-040657-VoxelRayDebug.png`, `run/validation-screenshots/round10-rt-entity-recapture-20260620-043616-20260620-043616-RtEntityDebug.png`, and `run/validation-screenshots/round10-hybrid-hit-recapture-20260620-043749-20260620-043749-HybridHitDebug.png`; key metrics include `rtEntity.focus.changedPixelPercent=100`, `hybridHit.focus.changedPixelPercent=99.962`, `maxRayCount=4096`, `voxelRayDebugOverlayPresent=True`, `rtEntityDebugOverlayPresent=True`, `hybridHitDebugOverlayPresent=True`, `blasStatusPresent=True`, `tlasStatusPresent=True`, `fallbackStatusPresent=True`, `hybridVoxelHitPresent=True`, `hybridRtHitPresent=True`, `hybridScreenSpaceHitPresent=True`, `invalidTracingValuesPresent=False`, `proofMarkerPresent=False`, `temporaryDirectLightSourcePresent=False`, and `nativeErrorPresent=False`. Boundary: this validates Round 10 status/debug scaffolding and fallback contracts, not real hardware RT or physical hybrid tracing.**
 - ~~Sodium + Iris + Vulkan Round 9 CPU/conservative culling validation now captures flat/open, interior/wall-facing, and high-distance/open terrain screenshots with clean shutdown and log proof for cluster counts, visible counts, culled/offscreen counts, upload bytes, generation counters, culling mode/reason, and real indirect draw counts.~~ **DONE/VALIDATED in `run/validation-logs/round9-cpu-culling-proof-20260620-035359.json`, `run/validation-logs/latest-round9-cpu-culling-20260620-034830-20260620-034830.log`, `run/validation-logs/latest-round9-cpu-culling-20260620-034830-20260620-035119.log`, `run/validation-logs/latest-round9-cpu-culling-20260620-034830-20260620-035359.log`, `run/validation-screenshots/round9-cpu-culling-20260620-034830-20260620-034830-FlatClusterOverlay.png`, `run/validation-screenshots/round9-cpu-culling-20260620-034830-20260620-035119-InteriorCullingOverlay.png`, and `run/validation-screenshots/round9-cpu-culling-20260620-034830-20260620-035359-HighDistanceCullingOverlay.png`; key metrics include `interiorCulling.focus.changedPixelPercent=84.4835`, `highDistanceCulling.focus.changedPixelPercent=99.1916`, `maxCulledOffscreenOrHiddenCount=14218`, `cpuConservativeCullingTelemetryPresent=True`, `realIndirectDrawPresent=True`, `maxRealIndirectDrawCount=22335`, `proofMarkerPresent=False`, `temporaryDirectLightSourcePresent=False`, and `nativeErrorPresent=False`. Boundary: this validates conservative CPU/status culling and overlay proof, not a finished GPU-driven frustum/occlusion pipeline.**
 - ~~Sodium + Iris + Vulkan Round 7 scene-shaped emissive/GI surface validation now captures hidden-HUD baseline, hidden-HUD enabled, and debug-overlay screenshots after native scene-spatial/material/cache telemetry, shader-side source shaping, clearer CPU/readback boundary labels, and stricter anti-washout proof diagnostics. The controller assertion passes with log proof for final composite dispatch, source-gated surface contribution, hidden GUI/command-feedback/chat-cleared capture, and rejection markers for proof-marker, focus-window-only, temporary direct-light substitution, native errors, and rectangular/full-screen washout.~~ **DONE/VALIDATED in `run/validation-logs/round7-emissive-gi-scene-shaped-proof-20260619-221725.json`, `run/validation-logs/latest-round7-emissive-gi-scene-shaped-20260619-221725-enabled-20260619-221817.log`, `run/validation-screenshots/round7-emissive-gi-scene-shaped-20260619-221725-baseline-20260619-221725-Baseline.png`, `run/validation-screenshots/round7-emissive-gi-scene-shaped-20260619-221725-enabled-20260619-221817-Enabled.png`, and `run/validation-screenshots/round7-emissive-gi-scene-shaped-20260619-221725-debug-20260619-221910-Debug.png`; key metrics include `classification=round7_emissive_gi_surface_evidence_passed`, `focus.changedPixelPercent=100`, `focus.brighterPixelPercent=100`, `focus.meanSignedLuma=40.7864`, `full.changedPixelPercent=71.0612`, `full.changedBoundingBoxAreaPercent=72.5664`, `full.activeTilePercent=83.3333`, `full.edgeActiveTilePercent=15.2778`, `fixed.changedPixelShareOfFull=8.2343`, `classification.fullScreenOrRectangularWashoutSuspect=False`, `classification.localizedSceneShapedDeltaPresent=True`, `proofMarkerPresent=False`, `focusWindowOnlyPresent=False`, `temporaryDirectLightSourcePresent=False`, and `nativeErrorPresent=False`. Boundary: this validates a less rectangular scene-shaped CPU/readback preview contribution, not physically correct GI tracing or real shader denoise.**

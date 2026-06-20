@@ -17,7 +17,10 @@ public enum DebugOverlay {
     CHUNK_CULLING("Round 9 chunk culling"),
     VOXEL_RAY_DEBUG("Round 10 voxel ray debug"),
     RT_ENTITY_DEBUG("Round 10 RT entity debug"),
-    HYBRID_HIT_DEBUG("Round 10 hybrid hit debug");
+    HYBRID_HIT_DEBUG("Round 10 hybrid hit debug"),
+    DIRECT_RESERVOIR_DEBUG("Round 11 direct reservoir debug"),
+    GI_RESERVOIR_DEBUG("Round 11 GI reservoir debug"),
+    RESERVOIR_REUSE_DEBUG("Round 11 reservoir reuse debug");
 
     private final String displayName;
 

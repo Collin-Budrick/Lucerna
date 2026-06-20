@@ -71,6 +71,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Round 9 culling: " + round9.summary()));
         Round10HybridHitDebugStatus round10 = Round10HybridHitDebugStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("Round 10 hybrid hits: " + round10.summary()));
+        lines.add(Component.literal("Round 11 ReSTIR reservoirs: " + roundElevenSummary(snapshot)));
         return lines;
     }
 
@@ -96,6 +97,9 @@ public final class LucernaDebugOverlayLines {
             case VOXEL_RAY_DEBUG -> addRoundTenVoxelRayLines(lines, snapshot);
             case RT_ENTITY_DEBUG -> addRoundTenRtEntityLines(lines, snapshot);
             case HYBRID_HIT_DEBUG -> addRoundTenHybridHitLines(lines, snapshot);
+            case DIRECT_RESERVOIR_DEBUG -> addRoundElevenDirectReservoirLines(lines, snapshot);
+            case GI_RESERVOIR_DEBUG -> addRoundElevenGiReservoirLines(lines, snapshot);
+            case RESERVOIR_REUSE_DEBUG -> addRoundElevenReservoirReuseLines(lines, snapshot);
             case OFF -> lines.add(statusLine(snapshot));
         }
         addCompositeModeLines(lines);
@@ -245,6 +249,8 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("round10.fallback=" + round10.fallbackLine()));
         lines.add(Component.literal("round10.readiness=" + round10.readinessLine()));
         lines.add(Component.literal("round10.evidenceBoundary=" + round10.evidenceBoundaryLine()));
+        lines.add(Component.literal("round11.restirSummary=" + roundElevenSummary(snapshot)));
+        addRoundElevenValidationLines(lines, snapshot);
         snapshot.validationFields().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .map(entry -> Component.literal(entry.getKey() + "=" + entry.getValue()))
@@ -453,6 +459,61 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Hybrid material consistency: " + status.materialConsistencyLine()));
         lines.add(Component.literal("Hybrid fallback: " + status.fallbackLine()));
         lines.add(Component.literal("Round 10 evidence boundary: " + status.evidenceBoundaryLine()));
+    }
+
+    private static void addRoundElevenDirectReservoirLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        LightingDispatchStageTelemetryStatus stage = roundElevenDirectStage(snapshot);
+        lines.add(Component.literal("Overlay scope: Round 11 ReSTIR DI reservoir metadata/status."));
+        lines.add(Component.literal("Direct reservoir debug visible: yes | source=native round11_restir metadata/status."));
+        lines.add(Component.literal("Direct reservoirs: count=" + roundElevenNativeValue(snapshot, "direct_reservoir_count", firstRoundElevenDetail(new LightingDispatchStageTelemetryStatus[]{stage}, "direct_reservoir_count", "reservoir_count"))));
+        lines.add(Component.literal("Direct candidates: count=" + roundElevenNativeValue(snapshot, "candidate_count", firstRoundElevenDetail(new LightingDispatchStageTelemetryStatus[]{stage}, "candidate_count", "selected_candidate_count"))));
+        lines.add(Component.literal("Direct reuse: temporal=" + roundElevenNativeValue(snapshot, "temporal_reuse_count", firstRoundElevenDetail(new LightingDispatchStageTelemetryStatus[]{stage}, "temporal_reuse_count"))
+                + " spatial=" + roundElevenNativeValue(snapshot, "spatial_reuse_count", firstRoundElevenDetail(new LightingDispatchStageTelemetryStatus[]{stage}, "spatial_reuse_count"))));
+        lines.add(Component.literal("Direct confidence: " + roundElevenNativeConfidenceLine(snapshot, stage)));
+        lines.add(Component.literal("Direct readiness: " + roundElevenReadinessLine(stage)));
+        lines.add(Component.literal("Round 11 boundary: reservoir metadata/debug status only; no ReSTIR lighting quality claim."));
+    }
+
+    private static void addRoundElevenGiReservoirLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        LightingDispatchStageTelemetryStatus stage = roundElevenGiStage(snapshot);
+        lines.add(Component.literal("Overlay scope: Round 11 ReSTIR GI/path reservoir metadata/status."));
+        lines.add(Component.literal("GI reservoir debug visible: yes | source=native round11_restir metadata/status."));
+        lines.add(Component.literal("GI reservoirs: count=" + roundElevenNativeValue(snapshot, "gi_reservoir_count", firstRoundElevenDetail(new LightingDispatchStageTelemetryStatus[]{stage}, "gi_reservoir_count", "reservoir_count"))));
+        lines.add(Component.literal("GI path candidates: count=" + roundElevenNativeValue(snapshot, "candidate_count", firstRoundElevenDetail(new LightingDispatchStageTelemetryStatus[]{stage}, "candidate_count", "path_candidate_count"))));
+        lines.add(Component.literal("GI path reuse: count=" + roundElevenNativeValue(snapshot, "path_reuse_count", firstRoundElevenDetail(new LightingDispatchStageTelemetryStatus[]{stage}, "path_reuse_count"))));
+        lines.add(Component.literal("GI invalidation: count=" + roundElevenNativeValue(snapshot, "invalidated_reservoir_count", firstRoundElevenDetail(new LightingDispatchStageTelemetryStatus[]{stage}, "invalidated_reservoir_count", "invalidation_count"))));
+        lines.add(Component.literal("GI confidence: " + roundElevenNativeConfidenceLine(snapshot, stage)));
+        lines.add(Component.literal("Round 11 boundary: GI/PT reservoir contracts only; physical path reuse execution not implied."));
+    }
+
+    private static void addRoundElevenReservoirReuseLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        LightingDispatchStageTelemetryStatus directStage = roundElevenDirectStage(snapshot);
+        LightingDispatchStageTelemetryStatus giStage = roundElevenGiStage(snapshot);
+        LightingDispatchStageTelemetryStatus reuseStage = roundElevenReuseStage(snapshot);
+        lines.add(Component.literal("Overlay scope: Round 11 temporal/spatial/path reuse counters."));
+        lines.add(Component.literal("Reservoir reuse debug visible: yes | native round11_restir status plus direct+GI details."));
+        lines.add(Component.literal("Temporal reuse: count=" + roundElevenNativeValue(snapshot, "temporal_reuse_count", firstRoundElevenDetail(new LightingDispatchStageTelemetryStatus[]{reuseStage, directStage, giStage}, "temporal_reuse_count"))));
+        lines.add(Component.literal("Spatial reuse: count=" + roundElevenNativeValue(snapshot, "spatial_reuse_count", firstRoundElevenDetail(new LightingDispatchStageTelemetryStatus[]{reuseStage, directStage, giStage}, "spatial_reuse_count"))));
+        lines.add(Component.literal("Path reuse: count=" + roundElevenNativeValue(snapshot, "path_reuse_count", firstRoundElevenDetail(new LightingDispatchStageTelemetryStatus[]{reuseStage, giStage}, "path_reuse_count"))));
+        lines.add(Component.literal("Invalidation: count=" + roundElevenNativeValue(snapshot, "invalidated_reservoir_count", firstRoundElevenDetail(new LightingDispatchStageTelemetryStatus[]{reuseStage, giStage}, "invalidated_reservoir_count", "invalidation_count"))));
+        lines.add(Component.literal("Confidence: " + roundElevenNativeConfidenceLine(snapshot, reuseStage, directStage, giStage)));
+        lines.add(Component.literal("Round 11 boundary: reuse telemetry/status only; shader/native reservoir execution still requires controller proof."));
+    }
+
+    private static void addRoundElevenValidationLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        LightingDispatchStageTelemetryStatus directStage = roundElevenDirectStage(snapshot);
+        LightingDispatchStageTelemetryStatus giStage = roundElevenGiStage(snapshot);
+        LightingDispatchStageTelemetryStatus reuseStage = roundElevenReuseStage(snapshot);
+        lines.add(Component.literal("round11.directReservoir=" + roundElevenReservoirCountLine(directStage)));
+        lines.add(Component.literal("round11.directCandidate=" + roundElevenCandidateCountLine(directStage)));
+        lines.add(Component.literal("round11.giReservoir=" + roundElevenReservoirCountLine(giStage)));
+        lines.add(Component.literal("round11.giCandidate=" + roundElevenCandidateCountLine(giStage)));
+        lines.add(Component.literal("round11.temporalReuse=" + roundElevenTemporalReuseCountLine(reuseStage, directStage, giStage)));
+        lines.add(Component.literal("round11.spatialReuse=" + roundElevenSpatialReuseCountLine(reuseStage, directStage, giStage)));
+        lines.add(Component.literal("round11.pathReuse=" + roundElevenPathReuseCountLine(reuseStage, giStage)));
+        lines.add(Component.literal("round11.invalidation=" + roundElevenInvalidationLine(reuseStage, giStage)));
+        lines.add(Component.literal("round11.confidence=" + roundElevenConfidenceLine(reuseStage, directStage, giStage)));
+        lines.add(Component.literal("round11.evidenceBoundary=reservoir metadata/debug overlay only"));
     }
 
     private static void addNativeQueueLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
@@ -725,6 +786,212 @@ public final class LucernaDebugOverlayLines {
         return "gi=" + stageSummary(diffuseGiStage)
                 + " cache=" + stageSummary(cacheStage)
                 + " dirtyPending=" + snapshot.pendingDirtyRegionCount();
+    }
+
+    private static String roundElevenSummary(LucernaStatusSnapshot snapshot) {
+        LightingDispatchTelemetryStatus lightingDispatch = snapshot.lightingDispatchStatus();
+        if (!lightingDispatch.hasLightingDispatchStatus()) {
+            return "not_reported";
+        }
+        return "direct=" + stageSummary(roundElevenDirectStage(snapshot))
+                + " gi=" + stageSummary(roundElevenGiStage(snapshot))
+                + " reuse=" + stageSummary(roundElevenReuseStage(snapshot));
+    }
+
+    private static LightingDispatchStageTelemetryStatus roundElevenDirectStage(LucernaStatusSnapshot snapshot) {
+        return firstStage(
+                snapshot.lightingDispatchStatus(),
+                "restir_direct",
+                "direct_restir",
+                "restir_di",
+                "direct_reservoir",
+                "direct_reservoir_debug",
+                "round11_direct_reservoir",
+                "round11_restir_direct"
+        );
+    }
+
+    private static LightingDispatchStageTelemetryStatus roundElevenGiStage(LucernaStatusSnapshot snapshot) {
+        return firstStage(
+                snapshot.lightingDispatchStatus(),
+                "restir_gi",
+                "gi_restir",
+                "gi_reservoir",
+                "path_reservoir",
+                "gi_reservoir_debug",
+                "round11_gi_reservoir",
+                "round11_restir_gi"
+        );
+    }
+
+    private static LightingDispatchStageTelemetryStatus roundElevenReuseStage(LucernaStatusSnapshot snapshot) {
+        return firstStage(
+                snapshot.lightingDispatchStatus(),
+                "restir_reuse",
+                "reservoir_reuse",
+                "reservoir_reuse_debug",
+                "round11_reservoir_reuse",
+                "round11_restir_reuse"
+        );
+    }
+
+    private static String roundElevenReservoirCountLine(LightingDispatchStageTelemetryStatus... stages) {
+        return "count=" + firstRoundElevenDetail(
+                stages,
+                "reservoir_count",
+                "reservoirs",
+                "direct_reservoir_count",
+                "gi_reservoir_count",
+                "path_reservoir_count",
+                "round11_reservoir_count"
+        );
+    }
+
+    private static String roundElevenCandidateCountLine(LightingDispatchStageTelemetryStatus... stages) {
+        String candidateCount = firstRoundElevenDetail(
+                stages,
+                "candidate_count",
+                "candidates",
+                "selected_candidate_count",
+                "selected_candidates",
+                "direct_candidate_count",
+                "gi_candidate_count",
+                "path_candidate_count",
+                "round11_candidate_count"
+        );
+        if (!"?".equals(candidateCount)) {
+            return "count=" + candidateCount;
+        }
+        for (LightingDispatchStageTelemetryStatus stage : stages) {
+            if (stage != null && stage.candidateCount() != null) {
+                return "count=" + stage.candidateCount();
+            }
+        }
+        return "count=?";
+    }
+
+    private static String roundElevenReuseCountLine(LightingDispatchStageTelemetryStatus... stages) {
+        return "temporal=" + firstRoundElevenDetail(stages, "temporal_reuse_count", "temporal_reuse", "temporal_reused", "accepted_temporal_reuse")
+                + " spatial=" + firstRoundElevenDetail(stages, "spatial_reuse_count", "spatial_reuse", "spatial_reused", "accepted_spatial_reuse")
+                + " rejected=" + firstRoundElevenDetail(stages, "reuse_rejected_count", "reuse_rejected", "rejected_reuse");
+    }
+
+    private static String roundElevenTemporalReuseCountLine(LightingDispatchStageTelemetryStatus... stages) {
+        return "count=" + firstRoundElevenDetail(
+                stages,
+                "temporal_reuse_count",
+                "temporal_reuse",
+                "temporal_reused",
+                "accepted_temporal_reuse",
+                "temporal_reuse_accepted"
+        );
+    }
+
+    private static String roundElevenSpatialReuseCountLine(LightingDispatchStageTelemetryStatus... stages) {
+        return "count=" + firstRoundElevenDetail(
+                stages,
+                "spatial_reuse_count",
+                "spatial_reuse",
+                "spatial_reused",
+                "accepted_spatial_reuse",
+                "spatial_reuse_accepted"
+        );
+    }
+
+    private static String roundElevenPathReuseCountLine(LightingDispatchStageTelemetryStatus... stages) {
+        return "count=" + firstRoundElevenDetail(
+                stages,
+                "path_reuse_count",
+                "path_reuse",
+                "path_reused",
+                "accepted_path_reuse",
+                "gi_path_reuse_count",
+                "restir_pt_path_reuse_count"
+        );
+    }
+
+    private static String roundElevenInvalidationLine(LightingDispatchStageTelemetryStatus... stages) {
+        return "count=" + firstRoundElevenDetail(
+                stages,
+                "invalidation_count",
+                "invalidations",
+                "invalidated_reservoirs",
+                "invalidated_reservoir_count",
+                "dirty_invalidations",
+                "global_invalidations"
+        ) + " reason=" + firstRoundElevenDetail(
+                stages,
+                "invalidation_reason",
+                "invalidation",
+                "dirty_reason",
+                "reuse_invalidation_reason"
+        );
+    }
+
+    private static String roundElevenConfidenceLine(LightingDispatchStageTelemetryStatus... stages) {
+        return "min=" + firstRoundElevenDetail(stages, "min_confidence", "confidence_min", "reservoir_confidence_min")
+                + " mean=" + firstRoundElevenDetail(stages, "mean_confidence", "avg_confidence", "average_confidence", "confidence", "combined_confidence")
+                + " max=" + firstRoundElevenDetail(stages, "max_confidence", "confidence_max", "reservoir_confidence_max");
+    }
+
+    private static String roundElevenNativeConfidenceLine(
+            LucernaStatusSnapshot snapshot,
+            LightingDispatchStageTelemetryStatus... stages
+    ) {
+        return "min=" + roundElevenNativeValue(snapshot, "min_confidence", firstRoundElevenDetail(stages, "min_confidence", "confidence_min", "reservoir_confidence_min"))
+                + " mean=" + roundElevenNativeValue(snapshot, "mean_confidence", firstRoundElevenDetail(stages, "mean_confidence", "avg_confidence", "average_confidence", "confidence", "combined_confidence"))
+                + " max=" + roundElevenNativeValue(snapshot, "max_confidence", firstRoundElevenDetail(stages, "max_confidence", "confidence_max", "reservoir_confidence_max"));
+    }
+
+    private static String roundElevenNativeValue(LucernaStatusSnapshot snapshot, String key, String fallback) {
+        if (snapshot == null || key == null || key.isBlank()) {
+            return fallback == null || fallback.isBlank() ? "?" : fallback;
+        }
+        String nativeStatus = snapshot.nativeBridge().nativeStatus();
+        if (nativeStatus == null || nativeStatus.isBlank()) {
+            return fallback == null || fallback.isBlank() ? "?" : fallback;
+        }
+        String search = key + "=";
+        int start = nativeStatus.indexOf(search);
+        if (start < 0) {
+            return fallback == null || fallback.isBlank() ? "?" : fallback;
+        }
+        int valueStart = start + search.length();
+        int valueEnd = valueStart;
+        while (valueEnd < nativeStatus.length()) {
+            char character = nativeStatus.charAt(valueEnd);
+            if (character == ',' || character == '}' || character == ']' || Character.isWhitespace(character)) {
+                break;
+            }
+            valueEnd++;
+        }
+        if (valueEnd <= valueStart) {
+            return fallback == null || fallback.isBlank() ? "?" : fallback;
+        }
+        return nativeStatus.substring(valueStart, valueEnd).replace("\"", "");
+    }
+
+    private static String roundElevenReadinessLine(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null) {
+            return "stage=not_reported";
+        }
+        return "enabled=" + yesNoUnknown(stage.enabled())
+                + " ready=" + yesNoUnknown(stage.readyForNativeExecution())
+                + " recorded=" + yesNoUnknown(stage.recordedThisFrame())
+                + " reason=" + readinessReason(stage);
+    }
+
+    private static String firstRoundElevenDetail(LightingDispatchStageTelemetryStatus[] stages, String... keys) {
+        if (stages == null || keys == null) {
+            return "?";
+        }
+        for (LightingDispatchStageTelemetryStatus stage : stages) {
+            String value = firstDetailOrUnknown(stage, keys);
+            if (!"?".equals(value)) {
+                return value;
+            }
+        }
+        return "?";
     }
 
     private static String giOutputSourceLabel(LightingDispatchStageTelemetryStatus stage) {

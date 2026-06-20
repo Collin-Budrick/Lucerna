@@ -1,8 +1,8 @@
 param(
-    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalStable", "TemporalMoved", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay", "VoxelRayDebug", "RtEntityDebug", "HybridHitDebug")]
+    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalStable", "TemporalMoved", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay", "VoxelRayDebug", "RtEntityDebug", "HybridHitDebug", "DirectReservoirDebug", "GiReservoirDebug", "ReservoirReuseDebug")]
     [string] $Mode,
 
-    [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round7DenoiseComposite", "Round7CompositeStability", "Round7EmissiveGiSurface", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry", "Round10HybridTracing")]
+    [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round7DenoiseComposite", "Round7CompositeStability", "Round7EmissiveGiSurface", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry", "Round10HybridTracing", "Round11Restir")]
     [string] $ValidationProfile = "Round5Direct",
 
     [string] $WorldName = "New World",
@@ -638,6 +638,77 @@ function Get-Round10CaptureIntent {
     }
 }
 
+function Get-Round11CaptureIntent {
+    param([string] $CaptureMode)
+
+    $round11CommonPatterns = @(
+        "(?:Lucerna Round 11|round11\.|ReSTIR|RESTIR|reservoir)"
+    )
+    $reservoirCountPatterns = @(
+        "(?:reservoir(?:Count|s)?|reservoir_count|round11\.reservoirCount|round11\.reservoirs)=([1-9][0-9]*)"
+    )
+    $candidateCountPatterns = @(
+        "(?:candidate(?:Count|s)?|candidate_count|selectedCandidateCount|selected_candidate_count|round11\.candidateCount)=([1-9][0-9]*)"
+    )
+    $temporalReusePatterns = @(
+        "(?:temporalReuse(?:Count|Accepted)?|temporal_reuse(?:_count|_accepted)?|round11\.temporalReuse)=([0-9]+)"
+    )
+    $spatialReusePatterns = @(
+        "(?:spatialReuse(?:Count|Accepted)?|spatial_reuse(?:_count|_accepted)?|round11\.spatialReuse)=([0-9]+)"
+    )
+    $pathReusePatterns = @(
+        "(?:pathReuse(?:Count|Accepted)?|path_reuse(?:_count|_accepted)?|giPathReuseCount|round11\.pathReuse)=([0-9]+)"
+    )
+    $invalidationPatterns = @(
+        "(?:invalidation(?:Count|s)?|invalidation_count|invalidatedReservoirs|invalidated_reservoirs|round11\.invalidation)=([0-9]+)"
+    )
+    $confidencePatterns = @(
+        "(?:confidence|minConfidence|maxConfidence|meanConfidence|combinedConfidence|reservoir_confidence|round11\.confidence)="
+    )
+
+    switch ($CaptureMode) {
+        "DirectReservoirDebug" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "DIRECT_RESERVOIR_DEBUG"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "direct-reservoir-debug"
+                sceneKind = "round11-restir-direct"
+                requiredPatterns = @($round11CommonPatterns) + @($reservoirCountPatterns) + @($candidateCountPatterns) + @($temporalReusePatterns) + @($spatialReusePatterns) + @($confidencePatterns) + @(
+                    "(?:directReservoirDebug(?:Visible|Submitted|Enabled)?=true|round11ArtifactRole=direct-reservoir-debug|artifactRole=direct-reservoir-debug|debug\.overlay=DIRECT_RESERVOIR_DEBUG|Overlay state: DIRECT_RESERVOIR_DEBUG)"
+                )
+            }
+        }
+        "GiReservoirDebug" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "GI_RESERVOIR_DEBUG"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "gi-reservoir-debug"
+                sceneKind = "round11-restir-gi"
+                requiredPatterns = @($round11CommonPatterns) + @($reservoirCountPatterns) + @($candidateCountPatterns) + @($pathReusePatterns) + @($invalidationPatterns) + @($confidencePatterns) + @(
+                    "(?:giReservoirDebug(?:Visible|Submitted|Enabled)?=true|round11ArtifactRole=gi-reservoir-debug|artifactRole=gi-reservoir-debug|debug\.overlay=GI_RESERVOIR_DEBUG|Overlay state: GI_RESERVOIR_DEBUG)"
+                )
+            }
+        }
+        "ReservoirReuseDebug" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "RESERVOIR_REUSE_DEBUG"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "reservoir-reuse-debug"
+                sceneKind = "round11-restir-reuse"
+                requiredPatterns = @($round11CommonPatterns) + @($temporalReusePatterns) + @($spatialReusePatterns) + @($pathReusePatterns) + @($invalidationPatterns) + @($confidencePatterns) + @(
+                    "(?:reservoirReuseDebug(?:Visible|Submitted|Enabled)?=true|round11ArtifactRole=reservoir-reuse-debug|artifactRole=reservoir-reuse-debug|debug\.overlay=RESERVOIR_REUSE_DEBUG|Overlay state: RESERVOIR_REUSE_DEBUG)"
+                )
+            }
+        }
+        default {
+            throw "Unsupported Round 11 capture mode: $CaptureMode"
+        }
+    }
+}
+
 function Wait-LatestLogPattern {
     param(
         [string] $LogPath,
@@ -1193,6 +1264,8 @@ $scenario = if ([string]::IsNullOrWhiteSpace($ScenarioName)) {
         "round9-virtualized-geometry-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round10HybridTracing") {
         "round10-hybrid-tracing-$($Mode.ToLowerInvariant())"
+    } elseif ($ValidationProfile -eq "Round11Restir") {
+        "round11-restir-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round5DirectSurface") {
         "round5-direct-surface-$($Mode.ToLowerInvariant())"
     } else {
@@ -1226,6 +1299,7 @@ try {
     $round8CaptureIntent = $null
     $round9CaptureIntent = $null
     $round10CaptureIntent = $null
+    $round11CaptureIntent = $null
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
         $round7CaptureIntent = Get-Round7CaptureIntent $Mode
         Write-LucernaConfig `
@@ -1268,6 +1342,13 @@ try {
             ([bool]$round10CaptureIntent.rendererEnabled) `
             ([string]$round10CaptureIntent.debugOverlay) `
             ([string]$round10CaptureIntent.compositeMode)
+    } elseif ($ValidationProfile -eq "Round11Restir") {
+        $round11CaptureIntent = Get-Round11CaptureIntent $Mode
+        Write-LucernaConfig `
+            $root `
+            ([bool]$round11CaptureIntent.rendererEnabled) `
+            ([string]$round11CaptureIntent.debugOverlay) `
+            ([string]$round11CaptureIntent.compositeMode)
     } else {
         switch ($Mode) {
             "Baseline" { Write-LucernaConfig $root $false "OFF" }
@@ -1318,7 +1399,7 @@ try {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
-    if ($ValidationProfile -eq "Round5DirectSurface" -or $ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing") {
+    if ($ValidationProfile -eq "Round5DirectSurface" -or $ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing" -or $ValidationProfile -eq "Round11Restir") {
         $psi.Environment["LUCERNA_HIDE_PROOF_OVERLAYS"] = "true"
     }
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
@@ -1361,6 +1442,12 @@ try {
         $psi.Environment["LUCERNA_ROUND10_SCENE_KIND"] = [string]$round10CaptureIntent.sceneKind
         $psi.Environment["LUCERNA_ROUND10_VISUAL_PROOF_OWNER"] = "controller"
     }
+    if ($ValidationProfile -eq "Round11Restir") {
+        $psi.Environment["LUCERNA_ROUND11_CAPTURE_MODE"] = [string]$round11CaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_ROUND11_ARTIFACT_ROLE"] = [string]$round11CaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_ROUND11_SCENE_KIND"] = [string]$round11CaptureIntent.sceneKind
+        $psi.Environment["LUCERNA_ROUND11_VISUAL_PROOF_OWNER"] = "controller"
+    }
     if ($ScreenshotSource -eq "InClient") {
         $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_REQUEST"] = "true"
         $screenshotDelayTicks = if ($ValidationProfile -eq "Round7CompositeStability") { "1400" } else { "180" }
@@ -1395,6 +1482,8 @@ try {
         @($round9CaptureIntent.requiredPatterns)
     } elseif ($ValidationProfile -eq "Round10HybridTracing") {
         @($round10CaptureIntent.requiredPatterns)
+    } elseif ($ValidationProfile -eq "Round11Restir") {
+        @($round11CaptureIntent.requiredPatterns)
     } elseif ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker") {
         @(
             "Lucerna Round 6 lighting dispatch prepared: .*diffuse_gi=\{\{enabled=true,.*rays=[1-9][0-9]*,cache_reads=[1-9][0-9]*",
@@ -1490,6 +1579,25 @@ try {
             "negative (?:voxel ray|traversal|hybrid|BLAS|TLAS)",
             "(?:voxelRay(?:Count|s)?|hybridHit(?:Count|s)?|traversal(?:Step|Steps|StepCount)).*(?:NaN|Infinity)"
         )
+    } elseif ($ValidationProfile -eq "Round11Restir") {
+        @(
+            "temporarySourceReady=true",
+            "using the current direct-light RGBA payload as the temporary visible source",
+            "round6-diffuse-gi-focus-window-additive",
+            "round6-gi-proof",
+            "R6 GI proof",
+            "R7 proof",
+            "R8 proof",
+            "R9 proof",
+            "R10 proof",
+            "proofMarkerSource=true",
+            "cpuOutputProofMarker=true",
+            "focusWindowOnly(?:Submitted)?=true",
+            "focus_window_only=true",
+            "invalid(?:Reservoir|Restir|ReSTIR|Reuse)(?:Count|s)?=true",
+            "negative (?:reservoir|candidate|temporal reuse|spatial reuse|path reuse|invalidation)",
+            "(?:reservoir(?:Count|s)?|candidate(?:Count|s)?|temporalReuse|spatialReuse|pathReuse|confidence).*(?:NaN|Infinity)"
+        )
     } elseif ($ValidationProfile -eq "Round6NativeDiffuseGiNoMarker") {
         @(
             "temporarySourceReady=true",
@@ -1559,7 +1667,7 @@ try {
     if ($enabledPatterns.Count -gt 0) {
         Wait-LatestLogPattern $markerLog $enabledPatterns $deadline $earlyFailureLogPaths $forbiddenPatterns
     }
-    if (($ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing") -and -not $SetupScene) {
+    if (($ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing" -or $ValidationProfile -eq "Round11Restir") -and -not $SetupScene) {
         Start-Sleep -Seconds 8
     }
 
@@ -1729,6 +1837,12 @@ try {
         Write-Host "round10SceneKind=$($round10CaptureIntent.sceneKind)"
         Write-Host "round10DebugOverlay=$($round10CaptureIntent.debugOverlay)"
         Write-Host "round10CompositeMode=$($round10CaptureIntent.compositeMode)"
+    }
+    if ($round11CaptureIntent) {
+        Write-Host "round11ArtifactRole=$($round11CaptureIntent.artifactRole)"
+        Write-Host "round11SceneKind=$($round11CaptureIntent.sceneKind)"
+        Write-Host "round11DebugOverlay=$($round11CaptureIntent.debugOverlay)"
+        Write-Host "round11CompositeMode=$($round11CaptureIntent.compositeMode)"
     }
     Write-Host "latestLog=$logPath"
     Write-Host "gradleOut=$gradleOut"

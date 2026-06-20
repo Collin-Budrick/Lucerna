@@ -784,6 +784,31 @@ struct NativeDenoiseExecutionTelemetry {
     std::string last_readiness_reason;
 };
 
+struct NativeRound11RestirTelemetry {
+    std::uint64_t metadata_packets = 0;
+    std::uint64_t last_frame_index = 0;
+    std::uint64_t last_packet_generation = 0;
+    std::uint64_t last_dispatch_generation = 0;
+    std::uint64_t last_direct_payload_generation = 0;
+    std::uint64_t direct_reservoir_count = 0;
+    std::uint64_t candidate_count = 0;
+    std::uint64_t selected_light_count = 0;
+    std::uint64_t temporal_reuse_count = 0;
+    std::uint64_t spatial_reuse_count = 0;
+    std::uint64_t gi_reservoir_count = 0;
+    std::uint64_t path_reuse_count = 0;
+    std::uint64_t invalidated_reservoir_count = 0;
+    std::uint64_t confidence_sample_count = 0;
+    double confidence_min = 0.0;
+    double confidence_mean = 0.0;
+    double confidence_max = 0.0;
+    bool metadata_only = true;
+    bool real_restir_execution = false;
+    std::string boundary_marker;
+    std::string confidence_marker;
+    std::string source_marker;
+};
+
 struct NativeLightingDispatchTelemetry {
     std::uint64_t packets = 0;
     std::uint64_t advertised_dispatches = 0;
@@ -841,6 +866,7 @@ struct NativeLightingDispatchTelemetry {
     NativeRound6DispatchExecutionTelemetry cache_execution;
     NativeDenoiseExecutionTelemetry denoise_execution;
     NativeAdaptiveBudgetTelemetry adaptive_budget;
+    NativeRound11RestirTelemetry round11_restir;
     std::array<NativeLightingDispatchStageTelemetry, kNativeLightingDispatchStageCount> stages;
     std::array<NativeLightingDispatchPayloadCategoryTelemetry, kNativeLightingDispatchPayloadCategoryCount> payload_categories;
 };
@@ -899,6 +925,7 @@ private:
     void track_virtual_chunk_geometry_metadata(const SectionUploadPacket& packet);
     void track_gbuffer_staging_upload(const GBufferStagingPacket& packet);
     void track_lighting_dispatch_upload(const LightingDispatchPacket& packet);
+    void track_round11_restir_metadata();
     void track_gbuffer_placeholder_intent();
     [[nodiscard]] std::uint64_t track_noop_lighting_placeholder();
     [[nodiscard]] std::uint64_t track_flat_composite_placeholder();

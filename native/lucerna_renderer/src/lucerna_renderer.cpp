@@ -1242,6 +1242,42 @@ void append_adaptive_budget_status(
         << "\"}";
 }
 
+void append_round11_restir_status(
+        std::ostringstream& out,
+        const NativeRound11RestirTelemetry& restir) {
+    out << ",round11_restir={metadata_packets=" << restir.metadata_packets
+        << ",last_frame=" << restir.last_frame_index
+        << ",packet_generation=" << restir.last_packet_generation
+        << ",dispatch_generation=" << restir.last_dispatch_generation
+        << ",direct_payload_generation=" << restir.last_direct_payload_generation
+        << ",direct_reservoir_count=" << restir.direct_reservoir_count
+        << ",candidate_count=" << restir.candidate_count
+        << ",selected_light_count=" << restir.selected_light_count
+        << ",temporal_reuse_count=" << restir.temporal_reuse_count
+        << ",spatial_reuse_count=" << restir.spatial_reuse_count
+        << ",gi_reservoir_count=" << restir.gi_reservoir_count
+        << ",path_reuse_count=" << restir.path_reuse_count
+        << ",invalidated_reservoir_count=" << restir.invalidated_reservoir_count
+        << ",confidence={samples=" << restir.confidence_sample_count
+        << ",min=" << restir.confidence_min
+        << ",mean=" << restir.confidence_mean
+        << ",max=" << restir.confidence_max
+        << ",marker=\"" << (restir.confidence_marker.empty()
+            ? "round11_confidence_metadata_not_recorded"
+            : restir.confidence_marker)
+        << "\"}"
+        << ",metadata_only=" << restir.metadata_only
+        << ",real_restir_execution=" << restir.real_restir_execution
+        << ",source_marker=\"" << (restir.source_marker.empty()
+            ? "round11_restir_source_metadata_not_recorded"
+            : restir.source_marker)
+        << "\""
+        << ",boundary=\"" << (restir.boundary_marker.empty()
+            ? "native_round11_metadata_only_no_real_restir_execution"
+            : restir.boundary_marker)
+        << "\"}";
+}
+
 void append_phase5_lighting_status(
         std::ostringstream& out,
         const NativeLightingDispatchTelemetry& lighting,
@@ -1387,6 +1423,7 @@ void append_phase5_lighting_status(
     append_round6_execution_status(out, "cache_execution", lighting.cache_execution);
     append_denoise_execution_status(out, lighting.denoise_execution);
     append_adaptive_budget_status(out, lighting.adaptive_budget);
+    append_round11_restir_status(out, lighting.round11_restir);
     append_phase5_payload_categories(out, lighting);
     out
         << ",total_estimated_bytes=" << lighting.total_estimated_bytes
@@ -2277,6 +2314,7 @@ void Renderer::upload_direct_lighting_payload(DirectLightingPayloadPacket packet
     execution.total_shadow_candidate_count = saturated_add(execution.total_shadow_candidate_count, shadow_count);
     execution.last_metadata_only = true;
     last_direct_lighting_payload_packet_ = std::move(packet);
+    track_round11_restir_metadata();
     clear_error();
 }
 
@@ -4040,6 +4078,90 @@ void Renderer::track_lighting_dispatch_upload(const LightingDispatchPacket& pack
     staging_.lighting.last_estimated_bytes = estimated_bytes;
     staging_.lighting.total_estimated_bytes = saturated_add(staging_.lighting.total_estimated_bytes, estimated_bytes);
     staging_.lighting.last_payload_recorded_this_frame = recorded_this_frame;
+    track_round11_restir_metadata();
+}
+
+void Renderer::track_round11_restir_metadata() {
+    auto& restir = staging_.lighting.round11_restir;
+    const auto& direct_stage = lighting_stage_telemetry(NativeLightingDispatchStage::DirectLighting);
+    const auto& gi_stage = lighting_stage_telemetry(NativeLightingDispatchStage::DiffuseGi);
+    const auto& cache_stage = lighting_stage_telemetry(NativeLightingDispatchStage::Cache);
+    const auto& direct_execution = staging_.lighting.direct_execution;
+    const auto& budget = staging_.lighting.adaptive_budget;
+
+    const auto selected_light_count = saturated_add(
+            direct_execution.last_celestial_light_count,
+            direct_execution.last_emissive_light_count);
+    const auto direct_stage_outputs = non_negative_u64(direct_stage.last_output_count);
+    const auto direct_stage_samples = non_negative_u64(direct_stage.last_sample_count);
+    const auto direct_stage_rays = non_negative_u64(direct_stage.last_ray_count);
+    const auto direct_candidates = saturated_add(
+            saturated_add(selected_light_count, direct_execution.last_shadow_candidate_count),
+            std::max(direct_stage_samples, direct_stage_rays));
+    const auto direct_reservoir_count = direct_stage_outputs == 0
+            ? selected_light_count
+            : direct_stage_outputs;
+
+    const auto gi_stage_outputs = non_negative_u64(gi_stage.last_output_count);
+    const auto gi_stage_samples = non_negative_u64(gi_stage.last_sample_count);
+    const auto gi_stage_rays = non_negative_u64(gi_stage.last_ray_count);
+    const auto gi_reservoir_count = std::max(
+            gi_stage_outputs,
+            std::max(budget.last_cell_count, gi_stage_samples));
+    const auto temporal_reuse_count = saturated_add(
+            budget.last_history_accepted_count,
+            staging_.lighting.denoise_execution.last_history_accepted);
+    const auto spatial_reuse_count = saturated_add(
+            budget.last_reuse_bucket_count,
+            non_negative_u64(cache_stage.last_cache_read_count));
+    const auto path_reuse_count = saturated_add(
+            saturated_add(temporal_reuse_count, spatial_reuse_count),
+            saturated_add(non_negative_u64(gi_stage.last_cache_read_count), gi_stage_rays));
+    const auto invalidated_reservoir_count = saturated_add(
+            budget.last_history_rejected_count,
+            saturated_add(
+                    budget.invalid_budget_rejections,
+                    direct_execution.invalid_ray_budget_rejections));
+
+    restir.metadata_packets++;
+    restir.last_frame_index = frame_index_;
+    restir.last_packet_generation = staging_.lighting.last_packet_generation;
+    restir.last_dispatch_generation = staging_.lighting.last_generation;
+    restir.last_direct_payload_generation = direct_execution.last_payload_generation;
+    restir.direct_reservoir_count = direct_reservoir_count;
+    restir.candidate_count = saturated_add(direct_candidates, gi_stage_samples);
+    restir.selected_light_count = selected_light_count;
+    restir.temporal_reuse_count = temporal_reuse_count;
+    restir.spatial_reuse_count = spatial_reuse_count;
+    restir.gi_reservoir_count = gi_reservoir_count;
+    restir.path_reuse_count = path_reuse_count;
+    restir.invalidated_reservoir_count = invalidated_reservoir_count;
+    restir.metadata_only = true;
+    restir.real_restir_execution = false;
+    restir.boundary_marker = "native_round11_metadata_only_no_real_restir_execution";
+    restir.source_marker = "round11_restir_metadata_derived_from_existing_direct_gi_cache_dispatch_status";
+
+    const auto confidence_sample_count = budget.last_cell_count == 0
+            ? gi_reservoir_count
+            : budget.last_cell_count;
+    restir.confidence_sample_count = confidence_sample_count;
+    if (confidence_sample_count == 0) {
+        restir.confidence_min = 0.0;
+        restir.confidence_mean = 0.0;
+        restir.confidence_max = 0.0;
+        restir.confidence_marker = "round11_confidence_metadata_unavailable_no_reservoirs";
+        return;
+    }
+
+    const auto confidence_contribution = saturated_add(
+            saturated_add(budget.last_cache_confidence_contribution, temporal_reuse_count),
+            spatial_reuse_count);
+    const auto bounded_contribution = std::min(confidence_contribution, confidence_sample_count);
+    restir.confidence_min = invalidated_reservoir_count == 0 ? 0.25 : 0.0;
+    restir.confidence_mean = static_cast<double>(bounded_contribution)
+            / static_cast<double>(confidence_sample_count);
+    restir.confidence_max = bounded_contribution == 0 ? restir.confidence_min : 1.0;
+    restir.confidence_marker = "round11_confidence_stats_metadata_only_from_cache_history_reuse_counts";
 }
 
 void Renderer::track_gbuffer_placeholder_intent() {

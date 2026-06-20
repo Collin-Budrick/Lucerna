@@ -127,6 +127,7 @@ public final class LucernaController {
     private String lastLoggedRound8AdaptiveDebugKey = "";
     private String lastLoggedRound9VirtualizedGeometryKey = "";
     private String lastLoggedRound10HybridTracingKey = "";
+    private String lastLoggedRound11RestirKey = "";
     private String lastLoggedTickNoOpFrameKey = "";
     private boolean renderThreadFrameHookObserved;
     private NativeDirectLightingUploadPacket pendingDirectLightingUpload;
@@ -198,6 +199,7 @@ public final class LucernaController {
             this.logLightingDispatchStatusIfChanged(lightingDispatchPacket);
             this.logRound9VirtualizedGeometryIfChanged();
             this.logRound10HybridTracingIfChanged();
+            this.logRound11RestirIfChanged();
             this.submitTickFallbackFrame(0.0F);
         }
     }
@@ -1843,6 +1845,103 @@ public final class LucernaController {
                 traversalBoundary,
                 traversalBoundary,
                 traversalMarker
+        );
+    }
+
+    private void logRound11RestirIfChanged() {
+        LucernaStatusSnapshot snapshot = LucernaStatusSnapshot.capture(this);
+        String nativeStatus = snapshot.nativeBridge().nativeStatus();
+        String artifactRole = envValue("LUCERNA_ROUND11_ARTIFACT_ROLE", "round11-restir");
+        String sceneKind = envValue("LUCERNA_ROUND11_SCENE_KIND", "unspecified");
+        String captureMode = envValue("LUCERNA_ROUND11_CAPTURE_MODE", artifactRole);
+        String owner = envValue("LUCERNA_ROUND11_VISUAL_PROOF_OWNER", "controller");
+        String directReservoirs = round9NativeValue(nativeStatus, "direct_reservoir_count", "0");
+        String candidates = round9NativeValue(nativeStatus, "candidate_count", "0");
+        String selectedLights = round9NativeValue(nativeStatus, "selected_light_count", "0");
+        String temporalReuse = round9NativeValue(nativeStatus, "temporal_reuse_count", "0");
+        String spatialReuse = round9NativeValue(nativeStatus, "spatial_reuse_count", "0");
+        String giReservoirs = round9NativeValue(nativeStatus, "gi_reservoir_count", "0");
+        String pathReuse = round9NativeValue(nativeStatus, "path_reuse_count", "0");
+        String invalidated = round9NativeValue(nativeStatus, "invalidated_reservoir_count", "0");
+        String minConfidence = round9NativeValue(nativeStatus, "min_confidence", "0");
+        String meanConfidence = round9NativeValue(nativeStatus, "mean_confidence", "0");
+        String maxConfidence = round9NativeValue(nativeStatus, "max_confidence", "0");
+        String sourceMarker = round9NativeValue(nativeStatus, "source_marker", "round11_restir_source_metadata_not_recorded");
+        String boundary = round9NativeValue(nativeStatus, "boundary", "round11_restir_boundary_not_recorded");
+        boolean directDebug = "direct-reservoir-debug".equals(captureMode);
+        boolean giDebug = "gi-reservoir-debug".equals(captureMode);
+        boolean reuseDebug = "reservoir-reuse-debug".equals(captureMode);
+        String logKey = artifactRole
+                + "|"
+                + sceneKind
+                + "|"
+                + captureMode
+                + "|"
+                + directReservoirs
+                + "|"
+                + candidates
+                + "|"
+                + temporalReuse
+                + "|"
+                + spatialReuse
+                + "|"
+                + giReservoirs
+                + "|"
+                + pathReuse
+                + "|"
+                + invalidated
+                + "|"
+                + sourceMarker;
+        if (logKey.equals(this.lastLoggedRound11RestirKey)) {
+            return;
+        }
+
+        this.lastLoggedRound11RestirKey = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna Round 11 ReSTIR reservoir metadata: artifactRole={} round11ArtifactRole={} sceneKind={} captureMode={} owner={} directReservoirDebugVisible={} round11.directReservoirDebugVisible={} giReservoirDebugVisible={} round11.giReservoirDebugVisible={} reservoirReuseDebugVisible={} round11.reservoirReuseDebugVisible={} reservoirCount={} round11.reservoirCount={} round11.reservoirs={} direct_reservoir_count={} round11.directReservoir=count={} gi_reservoir_count={} round11.giReservoir=count={} candidateCount={} round11.candidateCount={} candidate_count={} round11.directCandidate=count={} round11.giCandidate=count={} selectedLightCount={} temporalReuseCount={} round11.temporalReuse=count={} spatialReuseCount={} round11.spatialReuse=count={} pathReuseCount={} round11.pathReuse=count={} invalidatedReservoirs={} round11.invalidation=count={} confidence=min={},mean={},max={} round11.confidence=min={},mean={},max={} minConfidence={} meanConfidence={} maxConfidence={} sourceMarker={} boundary={} metadataOnlyRestir=true realRestirExecution=false.",
+                artifactRole,
+                artifactRole,
+                sceneKind,
+                captureMode,
+                owner,
+                directDebug,
+                directDebug,
+                giDebug,
+                giDebug,
+                reuseDebug,
+                reuseDebug,
+                directReservoirs,
+                directReservoirs,
+                directReservoirs,
+                directReservoirs,
+                directReservoirs,
+                giReservoirs,
+                giReservoirs,
+                candidates,
+                candidates,
+                candidates,
+                candidates,
+                candidates,
+                selectedLights,
+                temporalReuse,
+                temporalReuse,
+                spatialReuse,
+                spatialReuse,
+                pathReuse,
+                pathReuse,
+                invalidated,
+                invalidated,
+                minConfidence,
+                meanConfidence,
+                maxConfidence,
+                minConfidence,
+                meanConfidence,
+                maxConfidence,
+                minConfidence,
+                meanConfidence,
+                maxConfidence,
+                sourceMarker,
+                boundary
         );
     }
 
