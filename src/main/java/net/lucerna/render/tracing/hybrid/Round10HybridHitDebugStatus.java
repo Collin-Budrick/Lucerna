@@ -11,6 +11,16 @@ import java.util.Map;
 public record Round10HybridHitDebugStatus(
         boolean telemetryPresent,
         String summary,
+        String wallHitCount,
+        String openSkyMissCount,
+        String glassWaterMaterialHitCount,
+        String opaqueMaterialHitCount,
+        String materialIdConsistency,
+        String emptySectionSkipSafe,
+        String maskBitsReady,
+        String maskBitsSource,
+        String traversalBackend,
+        boolean realGpuTraversalExecuted,
         String sourceCountsLine,
         String priorityLine,
         String materialConsistencyLine,
@@ -20,6 +30,15 @@ public record Round10HybridHitDebugStatus(
 ) {
     public Round10HybridHitDebugStatus {
         summary = clean(summary, "hybrid hit telemetry unavailable");
+        wallHitCount = clean(wallHitCount, "unknown");
+        openSkyMissCount = clean(openSkyMissCount, "unknown");
+        glassWaterMaterialHitCount = clean(glassWaterMaterialHitCount, "unknown");
+        opaqueMaterialHitCount = clean(opaqueMaterialHitCount, "unknown");
+        materialIdConsistency = clean(materialIdConsistency, "unknown");
+        emptySectionSkipSafe = clean(emptySectionSkipSafe, "false");
+        maskBitsReady = clean(maskBitsReady, "false");
+        maskBitsSource = clean(maskBitsSource, "unknown");
+        traversalBackend = clean(traversalBackend, "unknown");
         sourceCountsLine = clean(sourceCountsLine, "Hybrid source counts: unavailable");
         priorityLine = clean(priorityLine, "Hybrid priority: unavailable");
         materialConsistencyLine = clean(materialConsistencyLine, "Hybrid material consistency: unavailable");
@@ -28,6 +47,38 @@ public record Round10HybridHitDebugStatus(
         evidenceBoundaryLine = clean(
                 evidenceBoundaryLine,
                 "Round 10 evidence boundary: hit resolver/status only; native tracing and screenshot proof are controller-owned"
+        );
+    }
+
+    public Round10HybridHitDebugStatus(
+            boolean telemetryPresent,
+            String summary,
+            String sourceCountsLine,
+            String priorityLine,
+            String materialConsistencyLine,
+            String fallbackLine,
+            String readinessLine,
+            String evidenceBoundaryLine
+    ) {
+        this(
+                telemetryPresent,
+                summary,
+                "unknown",
+                "unknown",
+                "unknown",
+                "unknown",
+                "unknown",
+                "false",
+                "false",
+                "unknown",
+                "unknown",
+                false,
+                sourceCountsLine,
+                priorityLine,
+                materialConsistencyLine,
+                fallbackLine,
+                readinessLine,
+                evidenceBoundaryLine
         );
     }
 
@@ -58,6 +109,10 @@ public record Round10HybridHitDebugStatus(
         Map<String, String> nativeHybridDetails = parseNativeBlock(
                 snapshot.nativeBridge().nativeStatus(),
                 "round10_hybrid_hit={"
+        );
+        Map<String, String> nativeVoxelDetails = parseNativeBlock(
+                snapshot.nativeBridge().nativeStatus(),
+                "round10_voxel_traversal={"
         );
 
         String screenCount = firstValue(
@@ -90,6 +145,46 @@ public record Round10HybridHitDebugStatus(
         );
         String skyCount = firstValue(hybridStage, nativeHybridDetails, nativePasses, "sky_hits", "sky");
         String missCount = firstValue(hybridStage, nativeHybridDetails, nativePasses, "misses", "miss_count", "miss");
+        String wallHitCount = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativeVoxelDetails,
+                nativePasses,
+                "wall_hit_count",
+                "known_scene_wall_hit_count",
+                "terrain_wall_hit_count"
+        );
+        String openSkyMissCount = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativeVoxelDetails,
+                nativePasses,
+                "open_sky_miss_count",
+                "open_sky_misses",
+                "sky_miss_count"
+        );
+        String glassWaterMaterialHitCount = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativeVoxelDetails,
+                nativePasses,
+                "glass_water_material_hit_count",
+                "transparent_material_hit_count",
+                "fluid_glass_hit_count"
+        );
+        String opaqueMaterialHitCount = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativeVoxelDetails,
+                nativePasses,
+                "opaque_material_hit_count",
+                "opaque_hits",
+                "solid_material_hit_count"
+        );
         String selectedSource = firstValue(
                 hybridStage,
                 nativeHybridDetails,
@@ -108,6 +203,19 @@ public record Round10HybridHitDebugStatus(
                 "consistent_material"
         );
         String materialId = firstValue(hybridStage, nativeHybridDetails, nativePasses, "material_id", "material");
+        String materialIdConsistency = firstNonBlank(
+                materialConsistent,
+                firstValue(
+                        hybridStage,
+                        voxelStage,
+                        nativeHybridDetails,
+                        nativeVoxelDetails,
+                        nativePasses,
+                        "material_id_consistency",
+                        "material_lookup_ready",
+                        "material_consistency"
+                )
+        );
         String expectedMaterialId = firstValue(
                 hybridStage,
                 nativeHybridDetails,
@@ -150,6 +258,59 @@ public record Round10HybridHitDebugStatus(
                 "reason",
                 "readiness_reason"
         );
+        String emptySectionSkipSafe = emptySectionSkipSafetyValue(
+                firstValue(
+                        hybridStage,
+                        voxelStage,
+                        nativeHybridDetails,
+                        nativeVoxelDetails,
+                        nativePasses,
+                        "empty_section_skip_safe",
+                        "empty_section_skip_safety_count",
+                        "empty_section_skips"
+                )
+        );
+        String maskBitsReady = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativeVoxelDetails,
+                nativePasses,
+                "mask_bits_ready",
+                "occupancy_mask_bits_ready",
+                "real_mask_bits_ready"
+        );
+        String maskBitsSource = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativeVoxelDetails,
+                nativePasses,
+                "mask_bits_source",
+                "mask_bit_source",
+                "occupancy_mask_source"
+        );
+        String traversalBackend = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativeVoxelDetails,
+                nativePasses,
+                "traversal_backend",
+                "backend",
+                "voxel_traversal_backend"
+        );
+        String realGpuTraversalExecutedValue = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativeVoxelDetails,
+                nativePasses,
+                "real_gpu_traversal_executed",
+                "gpu_traversal_executed",
+                "real_gpu_voxel_traversal"
+        );
+        boolean realGpuTraversalExecuted = truthy(realGpuTraversalExecutedValue);
 
         boolean hasTelemetry = hasAny(
                 screenCount,
@@ -159,6 +320,10 @@ public record Round10HybridHitDebugStatus(
                 missCount,
                 selectedSource,
                 materialConsistent,
+                wallHitCount,
+                openSkyMissCount,
+                glassWaterMaterialHitCount,
+                opaqueMaterialHitCount,
                 fallbackActive,
                 fallbackReason
         );
@@ -168,19 +333,29 @@ public record Round10HybridHitDebugStatus(
                 + ",rt=" + valueOrUnknown(rtCount)
                 + ",sky=" + valueOrUnknown(skyCount)
                 + ",miss=" + valueOrUnknown(missCount)
+                + ",wallHitCount=" + valueOrUnknown(wallHitCount)
+                + ",openSkyMissCount=" + valueOrUnknown(openSkyMissCount)
                 + ",materialConsistent=" + valueOrUnknown(materialConsistent)
+                + ",materialIdConsistency=" + valueOrUnknown(materialIdConsistency)
+                + ",traversalBackend=" + valueOrUnknown(traversalBackend)
+                + ",realGpuTraversalExecuted=" + yesNo(realGpuTraversalExecuted)
                 + ",fallback=" + valueOrUnknown(fallbackActive);
         String countsLine = "Hybrid source counts: screen=" + valueOrUnknown(screenCount)
                 + " voxel=" + valueOrUnknown(voxelCount)
                 + " hardwareRt=" + valueOrUnknown(rtCount)
                 + " sky=" + valueOrUnknown(skyCount)
-                + " miss=" + valueOrUnknown(missCount);
+                + " miss=" + valueOrUnknown(missCount)
+                + " wallHitCount=" + valueOrUnknown(wallHitCount)
+                + " openSkyMissCount=" + valueOrUnknown(openSkyMissCount);
         String priorityLine = "Hybrid priority: selected=" + valueOrUnknown(selectedSource)
                 + " rule=hardwareRt>voxel>screenSpace>sky>miss"
                 + " fallback=" + valueOrUnknown(fallbackActive);
         String materialLine = "Hybrid material consistency: consistent=" + valueOrUnknown(materialConsistent)
                 + " material=" + valueOrUnknown(materialId)
-                + " expected=" + valueOrUnknown(expectedMaterialId);
+                + " expected=" + valueOrUnknown(expectedMaterialId)
+                + " materialIdConsistency=" + valueOrUnknown(materialIdConsistency)
+                + " glassWaterMaterialHitCount=" + valueOrUnknown(glassWaterMaterialHitCount)
+                + " opaqueMaterialHitCount=" + valueOrUnknown(opaqueMaterialHitCount);
         String fallbackLine = "Hybrid fallback: active=" + valueOrUnknown(fallbackActive)
                 + " voxelAvailable=" + valueOrUnknown(voxelAvailable)
                 + " hardwareRtAvailable=" + valueOrUnknown(rtAvailable)
@@ -189,12 +364,36 @@ public record Round10HybridHitDebugStatus(
                 + " sources=" + readinessFrom(screenCount, voxelCount, rtCount, skyCount, missCount)
                 + " priority=" + readinessFrom(selectedSource)
                 + " material=" + readinessFrom(materialConsistent, materialId, expectedMaterialId)
+                + " terrainMaterial=" + readinessFrom(
+                        wallHitCount,
+                        openSkyMissCount,
+                        glassWaterMaterialHitCount,
+                        opaqueMaterialHitCount,
+                        materialIdConsistency
+                )
+                + " maskBitsReady=" + valueOrUnknown(maskBitsReady, "false")
+                + " maskBitsSource=" + valueOrUnknown(maskBitsSource)
+                + " traversalBackend=" + valueOrUnknown(traversalBackend)
+                + " realGpuTraversalExecuted=" + yesNo(realGpuTraversalExecuted)
+                + " emptySectionSkipSafe=" + valueOrUnknown(emptySectionSkipSafe, "false")
                 + " fallback=" + readinessFrom(fallbackActive, voxelAvailable, rtAvailable, fallbackReason);
-        String boundaryLine = "Round 10 evidence boundary: Java/status resolver only; unavailable voxel/RT paths must fall back explicitly and native execution remains unproven";
+        String boundaryLine = realGpuTraversalExecuted
+                ? "Round 10 evidence boundary: Java/status resolver reports GPU traversal execution from native telemetry; controller proof remains required"
+                : "Round 10 evidence boundary: Java/status resolver only; realGpuTraversalExecuted=false, voxel traversal remains CPU/status boundary unless native telemetry proves otherwise";
 
         return new Round10HybridHitDebugStatus(
                 hasTelemetry,
                 summary,
+                wallHitCount,
+                openSkyMissCount,
+                glassWaterMaterialHitCount,
+                opaqueMaterialHitCount,
+                materialIdConsistency,
+                emptySectionSkipSafe,
+                maskBitsReady,
+                maskBitsSource,
+                traversalBackend,
+                realGpuTraversalExecuted,
                 countsLine,
                 priorityLine,
                 materialLine,
@@ -232,6 +431,25 @@ public record Round10HybridHitDebugStatus(
             return value;
         }
         return firstValue(secondary, nativeDetails, nativePasses, keys);
+    }
+
+    private static String firstValue(
+            LightingDispatchStageTelemetryStatus primary,
+            LightingDispatchStageTelemetryStatus secondary,
+            Map<String, String> primaryNativeDetails,
+            Map<String, String> secondaryNativeDetails,
+            NativePassTelemetryStatus nativePasses,
+            String... keys
+    ) {
+        String value = firstValue(primary, primaryNativeDetails, nativePasses, keys);
+        if (!value.isBlank()) {
+            return value;
+        }
+        value = firstValue(secondary, secondaryNativeDetails, nativePasses, keys);
+        if (!value.isBlank()) {
+            return value;
+        }
+        return firstMapDetail(primaryNativeDetails, keys);
     }
 
     private static String firstValue(
@@ -336,6 +554,36 @@ public record Round10HybridHitDebugStatus(
             }
         }
         return false;
+    }
+
+    private static String firstNonBlank(String first, String second) {
+        return first == null || first.isBlank() ? second : first;
+    }
+
+    private static String emptySectionSkipSafetyValue(String value) {
+        if (value == null || value.isBlank()) {
+            return "false";
+        }
+        if (truthy(value)) {
+            return "true";
+        }
+        try {
+            return Long.parseLong(value.trim()) >= 0L ? "true" : "false";
+        } catch (NumberFormatException ignored) {
+            return value.trim();
+        }
+    }
+
+    private static boolean truthy(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        String normalized = normalize(value);
+        return "true".equals(normalized)
+                || "yes".equals(normalized)
+                || "1".equals(normalized)
+                || "ready".equals(normalized)
+                || "executed".equals(normalized);
     }
 
     private static String valueOrUnknown(String value) {

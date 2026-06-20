@@ -56,18 +56,71 @@ public final class VoxelTraversalValidator {
         for (int index = 0; index < request.sectionSnapshots().size(); index++) {
             VoxelSectionSnapshotReference sectionSnapshot = request.sectionSnapshots().get(index);
             String location = "$.sectionSnapshots[" + index + "]";
-            if (request.requireOccupancyMasks() && sectionSnapshot.hasOccupiedVoxels() && !sectionSnapshot.hasOccupancyMask()) {
+            if (request.requireOccupancyMasks()
+                    && sectionSnapshot.hasOccupiedVoxels()
+                    && !sectionSnapshot.hasOccupancyMaskReadyForTraversal()) {
                 findings.add(VoxelTraversalValidationFinding.error(
                         "MISSING_OCCUPANCY_MASK",
                         location + ".occupancyMaskWordCount",
-                        "Occupied section snapshot requires an occupancy mask for CPU-side DDA traversal"
+                        "Occupied section snapshot requires ready occupancy mask bits for CPU-side DDA traversal"
                 ));
             }
-            if (request.requireMaterialPalette() && sectionSnapshot.hasOccupiedVoxels() && !sectionSnapshot.hasMaterialPalette()) {
+            if (sectionSnapshot.occupancyMaskMetadataOnly()) {
+                findings.add(VoxelTraversalValidationFinding.info(
+                        "OCCUPANCY_MASK_METADATA_ONLY",
+                        location + ".occupancyMaskSource",
+                        "Occupancy mask readiness is metadata-only and does not prove populated mask bits"
+                ));
+            }
+            if (request.requireMaterialPalette()
+                    && sectionSnapshot.hasOccupiedVoxels()
+                    && !sectionSnapshot.hasMaterialLookupReady()) {
                 findings.add(VoxelTraversalValidationFinding.error(
                         "MISSING_MATERIAL_PALETTE",
                         location + ".materialPaletteSize",
-                        "Occupied section snapshot requires material palette metadata for G-buffer material id writes"
+                        "Occupied section snapshot requires material lookup-ready palette metadata for G-buffer material id writes"
+                ));
+            }
+            if (sectionSnapshot.hasOccupiedVoxels() && !sectionSnapshot.hasOpaqueMaterialFlags()) {
+                findings.add(VoxelTraversalValidationFinding.warning(
+                        "OPAQUE_MATERIAL_FLAGS_NOT_PROVEN",
+                        location + ".opaqueMaterialFlagsReady",
+                        "Known-scene solid hit validation cannot prove opaque material flags for this occupied section"
+                ));
+            }
+            if (sectionSnapshot.opaqueVoxelCount() > 0 && !sectionSnapshot.hasSolidWallHitEvidence()) {
+                findings.add(VoxelTraversalValidationFinding.info(
+                        "SOLID_WALL_HIT_EVIDENCE_NOT_PRESENT",
+                        location + ".solidWallHitEvidenceCount",
+                        "Known-scene validation has opaque voxels but no wall/solid hit evidence count"
+                ));
+            }
+            if (!sectionSnapshot.hasOpenSkyMissEvidence() && !sectionSnapshot.emptySectionSkipSafe()) {
+                findings.add(VoxelTraversalValidationFinding.info(
+                        "OPEN_SKY_MISS_EVIDENCE_NOT_PRESENT",
+                        location + ".openSkyMissEvidenceCount",
+                        "Known-scene validation has no open-sky miss evidence for this section snapshot"
+                ));
+            }
+            if (sectionSnapshot.translucentVoxelCount() > 0 && !sectionSnapshot.hasGlassMaterialFlags()) {
+                findings.add(VoxelTraversalValidationFinding.warning(
+                        "GLASS_MATERIAL_FLAGS_NOT_PROVEN",
+                        location + ".glassMaterialFlagsReady",
+                        "Known-scene traversal has translucent voxels but no glass material flag evidence"
+                ));
+            }
+            if (sectionSnapshot.fluidVoxelCount() > 0 && !sectionSnapshot.hasWaterMaterialFlags()) {
+                findings.add(VoxelTraversalValidationFinding.warning(
+                        "WATER_MATERIAL_FLAGS_NOT_PROVEN",
+                        location + ".waterMaterialFlagsReady",
+                        "Known-scene traversal has fluid voxels but no water material flag evidence"
+                ));
+            }
+            if (!sectionSnapshot.hasKnownSceneValidationEvidence()) {
+                findings.add(VoxelTraversalValidationFinding.info(
+                        "KNOWN_SCENE_EVIDENCE_NOT_PRESENT",
+                        location,
+                        "Section snapshot has no wall-hit, open-sky-miss, material-flag, or empty-skip evidence"
                 ));
             }
         }

@@ -74,4 +74,12 @@ public record ChunkSectionVoxelSnapshot(
                 || !this.emissiveEntries.isEmpty()
                 || !this.surfaceSamples.isEmpty();
     }
+
+    public boolean emptySectionSkipSafe() {
+        return !this.occupancySummary.hasOccupiedVoxels()
+                && !this.occupancyMask.readyForTraversal()
+                && !this.materialPalette.readyForMaterialLookup()
+                && this.emissiveEntries.isEmpty()
+                && this.surfaceSamples.isEmpty();
+    }
 }

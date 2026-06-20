@@ -20,6 +20,15 @@ public record Round10VoxelTraversalStatus(
         if (realOccupancyMaskBitsAvailable && !input.occupancyMaskSummary().hasMaskPayload()) {
             throw new IllegalArgumentException("realOccupancyMaskBitsAvailable requires occupancy mask metadata");
         }
+        if (output.realGpuTraversalExecuted() && !gpuTraversalAvailable) {
+            throw new IllegalArgumentException("realGpuTraversalExecuted requires gpuTraversalAvailable");
+        }
+        if (output.realGpuTraversalExecuted() && cpuMetadataFallback) {
+            throw new IllegalArgumentException("realGpuTraversalExecuted cannot use cpuMetadataFallback");
+        }
+        if (output.maskBitsReady() && !input.occupancyMaskSummary().hasMaskPayload()) {
+            throw new IllegalArgumentException("maskBitsReady requires occupancy mask metadata");
+        }
     }
 
     public static Round10VoxelTraversalStatus cpuMetadataFallback(
@@ -42,6 +51,36 @@ public record Round10VoxelTraversalStatus(
         return this.output.hasTraversalEvidence()
                 && this.output.hitCount() > 0
                 && this.output.missCount() > 0;
+    }
+
+    public boolean materialIdConsistency() {
+        return "consistent".equalsIgnoreCase(this.output.materialIdConsistency())
+                || "pass".equalsIgnoreCase(this.output.materialIdConsistency())
+                || "matched".equalsIgnoreCase(this.output.materialIdConsistency());
+    }
+
+    public boolean emptySectionSkipSafe() {
+        return this.output.emptySectionSkipSafe();
+    }
+
+    public boolean maskBitsReady() {
+        return this.output.maskBitsReady();
+    }
+
+    public String maskBitsSource() {
+        return this.output.maskBitsSource();
+    }
+
+    public String traversalBackend() {
+        return this.output.traversalBackend();
+    }
+
+    public boolean realGpuTraversalExecuted() {
+        return this.output.realGpuTraversalExecuted();
+    }
+
+    public String correctnessLabel() {
+        return this.output.correctnessLabel();
     }
 
     private static String requireText(String value, String name) {

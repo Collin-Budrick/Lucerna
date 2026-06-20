@@ -789,6 +789,7 @@ public final class LucernaDebugOverlayLines {
         Round10HybridHitDebugStatus status = Round10HybridHitDebugStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("Overlay scope: Round 10 voxel traversal CPU metadata/debug status."));
         lines.add(Component.literal("Voxel ray debug visible: yes | source=native round10_voxel_traversal status"));
+        addRoundTenTraversalValidationLines(lines, snapshot);
         lines.add(Component.literal("Round 10 hybrid hits: " + status.summary()));
         lines.add(Component.literal("Round 10 source counts: " + status.sourceCountsLine()));
         lines.add(Component.literal("Round 10 readiness: " + status.readinessLine()));
@@ -799,6 +800,7 @@ public final class LucernaDebugOverlayLines {
         Round10HybridHitDebugStatus status = Round10HybridHitDebugStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("Overlay scope: Round 10 Vulkan RT entity path status."));
         lines.add(Component.literal("RT entity debug visible: yes | BLAS/TLAS status is fallback-safe until native RT telemetry exists."));
+        addRoundTenTraversalValidationLines(lines, snapshot);
         lines.add(Component.literal("Round 10 fallback: " + status.fallbackLine()));
         lines.add(Component.literal("Round 10 priority: " + status.priorityLine()));
         lines.add(Component.literal("Round 10 material: " + status.materialConsistencyLine()));
@@ -809,11 +811,73 @@ public final class LucernaDebugOverlayLines {
         Round10HybridHitDebugStatus status = Round10HybridHitDebugStatus.fromSnapshot(snapshot);
         lines.add(Component.literal("Overlay scope: Round 10 hybrid hit resolver status."));
         lines.add(Component.literal("Hybrid hit debug visible: yes | " + status.summary()));
+        addRoundTenTraversalValidationLines(lines, snapshot);
         lines.add(Component.literal("Hybrid source counts: " + status.sourceCountsLine()));
         lines.add(Component.literal("Hybrid priority: " + status.priorityLine()));
         lines.add(Component.literal("Hybrid material consistency: " + status.materialConsistencyLine()));
         lines.add(Component.literal("Hybrid fallback: " + status.fallbackLine()));
         lines.add(Component.literal("Round 10 evidence boundary: " + status.evidenceBoundaryLine()));
+    }
+
+    private static void addRoundTenTraversalValidationLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
+        lines.add(Component.literal("R10 hits: wall=" + roundTenTraversalValue(
+                snapshot,
+                "known_scene_wall_hit_count",
+                "known_scene_wall_hits",
+                "traversal_known_scene_wall_hit_count",
+                "wall_hit_count",
+                "wall_hits"
+        ) + " openSkyMiss=" + roundTenTraversalValue(
+                snapshot,
+                "open_sky_miss_count",
+                "open_sky_misses",
+                "traversal_open_sky_miss_count",
+                "sky_miss_count",
+                "sky_misses"
+        ) + " glassWater=" + roundTenTraversalValue(
+                snapshot,
+                "glass_water_material_hit_count",
+                "glass_water_material_hits",
+                "traversal_glass_water_material_hit_count",
+                "water_glass_material_hits",
+                "translucent_material_hits"
+        ) + " opaque=" + roundTenTraversalValue(
+                snapshot,
+                "opaque_material_hit_count",
+                "opaque_material_hits",
+                "traversal_opaque_material_hit_count",
+                "opaque_hits",
+                "material_hit_count"
+        )));
+        lines.add(Component.literal("R10 readiness: maskBits=" + roundTenTraversalReadyValue(
+                snapshot,
+                "mask_bits_ready",
+                "traversal_mask_bits_ready",
+                "occupancy_mask_bits_ready"
+        ) + " source=" + shorten(roundTenTraversalValue(
+                snapshot,
+                "mask_bit_source",
+                "traversal_mask_bit_source",
+                "occupancy_mask_source",
+                "mask_source"
+        ), 44) + " materialLookup=" + roundTenTraversalReadyValue(
+                snapshot,
+                "material_lookup_ready",
+                "traversal_material_lookup_ready",
+                "palette_lookup_ready"
+        ) + " emptySkipSafe=" + roundTenTraversalValue(
+                snapshot,
+                "empty_section_skip_safety_count",
+                "traversal_empty_section_skip_safety_count",
+                "empty_section_skips",
+                "skipped_sections"
+        )));
+        lines.add(Component.literal("R10 backend: traversal=" + shorten(roundTenTraversalValue(
+                snapshot,
+                "backend",
+                "traversal_backend",
+                "voxel_traversal_backend"
+        ), 54) + " realGpuTraversalExecuted=" + roundTenRealGpuTraversalExecuted(snapshot)));
     }
 
     private static void addRoundElevenDirectReservoirLines(List<Component> lines, LucernaStatusSnapshot snapshot) {
@@ -1801,6 +1865,102 @@ public final class LucernaDebugOverlayLines {
             return "";
         }
         return text.substring(valueStart, valueEnd).replace("\"", "");
+    }
+
+    private static String roundTenTraversalValue(LucernaStatusSnapshot snapshot, String... keys) {
+        if (snapshot == null || keys == null) {
+            return "?";
+        }
+        String nativeStatus = snapshot.nativeBridge().nativeStatus();
+        String traversalBlock = nativeStatusBlock(nativeStatus, "round10_voxel_traversal={");
+        for (String key : keys) {
+            String value = nativeStatusValue(traversalBlock, key);
+            if (hasReportedValue(value)) {
+                return value;
+            }
+        }
+        for (String key : keys) {
+            String value = nativeStatusValue(nativeStatus, key);
+            if (hasReportedValue(value)) {
+                return value;
+            }
+        }
+        return "?";
+    }
+
+    private static String roundTenTraversalReadyValue(LucernaStatusSnapshot snapshot, String... keys) {
+        String value = roundTenTraversalValue(snapshot, keys);
+        if ("?".equals(value)) {
+            return "?";
+        }
+        if (isTruthy(value)) {
+            return "yes";
+        }
+        if (isFalsy(value)) {
+            return "no";
+        }
+        return value;
+    }
+
+    private static String roundTenRealGpuTraversalExecuted(LucernaStatusSnapshot snapshot) {
+        String explicit = roundTenTraversalValue(
+                snapshot,
+                "real_gpu_traversal_executed",
+                "realGpuTraversalExecuted",
+                "gpu_traversal_executed"
+        );
+        if (isTruthy(explicit)) {
+            return "yes";
+        }
+        if (isFalsy(explicit)) {
+            return "no";
+        }
+
+        String backend = roundTenTraversalValue(snapshot, "backend", "traversal_backend", "voxel_traversal_backend");
+        String boundary = roundTenTraversalValue(snapshot, "boundary", "traversal_boundary", "evidence_boundary");
+        String combined = (backend + " " + boundary).toLowerCase(Locale.ROOT);
+        if (combined.contains("no_gpu")
+                || combined.contains("not_real_gpu")
+                || combined.contains("not_hardware_rt")
+                || combined.contains("cpu_metadata")
+                || combined.contains("scaffold")) {
+            return "no";
+        }
+        return "no";
+    }
+
+    private static String nativeStatusBlock(String text, String prefix) {
+        if (text == null || text.isBlank() || prefix == null || prefix.isBlank()) {
+            return "";
+        }
+        int start = text.indexOf(prefix);
+        if (start < 0) {
+            return "";
+        }
+        int contentStart = start + prefix.length();
+        int depth = 1;
+        for (int index = contentStart; index < text.length(); index++) {
+            char character = text.charAt(index);
+            if (character == '{') {
+                depth++;
+            } else if (character == '}') {
+                depth--;
+                if (depth == 0) {
+                    return text.substring(contentStart, index);
+                }
+            }
+        }
+        return text.substring(contentStart);
+    }
+
+    private static boolean hasReportedValue(String value) {
+        return value != null && !value.isBlank() && !"?".equals(value);
+    }
+
+    private static boolean isFalsy(String value) {
+        return "0".equals(value)
+                || "false".equalsIgnoreCase(value)
+                || "no".equalsIgnoreCase(value);
     }
 
     private static Double parseDoubleOrNull(String value) {

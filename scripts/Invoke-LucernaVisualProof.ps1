@@ -726,20 +726,34 @@ function Get-Round10CaptureIntent {
         "(?:voxelHit(?:Count|s)?|voxel_hit_count|round10\.voxelHits)=([0-9]+)",
         "(?:voxelMiss(?:Count|s)?|voxel_miss_count|round10\.voxelMisses)=([0-9]+)",
         "(?:traversal(?:Step|Steps|StepCount)|averageTraversalSteps|avg_traversal_steps|round10\.traversalSteps)=([1-9][0-9]*(?:\.[0-9]+)?)",
-        "(?:skippedSection(?:Count|s)?|skipped_sections|round10\.skippedSections)=([0-9]+)"
+        "(?:skippedSection(?:Count|s)?|skipped_sections|round10\.skippedSections)=([0-9]+)",
+        "(?:wallHit(?:Count|s)?|wall_hit_count|round10\.wallHit(?:Count|s)?)=([1-9][0-9]*)",
+        "(?:openSkyMiss(?:Count|s)?|open_sky_miss_count|round10\.openSkyMiss(?:Count|s)?)=([1-9][0-9]*)",
+        "(?:glassWater|glassOrWater|transparentMaterial)(?:Hit(?:Count|s)?|Hits)=([1-9][0-9]*)",
+        "(?:opaqueMaterialHit(?:Count|s)?|opaque_material_hit_count|round10\.opaqueMaterialHits)=([1-9][0-9]*)",
+        "(?:materialIdConsistency(?:Ready|Passed)?|material_id_consistency(?:_ready|_passed)?|round10\.materialIdConsistency(?:Ready|Passed)?)=true",
+        "(?:materialLookupReady|material_lookup_ready|round10\.materialLookupReady)=true",
+        "(?:maskBitsReady|mask_bits_ready|round10\.maskBitsReady)=true",
+        "(?:maskBitsSource|mask_bits_source|round10\.maskBitsSource)=",
+        "(?:emptySectionSkipSafe|empty_section_skip_safe|round10\.emptySectionSkipSafe)=true",
+        "(?:traversalBackend|traversal_backend|round10\.traversalBackend)=",
+        "(?:realGpuTraversalExecuted|real_gpu_traversal_executed|round10\.realGpuTraversalExecuted)=false|(?:gpuTraversalBoundary|gpu_traversal_boundary)="
     )
     $rtCommonPatterns = @(
         "(?:Lucerna Round 10 RT entity|round10\.rtEntityDebug|round10\.rtEntities|Vulkan RT)",
         "(?:BLAS|blas)(?:Status|Ready|Builds|BuildCount)?=",
         "(?:TLAS|tlas)(?:Status|Ready|Builds|BuildCount)?=",
-        "(?:rtFallback(?:Status|Active)?|fallbackStatus|nonRtFallback)="
+        "(?:rtFallback(?:Status|Active)?|fallbackStatus|nonRtFallback)=",
+        "(?:hardwareRtExecutionProven|hardware_rt_execution_proven|round10\.hardwareRtExecutionProven)=(?:true|false)"
     )
     $hybridCommonPatterns = @(
         "(?:Lucerna Round 10 hybrid hit|round10\.hybridHitDebug|round10\.hybridHits)",
         "(?:hybridHit(?:Count|s)?|hybrid_hit_count|round10\.hybridHits)=([1-9][0-9]*)",
         "(?:voxelHybridHit(?:Count|s)?|hybridVoxelHits|hybrid_source_voxel)=([0-9]+)",
         "(?:rtHybridHit(?:Count|s)?|hybridRtHits|hybrid_source_rt)=([0-9]+)",
-        "(?:screenSpaceHybridHit(?:Count|s)?|hybridScreenSpaceHits|hybrid_source_screen)=([0-9]+)"
+        "(?:screenSpaceHybridHit(?:Count|s)?|hybridScreenSpaceHits|hybrid_source_screen)=([0-9]+)",
+        "(?:entityMovement(?:Marker|Ready|Observed)?|entity_movement(?:_marker|_ready|_observed)?|round10\.entityMovement(?:Marker|Ready|Observed)?)=true",
+        "(?:chunkChurn(?:Marker|Ready|Observed)?|chunk_churn(?:_marker|_ready|_observed)?|round10\.chunkChurn(?:Marker|Ready|Observed)?)=true"
     )
 
     switch ($CaptureMode) {
@@ -752,7 +766,10 @@ function Get-Round10CaptureIntent {
                 sceneKind = "round10-tracing-debug"
                 sceneAction = "voxel-rays"
                 requiredPatterns = @($voxelTraversalCommonPatterns) + @(
-                    "(?:voxelRayDebug(?:Visible|Submitted|Enabled)?=true|round10ArtifactRole=voxel-ray-debug|artifactRole=voxel-ray-debug)"
+                    "(?:voxelRayDebug(?:Visible|Submitted|Enabled)?=true|round10ArtifactRole=voxel-ray-debug|artifactRole=voxel-ray-debug)",
+                    "(?:round10\.scene=.*wall|wallSceneMarker=true)",
+                    "(?:round10\.scene=.*open-sky|openSkySceneMarker=true)",
+                    "(?:round10\.scene=.*glass-water|glassWaterSceneMarker=true)"
                 )
             }
         }
@@ -765,7 +782,8 @@ function Get-Round10CaptureIntent {
                 sceneKind = "round10-rt-entity-debug"
                 sceneAction = "rt-entities"
                 requiredPatterns = @($rtCommonPatterns) + @(
-                    "(?:rtEntityDebug(?:Visible|Submitted|Enabled)?=true|round10ArtifactRole=rt-entity-debug|artifactRole=rt-entity-debug)"
+                    "(?:rtEntityDebug(?:Visible|Submitted|Enabled)?=true|round10ArtifactRole=rt-entity-debug|artifactRole=rt-entity-debug)",
+                    "(?:entityMovement(?:Marker|Ready|Observed)?|round10\.entityMovement(?:Marker|Ready|Observed)?)=true"
                 )
             }
         }
@@ -778,7 +796,8 @@ function Get-Round10CaptureIntent {
                 sceneKind = "round10-hybrid-hit-debug"
                 sceneAction = "hybrid-hits"
                 requiredPatterns = @($voxelTraversalCommonPatterns) + @($rtCommonPatterns) + @($hybridCommonPatterns) + @(
-                    "(?:hybridHitDebug(?:Visible|Submitted|Enabled)?=true|round10ArtifactRole=hybrid-hit-debug|artifactRole=hybrid-hit-debug)"
+                    "(?:hybridHitDebug(?:Visible|Submitted|Enabled)?=true|round10ArtifactRole=hybrid-hit-debug|artifactRole=hybrid-hit-debug)",
+                    "(?:chunkChurn(?:Marker|Ready|Observed)?|round10\.chunkChurn(?:Marker|Ready|Observed)?)=true"
                 )
             }
         }
@@ -1350,27 +1369,39 @@ function Invoke-Round10SceneAction {
 
     if ($SetupScene) {
         Send-MinecraftChatCommand "/kill @e[type=!player,distance=..48]"
-        Send-MinecraftChatCommand "/fill ~3 ~-1 ~-5 ~9 ~4 ~5 minecraft:smooth_stone"
-        Send-MinecraftChatCommand "/fill ~5 ~ ~-4 ~5 ~3 ~4 minecraft:air"
-        Send-MinecraftChatCommand "/fill ~6 ~ ~-3 ~6 ~2 ~-1 minecraft:deepslate"
-        Send-MinecraftChatCommand "/fill ~6 ~ ~1 ~6 ~2 ~3 minecraft:copper_block"
+        Send-MinecraftChatCommand "/fill ~2 ~-1 ~-6 ~10 ~4 ~6 minecraft:smooth_stone"
+        Send-MinecraftChatCommand "/fill ~4 ~ ~-5 ~9 ~3 ~5 minecraft:air"
+        Send-MinecraftChatCommand "/fill ~6 ~ ~-4 ~6 ~3 ~-1 minecraft:deepslate"
+        Send-MinecraftChatCommand "/fill ~6 ~ ~1 ~6 ~3 ~4 minecraft:copper_block"
+        Send-MinecraftChatCommand "/fill ~7 ~ ~-5 ~7 ~3 ~-3 minecraft:glass"
+        Send-MinecraftChatCommand "/fill ~8 ~ ~3 ~8 ~2 ~5 minecraft:water"
+        Send-MinecraftChatCommand "/fill ~4 ~4 ~-5 ~9 ~8 ~5 minecraft:air"
+        Send-MinecraftChatCommand "/fill ~9 ~ ~-1 ~10 ~2 ~1 minecraft:air"
+        Send-MinecraftChatCommand "/setblock ~8 ~0 ~4 minecraft:water"
+        Send-MinecraftChatCommand "/setblock ~7 ~1 ~-4 minecraft:tinted_glass"
         Send-MinecraftChatCommand "/setblock ~4 ~1 ~ minecraft:glowstone"
-        Send-MinecraftChatCommand "/setblock ~7 ~0 ~ minecraft:glass"
-        Send-MinecraftChatCommand "/summon minecraft:armor_stand ~5 ~ ~2 {NoGravity:1b,Invisible:0b}"
+        Send-MinecraftChatCommand "/summon minecraft:armor_stand ~5 ~ ~2 {NoGravity:1b,Invisible:0b,Tags:[`"LucernaR10A`"]}"
+        Send-MinecraftChatCommand "/summon minecraft:armor_stand ~8 ~ ~-2 {NoGravity:1b,Invisible:0b,Tags:[`"LucernaR10B`"]}"
+        Send-MinecraftChatCommand "/fill ~12 ~-1 ~-2 ~13 ~1 ~2 minecraft:smooth_stone"
+        Send-MinecraftChatCommand "/fill ~12 ~-1 ~-2 ~13 ~1 ~2 minecraft:air"
     }
 
     switch ($SceneAction) {
         "voxel-rays" {
             Send-MinecraftChatCommand "/tp @s ~ ~ ~ -90 0"
-            Add-LucernaControllerMarker $MarkerPath "round10.scene=voxel-rays voxelRayDebugScene=true traversalDebugScene=true"
+            Add-LucernaControllerMarker $MarkerPath "round10.scene=voxel-rays-wall-open-sky-glass-water voxelRayDebugScene=true traversalDebugScene=true wallSceneMarker=true tunnelSceneMarker=true openSkySceneMarker=true glassWaterSceneMarker=true opaqueMaterialSceneMarker=true materialIdConsistencyScene=true maskBitsSceneSource=controller-known-scene emptySectionSkipScene=true"
         }
         "rt-entities" {
+            Send-MinecraftChatCommand "/tp @e[type=minecraft:armor_stand,tag=LucernaR10A,distance=..48,limit=1] ~ ~ ~1"
+            Send-MinecraftChatCommand "/tp @e[type=minecraft:armor_stand,tag=LucernaR10B,distance=..48,limit=1] ~ ~ ~-1"
             Send-MinecraftChatCommand "/tp @s ~ ~ ~ -80 0"
-            Add-LucernaControllerMarker $MarkerPath "round10.scene=rt-entities rtEntityDebugScene=true blasTlasDebugScene=true"
+            Add-LucernaControllerMarker $MarkerPath "round10.scene=rt-entities-moving rtEntityDebugScene=true blasTlasDebugScene=true entityMovementMarker=true rtEntityMovementScene=true hardwareRtFallbackAccepted=true"
         }
         "hybrid-hits" {
+            Send-MinecraftChatCommand "/fill ~11 ~-1 ~-2 ~12 ~2 ~2 minecraft:smooth_stone"
+            Send-MinecraftChatCommand "/fill ~11 ~ ~-1 ~12 ~1 ~1 minecraft:air"
             Send-MinecraftChatCommand "/tp @s ~ ~ ~ -100 2"
-            Add-LucernaControllerMarker $MarkerPath "round10.scene=hybrid-hits hybridHitDebugScene=true voxelRtScreenSpaceScene=true"
+            Add-LucernaControllerMarker $MarkerPath "round10.scene=hybrid-hits-wall-glass-water-churn hybridHitDebugScene=true voxelRtScreenSpaceScene=true wallSceneMarker=true glassWaterSceneMarker=true opaqueMaterialSceneMarker=true entityMovementMarker=true chunkChurnMarker=true chunkChurnScene=true"
         }
         default {
             throw "Unsupported Round 10 scene action: $SceneAction"
@@ -1789,6 +1820,10 @@ try {
         $psi.Environment["LUCERNA_ROUND10_CAPTURE_MODE"] = [string]$round10CaptureIntent.artifactRole
         $psi.Environment["LUCERNA_ROUND10_ARTIFACT_ROLE"] = [string]$round10CaptureIntent.artifactRole
         $psi.Environment["LUCERNA_ROUND10_SCENE_KIND"] = [string]$round10CaptureIntent.sceneKind
+        $psi.Environment["LUCERNA_ROUND10_SCENE_ACTION"] = [string]$round10CaptureIntent.sceneAction
+        $psi.Environment["LUCERNA_ROUND10_KNOWN_SCENE_MARKERS"] = "wall,tunnel,open-sky,glass,water,opaque,empty-section"
+        $psi.Environment["LUCERNA_ROUND10_REQUIRE_MATERIAL_PROOF"] = "true"
+        $psi.Environment["LUCERNA_ROUND10_ALLOW_HARDWARE_RT_FALLBACK"] = "true"
         $psi.Environment["LUCERNA_ROUND10_VISUAL_PROOF_OWNER"] = "controller"
     }
     if ($ValidationProfile -eq "Round11Restir") {
@@ -2014,8 +2049,14 @@ try {
             "proofMarkerSource=true",
             "cpuOutputProofMarker=true",
             "invalid(?:VoxelRay|Traversal|HybridHit|RtEntity)(?:Count|s)?=true",
+            "invalid(?:Material|MaskBits)(?:Count|s)?=true",
             "negative (?:voxel ray|traversal|hybrid|BLAS|TLAS)",
-            "(?:voxelRay(?:Count|s)?|hybridHit(?:Count|s)?|traversal(?:Step|Steps|StepCount)).*(?:NaN|Infinity)"
+            "negative (?:material|wall|open sky)",
+            "(?:voxelRay(?:Count|s)?|hybridHit(?:Count|s)?|traversal(?:Step|Steps|StepCount)|wallHit(?:Count|s)?|openSkyMiss(?:Count|s)?|materialHit(?:Count|s)?).*(?:NaN|Infinity)",
+            "realGpuTraversalExecuted=false[^`r`n]*(?:realGpuTraversal(?:Proven|Ready)|gpuTraversalOutputReady)=true",
+            "real_gpu_traversal_executed=false[^`r`n]*(?:real_gpu_traversal_(?:proven|ready)|gpu_traversal_output_ready)=true",
+            "hardwareRtExecutionProven=false[^`r`n]*(?:realHardwareRt(?:Proven|Ready)|rtOutputReady)=true",
+            "hardware_rt_execution_proven=false[^`r`n]*(?:real_hardware_rt_(?:proven|ready)|rt_output_ready)=true"
         )
     } elseif ($ValidationProfile -eq "Round11Restir") {
         @(

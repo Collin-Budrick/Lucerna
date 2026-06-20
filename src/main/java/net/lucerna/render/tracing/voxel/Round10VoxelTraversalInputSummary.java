@@ -134,6 +134,19 @@ public record Round10VoxelTraversalInputSummary(
         return this.materialPaletteSectionCount > 0 && this.materialPaletteEntryCount > 0;
     }
 
+    public boolean maskBitsReady() {
+        return this.occupancyMaskSummary.maskBitsReady();
+    }
+
+    public String maskBitsSource() {
+        return this.occupancyMaskSummary.maskBitsSource();
+    }
+
+    public boolean emptySectionSkipSafe() {
+        return this.emptySectionSkipCandidates <= this.sectionCount
+                && this.emptySectionSkipCandidates + this.occupiedSectionCount <= this.sectionCount;
+    }
+
     private static void requireNonNegative(long value, String name) {
         if (value < 0) {
             throw new IllegalArgumentException(name + " must be non-negative");

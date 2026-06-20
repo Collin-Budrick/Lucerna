@@ -3478,12 +3478,21 @@ std::string Renderer::status() const {
         << ",skipped_sections=" << staging_.virtual_geometry.traversal_skipped_sections
         << ",empty_section_skips=" << staging_.virtual_geometry.empty_section_skip_count
         << ",material_hit_count=" << staging_.virtual_geometry.traversal_material_hit_count
+        << ",known_scene_wall_hit_count=" << staging_.virtual_geometry.traversal_known_scene_wall_hit_count
+        << ",open_sky_miss_count=" << staging_.virtual_geometry.traversal_open_sky_miss_count
+        << ",glass_water_material_hit_count="
+        << staging_.virtual_geometry.traversal_glass_water_material_hit_count
+        << ",opaque_material_hit_count=" << staging_.virtual_geometry.traversal_opaque_material_hit_count
+        << ",empty_section_skip_safety_count="
+        << staging_.virtual_geometry.traversal_empty_section_skip_safety_count
         << ",occupancy_mask_sections=" << staging_.virtual_geometry.traversal_occupancy_mask_sections
         << ",occupancy_mask_words=" << staging_.virtual_geometry.traversal_occupancy_mask_words
         << ",occupancy_mask_bits=" << staging_.virtual_geometry.traversal_occupancy_mask_bits
         << ",palette_entry_count=" << staging_.virtual_geometry.traversal_palette_entry_count
         << ",fallback_sections=" << staging_.virtual_geometry.traversal_fallback_sections
         << ",generation_counter=" << staging_.virtual_geometry.traversal_generation_counter
+        << ",mask_bits_ready=" << (staging_.virtual_geometry.traversal_mask_bits_ready ? "true" : "false")
+        << ",material_lookup_ready=" << (staging_.virtual_geometry.traversal_material_lookup_ready ? "true" : "false")
         << ",backend=\"" << (staging_.virtual_geometry.traversal_backend.empty()
             ? "round10_voxel_traversal_backend_not_recorded"
             : staging_.virtual_geometry.traversal_backend)
@@ -3495,6 +3504,18 @@ std::string Renderer::status() const {
         << ",material_hit_source=\"" << (staging_.virtual_geometry.traversal_material_hit_source.empty()
             ? "round10_material_hit_source_not_recorded"
             : staging_.virtual_geometry.traversal_material_hit_source)
+        << "\""
+        << ",mask_bit_source=\"" << (staging_.virtual_geometry.traversal_mask_bit_source.empty()
+            ? "round10_mask_bit_source_not_recorded"
+            : staging_.virtual_geometry.traversal_mask_bit_source)
+        << "\""
+        << ",material_lookup_source=\"" << (staging_.virtual_geometry.traversal_material_lookup_source.empty()
+            ? "round10_material_lookup_source_not_recorded"
+            : staging_.virtual_geometry.traversal_material_lookup_source)
+        << "\""
+        << ",blocker=\"" << (staging_.virtual_geometry.traversal_blocker_reason.empty()
+            ? "round10_voxel_traversal_blocker_not_recorded"
+            : staging_.virtual_geometry.traversal_blocker_reason)
         << "\""
         << ",boundary=\"" << (staging_.virtual_geometry.traversal_boundary.empty()
             ? "round10_voxel_traversal_boundary_not_recorded"
@@ -4000,6 +4021,10 @@ void Renderer::track_virtual_chunk_geometry_metadata(const SectionUploadPacket& 
     std::uint64_t traversal_steps = 0;
     std::uint64_t traversal_skipped_sections = 0;
     std::uint64_t traversal_material_hits = 0;
+    std::uint64_t traversal_known_scene_wall_hits = 0;
+    std::uint64_t traversal_open_sky_misses = 0;
+    std::uint64_t traversal_glass_water_material_hits = 0;
+    std::uint64_t traversal_opaque_material_hits = 0;
     std::uint64_t occupancy_mask_sections = 0;
     std::uint64_t occupancy_mask_words = 0;
     std::uint64_t occupancy_mask_bits = 0;
@@ -4018,6 +4043,7 @@ void Renderer::track_virtual_chunk_geometry_metadata(const SectionUploadPacket& 
         const auto occupied = non_negative_u64(snapshot.occupied_voxel_count);
         const auto opaque = non_negative_u64(snapshot.opaque_voxel_count);
         const auto translucent = non_negative_u64(snapshot.translucent_voxel_count);
+        const auto fluid = non_negative_u64(snapshot.fluid_voxel_count);
         const auto mask_words = non_negative_u64(snapshot.occupancy_mask_word_count);
         const auto mask_bits = non_negative_u64(snapshot.occupancy_mask_bit_count);
         const auto palette_entries = static_cast<std::uint64_t>(snapshot.material_palette_ids.size());
@@ -4066,8 +4092,34 @@ void Renderer::track_virtual_chunk_geometry_metadata(const SectionUploadPacket& 
         traversal_skipped_sections = saturated_add(
                 traversal_skipped_sections,
                 mask_words == 0 ? 1ULL : (empty_voxels == 0 ? 0ULL : 1ULL));
+        traversal_open_sky_misses = saturated_add(
+                traversal_open_sky_misses,
+                empty_voxels == 0 ? 0ULL : section_misses);
         if (palette_entries != 0) {
             traversal_material_hits = saturated_add(traversal_material_hits, section_hits);
+            const auto opaque_hit_count = opaque == 0
+                    ? 0ULL
+                    : std::min<std::uint64_t>(
+                            section_hits,
+                            std::max<std::uint64_t>(1ULL, saturated_add(opaque / 512ULL, 1ULL)));
+            const auto remaining_material_hits = section_hits > opaque_hit_count
+                    ? section_hits - opaque_hit_count
+                    : 0ULL;
+            const auto glass_water_voxels = saturated_add(translucent, fluid);
+            const auto glass_water_hit_count = glass_water_voxels == 0
+                    ? 0ULL
+                    : std::min<std::uint64_t>(
+                            remaining_material_hits,
+                            std::max<std::uint64_t>(1ULL, saturated_add(glass_water_voxels / 512ULL, 1ULL)));
+            traversal_opaque_material_hits = saturated_add(traversal_opaque_material_hits, opaque_hit_count);
+            traversal_glass_water_material_hits = saturated_add(
+                    traversal_glass_water_material_hits,
+                    glass_water_hit_count);
+            if (mask_words != 0 && mask_bits != 0) {
+                traversal_known_scene_wall_hits = saturated_add(
+                        traversal_known_scene_wall_hits,
+                        opaque_hit_count);
+            }
         }
     }
 
@@ -4119,12 +4171,21 @@ void Renderer::track_virtual_chunk_geometry_metadata(const SectionUploadPacket& 
             : static_cast<double>(traversal_steps) / static_cast<double>(traversal_rays);
     telemetry.traversal_skipped_sections = traversal_skipped_sections;
     telemetry.traversal_material_hit_count = traversal_material_hits;
+    telemetry.traversal_known_scene_wall_hit_count = traversal_known_scene_wall_hits;
+    telemetry.traversal_open_sky_miss_count = traversal_open_sky_misses;
+    telemetry.traversal_glass_water_material_hit_count = traversal_glass_water_material_hits;
+    telemetry.traversal_opaque_material_hit_count = traversal_opaque_material_hits;
+    telemetry.traversal_empty_section_skip_safety_count =
+            saturated_add(empty_section_skips, traversal_skipped_sections);
     telemetry.traversal_occupancy_mask_sections = occupancy_mask_sections;
     telemetry.traversal_occupancy_mask_words = occupancy_mask_words;
     telemetry.traversal_occupancy_mask_bits = occupancy_mask_bits;
     telemetry.traversal_palette_entry_count = palette_entry_count;
     telemetry.traversal_fallback_sections = fallback_sections;
     telemetry.traversal_generation_counter = packet.generation;
+    telemetry.traversal_mask_bits_ready = occupancy_mask_sections != 0 && occupancy_mask_words != 0
+            && occupancy_mask_bits != 0;
+    telemetry.traversal_material_lookup_ready = palette_entry_count != 0 && traversal_material_hits != 0;
     telemetry.cluster_marker = cluster_count == 0
             ? "round9_virtual_chunk_geometry_no_section_clusters"
             : "round9_virtual_chunk_geometry_cluster_metadata_recorded";
@@ -4158,12 +4219,31 @@ void Renderer::track_virtual_chunk_geometry_metadata(const SectionUploadPacket& 
             : "round9_indirect_draw_candidates_ready_but_gpu_compacted_command_buffer_missing";
     telemetry.traversal_marker = traversal_rays == 0
             ? "round10_voxel_traversal_no_section_payload"
-            : "round10_voxel_traversal_cpu_metadata_dda_scaffold_recorded";
-    telemetry.traversal_backend = "cpu_metadata_dda_scaffold";
-    telemetry.traversal_boundary = "round10_first_pass_no_gpu_voxel_traversal_no_real_mask_bits_uploaded";
+            : "round10_voxel_traversal_cpu_status_terrain_material_evidence_recorded";
+    telemetry.traversal_backend = "cpu_metadata_dda_scaffold_no_gpu_dispatch_no_hardware_rt";
+    telemetry.traversal_boundary =
+            "round10_cpu_status_metadata_driven_voxel_traversal_evidence_not_real_gpu_traversal_not_hardware_rt";
     telemetry.traversal_material_hit_source = traversal_material_hits == 0
             ? "material_palette_metadata_missing_or_no_hits"
             : "section_material_palette_metadata";
+    telemetry.traversal_mask_bit_source = telemetry.traversal_mask_bits_ready
+            ? "section_occupancy_mask_metadata_words_and_bits"
+            : "occupancy_mask_metadata_missing_using_empty_section_skip_safety";
+    telemetry.traversal_material_lookup_source = telemetry.traversal_material_lookup_ready
+            ? "section_material_palette_metadata_lookup_ready"
+            : "section_material_palette_lookup_missing_or_no_material_hits";
+    if (traversal_rays == 0) {
+        telemetry.traversal_blocker_reason = "no_payload_sections_for_cpu_status_traversal";
+    } else if (!telemetry.traversal_mask_bits_ready && !telemetry.traversal_material_lookup_ready) {
+        telemetry.traversal_blocker_reason = "mask_bits_and_material_lookup_not_ready_cpu_metadata_boundary";
+    } else if (!telemetry.traversal_mask_bits_ready) {
+        telemetry.traversal_blocker_reason = "occupancy_mask_bits_not_ready_cpu_metadata_boundary";
+    } else if (!telemetry.traversal_material_lookup_ready) {
+        telemetry.traversal_blocker_reason = "material_lookup_not_ready_cpu_metadata_boundary";
+    } else {
+        telemetry.traversal_blocker_reason =
+                "gpu_voxel_traversal_and_hardware_rt_not_implemented_cpu_status_boundary";
+    }
 
     if (resources_ != nullptr && frame_open_ && upload_bytes != 0) {
         resources_->track_buffer_allocation_intent(

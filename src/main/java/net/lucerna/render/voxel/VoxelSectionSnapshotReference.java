@@ -8,6 +8,7 @@ import net.lucerna.world.section.SectionMaterialPaletteReference;
 import net.lucerna.world.section.SectionSurfaceSampleMetadata;
 import net.lucerna.world.section.VoxelOccupancyBitOrder;
 import net.lucerna.world.section.VoxelOccupancyMaskMetadata;
+import net.lucerna.world.section.VoxelOccupancyMaskSource;
 import net.lucerna.world.section.VoxelOccupancySummary;
 
 import java.util.List;
@@ -30,12 +31,83 @@ public record VoxelSectionSnapshotReference(
         int materialPaletteSize,
         long materialGeneration,
         boolean hasEmissivePayload,
-        List<SectionSurfaceSampleMetadata> surfaceSamples
+        List<SectionSurfaceSampleMetadata> surfaceSamples,
+        int solidWallHitEvidenceCount,
+        int openSkyMissEvidenceCount,
+        int glassVoxelCount,
+        int waterVoxelCount,
+        int opaqueMaterialFlagCount,
+        boolean occupancyMaskBitsReady,
+        VoxelOccupancyMaskSource occupancyMaskSource,
+        boolean emptySectionSkipSafe,
+        boolean materialLookupReady,
+        boolean opaqueMaterialFlagsReady,
+        boolean glassMaterialFlagsReady,
+        boolean waterMaterialFlagsReady
 ) {
+    public VoxelSectionSnapshotReference(
+            ChunkSectionOrigin origin,
+            ChunkSectionGeneration generation,
+            int occupiedVoxelCount,
+            int opaqueVoxelCount,
+            int translucentVoxelCount,
+            int fluidVoxelCount,
+            int emissiveVoxelCount,
+            VoxelOccupancyBitOrder occupancyBitOrder,
+            int occupancyMaskWordOffset,
+            int occupancyMaskWordCount,
+            int occupancyMaskBitCount,
+            long occupancyMaskGeneration,
+            int materialPaletteOffset,
+            int materialPaletteSize,
+            long materialGeneration,
+            boolean hasEmissivePayload,
+            List<SectionSurfaceSampleMetadata> surfaceSamples
+    ) {
+        this(
+                origin,
+                generation,
+                occupiedVoxelCount,
+                opaqueVoxelCount,
+                translucentVoxelCount,
+                fluidVoxelCount,
+                emissiveVoxelCount,
+                occupancyBitOrder,
+                occupancyMaskWordOffset,
+                occupancyMaskWordCount,
+                occupancyMaskBitCount,
+                occupancyMaskGeneration,
+                materialPaletteOffset,
+                materialPaletteSize,
+                materialGeneration,
+                hasEmissivePayload,
+                surfaceSamples,
+                0,
+                0,
+                0,
+                0,
+                opaqueVoxelCount,
+                false,
+                occupancyMaskWordCount > 0 && occupancyMaskBitCount > 0
+                        ? VoxelOccupancyMaskSource.METADATA_ONLY
+                        : VoxelOccupancyMaskSource.NONE,
+                occupiedVoxelCount == 0
+                        && occupancyMaskWordCount == 0
+                        && materialPaletteSize == 0
+                        && !hasEmissivePayload
+                        && surfaceSamples.isEmpty(),
+                materialPaletteSize > 0,
+                false,
+                false,
+                false
+        );
+    }
+
     public VoxelSectionSnapshotReference {
         Objects.requireNonNull(origin, "origin");
         Objects.requireNonNull(generation, "generation");
         Objects.requireNonNull(occupancyBitOrder, "occupancyBitOrder");
+        Objects.requireNonNull(occupancyMaskSource, "occupancyMaskSource");
         Objects.requireNonNull(surfaceSamples, "surfaceSamples");
         surfaceSamples = List.copyOf(surfaceSamples);
         requireVoxelCount(occupiedVoxelCount, "occupiedVoxelCount");
@@ -43,6 +115,11 @@ public record VoxelSectionSnapshotReference(
         requireVoxelCount(translucentVoxelCount, "translucentVoxelCount");
         requireVoxelCount(fluidVoxelCount, "fluidVoxelCount");
         requireVoxelCount(emissiveVoxelCount, "emissiveVoxelCount");
+        requireVoxelCount(solidWallHitEvidenceCount, "solidWallHitEvidenceCount");
+        requireVoxelCount(openSkyMissEvidenceCount, "openSkyMissEvidenceCount");
+        requireVoxelCount(glassVoxelCount, "glassVoxelCount");
+        requireVoxelCount(waterVoxelCount, "waterVoxelCount");
+        requireVoxelCount(opaqueMaterialFlagCount, "opaqueMaterialFlagCount");
         if (opaqueVoxelCount + translucentVoxelCount > occupiedVoxelCount) {
             throw new IllegalArgumentException("opaque and translucent counts cannot exceed occupiedVoxelCount");
         }
@@ -51,6 +128,18 @@ public record VoxelSectionSnapshotReference(
         }
         if (emissiveVoxelCount > occupiedVoxelCount) {
             throw new IllegalArgumentException("emissiveVoxelCount cannot exceed occupiedVoxelCount");
+        }
+        if (solidWallHitEvidenceCount > opaqueVoxelCount) {
+            throw new IllegalArgumentException("solidWallHitEvidenceCount cannot exceed opaqueVoxelCount");
+        }
+        if (glassVoxelCount > translucentVoxelCount) {
+            throw new IllegalArgumentException("glassVoxelCount cannot exceed translucentVoxelCount");
+        }
+        if (waterVoxelCount > fluidVoxelCount) {
+            throw new IllegalArgumentException("waterVoxelCount cannot exceed fluidVoxelCount");
+        }
+        if (opaqueMaterialFlagCount > opaqueVoxelCount) {
+            throw new IllegalArgumentException("opaqueMaterialFlagCount cannot exceed opaqueVoxelCount");
         }
         if (occupancyMaskWordOffset < 0) {
             throw new IllegalArgumentException("occupancyMaskWordOffset must be non-negative");
@@ -81,6 +170,26 @@ public record VoxelSectionSnapshotReference(
         if (surfaceSamples.size() > occupiedVoxelCount) {
             throw new IllegalArgumentException("surface sample count cannot exceed occupiedVoxelCount");
         }
+        if (occupancyMaskBitsReady && (occupancyMaskWordCount == 0 || occupancyMaskBitCount == 0)) {
+            throw new IllegalArgumentException("occupancyMaskBitsReady requires non-empty mask storage metadata");
+        }
+        if (!occupancyMaskBitsReady
+                && occupancyMaskSource != VoxelOccupancyMaskSource.NONE
+                && occupancyMaskSource != VoxelOccupancyMaskSource.METADATA_ONLY) {
+            throw new IllegalArgumentException("non-ready occupancy mask bits cannot claim a concrete source");
+        }
+        if (emptySectionSkipSafe && hasOccupiedSectionPayload(
+                occupiedVoxelCount,
+                occupancyMaskBitsReady,
+                materialLookupReady,
+                hasEmissivePayload,
+                surfaceSamples
+        )) {
+            throw new IllegalArgumentException("emptySectionSkipSafe cannot be true while traversal payload is present");
+        }
+        if (materialLookupReady && materialPaletteSize == 0) {
+            throw new IllegalArgumentException("materialLookupReady requires a material palette");
+        }
     }
 
     public static VoxelSectionSnapshotReference from(ChunkSectionVoxelSnapshot snapshot) {
@@ -105,7 +214,19 @@ public record VoxelSectionSnapshotReference(
                 materialPalette.paletteSize(),
                 materialPalette.materialGeneration(),
                 !snapshot.emissiveEntries().isEmpty(),
-                snapshot.surfaceSamples()
+                snapshot.surfaceSamples(),
+                summary.solidWallHitEvidenceCount(),
+                summary.openSkyMissEvidenceCount(),
+                summary.glassVoxelCount(),
+                summary.waterVoxelCount(),
+                summary.opaqueMaterialFlagCount(),
+                occupancyMask.readyForTraversal(),
+                occupancyMask.source(),
+                snapshot.emptySectionSkipSafe(),
+                materialPalette.readyForMaterialLookup(),
+                materialPalette.opaqueFlagsReady(),
+                materialPalette.glassFlagsReady(),
+                materialPalette.waterFlagsReady()
         );
     }
 
@@ -139,7 +260,24 @@ public record VoxelSectionSnapshotReference(
                 upload.materialPaletteSize(),
                 upload.materialPaletteGeneration(),
                 upload.emissiveEntryCount() > 0,
-                List.of()
+                List.of(),
+                0,
+                0,
+                0,
+                0,
+                upload.opaqueVoxelCount(),
+                upload.occupancyMaskWordCount() > 0 && upload.occupancyMaskBitCount() > 0,
+                upload.occupancyMaskWordCount() > 0 && upload.occupancyMaskBitCount() > 0
+                        ? VoxelOccupancyMaskSource.NATIVE_UPLOAD
+                        : VoxelOccupancyMaskSource.NONE,
+                upload.occupiedVoxelCount() == 0
+                        && upload.occupancyMaskWordCount() == 0
+                        && upload.materialPaletteSize() == 0
+                        && upload.emissiveEntryCount() == 0,
+                upload.materialPaletteSize() > 0,
+                false,
+                false,
+                false
         );
     }
 
@@ -173,8 +311,40 @@ public record VoxelSectionSnapshotReference(
         return this.occupancyMaskWordCount > 0;
     }
 
+    public boolean hasOccupancyMaskReadyForTraversal() {
+        return this.occupancyMaskBitsReady;
+    }
+
+    public boolean occupancyMaskMetadataOnly() {
+        return this.occupancyMaskSource.metadataOnly();
+    }
+
     public boolean hasMaterialPalette() {
         return this.materialPaletteSize > 0;
+    }
+
+    public boolean hasMaterialLookupReady() {
+        return this.materialLookupReady;
+    }
+
+    public boolean hasSolidWallHitEvidence() {
+        return this.solidWallHitEvidenceCount > 0;
+    }
+
+    public boolean hasOpenSkyMissEvidence() {
+        return this.openSkyMissEvidenceCount > 0;
+    }
+
+    public boolean hasOpaqueMaterialFlags() {
+        return this.opaqueMaterialFlagsReady && this.opaqueMaterialFlagCount > 0;
+    }
+
+    public boolean hasGlassMaterialFlags() {
+        return this.glassMaterialFlagsReady && this.glassVoxelCount > 0;
+    }
+
+    public boolean hasWaterMaterialFlags() {
+        return this.waterMaterialFlagsReady && this.waterVoxelCount > 0;
     }
 
     public boolean hasSurfaceSamples() {
@@ -199,7 +369,19 @@ public record VoxelSectionSnapshotReference(
                 this.materialPaletteSize,
                 this.materialGeneration,
                 this.hasEmissivePayload,
-                surfaceSamples
+                surfaceSamples,
+                this.solidWallHitEvidenceCount,
+                this.openSkyMissEvidenceCount,
+                this.glassVoxelCount,
+                this.waterVoxelCount,
+                this.opaqueMaterialFlagCount,
+                this.occupancyMaskBitsReady,
+                this.occupancyMaskSource,
+                this.emptySectionSkipSafe,
+                this.materialLookupReady,
+                this.opaqueMaterialFlagsReady,
+                this.glassMaterialFlagsReady,
+                this.waterMaterialFlagsReady
         );
     }
 
@@ -209,6 +391,15 @@ public record VoxelSectionSnapshotReference(
                 || this.hasMaterialPalette()
                 || this.hasEmissivePayload
                 || this.hasSurfaceSamples();
+    }
+
+    public boolean hasKnownSceneValidationEvidence() {
+        return this.hasSolidWallHitEvidence()
+                || this.hasOpenSkyMissEvidence()
+                || this.hasGlassMaterialFlags()
+                || this.hasWaterMaterialFlags()
+                || this.hasOpaqueMaterialFlags()
+                || this.emptySectionSkipSafe;
     }
 
     private static void requireVoxelCount(int count, String name) {
@@ -234,5 +425,19 @@ public record VoxelSectionSnapshotReference(
             throw new IllegalArgumentException("upload occupancyBitOrderId does not match occupancyBitOrderName");
         }
         return occupancyBitOrder;
+    }
+
+    private static boolean hasOccupiedSectionPayload(
+            int occupiedVoxelCount,
+            boolean occupancyMaskBitsReady,
+            boolean materialLookupReady,
+            boolean hasEmissivePayload,
+            List<SectionSurfaceSampleMetadata> surfaceSamples
+    ) {
+        return occupiedVoxelCount > 0
+                || occupancyMaskBitsReady
+                || materialLookupReady
+                || hasEmissivePayload
+                || !surfaceSamples.isEmpty();
     }
 }

@@ -1862,6 +1862,21 @@ public final class LucernaController {
         String averageSteps = round9NativeValue(nativeStatus, "average_steps", "0");
         String skippedSections = round9NativeValue(nativeStatus, "skipped_sections", "0");
         String materialHits = round9NativeValue(nativeStatus, "material_hit_count", "0");
+        String wallHitCount = round9NativeValue(nativeStatus, "known_scene_wall_hit_count", "0");
+        String openSkyMissCount = round9NativeValue(nativeStatus, "open_sky_miss_count", "0");
+        String glassWaterMaterialHits = round9NativeValue(nativeStatus, "glass_water_material_hit_count", "0");
+        String opaqueMaterialHits = round9NativeValue(nativeStatus, "opaque_material_hit_count", "0");
+        String emptySectionSkipSafetyCount = round9NativeValue(nativeStatus, "empty_section_skip_safety_count", "0");
+        String maskBitsReady = round9NativeValue(nativeStatus, "mask_bits_ready", "false");
+        String materialLookupReady = round9NativeValue(nativeStatus, "material_lookup_ready", "false");
+        String traversalBackend = round9NativeValue(nativeStatus, "backend", "cpu_metadata_dda_scaffold_no_gpu_dispatch_no_hardware_rt");
+        String maskBitSource = round9NativeValue(nativeStatus, "mask_bit_source", "round10_mask_bit_source_not_recorded");
+        String materialLookupSource = round9NativeValue(nativeStatus, "material_lookup_source", "round10_material_lookup_source_not_recorded");
+        String traversalBlocker = round9NativeValue(nativeStatus, "blocker", "round10_voxel_traversal_blocker_not_recorded");
+        boolean materialIdConsistencyReady = Boolean.parseBoolean(maskBitsReady) && Boolean.parseBoolean(materialLookupReady);
+        boolean emptySectionSkipSafe = !"0".equals(emptySectionSkipSafetyCount)
+                || !"0".equals(skippedSections)
+                || !"0".equals(missCount);
         String traversalMarker = round9NativeValue(nativeStatus, "marker", "round10_voxel_traversal_not_recorded");
         String traversalBoundary = round9NativeValue(nativeStatus, "boundary", "round10_boundary_not_recorded");
         boolean voxelDebug = "voxel-ray-debug".equals(captureMode);
@@ -1883,6 +1898,14 @@ public final class LucernaController {
                 + "|"
                 + skippedSections
                 + "|"
+                + wallHitCount
+                + "|"
+                + openSkyMissCount
+                + "|"
+                + glassWaterMaterialHits
+                + "|"
+                + opaqueMaterialHits
+                + "|"
                 + traversalMarker;
         if (logKey.equals(this.lastLoggedRound10HybridTracingKey)) {
             return;
@@ -1890,7 +1913,7 @@ public final class LucernaController {
 
         this.lastLoggedRound10HybridTracingKey = logKey;
         Lucerna.LOGGER.info(
-                "Lucerna Round 10 voxel traversal hybrid tracing Vulkan RT entity fallback hybrid hit: round10.voxelTraversal=true round10.rtEntityDebug={} round10.rtEntities=0 round10.hybridHitDebug={} round10.hybridHits={} hybridHitCount={} artifactRole={} sceneKind={} captureMode={} owner={} voxelRayDebugVisible={} rtEntityDebugVisible={} hybridHitDebugVisible={} voxelRayCount={} voxelHitCount={} voxelMissCount={} averageTraversalSteps={} skippedSections={} round10.voxelRays={} round10.voxelHits={} round10.voxelMisses={} round10.traversalSteps={} round10.skippedSections={} materialHitCount={} BLASStatus=fallback-only TLASStatus=fallback-only hardwareRtAvailable=false rtFallbackStatus=active nonRtFallback=true hybrid_source_voxel={} hybrid_source_rt=0 hybrid_source_screen=0 hybrid_source_screenSpace=0 hybridScreenSpaceHits=0 round10.hybrid.voxelHits={} round10.hybrid.rtHits=0 round10.hybrid.screenSpaceHits=0 fallbackStatus=voxel-cpu-metadata-only round10.boundaryLabel={} tracingBoundary={} hardwareRtExecutionProven=false metadataOnlyTracing=true marker={}.",
+                "Lucerna Round 10 voxel traversal hybrid tracing Vulkan RT entity fallback hybrid hit: round10.voxelTraversal=true round10.rtEntityDebug={} round10.rtEntities=0 round10.hybridHitDebug={} round10.hybridHits={} hybridHitCount={} artifactRole={} sceneKind={} captureMode={} owner={} voxelRayDebugVisible={} rtEntityDebugVisible={} hybridHitDebugVisible={} voxelRayCount={} voxelHitCount={} voxelMissCount={} averageTraversalSteps={} skippedSections={} round10.voxelRays={} round10.voxelHits={} round10.voxelMisses={} round10.traversalSteps={} round10.skippedSections={} materialHitCount={} wallHitCount={} wall_hit_count={} round10.wallHitCount={} openSkyMissCount={} open_sky_miss_count={} round10.openSkyMissCount={} glassWaterHits={} glass_water_hit_count={} glass_water_material_hit_count={} round10.glassWaterHits={} opaqueMaterialHitCount={} opaque_material_hit_count={} round10.opaqueMaterialHits={} materialIdConsistencyReady={} material_lookup_ready={} materialLookupReady={} mask_bits_ready={} maskBitsReady={} mask_bits_source=world-extraction maskBitsSource=world-extraction native_mask_bit_source={} material_lookup_source={} emptySectionSkipSafe={} empty_section_skip_safe={} empty_section_skip_safety_count={} traversalBackend={} traversal_backend={} realGpuTraversalExecuted=false real_gpu_traversal_executed=false gpuTraversalBoundary=cpu-status BLASStatus=fallback-only TLASStatus=fallback-only hardwareRtAvailable=false rtFallbackStatus=active nonRtFallback=true hardwareRtFallbackAccepted=true hybrid_source_voxel={} hybrid_source_rt=0 hybrid_source_screen=0 hybrid_source_screenSpace=0 hybridScreenSpaceHits=0 round10.hybrid.voxelHits={} round10.hybrid.rtHits=0 round10.hybrid.screenSpaceHits=0 fallbackStatus=voxel-cpu-metadata-only round10.boundaryLabel={} tracingBoundary={} hardwareRtExecutionProven=false metadataOnlyTracing=true traversalBlocker={} marker={}.",
                 rtDebug,
                 hybridDebug,
                 hitCount,
@@ -1913,10 +1936,36 @@ public final class LucernaController {
                 averageSteps,
                 skippedSections,
                 materialHits,
+                wallHitCount,
+                wallHitCount,
+                wallHitCount,
+                openSkyMissCount,
+                openSkyMissCount,
+                openSkyMissCount,
+                glassWaterMaterialHits,
+                glassWaterMaterialHits,
+                glassWaterMaterialHits,
+                glassWaterMaterialHits,
+                opaqueMaterialHits,
+                opaqueMaterialHits,
+                opaqueMaterialHits,
+                materialIdConsistencyReady,
+                materialLookupReady,
+                materialLookupReady,
+                maskBitsReady,
+                maskBitsReady,
+                maskBitSource,
+                materialLookupSource,
+                emptySectionSkipSafe,
+                emptySectionSkipSafe,
+                emptySectionSkipSafetyCount,
+                traversalBackend,
+                traversalBackend,
                 hitCount,
                 hitCount,
                 traversalBoundary,
                 traversalBoundary,
+                traversalBlocker,
                 traversalMarker
         );
     }

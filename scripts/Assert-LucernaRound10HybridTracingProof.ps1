@@ -116,6 +116,74 @@ param(
         "round10\.skippedSections=([0-9]+)"
     ),
 
+    [string[]] $WallHitPatterns = @(
+        "wallHit(?:Count|s)?=([1-9][0-9]*)",
+        "wall_hit_count=([1-9][0-9]*)",
+        "round10\.wallHit(?:Count|s)?=([1-9][0-9]*)"
+    ),
+
+    [string[]] $OpenSkyMissPatterns = @(
+        "openSkyMiss(?:Count|s)?=([1-9][0-9]*)",
+        "open_sky_miss_count=([1-9][0-9]*)",
+        "round10\.openSkyMiss(?:Count|s)?=([1-9][0-9]*)"
+    ),
+
+    [string[]] $GlassWaterMaterialHitPatterns = @(
+        "(?:glassWater|glassOrWater|transparentMaterial)Hit(?:Count|s)?=([1-9][0-9]*)",
+        "(?:glass_water|glass_or_water|transparent_material)_hit_count=([1-9][0-9]*)",
+        "round10\.(?:glassWater|glassOrWater|transparentMaterial)Hits=([1-9][0-9]*)"
+    ),
+
+    [string[]] $OpaqueMaterialHitPatterns = @(
+        "opaqueMaterialHit(?:Count|s)?=([1-9][0-9]*)",
+        "opaque_material_hit_count=([1-9][0-9]*)",
+        "round10\.opaqueMaterialHits=([1-9][0-9]*)"
+    ),
+
+    [string[]] $MaterialIdConsistencyPatterns = @(
+        "materialIdConsistency(?:Ready|Passed)?=true",
+        "material_id_consistency(?:_ready|_passed)?=true",
+        "round10\.materialIdConsistency(?:Ready|Passed)?=true"
+    ),
+
+    [string[]] $MaterialLookupReadyPatterns = @(
+        "materialLookupReady=true",
+        "material_lookup_ready=true",
+        "round10\.materialLookupReady=true"
+    ),
+
+    [string[]] $MaskBitsReadyPatterns = @(
+        "maskBitsReady=true",
+        "mask_bits_ready=true",
+        "round10\.maskBitsReady=true"
+    ),
+
+    [string[]] $MaskBitsSourcePatterns = @(
+        "maskBitsSource=(?:material-table|voxel-material|native-voxel|world-extraction|block-state)",
+        "mask_bits_source=(?:material-table|voxel-material|native-voxel|world-extraction|block-state)",
+        "round10\.maskBitsSource=(?:material-table|voxel-material|native-voxel|world-extraction|block-state)"
+    ),
+
+    [string[]] $EmptySectionSkipSafePatterns = @(
+        "emptySectionSkipSafe=true",
+        "empty_section_skip_safe=true",
+        "round10\.emptySectionSkipSafe=true"
+    ),
+
+    [string[]] $TraversalBackendPatterns = @(
+        "traversalBackend=(?:cpu|native-cpu|gpu-boundary|fallback|voxel-cpu)",
+        "traversal_backend=(?:cpu|native-cpu|gpu-boundary|fallback|voxel-cpu)",
+        "round10\.traversalBackend=(?:cpu|native-cpu|gpu-boundary|fallback|voxel-cpu)"
+    ),
+
+    [string[]] $RealGpuTraversalBoundaryPatterns = @(
+        "realGpuTraversalExecuted=false",
+        "real_gpu_traversal_executed=false",
+        "round10\.realGpuTraversalExecuted=false",
+        "gpuTraversalBoundary=(?:open|not-proven|fallback|cpu-status)",
+        "gpu_traversal_boundary=(?:open|not-proven|fallback|cpu-status)"
+    ),
+
     [string[]] $BlasStatusPatterns = @(
         "BLAS(?:Status|Ready|Builds|BuildCount)?=",
         "blas(?:Status|Ready|Builds|BuildCount)?=",
@@ -134,6 +202,31 @@ param(
         "nonRtFallback=",
         "hardwareRtAvailable=",
         "round10\.rtFallback"
+    ),
+
+    [string[]] $HardwareRtExecutionPatterns = @(
+        "hardwareRtExecutionProven=(?:true|false)",
+        "hardware_rt_execution_proven=(?:true|false)",
+        "round10\.hardwareRtExecutionProven=(?:true|false)"
+    ),
+
+    [string[]] $HardwareRtFallbackPatterns = @(
+        "hardwareRtExecutionProven=false[^`r`n]*(?:rtFallback(?:Status|Active)?|fallbackStatus|nonRtFallback|hardwareRtFallback)=([^`r`n ]+)",
+        "hardware_rt_execution_proven=false[^`r`n]*(?:rt_fallback(?:_status|_active)?|fallback_status|non_rt_fallback|hardware_rt_fallback)=([^`r`n ]+)",
+        "(?:rtFallback(?:Status|Active)?|fallbackStatus|nonRtFallback|hardwareRtFallback)=(?:active|true|cpu|native-cpu|unsupported|unavailable|fallback)",
+        "hardwareRtFallbackAccepted=true"
+    ),
+
+    [string[]] $EntityMovementPatterns = @(
+        "entityMovement(?:Marker|Ready|Observed)?=true",
+        "entity_movement(?:_marker|_ready|_observed)?=true",
+        "round10\.entityMovement(?:Marker|Ready|Observed)?=true"
+    ),
+
+    [string[]] $ChunkChurnPatterns = @(
+        "chunkChurn(?:Marker|Ready|Observed)?=true",
+        "chunk_churn(?:_marker|_ready|_observed)?=true",
+        "round10\.chunkChurn(?:Marker|Ready|Observed)?=true"
     ),
 
     [string[]] $HybridVoxelHitPatterns = @(
@@ -342,6 +435,10 @@ function Measure-Round10LogProof {
     $missCounts = Get-CapturedNumbers $log $MissCountPatterns
     $traversalSteps = Get-CapturedNumbers $log $TraversalStepPatterns
     $skippedSections = Get-CapturedNumbers $log $SkippedSectionPatterns
+    $wallHits = Get-CapturedNumbers $log $WallHitPatterns
+    $openSkyMisses = Get-CapturedNumbers $log $OpenSkyMissPatterns
+    $glassWaterMaterialHits = Get-CapturedNumbers $log $GlassWaterMaterialHitPatterns
+    $opaqueMaterialHits = Get-CapturedNumbers $log $OpaqueMaterialHitPatterns
     $hybridVoxelHits = Get-CapturedNumbers $log $HybridVoxelHitPatterns
     $hybridRtHits = Get-CapturedNumbers $log $HybridRtHitPatterns
     $hybridScreenSpaceHits = Get-CapturedNumbers $log $HybridScreenSpaceHitPatterns
@@ -358,16 +455,35 @@ function Measure-Round10LogProof {
             missCountPresent = Test-AnyRegex $log $MissCountPatterns
             traversalStepPresent = Test-AnyRegex $log $TraversalStepPatterns
             skippedSectionPresent = Test-AnyRegex $log $SkippedSectionPatterns
+            wallHitPresent = Test-AnyRegex $log $WallHitPatterns
+            openSkyMissPresent = Test-AnyRegex $log $OpenSkyMissPatterns
+            glassWaterMaterialHitPresent = Test-AnyRegex $log $GlassWaterMaterialHitPatterns
+            opaqueMaterialHitPresent = Test-AnyRegex $log $OpaqueMaterialHitPatterns
+            materialIdConsistencyPresent = Test-AnyRegex $log $MaterialIdConsistencyPatterns
+            materialLookupReadyPresent = Test-AnyRegex $log $MaterialLookupReadyPatterns
+            maskBitsReadyPresent = Test-AnyRegex $log $MaskBitsReadyPatterns
+            maskBitsSourcePresent = Test-AnyRegex $log $MaskBitsSourcePatterns
+            emptySectionSkipSafePresent = Test-AnyRegex $log $EmptySectionSkipSafePatterns
+            traversalBackendPresent = Test-AnyRegex $log $TraversalBackendPatterns
+            realGpuTraversalBoundaryPresent = Test-AnyRegex $log $RealGpuTraversalBoundaryPatterns
             blasStatusPresent = Test-AnyRegex $log $BlasStatusPatterns
             tlasStatusPresent = Test-AnyRegex $log $TlasStatusPatterns
             fallbackStatusPresent = Test-AnyRegex $log $FallbackStatusPatterns
+            hardwareRtExecutionPresent = Test-AnyRegex $log $HardwareRtExecutionPatterns
+            hardwareRtExecutionProvenTrue = Test-Regex $log "(?:hardwareRtExecutionProven|hardware_rt_execution_proven|round10\.hardwareRtExecutionProven)=true"
+            hardwareRtExecutionProvenFalse = Test-Regex $log "(?:hardwareRtExecutionProven|hardware_rt_execution_proven|round10\.hardwareRtExecutionProven)=false"
+            hardwareRtFallbackPresent = Test-AnyRegex $log $HardwareRtFallbackPatterns
             hybridVoxelHitPresent = Test-AnyRegex $log $HybridVoxelHitPatterns
             hybridRtHitPresent = Test-AnyRegex $log $HybridRtHitPatterns
             hybridScreenSpaceHitPresent = Test-AnyRegex $log $HybridScreenSpaceHitPatterns
+            entityMovementPresent = Test-AnyRegex $log $EntityMovementPatterns
+            chunkChurnPresent = Test-AnyRegex $log $ChunkChurnPatterns
             boundaryLabelPresent = Test-AnyRegex $log $BoundaryLabelPatterns
-            invalidTracingValuesPresent = Test-Regex $log "invalid(?:VoxelRay|Traversal|HybridHit|RtEntity)(?:Count|s)?=true|negative (?:voxel ray|traversal|hybrid|BLAS|TLAS)|(?:voxelRay(?:Count|s)?|hybridHit(?:Count|s)?|traversal(?:Step|Steps|StepCount)).*(?:NaN|Infinity)"
+            invalidTracingValuesPresent = Test-Regex $log "invalid(?:VoxelRay|Traversal|HybridHit|RtEntity|Material|MaskBits)(?:Count|s)?=true|negative (?:voxel ray|traversal|hybrid|BLAS|TLAS|material|wall|open sky)|(?:voxelRay(?:Count|s)?|hybridHit(?:Count|s)?|traversal(?:Step|Steps|StepCount)|wallHit(?:Count|s)?|openSkyMiss(?:Count|s)?|materialHit(?:Count|s)?).*(?:NaN|Infinity)"
             proofMarkerPresent = Test-Regex $log "round10\.(?:proofMarker|focusWindowOnly)=true|Round 10 .*proof marker|Round 10 .*focus-window-only"
             temporaryDirectLightSourcePresent = Test-Regex $log "round10\.temporaryDirectLightSource=true|Round 10 .*temporary direct-light|Round 10 .*current direct-light RGBA payload"
+            gpuTraversalOverclaimPresent = Test-Regex $log "realGpuTraversalExecuted=false[^`r`n]*(?:realGpuTraversal(?:Proven|Ready)|gpuTraversalOutputReady)=true|real_gpu_traversal_executed=false[^`r`n]*(?:real_gpu_traversal_(?:proven|ready)|gpu_traversal_output_ready)=true"
+            hardwareRtOverclaimPresent = Test-Regex $log "hardwareRtExecutionProven=false[^`r`n]*(?:realHardwareRt(?:Proven|Ready)|rtOutputReady)=true|hardware_rt_execution_proven=false[^`r`n]*(?:real_hardware_rt_(?:proven|ready)|rt_output_ready)=true"
             nativeErrorPresent = Test-Regex $log "invalid descriptor|VK_ERROR|Lucerna native error|native error"
         }
         counts = [ordered]@{
@@ -376,6 +492,10 @@ function Measure-Round10LogProof {
             missCounts = @($missCounts)
             traversalSteps = @($traversalSteps)
             skippedSections = @($skippedSections)
+            wallHits = @($wallHits)
+            openSkyMisses = @($openSkyMisses)
+            glassWaterMaterialHits = @($glassWaterMaterialHits)
+            opaqueMaterialHits = @($opaqueMaterialHits)
             hybridVoxelHits = @($hybridVoxelHits)
             hybridRtHits = @($hybridRtHits)
             hybridScreenSpaceHits = @($hybridScreenSpaceHits)
@@ -384,6 +504,10 @@ function Measure-Round10LogProof {
             maxMissCount = Get-MaxNumber $missCounts
             maxTraversalSteps = Get-MaxNumber $traversalSteps
             maxSkippedSections = Get-MaxNumber $skippedSections
+            maxWallHits = Get-MaxNumber $wallHits
+            maxOpenSkyMisses = Get-MaxNumber $openSkyMisses
+            maxGlassWaterMaterialHits = Get-MaxNumber $glassWaterMaterialHits
+            maxOpaqueMaterialHits = Get-MaxNumber $opaqueMaterialHits
             maxHybridVoxelHits = Get-MaxNumber $hybridVoxelHits
             maxHybridRtHits = Get-MaxNumber $hybridRtHits
             maxHybridScreenSpaceHits = Get-MaxNumber $hybridScreenSpaceHits
@@ -398,12 +522,27 @@ function Measure-Round10LogProof {
             missCountPatterns = @($MissCountPatterns)
             traversalStepPatterns = @($TraversalStepPatterns)
             skippedSectionPatterns = @($SkippedSectionPatterns)
+            wallHitPatterns = @($WallHitPatterns)
+            openSkyMissPatterns = @($OpenSkyMissPatterns)
+            glassWaterMaterialHitPatterns = @($GlassWaterMaterialHitPatterns)
+            opaqueMaterialHitPatterns = @($OpaqueMaterialHitPatterns)
+            materialIdConsistencyPatterns = @($MaterialIdConsistencyPatterns)
+            materialLookupReadyPatterns = @($MaterialLookupReadyPatterns)
+            maskBitsReadyPatterns = @($MaskBitsReadyPatterns)
+            maskBitsSourcePatterns = @($MaskBitsSourcePatterns)
+            emptySectionSkipSafePatterns = @($EmptySectionSkipSafePatterns)
+            traversalBackendPatterns = @($TraversalBackendPatterns)
+            realGpuTraversalBoundaryPatterns = @($RealGpuTraversalBoundaryPatterns)
             blasStatusPatterns = @($BlasStatusPatterns)
             tlasStatusPatterns = @($TlasStatusPatterns)
             fallbackStatusPatterns = @($FallbackStatusPatterns)
+            hardwareRtExecutionPatterns = @($HardwareRtExecutionPatterns)
+            hardwareRtFallbackPatterns = @($HardwareRtFallbackPatterns)
             hybridVoxelHitPatterns = @($HybridVoxelHitPatterns)
             hybridRtHitPatterns = @($HybridRtHitPatterns)
             hybridScreenSpaceHitPatterns = @($HybridScreenSpaceHitPatterns)
+            entityMovementPatterns = @($EntityMovementPatterns)
+            chunkChurnPatterns = @($ChunkChurnPatterns)
             boundaryLabelPatterns = @($BoundaryLabelPatterns)
         }
     }
@@ -470,6 +609,36 @@ if ($logProof) {
     if (-not $logProof.markers.skippedSectionPresent) {
         $failures.Add("Missing Round 10 skipped section marker.")
     }
+    if (-not $logProof.markers.wallHitPresent -or $null -eq $logProof.counts.maxWallHits -or [double]$logProof.counts.maxWallHits -le 0) {
+        $failures.Add("Missing nonzero Round 10 known-scene wall hit count marker.")
+    }
+    if (-not $logProof.markers.openSkyMissPresent -or $null -eq $logProof.counts.maxOpenSkyMisses -or [double]$logProof.counts.maxOpenSkyMisses -le 0) {
+        $failures.Add("Missing nonzero Round 10 known-scene open-sky miss count marker.")
+    }
+    if (-not $logProof.markers.glassWaterMaterialHitPresent -or $null -eq $logProof.counts.maxGlassWaterMaterialHits -or [double]$logProof.counts.maxGlassWaterMaterialHits -le 0) {
+        $failures.Add("Missing nonzero Round 10 glass/water material hit count marker.")
+    }
+    if (-not $logProof.markers.opaqueMaterialHitPresent -or $null -eq $logProof.counts.maxOpaqueMaterialHits -or [double]$logProof.counts.maxOpaqueMaterialHits -le 0) {
+        $failures.Add("Missing nonzero Round 10 opaque material hit count marker.")
+    }
+    if (-not $logProof.markers.materialIdConsistencyPresent) {
+        $failures.Add("Missing Round 10 material ID consistency marker.")
+    }
+    if (-not $logProof.markers.materialLookupReadyPresent) {
+        $failures.Add("Missing Round 10 material lookup readiness marker.")
+    }
+    if (-not $logProof.markers.maskBitsReadyPresent -or -not $logProof.markers.maskBitsSourcePresent) {
+        $failures.Add("Missing Round 10 mask-bits readiness/source marker.")
+    }
+    if (-not $logProof.markers.emptySectionSkipSafePresent) {
+        $failures.Add("Missing Round 10 empty-section skip safety marker.")
+    }
+    if (-not $logProof.markers.traversalBackendPresent) {
+        $failures.Add("Missing Round 10 traversal backend marker.")
+    }
+    if (-not $logProof.markers.realGpuTraversalBoundaryPresent) {
+        $failures.Add("Missing honest Round 10 real GPU traversal false/boundary marker.")
+    }
     if (-not $logProof.markers.blasStatusPresent) {
         $failures.Add("Missing Round 10 BLAS status marker.")
     }
@@ -478,6 +647,12 @@ if ($logProof) {
     }
     if (-not $logProof.markers.fallbackStatusPresent) {
         $failures.Add("Missing Round 10 RT fallback/capability status marker.")
+    }
+    if (-not $logProof.markers.hardwareRtExecutionPresent) {
+        $failures.Add("Missing Round 10 hardware RT execution-proven marker.")
+    }
+    if ($logProof.markers.hardwareRtExecutionProvenFalse -and -not $logProof.markers.hardwareRtFallbackPresent) {
+        $failures.Add("Missing Round 10 hardware RT fallback marker for unproven hardware RT execution.")
     }
     if (-not $logProof.markers.hybridVoxelHitPresent) {
         $failures.Add("Missing Round 10 per-source hybrid voxel hit count marker.")
@@ -501,6 +676,18 @@ if ($logProof) {
     }
     if ($logProof.markers.proofMarkerPresent) {
         $failures.Add("Log contains proof-marker or focus-window-only evidence; Round 10 proof must use requested overlay artifacts.")
+    }
+    if (-not $logProof.markers.entityMovementPresent) {
+        $failures.Add("Missing Round 10 entity movement scene/control marker.")
+    }
+    if (-not $logProof.markers.chunkChurnPresent) {
+        $failures.Add("Missing Round 10 chunk churn scene/control marker.")
+    }
+    if ($logProof.markers.gpuTraversalOverclaimPresent) {
+        $failures.Add("Log overclaims real GPU traversal despite realGpuTraversalExecuted=false.")
+    }
+    if ($logProof.markers.hardwareRtOverclaimPresent) {
+        $failures.Add("Log overclaims hardware RT output despite hardwareRtExecutionProven=false.")
     }
     if ($logProof.markers.nativeErrorPresent) {
         $failures.Add("Log contains native/Vulkan error markers.")
@@ -564,12 +751,33 @@ $result = [ordered]@{
                 missCountPresent = if ($logProof) { [bool]$logProof.markers.missCountPresent } else { $null }
                 traversalStepPresent = if ($logProof) { [bool]$logProof.markers.traversalStepPresent } else { $null }
                 skippedSectionPresent = if ($logProof) { [bool]$logProof.markers.skippedSectionPresent } else { $null }
+                wallHitPresent = if ($logProof) { [bool]$logProof.markers.wallHitPresent } else { $null }
+                maxWallHits = if ($logProof) { $logProof.counts.maxWallHits } else { $null }
+                openSkyMissPresent = if ($logProof) { [bool]$logProof.markers.openSkyMissPresent } else { $null }
+                maxOpenSkyMisses = if ($logProof) { $logProof.counts.maxOpenSkyMisses } else { $null }
+                emptySectionSkipSafePresent = if ($logProof) { [bool]$logProof.markers.emptySectionSkipSafePresent } else { $null }
+                traversalBackendPresent = if ($logProof) { [bool]$logProof.markers.traversalBackendPresent } else { $null }
+                realGpuTraversalBoundaryPresent = if ($logProof) { [bool]$logProof.markers.realGpuTraversalBoundaryPresent } else { $null }
+            }
+            materialCorrectness = [ordered]@{
+                glassWaterMaterialHitPresent = if ($logProof) { [bool]$logProof.markers.glassWaterMaterialHitPresent } else { $null }
+                maxGlassWaterMaterialHits = if ($logProof) { $logProof.counts.maxGlassWaterMaterialHits } else { $null }
+                opaqueMaterialHitPresent = if ($logProof) { [bool]$logProof.markers.opaqueMaterialHitPresent } else { $null }
+                maxOpaqueMaterialHits = if ($logProof) { $logProof.counts.maxOpaqueMaterialHits } else { $null }
+                materialIdConsistencyPresent = if ($logProof) { [bool]$logProof.markers.materialIdConsistencyPresent } else { $null }
+                materialLookupReadyPresent = if ($logProof) { [bool]$logProof.markers.materialLookupReadyPresent } else { $null }
+                maskBitsReadyPresent = if ($logProof) { [bool]$logProof.markers.maskBitsReadyPresent } else { $null }
+                maskBitsSourcePresent = if ($logProof) { [bool]$logProof.markers.maskBitsSourcePresent } else { $null }
             }
             rtEntity = [ordered]@{
                 rtEntityDebugOverlayPresent = if ($logProof) { [bool]$logProof.markers.rtEntityDebugOverlayPresent } else { $null }
                 blasStatusPresent = if ($logProof) { [bool]$logProof.markers.blasStatusPresent } else { $null }
                 tlasStatusPresent = if ($logProof) { [bool]$logProof.markers.tlasStatusPresent } else { $null }
                 fallbackStatusPresent = if ($logProof) { [bool]$logProof.markers.fallbackStatusPresent } else { $null }
+                hardwareRtExecutionPresent = if ($logProof) { [bool]$logProof.markers.hardwareRtExecutionPresent } else { $null }
+                hardwareRtExecutionProvenTrue = if ($logProof) { [bool]$logProof.markers.hardwareRtExecutionProvenTrue } else { $null }
+                hardwareRtExecutionProvenFalse = if ($logProof) { [bool]$logProof.markers.hardwareRtExecutionProvenFalse } else { $null }
+                hardwareRtFallbackPresent = if ($logProof) { [bool]$logProof.markers.hardwareRtFallbackPresent } else { $null }
             }
             hybridHits = [ordered]@{
                 hybridHitDebugOverlayPresent = if ($logProof) { [bool]$logProof.markers.hybridHitDebugOverlayPresent } else { $null }
@@ -582,12 +790,16 @@ $result = [ordered]@{
             }
             proofBoundary = [ordered]@{
                 boundaryLabelPresent = if ($logProof) { [bool]$logProof.markers.boundaryLabelPresent } else { $null }
+                entityMovementPresent = if ($logProof) { [bool]$logProof.markers.entityMovementPresent } else { $null }
+                chunkChurnPresent = if ($logProof) { [bool]$logProof.markers.chunkChurnPresent } else { $null }
                 classification = "round10_overlay_and_telemetry_scaffold_not_physical_quality_claim"
             }
             rejectionMarkers = [ordered]@{
                 invalidTracingValuesPresent = if ($logProof) { [bool]$logProof.markers.invalidTracingValuesPresent } else { $null }
                 temporaryDirectLightSourcePresent = if ($logProof) { [bool]$logProof.markers.temporaryDirectLightSourcePresent } else { $null }
                 proofMarkerPresent = if ($logProof) { [bool]$logProof.markers.proofMarkerPresent } else { $null }
+                gpuTraversalOverclaimPresent = if ($logProof) { [bool]$logProof.markers.gpuTraversalOverclaimPresent } else { $null }
+                hardwareRtOverclaimPresent = if ($logProof) { [bool]$logProof.markers.hardwareRtOverclaimPresent } else { $null }
                 nativeErrorPresent = if ($logProof) { [bool]$logProof.markers.nativeErrorPresent } else { $null }
             }
         }
@@ -623,14 +835,37 @@ if ($logProof) {
     Write-Host "missCountPresent=$($logProof.markers.missCountPresent)"
     Write-Host "traversalStepPresent=$($logProof.markers.traversalStepPresent)"
     Write-Host "skippedSectionPresent=$($logProof.markers.skippedSectionPresent)"
+    Write-Host "wallHitPresent=$($logProof.markers.wallHitPresent)"
+    Write-Host "maxWallHits=$($logProof.counts.maxWallHits)"
+    Write-Host "openSkyMissPresent=$($logProof.markers.openSkyMissPresent)"
+    Write-Host "maxOpenSkyMisses=$($logProof.counts.maxOpenSkyMisses)"
+    Write-Host "glassWaterMaterialHitPresent=$($logProof.markers.glassWaterMaterialHitPresent)"
+    Write-Host "maxGlassWaterMaterialHits=$($logProof.counts.maxGlassWaterMaterialHits)"
+    Write-Host "opaqueMaterialHitPresent=$($logProof.markers.opaqueMaterialHitPresent)"
+    Write-Host "maxOpaqueMaterialHits=$($logProof.counts.maxOpaqueMaterialHits)"
+    Write-Host "materialIdConsistencyPresent=$($logProof.markers.materialIdConsistencyPresent)"
+    Write-Host "materialLookupReadyPresent=$($logProof.markers.materialLookupReadyPresent)"
+    Write-Host "maskBitsReadyPresent=$($logProof.markers.maskBitsReadyPresent)"
+    Write-Host "maskBitsSourcePresent=$($logProof.markers.maskBitsSourcePresent)"
+    Write-Host "emptySectionSkipSafePresent=$($logProof.markers.emptySectionSkipSafePresent)"
+    Write-Host "traversalBackendPresent=$($logProof.markers.traversalBackendPresent)"
+    Write-Host "realGpuTraversalBoundaryPresent=$($logProof.markers.realGpuTraversalBoundaryPresent)"
     Write-Host "blasStatusPresent=$($logProof.markers.blasStatusPresent)"
     Write-Host "tlasStatusPresent=$($logProof.markers.tlasStatusPresent)"
     Write-Host "fallbackStatusPresent=$($logProof.markers.fallbackStatusPresent)"
+    Write-Host "hardwareRtExecutionPresent=$($logProof.markers.hardwareRtExecutionPresent)"
+    Write-Host "hardwareRtExecutionProvenTrue=$($logProof.markers.hardwareRtExecutionProvenTrue)"
+    Write-Host "hardwareRtExecutionProvenFalse=$($logProof.markers.hardwareRtExecutionProvenFalse)"
+    Write-Host "hardwareRtFallbackPresent=$($logProof.markers.hardwareRtFallbackPresent)"
     Write-Host "hybridVoxelHitPresent=$($logProof.markers.hybridVoxelHitPresent)"
     Write-Host "hybridRtHitPresent=$($logProof.markers.hybridRtHitPresent)"
     Write-Host "hybridScreenSpaceHitPresent=$($logProof.markers.hybridScreenSpaceHitPresent)"
+    Write-Host "entityMovementPresent=$($logProof.markers.entityMovementPresent)"
+    Write-Host "chunkChurnPresent=$($logProof.markers.chunkChurnPresent)"
     Write-Host "boundaryLabelPresent=$($logProof.markers.boundaryLabelPresent)"
     Write-Host "invalidTracingValuesPresent=$($logProof.markers.invalidTracingValuesPresent)"
+    Write-Host "gpuTraversalOverclaimPresent=$($logProof.markers.gpuTraversalOverclaimPresent)"
+    Write-Host "hardwareRtOverclaimPresent=$($logProof.markers.hardwareRtOverclaimPresent)"
     Write-Host "proofMarkerPresent=$($logProof.markers.proofMarkerPresent)"
     Write-Host "temporaryDirectLightSourcePresent=$($logProof.markers.temporaryDirectLightSourcePresent)"
     Write-Host "nativeErrorPresent=$($logProof.markers.nativeErrorPresent)"

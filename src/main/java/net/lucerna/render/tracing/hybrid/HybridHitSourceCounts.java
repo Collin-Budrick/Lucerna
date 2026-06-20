@@ -69,12 +69,23 @@ public record HybridHitSourceCounts(
         return this.screenSpaceHits + this.voxelHits + this.hardwareRtHits;
     }
 
+    public int availableSurfaceHits() {
+        return Math.max(0, this.surfaceHits() - this.unavailableVoxelHits - this.unavailableHardwareRtHits);
+    }
+
+    public int fallbackHits() {
+        return this.skyFallbacks + this.misses;
+    }
+
     public String compactLabel() {
         return "screen=" + this.screenSpaceHits
                 + ",voxel=" + this.voxelHits
                 + ",rt=" + this.hardwareRtHits
+                + ",surface=" + this.surfaceHits()
+                + ",availableSurface=" + this.availableSurfaceHits()
                 + ",sky=" + this.skyFallbacks
                 + ",miss=" + this.misses
+                + ",fallback=" + this.fallbackHits()
                 + ",voxelUnavailable=" + this.unavailableVoxelHits
                 + ",rtUnavailable=" + this.unavailableHardwareRtHits;
     }

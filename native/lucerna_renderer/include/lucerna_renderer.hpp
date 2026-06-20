@@ -341,12 +341,19 @@ struct NativeVirtualChunkGeometryTelemetry {
     double traversal_average_steps = 0.0;
     std::uint64_t traversal_skipped_sections = 0;
     std::uint64_t traversal_material_hit_count = 0;
+    std::uint64_t traversal_known_scene_wall_hit_count = 0;
+    std::uint64_t traversal_open_sky_miss_count = 0;
+    std::uint64_t traversal_glass_water_material_hit_count = 0;
+    std::uint64_t traversal_opaque_material_hit_count = 0;
+    std::uint64_t traversal_empty_section_skip_safety_count = 0;
     std::uint64_t traversal_occupancy_mask_sections = 0;
     std::uint64_t traversal_occupancy_mask_words = 0;
     std::uint64_t traversal_occupancy_mask_bits = 0;
     std::uint64_t traversal_palette_entry_count = 0;
     std::uint64_t traversal_fallback_sections = 0;
     std::uint64_t traversal_generation_counter = 0;
+    bool traversal_mask_bits_ready = false;
+    bool traversal_material_lookup_ready = false;
     bool gpu_culling_executed = false;
     bool gpu_culling_prerequisites_ready = false;
     bool gpu_frustum_culling_ready = false;
@@ -365,6 +372,9 @@ struct NativeVirtualChunkGeometryTelemetry {
     std::string traversal_backend;
     std::string traversal_boundary;
     std::string traversal_material_hit_source;
+    std::string traversal_mask_bit_source;
+    std::string traversal_material_lookup_source;
+    std::string traversal_blocker_reason;
 };
 
 struct NativeGBufferStagingTelemetry {

@@ -33,6 +33,19 @@ public record Round10VoxelOccupancyMaskSummary(
         return this.maskBackedSectionCount > 0 && this.maskWordCount > 0;
     }
 
+    public boolean maskBitsReady() {
+        return this.hasMaskPayload() && this.maskBitCount > 0;
+    }
+
+    public String maskBitsSource() {
+        if (this.maskBitsReady()) {
+            return this.requiresFallbackTraversal()
+                    ? "partial_section_snapshot_occupancy_masks"
+                    : "section_snapshot_occupancy_masks";
+        }
+        return "not_uploaded";
+    }
+
     public boolean requiresFallbackTraversal() {
         return this.missingMaskSectionCount > 0;
     }

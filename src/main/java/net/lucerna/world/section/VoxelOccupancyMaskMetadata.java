@@ -7,13 +7,34 @@ public record VoxelOccupancyMaskMetadata(
         int wordOffset,
         int wordCount,
         int bitCount,
-        long generation
+        long generation,
+        boolean maskBitsReady,
+        VoxelOccupancyMaskSource source
 ) {
     public static final int BITS_PER_WORD = Long.SIZE;
     public static final int SECTION_MASK_WORD_COUNT = ChunkSectionOrigin.SECTION_VOLUME / BITS_PER_WORD;
 
+    public VoxelOccupancyMaskMetadata(
+            VoxelOccupancyBitOrder bitOrder,
+            int wordOffset,
+            int wordCount,
+            int bitCount,
+            long generation
+    ) {
+        this(
+                bitOrder,
+                wordOffset,
+                wordCount,
+                bitCount,
+                generation,
+                false,
+                wordCount > 0 && bitCount > 0 ? VoxelOccupancyMaskSource.METADATA_ONLY : VoxelOccupancyMaskSource.NONE
+        );
+    }
+
     public VoxelOccupancyMaskMetadata {
         Objects.requireNonNull(bitOrder, "bitOrder");
+        Objects.requireNonNull(source, "source");
         if (wordOffset < 0) {
             throw new IllegalArgumentException("wordOffset must be non-negative");
         }
@@ -29,6 +50,12 @@ public record VoxelOccupancyMaskMetadata(
         if (generation < 0) {
             throw new IllegalArgumentException("generation must be non-negative");
         }
+        if (maskBitsReady && (wordCount == 0 || bitCount == 0)) {
+            throw new IllegalArgumentException("maskBitsReady requires non-empty mask storage metadata");
+        }
+        if (!maskBitsReady && source != VoxelOccupancyMaskSource.NONE && source != VoxelOccupancyMaskSource.METADATA_ONLY) {
+            throw new IllegalArgumentException("non-ready mask bits cannot claim a concrete scan/upload source");
+        }
     }
 
     public static VoxelOccupancyMaskMetadata empty() {
@@ -41,7 +68,9 @@ public record VoxelOccupancyMaskMetadata(
                 wordOffset,
                 SECTION_MASK_WORD_COUNT,
                 ChunkSectionOrigin.SECTION_VOLUME,
-                generation
+                generation,
+                true,
+                VoxelOccupancyMaskSource.JAVA_SECTION_SCAN
         );
     }
 
@@ -51,5 +80,13 @@ public record VoxelOccupancyMaskMetadata(
 
     public boolean hasMask() {
         return this.wordCount > 0;
+    }
+
+    public boolean readyForTraversal() {
+        return this.maskBitsReady;
+    }
+
+    public boolean metadataOnly() {
+        return this.source.metadataOnly();
     }
 }

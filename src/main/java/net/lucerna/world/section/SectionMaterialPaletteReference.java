@@ -6,8 +6,20 @@ import java.util.Objects;
 public record SectionMaterialPaletteReference(
         long materialGeneration,
         int paletteOffset,
-        List<Integer> materialIds
+        List<Integer> materialIds,
+        boolean materialLookupReady,
+        boolean opaqueFlagsReady,
+        boolean glassFlagsReady,
+        boolean waterFlagsReady
 ) {
+    public SectionMaterialPaletteReference(
+            long materialGeneration,
+            int paletteOffset,
+            List<Integer> materialIds
+    ) {
+        this(materialGeneration, paletteOffset, materialIds, !materialIds.isEmpty(), false, false, false);
+    }
+
     public SectionMaterialPaletteReference {
         Objects.requireNonNull(materialIds, "materialIds");
         materialIds = List.copyOf(materialIds);
@@ -23,6 +35,9 @@ public record SectionMaterialPaletteReference(
                 throw new IllegalArgumentException("materialIds must contain positive ids");
             }
         }
+        if (materialLookupReady && materialIds.isEmpty()) {
+            throw new IllegalArgumentException("materialLookupReady requires at least one material id");
+        }
     }
 
     public static SectionMaterialPaletteReference empty() {
@@ -35,6 +50,10 @@ public record SectionMaterialPaletteReference(
 
     public boolean hasPalette() {
         return !this.materialIds.isEmpty();
+    }
+
+    public boolean readyForMaterialLookup() {
+        return this.materialLookupReady;
     }
 
     public int[] materialIdArray() {
