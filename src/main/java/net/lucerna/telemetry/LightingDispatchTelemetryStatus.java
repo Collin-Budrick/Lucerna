@@ -61,7 +61,15 @@ public record LightingDispatchTelemetryStatus(
                     + "gpu_denoise_output_material_ready|shader_generated_output|"
                     + "shader_denoise_generated_output|real_shader_generated_output|"
                     + "real_shader_denoise_generated_output|real_denoise_shader_generated_output|"
-                    + "gpu_denoise_generated_output|cpu_readback_fallback|cpu_readback_fallback_used|"
+                    + "gpu_denoise_generated_output|public_mojang_shader_visual_output_attempted|"
+                    + "public_mojang_shader_output_attempted|public_mojang_visual_output_attempted|"
+                    + "public_mojang_denoise_visual_output_attempted|shader_visual_output_attempted|"
+                    + "public_mojang_shader_visual_output_submitted|public_mojang_shader_output_submitted|"
+                    + "public_mojang_visual_output_submitted|public_mojang_denoise_visual_output_submitted|"
+                    + "shader_visual_output_submitted|public_mojang_shader_visual_output_ready|"
+                    + "public_mojang_shader_output_ready|public_mojang_visual_output_ready|"
+                    + "public_mojang_denoise_visual_output_ready|shader_visual_output_ready|"
+                    + "cpu_readback_fallback|cpu_readback_fallback_used|"
                     + "cpu_denoise_readback_fallback|shader_denoise_cpu_readback_fallback|"
                     + "denoise_cpu_readback_fallback|shader_denoise_blockers|shader_denoise_blocker|"
                     + "shader_blockers|shader_blocker|denoise_blockers|output_blockers|blockers|blocker|"
@@ -96,7 +104,12 @@ public record LightingDispatchTelemetryStatus(
                     + "gi_physical_output_checksum|native_physical_output_checksum|physical_scene_linked|"
                     + "physical_gi_scene_linked|scene_linked_physical|gi_scene_linked|"
                     + "physical_surface_contribution|physical_gi_surface_contribution|"
-                    + "surface_physical_contribution|physical_contribution|preview_fallback_contribution|"
+                    + "surface_physical_contribution|physical_contribution|localized_emissive_spill|"
+                    + "localized_spill|emissive_spill_localized|emissive_spill|hue_shifted_bounce|"
+                    + "colored_bounce_hue_shift|colored_bounce|bounce_hue_shifted|"
+                    + "contact_shadow_darkening|contact_shadows|local_occlusion_darkening|local_occlusion|"
+                    + "final_physical_composite_ready|physical_final_composite_ready|"
+                    + "final_composite_physical_ready|final_physical_composite|preview_fallback_contribution|"
                     + "physical_preview_fallback_contribution|cpu_preview_fallback_contribution|"
                     + "metadata_only_proof_rejected|metadata_preview_rejected|metadata_only_rejected|"
                     + "focus_window_capture_rejected|focus_window_rejected|focus_window_only_rejected|"
@@ -104,9 +117,16 @@ public record LightingDispatchTelemetryStatus(
                     + "temporary_direct_substitution_rejected|temporary_direct_light_substitution_rejected|"
                     + "temporary_direct_source_rejected|direct_light_substitution_rejected|"
                     + "rectangular_washout_rejected|anti_rectangular_washout_passed|washout_rejected|"
+                    + "wrong_window_screenshot_rejected|wrong_window_capture_rejected|"
+                    + "window_screenshot_rejected|wrong_provenance_rejected|blank_screenshot_rejected|"
+                    + "blank_surface_rejected|blank_capture_rejected|blank_frame_rejected|"
                     + "physical_scene_marker|physical_gi_scene_marker|scene_link_marker|"
                     + "physical_scene_evidence_marker|physical_output_marker|physical_gi_output_marker|"
-                    + "physical_output_evidence_marker|proof_boundary_marker|physical_proof_boundary_marker|"
+                    + "physical_output_evidence_marker|emissive_spill_marker|localized_emissive_spill_marker|"
+                    + "spill_marker|colored_bounce_marker|hue_shifted_bounce_marker|bounce_marker|"
+                    + "contact_shadow_marker|contact_shadow_darkening_marker|local_occlusion_marker|"
+                    + "final_physical_composite_marker|physical_final_composite_marker|"
+                    + "physical_composite_marker|proof_boundary_marker|physical_proof_boundary_marker|"
                     + "physical_gi_proof_boundary|gi_proof_boundary_marker|"
                     + "cache|last_cache|cache_counts|cache_reads|cache_writes|cache_read_count|cache_write_count|"
                     + "last_flags|flags|stage_flags|placeholder|metadata_only|validated|valid|debug_overlay|debug|"
@@ -436,6 +456,9 @@ public record LightingDispatchTelemetryStatus(
         copyMissing(target, executionFields, "shader_denoise_output_image_blocker", "shader_output_blocker_reason");
         copyMissing(target, executionFields, "shader_denoise_output_material_ready", "shader_output_material_ready");
         copyMissing(target, executionFields, "shader_denoise_output_shader_generated", "shader_generated_output");
+        copyMissing(target, executionFields, "public_mojang_shader_visual_output_attempted", "public_mojang_shader_visual_output_attempted");
+        copyMissing(target, executionFields, "public_mojang_shader_visual_output_submitted", "public_mojang_shader_visual_output_submitted");
+        copyMissing(target, executionFields, "public_mojang_shader_visual_output_ready", "public_mojang_shader_visual_output_ready");
         copyMissing(target, executionFields, "real_denoise_shader_output", "real_shader_denoise_output");
         copyMissing(target, executionFields, "real_shader_denoise_output_ready", "real_shader_denoise_output_ready");
         copyMissing(target, executionFields, "cpu_fallback_quality_metrics", "cpu_readback_fallback");
@@ -939,6 +962,15 @@ public record LightingDispatchTelemetryStatus(
             case "shader_denoise_generated_output", "real_shader_generated_output",
                     "real_shader_denoise_generated_output", "real_denoise_shader_generated_output",
                     "gpu_denoise_generated_output" -> "shader_generated_output";
+            case "public_mojang_shader_output_attempted", "public_mojang_visual_output_attempted",
+                    "public_mojang_denoise_visual_output_attempted",
+                    "shader_visual_output_attempted" -> "public_mojang_shader_visual_output_attempted";
+            case "public_mojang_shader_output_submitted", "public_mojang_visual_output_submitted",
+                    "public_mojang_denoise_visual_output_submitted",
+                    "shader_visual_output_submitted" -> "public_mojang_shader_visual_output_submitted";
+            case "public_mojang_shader_output_ready", "public_mojang_visual_output_ready",
+                    "public_mojang_denoise_visual_output_ready",
+                    "shader_visual_output_ready" -> "public_mojang_shader_visual_output_ready";
             case "cpu_readback_fallback_used", "cpu_denoise_readback_fallback",
                     "shader_denoise_cpu_readback_fallback",
                     "denoise_cpu_readback_fallback" -> "cpu_readback_fallback";
@@ -984,6 +1016,14 @@ public record LightingDispatchTelemetryStatus(
                     "gi_scene_linked" -> "physical_scene_linked";
             case "physical_gi_surface_contribution", "surface_physical_contribution",
                     "physical_contribution" -> "physical_surface_contribution";
+            case "localized_spill", "emissive_spill_localized",
+                    "emissive_spill" -> "localized_emissive_spill";
+            case "colored_bounce_hue_shift", "colored_bounce",
+                    "bounce_hue_shifted" -> "hue_shifted_bounce";
+            case "contact_shadows", "local_occlusion_darkening",
+                    "local_occlusion" -> "contact_shadow_darkening";
+            case "physical_final_composite_ready", "final_composite_physical_ready",
+                    "final_physical_composite" -> "final_physical_composite_ready";
             case "physical_preview_fallback_contribution",
                     "cpu_preview_fallback_contribution" -> "preview_fallback_contribution";
             case "metadata_preview_rejected", "metadata_only_rejected" -> "metadata_only_proof_rejected";
@@ -992,9 +1032,18 @@ public record LightingDispatchTelemetryStatus(
             case "temporary_direct_light_substitution_rejected", "temporary_direct_source_rejected",
                     "direct_light_substitution_rejected" -> "temporary_direct_substitution_rejected";
             case "anti_rectangular_washout_passed", "washout_rejected" -> "rectangular_washout_rejected";
+            case "wrong_window_capture_rejected", "window_screenshot_rejected",
+                    "wrong_provenance_rejected" -> "wrong_window_screenshot_rejected";
+            case "blank_surface_rejected", "blank_capture_rejected",
+                    "blank_frame_rejected" -> "blank_screenshot_rejected";
             case "physical_gi_scene_marker", "scene_link_marker",
                     "physical_scene_evidence_marker" -> "physical_scene_marker";
             case "physical_gi_output_marker", "physical_output_evidence_marker" -> "physical_output_marker";
+            case "localized_emissive_spill_marker", "spill_marker" -> "emissive_spill_marker";
+            case "hue_shifted_bounce_marker", "bounce_marker" -> "colored_bounce_marker";
+            case "contact_shadow_darkening_marker", "local_occlusion_marker" -> "contact_shadow_marker";
+            case "physical_final_composite_marker",
+                    "physical_composite_marker" -> "final_physical_composite_marker";
             case "physical_proof_boundary_marker", "physical_gi_proof_boundary",
                     "gi_proof_boundary_marker" -> "proof_boundary_marker";
             case "cache", "cache_counts" -> "last_cache";

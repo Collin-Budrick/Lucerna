@@ -1,5 +1,9 @@
 package net.lucerna.render.frame;
 
+import net.lucerna.render.gbuffer.GBufferSceneDataAttachment;
+import net.lucerna.render.gbuffer.GBufferWriteIntent;
+import net.lucerna.render.pass.LucernaFramePassTarget;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -97,6 +101,14 @@ public record LucernaFrameConstants(
             missing.add("renderFlags");
         }
         return List.copyOf(missing);
+    }
+
+    public SceneFrameDataReadiness sceneFrameDataReadiness(
+            GBufferWriteIntent writeIntent,
+            LucernaFramePassTarget frameTarget,
+            List<GBufferSceneDataAttachment> frameDataAttachments
+    ) {
+        return SceneFrameDataReadiness.from(this, writeIntent, frameTarget, frameDataAttachments);
     }
 
     private static float clampTickDelta(float value) {

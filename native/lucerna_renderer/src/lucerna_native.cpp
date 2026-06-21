@@ -1229,7 +1229,7 @@ Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeDirectLightingCpuOutputP
     std::lock_guard lock(g_renderer_mutex);
     try {
         const auto rgba8 = initialized_renderer().direct_lighting_cpu_output_preview_rgba8();
-        constexpr std::size_t kMaxDirectLightingPreviewRgba8Bytes = 64 * 36 * 4;
+        constexpr std::size_t kMaxDirectLightingPreviewRgba8Bytes = 256 * 144 * 4;
         if (rgba8.size() > kMaxDirectLightingPreviewRgba8Bytes || rgba8.size() % 4 != 0) {
             set_last_error("directLightingCpuOutputPreviewRgba8", "native direct-light RGBA8 preview payload size is invalid");
             return env->NewByteArray(0);

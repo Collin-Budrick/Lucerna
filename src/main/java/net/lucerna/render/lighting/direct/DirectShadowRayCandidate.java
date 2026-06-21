@@ -90,7 +90,7 @@ public record DirectShadowRayCandidate(
                         DEFAULT_MIN_SHADOW_DISTANCE,
                         distance
                 ),
-                light.priority(),
+                light.nearbySurfaceContribution(distance),
                 light.generation(),
                 sampleIndex
         );

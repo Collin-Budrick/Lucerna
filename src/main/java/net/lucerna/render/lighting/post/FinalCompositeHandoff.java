@@ -106,8 +106,19 @@ public record FinalCompositeHandoff(
                 + ",denoisedSourceIdentity=" + this.denoisedSourceIdentity
                 + ",shaderDenoiseOutputSource=" + this.shaderDenoiseOutputSource
                 + ",shaderDenoiseOutputBlocker=" + this.shaderDenoiseOutputBlocker
+                + ",publicMojangShaderGeneratedVisualOutput=resolved-by-submitted-draw"
+                + ",finalSourceIdentity="
+                + finalSourceIdentitySummary(
+                this.usesDirectLighting,
+                this.usesRawDiffuseGi,
+                this.usesDenoisedDiffuse,
+                this.shaderDenoiseOutputSource,
+                this.shaderDenoiseOutputBlocker
+        )
                 + ",finalBlend=" + sourceState(this.blendsDirectRawAndDenoisedSources())
-                + ",boundary=planning-only; CPU/readback denoised GI, visual shader denoise, candidate image telemetry, and true shader-generated output must remain source-separated until native status and controller screenshots prove them";
+                + ",geometryAwareFinalComposite=directSpill+coloredBounceGi+contactShadow+shaderDenoisedGi/source-shaped-by-surface-material-metadata"
+                + ",rejects=focus-window-only,rectangular-washout,proof-marker,metadata-only"
+                + ",boundary=planning-only; CPU/readback denoised GI, public Mojang visual-shader output, candidate image telemetry, and true shader-generated denoise output must remain source-separated until submission/native status and controller screenshots prove them";
     }
 
     public boolean readyForWorldColorHandoff() {
@@ -142,7 +153,17 @@ public record FinalCompositeHandoff(
                 + ",denoisedSourceIdentity=" + denoisedSourceIdentity(denoisePlan)
                 + ",shaderDenoiseOutputSource=" + shaderDenoiseOutputSource(denoisePlan)
                 + ",shaderDenoiseOutputBlocker=" + shaderDenoiseOutputBlocker(denoisePlan)
-                + ",qualityBoundary=denoise-plan-ready-is-not-proof-of-CPU-output-readback-real-shader-output-or-denoise-quality";
+                + ",publicMojangShaderGeneratedVisualOutput=requires-final-composite-submitted-draw"
+                + ",finalSourceIdentity="
+                + finalSourceIdentitySummary(
+                ready && denoisePlan.inputs().directLightingAvailable(),
+                ready && denoisePlan.rawDiffuseGiInputAvailable(),
+                ready && denoisePlan.writesDiffuseOutput(),
+                shaderDenoiseOutputSource(denoisePlan),
+                shaderDenoiseOutputBlocker(denoisePlan)
+        )
+                + ",geometryAwareFinalComposite=directSpill+coloredBounceGi+contactShadow+shaderDenoisedGi/source-shaped-by-surface-material-metadata"
+                + ",qualityBoundary=denoise-plan-ready-is-not-proof-of-CPU-output-readback-public-Mojang-draw-real-shader-output-or-denoise-quality";
     }
 
     private static String sourceState(boolean available) {
@@ -159,5 +180,28 @@ public record FinalCompositeHandoff(
 
     private static String shaderDenoiseOutputBlocker(DenoisePassPlan denoisePlan) {
         return denoisePlan.shaderDenoiseOutputBlockerForFinalComposite();
+    }
+
+    private static String finalSourceIdentitySummary(
+            boolean directReady,
+            boolean rawGiReady,
+            boolean denoisedReady,
+            String shaderDenoiseOutputSource,
+            String shaderDenoiseOutputBlocker
+    ) {
+        boolean cpuFallback = sourceMentionsCpuFallback(shaderDenoiseOutputSource)
+                || sourceMentionsCpuFallback(shaderDenoiseOutputBlocker);
+        return "directSpill=" + sourceState(directReady)
+                + ",coloredBounceGi=" + sourceState(rawGiReady || denoisedReady)
+                + ",contactShadow=" + sourceState(directReady || rawGiReady || denoisedReady)
+                + ",shaderDenoisedGi=" + sourceState(denoisedReady)
+                + ",cpuFallback=" + (cpuFallback ? "present" : "absent-or-not-reported");
+    }
+
+    private static boolean sourceMentionsCpuFallback(String value) {
+        String normalized = normalizeDescription(value).toLowerCase(java.util.Locale.ROOT);
+        return normalized.contains("cpu")
+                || normalized.contains("readback")
+                || normalized.contains("fallback");
     }
 }

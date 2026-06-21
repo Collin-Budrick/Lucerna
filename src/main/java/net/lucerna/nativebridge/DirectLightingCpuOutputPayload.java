@@ -129,6 +129,8 @@ public record DirectLightingCpuOutputPayload(
                 + " peakChannel=" + this.peakChannel()
                 + " generation=" + this.snapshot.dispatchGeneration()
                 + " checksum=" + this.snapshot.outputChecksum()
+                + " directSurfaceSpillReady=" + this.snapshot.directSurfaceSpillOutputReady()
+                + " directSurfaceSpillReason=" + this.snapshot.directSurfaceSpillReadinessReason()
                 + " readinessReason=" + this.previewReadinessReason()
                 + " reason=" + this.reason;
     }

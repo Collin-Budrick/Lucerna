@@ -52,6 +52,7 @@ import net.lucerna.render.pass.LucernaFramePassStatus;
 import net.lucerna.render.pass.LucernaFramePassTarget;
 import net.lucerna.render.preview.FinalCompositeModeStatus;
 import net.lucerna.render.preview.PublicMojangFinalCompositeSubmissionResult;
+import net.lucerna.render.preview.ProofVisualMode;
 import net.lucerna.render.preview.Round6DiffuseGiPreviewCompositeState;
 import net.lucerna.render.preview.Round8AdaptiveDebugStatus;
 import net.lucerna.render.voxel.VoxelRay;
@@ -375,6 +376,23 @@ public final class LucernaController {
                     target,
                     denoisedGiPayload
             );
+        }
+        if (modeStatus.finalCompositeVisualMode()
+                && !ProofVisualMode.experimentalVisualStackAllowed()
+                && !ProofVisualMode.cpuDirectTextureCompositeAllowed()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    false,
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.NOT_REQUESTED,
+                    "cleanGameplayComposite=true experimentalVisualStack=false cpuDirectTextureComposite=false "
+                            + "screenSpaceBlobComposite=false worldSpaceEmissiveSpillPath=true proofMarker=false "
+                            + "focusWindowOnly=false metadataOnly=false reason=normal gameplay bypasses the rejected "
+                            + "CPU direct-light texture composite; world-space emissive block-face spill owns the "
+                            + "clean visual milestone."
+            );
+        }
+        if (modeStatus.finalCompositeVisualMode() && !ProofVisualMode.experimentalVisualStackAllowed()) {
+            return RenderThreadPreviewTargetFactory.submitFinalCompositePublicDraw(target, directOutputPayload);
         }
         if (modeStatus.finalCompositeVisualMode() && denoisedGiPayload != null && denoisedGiPayload.readyForPreviewDraw()) {
             return RenderThreadPreviewTargetFactory.submitRound7FinalCompositePublicDraw(

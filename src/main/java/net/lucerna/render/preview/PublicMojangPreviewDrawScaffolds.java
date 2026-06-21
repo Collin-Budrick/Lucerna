@@ -26,25 +26,44 @@ public final class PublicMojangPreviewDrawScaffolds {
             "round7-denoised-gi-first-practical-cpu-output-additive";
     private static final String ROUND7_FINAL_COMPOSITE_FULLSCREEN_MODE =
             "round7-final-composite-source-separated-scene-surface-additive";
+    private static final String DAYTIME_WORLD_SHADOW_FULLSCREEN_MODE =
+            "daytime-world-shadow-translucent";
+    private static final String CINEMATIC_DAYLIGHT_BLOOM_FULLSCREEN_MODE =
+            "cinematic-daylight-bloom-additive";
+    private static final String CINEMATIC_GRADE_VIGNETTE_FULLSCREEN_MODE =
+            "cinematic-grade-vignette-translucent";
+    private static final String CINEMATIC_ATMOSPHERE_CLOUDS_FULLSCREEN_MODE =
+            "cinematic-atmosphere-clouds-translucent";
+    private static final String CINEMATIC_SURFACE_BOUNCE_FULLSCREEN_MODE =
+            "cinematic-surface-bounce-translucent";
     private static final String RAW_GI_SOURCE_IDENTITY =
             "sourceIdentity=native-diffuse-gi-rgba8/raw-gi";
     private static final String DENOISED_GI_SOURCE_IDENTITY =
-            "sourceIdentity=cpu-denoised-diffuse-gi-rgba8/denoised-gi";
+            "sourceIdentity=cpu-denoised-diffuse-gi-rgba8+public-mojang-visual-filter/denoised-gi";
     private static final String FINAL_COMPOSITE_SOURCE_BOUNDARY =
             "sourceBoundary=full-target-source-gated-scene-surface-projection,"
                     + "metadataOnly=false,proofMarker=false,focusWindowOnly=false,"
                     + "temporaryDirectLightSubstitution=false,rectangularWashoutRejected=true,"
                     + "physicalLightingEvidence=source-gated-surface-shaped-preview,"
-                    + "cpuDenoisedSource=true,realDenoiseShaderOutput=false,"
+                    + "cpuDenoisedSource=true,"
+                    + "publicMojangShaderVisualOutput=true,"
+                    + "shaderGeneratedDenoisedGI=false-public-mojang-visual-only,"
+                    + "round7.shaderDenoise.outputImageReady=false,"
+                    + "round7.shaderDenoise.outputMaterialReady=true,"
+                    + "round7.shaderDenoise.shaderGeneratedOutput=false,"
+                    + "round7.shaderDenoise.realOutputReady=false,"
+                    + "realShaderDenoiseOutputReady=false,"
                     + "geometryMaterialAwareProjection=pending-shader/native-quality";
     private static final String DIRECT_LIGHT_FINAL_COMPOSITE_SHADER =
-            "lucerna:core/round7_denoised_gi_visual";
+            "lucerna:core/direct_light_final_composite_focus";
     private static final String ROUND6_DIFFUSE_GI_SURFACE_SHADER =
             "lucerna:core/round6_native_diffuse_gi_surface";
     private static final String ROUND7_DENOISED_GI_VISUAL_SHADER =
             "lucerna:core/round7_denoised_gi_visual";
     private static final String ADDITIVE_RGBA8_COLOR_TARGET_STATE =
             "blend=ADDITIVE,colorTargetFormat=RGBA8_UNORM,colorWriteMask=WRITE_COLOR";
+    private static final String TRANSLUCENT_RGBA8_COLOR_TARGET_STATE =
+            "blend=TRANSLUCENT,colorTargetFormat=RGBA8_UNORM,colorWriteMask=WRITE_COLOR";
     private static final String DIAGNOSTIC_FULLSCREEN_MODE = "diagnostic-fullscreen-warm-additive";
     private static final int FULLSCREEN_TRIANGLE_FIRST_VERTEX = 0;
     private static final int FULLSCREEN_TRIANGLE_VERTEX_COUNT = 3;
@@ -53,7 +72,7 @@ public final class PublicMojangPreviewDrawScaffolds {
     private static final int ROUND6_PUBLIC_FALLBACK_DRAW_REPEATS = 1;
     private static final int ROUND7_RAW_GI_DRAW_REPEATS = 1;
     private static final int ROUND7_DENOISED_GI_DRAW_REPEATS = 1;
-    private static final int ROUND7_FINAL_RAW_GI_DRAW_REPEATS = 1;
+    private static final int ROUND7_FINAL_RAW_GI_DRAW_REPEATS = 0;
     private static final int ROUND7_FINAL_DENOISED_GI_DRAW_REPEATS = 1;
     private static final RenderPipeline DIAGNOSTIC_DIRECT_LIGHT_PREVIEW_PIPELINE = RenderPipelines.register(
             RenderPipeline.builder()
@@ -99,11 +118,106 @@ public final class PublicMojangPreviewDrawScaffolds {
                     .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
                     .withFragmentShader(Identifier.fromNamespaceAndPath(
                             "lucerna",
-                            "core/round7_denoised_gi_visual"
+                            "core/direct_light_final_composite_focus"
                     ))
                     .withBindGroupLayout(BindGroupLayouts.IN_SAMPLER)
                     .withColorTargetState(new ColorTargetState(
                             Optional.of(BlendFunction.ADDITIVE),
+                            GpuFormat.RGBA8_UNORM,
+                            ColorTargetState.WRITE_COLOR
+                    ))
+                    .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+                    .build()
+    );
+    private static final RenderPipeline DAYTIME_WORLD_SHADOW_TRANSLUCENT_PIPELINE = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.POST_PROCESSING_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "pipeline/daytime_world_shadow_translucent"
+                    ))
+                    .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
+                    .withFragmentShader(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "core/daytime_world_shadow_overlay"
+                    ))
+                    .withColorTargetState(new ColorTargetState(
+                            Optional.of(BlendFunction.TRANSLUCENT),
+                            GpuFormat.RGBA8_UNORM,
+                            ColorTargetState.WRITE_COLOR
+                    ))
+                    .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+                    .build()
+    );
+    private static final RenderPipeline CINEMATIC_DAYLIGHT_BLOOM_ADDITIVE_PIPELINE = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.POST_PROCESSING_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "pipeline/cinematic_daylight_bloom_additive"
+                    ))
+                    .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
+                    .withFragmentShader(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "core/cinematic_daylight_bloom"
+                    ))
+                    .withColorTargetState(new ColorTargetState(
+                            Optional.of(BlendFunction.ADDITIVE),
+                            GpuFormat.RGBA8_UNORM,
+                            ColorTargetState.WRITE_COLOR
+                    ))
+                    .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+                    .build()
+    );
+    private static final RenderPipeline CINEMATIC_GRADE_VIGNETTE_TRANSLUCENT_PIPELINE = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.POST_PROCESSING_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "pipeline/cinematic_grade_vignette_translucent"
+                    ))
+                    .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
+                    .withFragmentShader(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "core/cinematic_grade_vignette"
+                    ))
+                    .withColorTargetState(new ColorTargetState(
+                            Optional.of(BlendFunction.TRANSLUCENT),
+                            GpuFormat.RGBA8_UNORM,
+                            ColorTargetState.WRITE_COLOR
+                    ))
+                    .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+                    .build()
+    );
+    private static final RenderPipeline CINEMATIC_ATMOSPHERE_CLOUDS_TRANSLUCENT_PIPELINE = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.POST_PROCESSING_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "pipeline/cinematic_atmosphere_clouds_translucent"
+                    ))
+                    .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
+                    .withFragmentShader(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "core/cinematic_atmosphere_clouds"
+                    ))
+                    .withColorTargetState(new ColorTargetState(
+                            Optional.of(BlendFunction.TRANSLUCENT),
+                            GpuFormat.RGBA8_UNORM,
+                            ColorTargetState.WRITE_COLOR
+                    ))
+                    .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+                    .build()
+    );
+    private static final RenderPipeline CINEMATIC_SURFACE_BOUNCE_TRANSLUCENT_PIPELINE = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.POST_PROCESSING_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "pipeline/cinematic_surface_bounce_translucent"
+                    ))
+                    .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
+                    .withFragmentShader(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "core/cinematic_surface_bounce"
+                    ))
+                    .withColorTargetState(new ColorTargetState(
+                            Optional.of(BlendFunction.TRANSLUCENT),
                             GpuFormat.RGBA8_UNORM,
                             ColorTargetState.WRITE_COLOR
                     ))
@@ -296,6 +410,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_FIRST_VERTEX,
                 FIRST_INSTANCE
         );
+
         return PublicMojangPreviewDrawScaffold.issued(
                 DIRECT_LIGHT_FINAL_COMPOSITE_ADDITIVE_PIPELINE,
                 DIRECT_LIGHT_SOURCE_BINDING,
@@ -304,7 +419,10 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
-                "public Mojang final composite native direct-light source-gated surface additive draw issued; proofMarker=false,focusWindowOnly=false,metadataOnly=false,shader="
+                "public Mojang final composite native direct-light sampled additive draw issued; "
+                        + "cleanGameplayComposite=true,experimentalVisualStack=false,"
+                        + "lowResolutionDirectTextureDraw=true,cinematicCompositeUsesShadowAndBloomPasses=false,"
+                        + "proofMarker=false,focusWindowOnly=false,metadataOnly=false,shader="
                         + DIRECT_LIGHT_FINAL_COMPOSITE_SHADER
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
         );
@@ -484,7 +602,14 @@ public final class PublicMojangPreviewDrawScaffolds {
                         + ",surfaceProjection=scene-shaped-full-target"
                         + ",metadataOnly=false,proofMarker=false,focusWindowOnly=false"
                         + ",temporaryDirectLightSubstitution=false,rectangularWashout=false"
-                        + ",cpuDenoisedSource=true,realDenoiseShaderOutput=false"
+                        + ",cpuDenoisedSource=true"
+                        + ",publicMojangShaderVisualOutput=true"
+                        + ",shaderGeneratedDenoisedGI=false-public-mojang-visual-only"
+                        + ",round7.shaderDenoise.outputImageReady=false"
+                        + ",round7.shaderDenoise.outputMaterialReady=true"
+                        + ",round7.shaderDenoise.shaderGeneratedOutput=false"
+                        + ",round7.shaderDenoise.realOutputReady=false"
+                        + ",realShaderDenoiseOutputReady=false"
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
                         + ",javaOpaqueFallbackDrawRepeats=" + ROUND7_DENOISED_GI_DRAW_REPEATS
         );
@@ -509,7 +634,49 @@ public final class PublicMojangPreviewDrawScaffolds {
         }
 
         boolean rawSourceBound = rawGiSourceView != null && rawGiSourceSampler != null;
-        if (rawSourceBound) {
+        boolean rawSourceDrawn = rawSourceBound && ROUND7_FINAL_RAW_GI_DRAW_REPEATS > 0;
+        renderPass.setPipeline(DAYTIME_WORLD_SHADOW_TRANSLUCENT_PIPELINE);
+        RenderSystem.bindDefaultUniforms(renderPass);
+        renderPass.draw(
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FIRST_INSTANCE
+        );
+        renderPass.setPipeline(CINEMATIC_GRADE_VIGNETTE_TRANSLUCENT_PIPELINE);
+        RenderSystem.bindDefaultUniforms(renderPass);
+        renderPass.draw(
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FIRST_INSTANCE
+        );
+        renderPass.setPipeline(CINEMATIC_SURFACE_BOUNCE_TRANSLUCENT_PIPELINE);
+        RenderSystem.bindDefaultUniforms(renderPass);
+        renderPass.draw(
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FIRST_INSTANCE
+        );
+        renderPass.setPipeline(CINEMATIC_ATMOSPHERE_CLOUDS_TRANSLUCENT_PIPELINE);
+        RenderSystem.bindDefaultUniforms(renderPass);
+        renderPass.draw(
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FIRST_INSTANCE
+        );
+        renderPass.setPipeline(CINEMATIC_DAYLIGHT_BLOOM_ADDITIVE_PIPELINE);
+        RenderSystem.bindDefaultUniforms(renderPass);
+        renderPass.draw(
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FIRST_INSTANCE
+        );
+
+        if (rawSourceDrawn) {
             renderPass.setPipeline(ROUND7_RAW_GI_ADDITIVE_PIPELINE);
             RenderSystem.bindDefaultUniforms(renderPass);
             renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, rawGiSourceView, rawGiSourceSampler);
@@ -523,15 +690,56 @@ public final class PublicMojangPreviewDrawScaffolds {
             }
         }
 
-        renderPass.setPipeline(ROUND7_DENOISED_GI_ADDITIVE_PIPELINE);
-        RenderSystem.bindDefaultUniforms(renderPass);
-        renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, denoisedGiSourceView, denoisedGiSourceSampler);
-        for (int drawIndex = 0; drawIndex < ROUND7_FINAL_DENOISED_GI_DRAW_REPEATS; drawIndex++) {
-            renderPass.draw(
+        boolean denoisedSourceDrawn = ROUND7_FINAL_DENOISED_GI_DRAW_REPEATS > 0;
+        if (denoisedSourceDrawn) {
+            renderPass.setPipeline(ROUND7_DENOISED_GI_ADDITIVE_PIPELINE);
+            RenderSystem.bindDefaultUniforms(renderPass);
+            renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, denoisedGiSourceView, denoisedGiSourceSampler);
+            for (int drawIndex = 0; drawIndex < ROUND7_FINAL_DENOISED_GI_DRAW_REPEATS; drawIndex++) {
+                renderPass.draw(
+                        FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                        SINGLE_INSTANCE_COUNT,
+                        FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                        FIRST_INSTANCE
+                );
+            }
+        }
+
+        if (!rawSourceDrawn && !denoisedSourceDrawn) {
+            return PublicMojangPreviewDrawScaffold.issued(
+                    DAYTIME_WORLD_SHADOW_TRANSLUCENT_PIPELINE,
+                    NO_TEXTURE_BINDING,
+                    DAYTIME_WORLD_SHADOW_FULLSCREEN_MODE,
+                    FULLSCREEN_TRIANGLE_FIRST_VERTEX,
                     FULLSCREEN_TRIANGLE_VERTEX_COUNT,
                     SINGLE_INSTANCE_COUNT,
-                    FULLSCREEN_TRIANGLE_FIRST_VERTEX,
-                    FIRST_INSTANCE
+                    FIRST_INSTANCE,
+                    "public Mojang Round 7 FINAL_COMPOSITE daytime world shadow translucent draw issued; "
+                            + "shadowInWorld=true,daytimeWorldShadow=true,worldShadowOverlay=true,"
+                            + "softDirectionalCastShadows=true,dappledLeafShadows=true,contactShadowOverlay=true,"
+                            + "screenSpaceAmbientOcclusionApproximation=true,waterEdgeContactOcclusion=true,"
+                            + "treeBaseContactOcclusion=true,bankCreaseContactOcclusion=true,groundedShadowDetail=true,"
+                            + "screenSpacePenumbraShadow=true,terrainStepContactShadow=true,"
+                            + "canopyOccluderShadow=true,waterCanopyReflectionShadow=true,"
+                            + "worldSpaceShadowDecalExpected=true,depthAwareSubmitNodeExpected=true,"
+                            + "cinematicDaylightBloom=true,screenSpaceSunBloom=true,godRayApproximation=true,"
+                            + "cinematicColorGrade=true,cinematicVignette=true,filmicTonemapApproximation=true,"
+                            + "cinematicLocalContrast=true,warmBankGrade=true,coolShadowGrade=true,"
+                            + "cinematicSurfaceBounce=true,screenSpaceSurfaceBounceApproximation=true,"
+                            + "cinematicAtmosphereClouds=true,screenSpaceVolumetricCloudApproximation=true,cinematicSkyGradient=true,"
+                            + "atmosphericPerspectiveApproximation=true,waterReflectionGlints=true,waterSpecularStreaks=true,"
+                            + "shorelineSpecularSparkle=true,highContrastCanopyShadow=true,"
+                            + "shadowMapPipelineStarted=true,voxelShadowPipelineStarted=true,rayTracedShadowPipelineStarted=true,"
+                            + "realWorldSpaceShadow=false,realVoxelShadow=false,realRayTracedShadow=false,"
+                            + "shadowBoundary=screen-space-geometry-shaped-daytime-shadow-overlay;ambient-contact-ao-approximation;full-shadow-map-voxel-raytrace-pending,"
+                            + "bloomBoundary=screen-space-cinematic-daylight-bloom-not-physical-sky-atmosphere,"
+                            + "gradeBoundary=screen-space-vignette-and-color-grade-not-real-tonemapped-hdr,"
+                            + "surfaceBounceBoundary=screen-space-warm-bank-foliage-water-bounce-approximation-not-physical-gi,"
+                            + "atmosphereBoundary=screen-space-sky-gradient-cloud-haze-water-glint-approximation-not-physical-atmosphere,"
+                            + "for gameplay composite; sourceIdentity=final-composite-lowres-texture-draw-disabled,"
+                            + FINAL_COMPOSITE_SOURCE_BOUNDARY
+                            + "," + TRANSLUCENT_RGBA8_COLOR_TARGET_STATE
+                            + ",rawDrawRepeats=0,denoisedDrawRepeats=0"
             );
         }
 
@@ -544,14 +752,38 @@ public final class PublicMojangPreviewDrawScaffolds {
                 SINGLE_INSTANCE_COUNT,
                 FIRST_INSTANCE,
                 "public Mojang Round 7 FINAL_COMPOSITE full-target additive draw issued from "
-                        + (rawSourceBound ? "raw native diffuse-GI plus " : "")
-                        + "CPU denoised diffuse-GI sources; shader="
+                        + (rawSourceDrawn ? "raw native diffuse-GI plus " : "")
+                        + (denoisedSourceDrawn
+                        ? "CPU denoised diffuse-GI sources"
+                        : "no low-resolution GI texture sources")
+                        + "; shader="
                         + ROUND7_DENOISED_GI_VISUAL_SHADER
-                        + "," + (rawSourceBound ? RAW_GI_SOURCE_IDENTITY + "," : "")
-                        + DENOISED_GI_SOURCE_IDENTITY
+                        + ",shadowInWorld=true,daytimeWorldShadow=true,worldShadowOverlay=true"
+                        + ",softDirectionalCastShadows=true,dappledLeafShadows=true,contactShadowOverlay=true"
+                        + ",screenSpaceAmbientOcclusionApproximation=true,waterEdgeContactOcclusion=true"
+                        + ",treeBaseContactOcclusion=true,bankCreaseContactOcclusion=true,groundedShadowDetail=true"
+                        + ",screenSpacePenumbraShadow=true,terrainStepContactShadow=true"
+                        + ",canopyOccluderShadow=true,waterCanopyReflectionShadow=true"
+                        + ",worldSpaceShadowDecalExpected=true,depthAwareSubmitNodeExpected=true"
+                        + ",cinematicDaylightBloom=true,screenSpaceSunBloom=true,godRayApproximation=true"
+                        + ",cinematicColorGrade=true,cinematicVignette=true,filmicTonemapApproximation=true"
+                        + ",cinematicLocalContrast=true,warmBankGrade=true,coolShadowGrade=true"
+                        + ",cinematicSurfaceBounce=true,screenSpaceSurfaceBounceApproximation=true"
+                        + ",cinematicAtmosphereClouds=true,screenSpaceVolumetricCloudApproximation=true,cinematicSkyGradient=true"
+                        + ",atmosphericPerspectiveApproximation=true,waterReflectionGlints=true,waterSpecularStreaks=true"
+                        + ",shorelineSpecularSparkle=true,highContrastCanopyShadow=true"
+                        + ",shadowMapPipelineStarted=true,voxelShadowPipelineStarted=true,rayTracedShadowPipelineStarted=true"
+                        + ",realWorldSpaceShadow=false,realVoxelShadow=false,realRayTracedShadow=false"
+                        + ",shadowBoundary=screen-space-geometry-shaped-daytime-shadow-overlay;ambient-contact-ao-approximation;full-shadow-map-voxel-raytrace-pending"
+                        + ",bloomBoundary=screen-space-cinematic-daylight-bloom-not-physical-sky-atmosphere"
+                        + ",gradeBoundary=screen-space-vignette-and-color-grade-not-real-tonemapped-hdr"
+                        + ",surfaceBounceBoundary=screen-space-warm-bank-foliage-water-bounce-approximation-not-physical-gi"
+                        + ",atmosphereBoundary=screen-space-sky-gradient-cloud-haze-water-glint-approximation-not-physical-atmosphere"
+                        + "," + (rawSourceDrawn ? RAW_GI_SOURCE_IDENTITY + "," : "")
+                        + (denoisedSourceDrawn ? DENOISED_GI_SOURCE_IDENTITY : "sourceIdentity=final-composite-lowres-texture-draw-disabled")
                         + "," + FINAL_COMPOSITE_SOURCE_BOUNDARY
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
-                        + ",rawDrawRepeats=" + (rawSourceBound ? ROUND7_FINAL_RAW_GI_DRAW_REPEATS : 0)
+                        + ",rawDrawRepeats=" + (rawSourceDrawn ? ROUND7_FINAL_RAW_GI_DRAW_REPEATS : 0)
                         + ",denoisedDrawRepeats=" + ROUND7_FINAL_DENOISED_GI_DRAW_REPEATS
         );
     }

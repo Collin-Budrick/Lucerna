@@ -316,6 +316,13 @@ public final class LowResDiffuseGiPlanner {
                     "Diffuse GI has weak material/color input; do not claim colored bounce response from proof-only evidence"
             ));
         }
+        if (sceneInputs.surfaceSampleCount() > 0 && !sceneInputs.hasColoredBounceEvidence()) {
+            findings.add(DiffuseGiValidationFinding.info(
+                    "GI_COLORED_BOUNCE_EVIDENCE_PENDING",
+                    "$.sceneInputs.coloredBounceEvidence",
+                    "Colored bounce needs saturated surface albedo plus source/direct light, normals, nearby geometry, hit/cache confidence, and material coupling; reject global wash or metadata-only color"
+            ));
+        }
         if (sceneInputs.surfaceSampleCount() > 0 && sceneInputs.materialGeometryCoupling() < 0.12F) {
             findings.add(DiffuseGiValidationFinding.info(
                     "GI_MATERIAL_GEOMETRY_COUPLING_LOW",

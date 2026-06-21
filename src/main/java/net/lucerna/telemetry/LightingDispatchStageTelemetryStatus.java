@@ -51,6 +51,9 @@ public record LightingDispatchStageTelemetryStatus(
         Boolean shaderOutputImageReady,
         Boolean shaderOutputMaterialReady,
         Boolean shaderGeneratedOutput,
+        Boolean publicMojangShaderVisualOutputAttempted,
+        Boolean publicMojangShaderVisualOutputSubmitted,
+        Boolean publicMojangShaderVisualOutputReady,
         Boolean cpuReadbackFallback,
         Boolean realShaderDenoiseOutput,
         Boolean realShaderDenoiseOutputReady,
@@ -84,14 +87,24 @@ public record LightingDispatchStageTelemetryStatus(
         Long physicalOutputChecksum,
         Boolean physicalSceneLinked,
         Boolean physicalSurfaceContribution,
+        Boolean localizedEmissiveSpill,
+        Boolean hueShiftedBounce,
+        Boolean contactShadowDarkening,
+        Boolean finalPhysicalCompositeReady,
         Boolean previewFallbackContribution,
         Boolean metadataOnlyProofRejected,
         Boolean focusWindowCaptureRejected,
         Boolean proofMarkerEvidenceRejected,
         Boolean temporaryDirectSubstitutionRejected,
         Boolean rectangularWashoutRejected,
+        Boolean wrongWindowScreenshotRejected,
+        Boolean blankScreenshotRejected,
         String physicalSceneMarker,
         String physicalOutputMarker,
+        String emissiveSpillMarker,
+        String coloredBounceMarker,
+        String contactShadowMarker,
+        String finalPhysicalCompositeMarker,
         String proofBoundaryMarker,
         Map<String, String> details
 ) {
@@ -114,6 +127,10 @@ public record LightingDispatchStageTelemetryStatus(
         evidenceBoundary = blankToEmpty(stripQuotes(evidenceBoundary));
         physicalSceneMarker = blankToEmpty(stripQuotes(physicalSceneMarker));
         physicalOutputMarker = blankToEmpty(stripQuotes(physicalOutputMarker));
+        emissiveSpillMarker = blankToEmpty(stripQuotes(emissiveSpillMarker));
+        coloredBounceMarker = blankToEmpty(stripQuotes(coloredBounceMarker));
+        contactShadowMarker = blankToEmpty(stripQuotes(contactShadowMarker));
+        finalPhysicalCompositeMarker = blankToEmpty(stripQuotes(finalPhysicalCompositeMarker));
         proofBoundaryMarker = blankToEmpty(stripQuotes(proofBoundaryMarker));
         shaderOutputImageCandidateDimensions = blankToEmpty(stripQuotes(shaderOutputImageCandidateDimensions));
         shaderOutputImageCandidateMarker = blankToEmpty(stripQuotes(shaderOutputImageCandidateMarker));
@@ -425,6 +442,30 @@ public record LightingDispatchStageTelemetryStatus(
                 "real_denoise_shader_generated_output",
                 "gpu_denoise_generated_output"
         ));
+        Boolean publicMojangShaderVisualOutputAttempted = parseBoolean(firstPresent(
+                normalizedFields,
+                "public_mojang_shader_visual_output_attempted",
+                "public_mojang_shader_output_attempted",
+                "public_mojang_visual_output_attempted",
+                "public_mojang_denoise_visual_output_attempted",
+                "shader_visual_output_attempted"
+        ));
+        Boolean publicMojangShaderVisualOutputSubmitted = parseBoolean(firstPresent(
+                normalizedFields,
+                "public_mojang_shader_visual_output_submitted",
+                "public_mojang_shader_output_submitted",
+                "public_mojang_visual_output_submitted",
+                "public_mojang_denoise_visual_output_submitted",
+                "shader_visual_output_submitted"
+        ));
+        Boolean publicMojangShaderVisualOutputReady = parseBoolean(firstPresent(
+                normalizedFields,
+                "public_mojang_shader_visual_output_ready",
+                "public_mojang_shader_output_ready",
+                "public_mojang_visual_output_ready",
+                "public_mojang_denoise_visual_output_ready",
+                "shader_visual_output_ready"
+        ));
         Boolean cpuReadbackFallback = parseBoolean(firstPresent(
                 normalizedFields,
                 "cpu_readback_fallback",
@@ -694,6 +735,34 @@ public record LightingDispatchStageTelemetryStatus(
                 "surface_physical_contribution",
                 "physical_contribution"
         ));
+        Boolean localizedEmissiveSpill = parseBoolean(firstPresent(
+                normalizedFields,
+                "localized_emissive_spill",
+                "localized_spill",
+                "emissive_spill_localized",
+                "emissive_spill"
+        ));
+        Boolean hueShiftedBounce = parseBoolean(firstPresent(
+                normalizedFields,
+                "hue_shifted_bounce",
+                "colored_bounce_hue_shift",
+                "colored_bounce",
+                "bounce_hue_shifted"
+        ));
+        Boolean contactShadowDarkening = parseBoolean(firstPresent(
+                normalizedFields,
+                "contact_shadow_darkening",
+                "contact_shadows",
+                "local_occlusion_darkening",
+                "local_occlusion"
+        ));
+        Boolean finalPhysicalCompositeReady = parseBoolean(firstPresent(
+                normalizedFields,
+                "final_physical_composite_ready",
+                "physical_final_composite_ready",
+                "final_composite_physical_ready",
+                "final_physical_composite"
+        ));
         Boolean previewFallbackContribution = parseBoolean(firstPresent(
                 normalizedFields,
                 "preview_fallback_contribution",
@@ -731,6 +800,20 @@ public record LightingDispatchStageTelemetryStatus(
                 "anti_rectangular_washout_passed",
                 "washout_rejected"
         ));
+        Boolean wrongWindowScreenshotRejected = parseBoolean(firstPresent(
+                normalizedFields,
+                "wrong_window_screenshot_rejected",
+                "wrong_window_capture_rejected",
+                "window_screenshot_rejected",
+                "wrong_provenance_rejected"
+        ));
+        Boolean blankScreenshotRejected = parseBoolean(firstPresent(
+                normalizedFields,
+                "blank_screenshot_rejected",
+                "blank_surface_rejected",
+                "blank_capture_rejected",
+                "blank_frame_rejected"
+        ));
         String physicalSceneMarker = firstPresent(
                 normalizedFields,
                 "physical_scene_marker",
@@ -743,6 +826,30 @@ public record LightingDispatchStageTelemetryStatus(
                 "physical_output_marker",
                 "physical_gi_output_marker",
                 "physical_output_evidence_marker"
+        );
+        String emissiveSpillMarker = firstPresent(
+                normalizedFields,
+                "emissive_spill_marker",
+                "localized_emissive_spill_marker",
+                "spill_marker"
+        );
+        String coloredBounceMarker = firstPresent(
+                normalizedFields,
+                "colored_bounce_marker",
+                "hue_shifted_bounce_marker",
+                "bounce_marker"
+        );
+        String contactShadowMarker = firstPresent(
+                normalizedFields,
+                "contact_shadow_marker",
+                "contact_shadow_darkening_marker",
+                "local_occlusion_marker"
+        );
+        String finalPhysicalCompositeMarker = firstPresent(
+                normalizedFields,
+                "final_physical_composite_marker",
+                "physical_final_composite_marker",
+                "physical_composite_marker"
         );
         String proofBoundaryMarker = firstPresent(
                 normalizedFields,
@@ -798,6 +905,9 @@ public record LightingDispatchStageTelemetryStatus(
                 shaderOutputImageReady,
                 shaderOutputMaterialReady,
                 shaderGeneratedOutput,
+                publicMojangShaderVisualOutputAttempted,
+                publicMojangShaderVisualOutputSubmitted,
+                publicMojangShaderVisualOutputReady,
                 cpuReadbackFallback,
                 realShaderDenoiseOutput,
                 realShaderDenoiseOutputReady,
@@ -831,14 +941,24 @@ public record LightingDispatchStageTelemetryStatus(
                 physicalOutputChecksum,
                 physicalSceneLinked,
                 physicalSurfaceContribution,
+                localizedEmissiveSpill,
+                hueShiftedBounce,
+                contactShadowDarkening,
+                finalPhysicalCompositeReady,
                 previewFallbackContribution,
                 metadataOnlyProofRejected,
                 focusWindowCaptureRejected,
                 proofMarkerEvidenceRejected,
                 temporaryDirectSubstitutionRejected,
                 rectangularWashoutRejected,
+                wrongWindowScreenshotRejected,
+                blankScreenshotRejected,
                 physicalSceneMarker,
                 physicalOutputMarker,
+                emissiveSpillMarker,
+                coloredBounceMarker,
+                contactShadowMarker,
+                finalPhysicalCompositeMarker,
                 proofBoundaryMarker,
                 normalizedFields
         );
@@ -868,6 +988,7 @@ public record LightingDispatchStageTelemetryStatus(
             fieldCount += append(label, "shaderImage", this.shaderOutputImageReady == null ? "" : Boolean.toString(this.shaderOutputImageReady));
             fieldCount += append(label, "shaderMaterial", this.shaderOutputMaterialReady == null ? "" : Boolean.toString(this.shaderOutputMaterialReady));
             fieldCount += append(label, "shaderGenerated", this.shaderGeneratedOutput == null ? "" : Boolean.toString(this.shaderGeneratedOutput));
+            fieldCount += append(label, "publicMojangVisual", publicMojangShaderVisualOutputLabel());
             fieldCount += append(label, "realShaderOutput", this.realShaderDenoiseOutputReady == null ? "" : Boolean.toString(this.realShaderDenoiseOutputReady));
             fieldCount += append(label, "cpuFallback", this.cpuReadbackFallback == null ? "" : Boolean.toString(this.cpuReadbackFallback));
             fieldCount += append(label, "candidateOnly", this.shaderOutputImageCandidateReady == null ? "" : Boolean.toString(this.shaderOutputImageCandidateReady));
@@ -877,6 +998,10 @@ public record LightingDispatchStageTelemetryStatus(
         if (isPhysicalGiLikeStage() || hasAnyPhysicalGiEvidence()) {
             fieldCount += append(label, "physicalScene", this.physicalSceneLinked == null ? "" : Boolean.toString(this.physicalSceneLinked));
             fieldCount += append(label, "physicalSurface", this.physicalSurfaceContribution == null ? "" : Boolean.toString(this.physicalSurfaceContribution));
+            fieldCount += append(label, "spill", this.localizedEmissiveSpill == null ? "" : Boolean.toString(this.localizedEmissiveSpill));
+            fieldCount += append(label, "coloredBounce", this.hueShiftedBounce == null ? "" : Boolean.toString(this.hueShiftedBounce));
+            fieldCount += append(label, "contactShadow", this.contactShadowDarkening == null ? "" : Boolean.toString(this.contactShadowDarkening));
+            fieldCount += append(label, "finalPhysicalComposite", this.finalPhysicalCompositeReady == null ? "" : Boolean.toString(this.finalPhysicalCompositeReady));
             fieldCount += append(label, "sceneScore", this.physicalSceneLinkScore == null ? "" : Long.toString(this.physicalSceneLinkScore));
         }
         if (fieldCount == 0) {
@@ -997,6 +1122,7 @@ public record LightingDispatchStageTelemetryStatus(
                 + " shaderIntent=" + booleanOrUnknown(this.shaderDenoiseIntended)
                 + " shaderOutput=" + booleanOrUnknown(this.shaderOutputReady)
                 + " shaderGenerated=" + booleanOrUnknown(this.shaderGeneratedOutput)
+                + " publicMojangVisual=" + publicMojangShaderVisualOutputLabel()
                 + " realShaderOutput=" + booleanOrUnknown(this.realShaderDenoiseOutputReady)
                 + " cpuFallback=" + booleanOrUnknown(this.cpuReadbackFallback)
                 + " edgeRejects=" + valueOrUnknown(this.edgeRejectionCount)
@@ -1010,6 +1136,7 @@ public record LightingDispatchStageTelemetryStatus(
                 + " outputImage=" + booleanOrUnknown(this.shaderOutputImageReady)
                 + " outputMaterial=" + booleanOrUnknown(this.shaderOutputMaterialReady)
                 + " generatedOutput=" + booleanOrUnknown(this.shaderGeneratedOutput)
+                + " publicMojangVisual=" + publicMojangShaderVisualOutputLabel()
                 + " realShaderOutput=" + booleanOrUnknown(this.realShaderDenoiseOutputReady)
                 + " cpuReadbackFallback=" + booleanOrUnknown(this.cpuReadbackFallback)
                 + " readiness=" + valueOrUnknown(this.shaderOutputReadinessLabel)
@@ -1034,6 +1161,9 @@ public record LightingDispatchStageTelemetryStatus(
                 + " generatedOutput=" + booleanOrUnknown(this.shaderGeneratedOutput)
                 + " outputImage=" + booleanOrUnknown(this.shaderOutputImageReady)
                 + " outputMaterial=" + booleanOrUnknown(this.shaderOutputMaterialReady)
+                + " publicMojangVisualAttempted=" + booleanOrUnknown(this.publicMojangShaderVisualOutputAttempted)
+                + " publicMojangVisualSubmitted=" + booleanOrUnknown(this.publicMojangShaderVisualOutputSubmitted)
+                + " publicMojangVisualReady=" + booleanOrUnknown(this.publicMojangShaderVisualOutputReady)
                 + " cpuReadbackFallback=" + booleanOrUnknown(this.cpuReadbackFallback)
                 + " candidateOnly=" + booleanOrUnknown(this.shaderOutputImageCandidateReady)
                 + " candidateCpuStaged=" + booleanOrUnknown(this.shaderOutputImageCandidateCpuStaged)
@@ -1227,6 +1357,27 @@ public record LightingDispatchStageTelemetryStatus(
         }
         if (this.shaderGeneratedOutput != null) {
             fields.put(normalizedPrefix + ".shaderGeneratedOutput", Boolean.toString(this.shaderGeneratedOutput));
+        }
+        if (this.publicMojangShaderVisualOutputAttempted != null) {
+            fields.put(
+                    normalizedPrefix + ".publicMojangShaderVisualOutputAttempted",
+                    Boolean.toString(this.publicMojangShaderVisualOutputAttempted)
+            );
+        }
+        if (this.publicMojangShaderVisualOutputSubmitted != null) {
+            fields.put(
+                    normalizedPrefix + ".publicMojangShaderVisualOutputSubmitted",
+                    Boolean.toString(this.publicMojangShaderVisualOutputSubmitted)
+            );
+        }
+        if (this.publicMojangShaderVisualOutputReady != null) {
+            fields.put(
+                    normalizedPrefix + ".publicMojangShaderVisualOutputReady",
+                    Boolean.toString(this.publicMojangShaderVisualOutputReady)
+            );
+        }
+        if (hasPublicMojangShaderVisualOutputState()) {
+            fields.put(normalizedPrefix + ".publicMojangShaderVisualOutputBoundary", publicMojangShaderVisualOutputBoundaryText());
         }
         if (this.cpuReadbackFallback != null) {
             fields.put(normalizedPrefix + ".cpuReadbackFallback", Boolean.toString(this.cpuReadbackFallback));
@@ -1449,6 +1600,44 @@ public record LightingDispatchStageTelemetryStatus(
         return this.hasMeasuredGpuTiming() ? "timed_no_output_flag" : "unavailable";
     }
 
+    private boolean hasPublicMojangShaderVisualOutputState() {
+        return this.publicMojangShaderVisualOutputAttempted != null
+                || this.publicMojangShaderVisualOutputSubmitted != null
+                || this.publicMojangShaderVisualOutputReady != null;
+    }
+
+    private String publicMojangShaderVisualOutputLabel() {
+        if (!hasPublicMojangShaderVisualOutputState()) {
+            return "";
+        }
+        if (Boolean.TRUE.equals(this.publicMojangShaderVisualOutputReady)) {
+            return "ready";
+        }
+        if (Boolean.TRUE.equals(this.publicMojangShaderVisualOutputSubmitted)) {
+            return "submitted";
+        }
+        if (Boolean.TRUE.equals(this.publicMojangShaderVisualOutputAttempted)) {
+            return "attempted";
+        }
+        return "reported_false";
+    }
+
+    private String publicMojangShaderVisualOutputBoundaryText() {
+        if (!hasPublicMojangShaderVisualOutputState()) {
+            return "public Mojang shader visual output not reported";
+        }
+        if (Boolean.TRUE.equals(this.publicMojangShaderVisualOutputReady)) {
+            return "public Mojang shader visual output ready; not real compute/native shader denoise output";
+        }
+        if (Boolean.TRUE.equals(this.publicMojangShaderVisualOutputSubmitted)) {
+            return "public Mojang shader visual output submitted; readiness not proven";
+        }
+        if (Boolean.TRUE.equals(this.publicMojangShaderVisualOutputAttempted)) {
+            return "public Mojang shader visual output attempted; submission/readiness not proven";
+        }
+        return "public Mojang shader visual output explicitly false";
+    }
+
     private boolean isDenoiseLikeStage() {
         return switch (this.stageId) {
             case "denoise", "shader_denoise", "edge_aware_denoise", "diffuse_gi_denoise" -> true;
@@ -1472,6 +1661,9 @@ public record LightingDispatchStageTelemetryStatus(
                 || this.shaderOutputImageReady != null
                 || this.shaderOutputMaterialReady != null
                 || this.shaderGeneratedOutput != null
+                || this.publicMojangShaderVisualOutputAttempted != null
+                || this.publicMojangShaderVisualOutputSubmitted != null
+                || this.publicMojangShaderVisualOutputReady != null
                 || this.cpuReadbackFallback != null
                 || this.realShaderDenoiseOutput != null
                 || this.realShaderDenoiseOutputReady != null

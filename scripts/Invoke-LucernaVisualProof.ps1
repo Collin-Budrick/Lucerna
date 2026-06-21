@@ -1,8 +1,8 @@
 param(
-    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ShaderDenoisedGi", "ShaderDenoiseFinalComposite", "ShaderDenoiseDebug", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalStable", "TemporalMoved", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay", "ForestComplexCullingOverlay", "VoxelRayDebug", "RtEntityDebug", "HybridHitDebug", "DirectReservoirDebug", "GiReservoirDebug", "ReservoirReuseDebug", "DirectBruteBaseline", "RestirDirectEnabled", "RestirTemporalStable", "RestirTemporalMoved", "RestirExecutionDebug")]
+    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ShaderDenoisedGi", "ShaderDenoiseFinalComposite", "ShaderDenoiseDebug", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalBaseline", "TemporalStable", "TemporalMoved", "UserVisibleBaseline", "UserVisibleFinalComposite", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay", "ForestComplexCullingOverlay", "VoxelRayDebug", "RtEntityDebug", "HybridHitDebug", "DirectReservoirDebug", "GiReservoirDebug", "ReservoirReuseDebug", "DirectBruteBaseline", "RestirDirectEnabled", "RestirTemporalStable", "RestirTemporalMoved", "RestirExecutionDebug", "PhysicalBaseline", "PhysicalEnabled", "PhysicalDebug", "EmissiveSpill", "ColoredBounce", "ContactShadows", "ShaderDenoiseOutput", "FinalPhysicalComposite")]
     [string] $Mode,
 
-    [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round56PhysicalLighting", "Round7DenoiseComposite", "Round7CompositeStability", "Round7EmissiveGiSurface", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry", "Round10HybridTracing", "Round11Restir")]
+    [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round56PhysicalLighting", "Round7DenoiseComposite", "Round7CompositeStability", "Round7EmissiveGiSurface", "Round7FinalPhysicalComposite", "VisualLightingMilestone1", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry", "Round10HybridTracing", "Round11Restir")]
     [string] $ValidationProfile = "Round5Direct",
 
     [string] $WorldName = "New World",
@@ -391,6 +391,235 @@ function Get-Round56PhysicalLightingCaptureIntent {
     }
 }
 
+function Get-Round7FinalPhysicalCompositeCaptureIntent {
+    param([string] $CaptureMode)
+
+    $strictPhysicalPatterns = @(
+        "(?:localized_emissive_spill|localizedEmissiveSpill|emissive_spill_localized)=true",
+        "(?:emissive_spill_marker|localized_emissive_spill_marker|spill_marker)=`"?[^`"\r\n,}]+",
+        "(?:hue_shifted_bounce|hueShiftedBounce|colored_bounce|coloredBounce)=true",
+        "(?:colored_bounce_marker|hue_shifted_bounce_marker|bounce_marker)=`"?[^`"\r\n,}]+",
+        "(?:contact_shadow_darkening|contactShadowDarkening|contact_shadows|local_occlusion_darkening)=true",
+        "(?:contact_shadow_marker|contact_shadow_darkening_marker|local_occlusion_marker)=`"?[^`"\r\n,}]+",
+        "(?:shadowInWorld|daytimeWorldShadow|worldShadowOverlay)=true",
+        "(?:softDirectionalCastShadows|dappledLeafShadows|contactShadowOverlay)=true",
+        "(?:cinematicDaylightBloom|screenSpaceSunBloom|godRayApproximation)=true",
+        "(?:cinematicColorGrade|cinematicVignette|filmicTonemapApproximation)=true",
+        "(?:cinematicSurfaceBounce|screenSpaceSurfaceBounceApproximation)=true",
+        "(?:cinematicAtmosphereClouds|screenSpaceVolumetricCloudApproximation|waterReflectionGlints)=true",
+        "(?:cinematicSkyGradient|atmosphericPerspectiveApproximation|waterSpecularStreaks)=true",
+        "(?:shorelineSpecularSparkle|highContrastCanopyShadow)=true",
+        "worldSpaceShadowDecal=true.*cameraAnchoredWorldQuad=true.*depthAwareSubmitNode=true.*softenedWorldSpaceShadowDecal=true",
+        "vanillaCloudPassSuppressed=true",
+        "(?:shadowMapPipelineStarted|voxelShadowPipelineStarted|rayTracedShadowPipelineStarted)=true",
+        "(?:screenSpaceAmbientOcclusionApproximation|waterEdgeContactOcclusion|treeBaseContactOcclusion|bankCreaseContactOcclusion|groundedShadowDetail)=true",
+        "(?:screenSpacePenumbraShadow|terrainStepContactShadow|canopyOccluderShadow|waterCanopyReflectionShadow)=true",
+        "shadowBoundary=screen-space-geometry-shaped-daytime-shadow-overlay;ambient-contact-ao-approximation",
+        "bloomBoundary=screen-space-cinematic-daylight-bloom-not-physical-sky-atmosphere",
+        "gradeBoundary=screen-space-vignette-and-color-grade-not-real-tonemapped-hdr",
+        "(?:cinematicLocalContrast|warmBankGrade|coolShadowGrade)=true",
+        "surfaceBounceBoundary=screen-space-warm-bank-foliage-water-bounce-approximation-not-physical-gi",
+        "atmosphereBoundary=screen-space-sky-gradient-cloud-haze-water-glint-approximation-not-physical-atmosphere",
+        "(?:final_physical_composite_ready|finalPhysicalCompositeReady|physical_final_composite_ready)=true",
+        "(?:final_physical_composite_marker|physical_final_composite_marker|physical_composite_marker)=`"?[^`"\r\n,}]+",
+        "(?:publicMojangShaderVisualOutput|cpuDenoisedSource)=true",
+        "(?:round7\.shaderDenoise\.outputImageReady|shaderDenoiseOutputImageReady|shader_denoise_output_image_ready)=false",
+        "(?:round7\.shaderDenoise\.outputMaterialReady|shaderDenoiseOutputMaterialReady|shader_denoise_output_material_ready)=true",
+        "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=false",
+        "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=false",
+        "(?:metadata_only_proof_rejected|metadata_preview_rejected|metadata_only_rejected)=true",
+        "(?:focus_window_capture_rejected|focus_window_rejected|focus_window_only_rejected)=true",
+        "(?:proof_marker_evidence_rejected|proof_marker_rejected|proof_marker_source_rejected)=true",
+        "(?:temporary_direct_substitution_rejected|temporary_direct_light_substitution_rejected|temporary_direct_source_rejected|direct_light_substitution_rejected)=true",
+        "(?:rectangular_washout_rejected|anti_rectangular_washout_passed|washout_rejected)=true",
+        "(?:wrong_window_screenshot_rejected|wrong_window_capture_rejected|window_screenshot_rejected|wrong_provenance_rejected)=true",
+        "(?:blank_screenshot_rejected|blank_surface_rejected|blank_capture_rejected|blank_frame_rejected)=true",
+        "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true",
+        "(?:sourceIdentity|source_identity)=[^`r`n]*(?:native-direct-light-rgba8|cpu-denoised-diffuse-gi-rgba8|public-mojang-visual-filter|final-composite-lowres-texture-draw-disabled|final-physical-composite|physical-final-composite)",
+        "denoisedDrawRepeats=1"
+    )
+
+    switch ($CaptureMode) {
+        "Baseline" { return Get-Round7FinalPhysicalCompositeCaptureIntent "PhysicalBaseline" }
+        "Enabled" { return Get-Round7FinalPhysicalCompositeCaptureIntent "PhysicalEnabled" }
+        "Debug" { return Get-Round7FinalPhysicalCompositeCaptureIntent "PhysicalDebug" }
+        "PhysicalBaseline" {
+            return [ordered]@{
+                rendererEnabled = $false
+                debugOverlay = "OFF"
+                compositeMode = "BASE_VANILLA_ONLY"
+                artifactRole = "physical-composite-baseline-disabled"
+                sceneKind = "colored-panel-emissive"
+                sceneState = "same-camera-baseline-off"
+                sceneAction = "user-visible"
+                hideHudForScreenshot = $true
+                requiredPatterns = @(
+                    "Using graphics backend Vulkan",
+                    "Lucerna backend status: SODIUM_VULKAN"
+                )
+            }
+        }
+        "PhysicalEnabled" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "physical-composite-enabled"
+                sceneKind = "colored-panel-emissive"
+                sceneState = "same-camera-enabled"
+                sceneAction = "user-visible"
+                hideHudForScreenshot = $true
+                requiredPatterns = @($strictPhysicalPatterns)
+            }
+        }
+        "PhysicalDebug" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "FINAL_PHYSICAL_COMPOSITE_PROOF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "physical-composite-debug"
+                sceneKind = "colored-panel-emissive"
+                sceneState = "same-camera-debug"
+                sceneAction = "user-visible"
+                hideHudForScreenshot = $false
+                requiredPatterns = @($strictPhysicalPatterns)
+            }
+        }
+        "EmissiveSpill" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "EMISSIVE_SPILL_PROOF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "physical-composite-emissive-spill"
+                sceneKind = "colored-panel-emissive"
+                sceneState = "same-camera-emissive-spill"
+                sceneAction = "user-visible"
+                requiredPatterns = @($strictPhysicalPatterns)
+            }
+        }
+        "ColoredBounce" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "COLORED_BOUNCE_PROOF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "physical-composite-colored-bounce"
+                sceneKind = "colored-panel-emissive"
+                sceneState = "same-camera-colored-bounce"
+                sceneAction = "user-visible"
+                requiredPatterns = @($strictPhysicalPatterns)
+            }
+        }
+        "ContactShadows" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "CONTACT_SHADOW_PROOF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "physical-composite-contact-shadows"
+                sceneKind = "colored-panel-emissive"
+                sceneState = "same-camera-contact-shadows"
+                sceneAction = "user-visible"
+                requiredPatterns = @($strictPhysicalPatterns)
+            }
+        }
+        "ShaderDenoiseOutput" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "SHADER_DENOISE_OUTPUT_PROOF"
+                compositeMode = "DENOISED_GI"
+                artifactRole = "physical-composite-shader-denoise-output"
+                sceneKind = "colored-panel-emissive"
+                sceneState = "same-camera-shader-denoise-output"
+                sceneAction = "user-visible"
+                requiredPatterns = @($strictPhysicalPatterns)
+            }
+        }
+        "FinalPhysicalComposite" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "FINAL_PHYSICAL_COMPOSITE_PROOF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "physical-composite-final"
+                sceneKind = "colored-panel-emissive"
+                sceneState = "same-camera-final-physical-composite"
+                sceneAction = "user-visible"
+                requiredPatterns = @($strictPhysicalPatterns)
+            }
+        }
+        default {
+            throw "Unsupported Round 7 final physical composite capture mode: $CaptureMode"
+        }
+    }
+}
+
+function Get-VisualLightingMilestone1CaptureIntent {
+    param([string] $CaptureMode)
+
+    $scenePatterns = @(
+        "visualLightingMilestone1\.scene=dry-daytime-colored-emissive-bounce.*dryScene=true.*dayTime=true.*timeOfDay=6000.*sameCamera=true",
+        "visualLightingMilestone1\.coloredEmissiveSources=.*minecraft:glowstone.*minecraft:sea_lantern.*minecraft:redstone_lamp",
+        "visualLightingMilestone1\.coloredBouncePanels=.*minecraft:red_concrete.*minecraft:blue_concrete.*minecraft:lime_concrete.*minecraft:yellow_concrete",
+        "visualLightingMilestone1\.rejectFixedBlobs=true.*rejectFullscreenWash=true.*rejectLowResDebugMarkers=true"
+    )
+    $milestoneOnePatterns = @($scenePatterns) + @(
+        "Lucerna world-space emissive spill submitted: (?=.*minecraft:glowstone)(?=.*minecraft:sea_lantern)(?=.*minecraft:redstone_lamp).*worldSpaceEmissiveSpill=true.*cleanGameplayComposite=true.*screenSpaceBlobComposite=false.*receiverQuadCount=[1-9][0-9]*.*sourceColorMaterialData=true.*sourceReceiverDistanceFalloff=true.*worldSpaceBlockFaceQuads=true",
+        "(?:hue_shifted_bounce|hueShiftedBounce|colored_bounce|coloredBounce)=true",
+        "(?:colored_bounce_marker|hue_shifted_bounce_marker|bounce_marker)=`"?[^`"\r\n,}]+",
+        "(?:colored_bounce_samples=[1-9][0-9]*.*colored_bounce_hits=[1-9][0-9]*|coloredBounceSamples=[1-9][0-9]*.*coloredBounceHits=[1-9][0-9]*)",
+        "(?:realWorldSpaceShadow|real_world_space_shadow)=true",
+        "(?:worldSpaceShadowGeometry|world_space_shadow_geometry|worldSpaceShadowCaster|world_space_shadow_caster|worldSpaceShadowReceiver|world_space_shadow_receiver)=true",
+        "(?:shadowReceiverWorldSpace|shadow_receiver_world_space|shadowOccluderWorldSpace|shadow_occluder_world_space|depthAwareSubmitNode)=true",
+        "(?:fixedDarkBlobRemoved|fixed_blob_removed|fixedBlobRejected|fixed_blob_rejected)=true",
+        "(?:fullScreenWashRejected|fullscreen_wash_rejected|rectangular_washout_rejected|anti_rectangular_washout_passed|washout_rejected)=true",
+        "(?:lowResolutionDirectTextureDraw|low_resolution_direct_texture_draw)=false",
+        "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*(?:final_physical_composite_ready|finalPhysicalCompositeReady|physical_final_composite_ready)=true"
+    )
+
+    switch ($CaptureMode) {
+        "Baseline" {
+            return [ordered]@{
+                rendererEnabled = $false
+                debugOverlay = "OFF"
+                compositeMode = "BASE_VANILLA_ONLY"
+                artifactRole = "visual-lighting-milestone1-baseline"
+                sceneKind = "dry-daytime-colored-emissive-bounce"
+                sceneState = "same-camera-baseline-off"
+                sceneAction = "visual-lighting-milestone1"
+                hideHudForScreenshot = $true
+                requiredPatterns = @($scenePatterns)
+            }
+        }
+        "Enabled" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "visual-lighting-milestone1-enabled"
+                sceneKind = "dry-daytime-colored-emissive-bounce"
+                sceneState = "same-camera-enabled"
+                sceneAction = "visual-lighting-milestone1"
+                hideHudForScreenshot = $true
+                requiredPatterns = @($milestoneOnePatterns)
+            }
+        }
+        "Debug" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "VISUAL_LIGHTING_MILESTONE1_PROOF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "visual-lighting-milestone1-debug"
+                sceneKind = "dry-daytime-colored-emissive-bounce"
+                sceneState = "same-camera-debug"
+                sceneAction = "visual-lighting-milestone1"
+                hideHudForScreenshot = $false
+                requiredPatterns = @($milestoneOnePatterns)
+            }
+        }
+        default {
+            throw "Unsupported Visual Lighting Milestone 1 capture mode: $CaptureMode"
+        }
+    }
+}
+
 function Get-Round7CompositeStabilityCaptureIntent {
     param([string] $CaptureMode)
 
@@ -456,6 +685,19 @@ function Get-Round7CompositeStabilityCaptureIntent {
                 requiredPatterns = @($finalCompositePatterns)
             }
         }
+        "TemporalBaseline" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "BASE_VANILLA_ONLY"
+                artifactRole = "temporal-baseline"
+                sceneKind = "temporal"
+                sceneState = "baseline"
+                sceneAction = "temporal-stable"
+                preScreenshotAction = "none"
+                requiredPatterns = @($baselinePatterns)
+            }
+        }
         "TemporalStable" {
             return [ordered]@{
                 rendererEnabled = $true
@@ -482,6 +724,32 @@ function Get-Round7CompositeStabilityCaptureIntent {
                 requiredPatterns = @($finalCompositePatterns)
             }
         }
+        "UserVisibleBaseline" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "BASE_VANILLA_ONLY"
+                artifactRole = "user-visible-baseline"
+                sceneKind = "user-visible-colored-emissive"
+                sceneState = "baseline"
+                sceneAction = "user-visible"
+                preScreenshotAction = "none"
+                requiredPatterns = @($baselinePatterns)
+            }
+        }
+        "UserVisibleFinalComposite" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "user-visible-final-composite"
+                sceneKind = "user-visible-colored-emissive"
+                sceneState = "final-composite"
+                sceneAction = "user-visible"
+                preScreenshotAction = "none"
+                requiredPatterns = @($finalCompositePatterns)
+            }
+        }
         default {
             throw "Unsupported Round 7 composite stability capture mode: $CaptureMode"
         }
@@ -491,11 +759,9 @@ function Get-Round7CompositeStabilityCaptureIntent {
 function Get-Round7EmissiveGiSurfaceCaptureIntent {
     param([string] $CaptureMode)
 
-    $finalCompositePatterns = @(
-        "Lucerna Round 7 denoised GI CPU output: .*denoisedCpuOutputGenerated=true",
-        "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true",
-        "round7\.finalCompositeMode=final-composite.*round7\.finalCompositeSourceMix=base=true,direct=enabled-ready,gi=enabled-ready,denoised=enabled-ready",
-        "public Mojang Round 7 FINAL_COMPOSITE visual render pass submitted; .*mode=FINAL_LUCERNA_COMPOSITE.*finalBlendComplete=true"
+    $emissiveSpillPatterns = @(
+        "Lucerna world-space emissive spill submitted: (?=.*minecraft:glowstone)(?=.*minecraft:sea_lantern)(?=.*minecraft:lava).*worldSpaceEmissiveSpill=true.*cleanGameplayComposite=true.*screenSpaceBlobComposite=false.*receiverQuadCount=[1-9][0-9]*.*blockMaterialSceneData=true.*faceNormalData=true.*depthAwareSubmitNode=true",
+        "Lucerna public Mojang final composite: attempted=true submitted=false drawCalls=false.*cleanGameplayComposite=true.*cpuDirectTextureComposite=false.*screenSpaceBlobComposite=false.*worldSpaceEmissiveSpillPath=true"
     )
     $baselinePatterns = @(
         "Using graphics backend Vulkan",
@@ -522,7 +788,7 @@ function Get-Round7EmissiveGiSurfaceCaptureIntent {
                 artifactRole = "emissive-gi-surface-final-composite"
                 sceneAction = "emissive-gi-surface"
                 hideHudForScreenshot = $true
-                requiredPatterns = @($finalCompositePatterns)
+                requiredPatterns = @($emissiveSpillPatterns)
             }
         }
         "Debug" {
@@ -533,7 +799,7 @@ function Get-Round7EmissiveGiSurfaceCaptureIntent {
                 artifactRole = "emissive-gi-surface-debug"
                 sceneAction = "emissive-gi-surface"
                 hideHudForScreenshot = $false
-                requiredPatterns = @($finalCompositePatterns) + @(
+                requiredPatterns = @($emissiveSpillPatterns) + @(
                     "(?:round7\.compositeMode|debug\.overlay=DIRECT_LIGHTING|Overlay state: DIRECT_LIGHTING|Direct Lighting)"
                 )
             }
@@ -1265,6 +1531,103 @@ function Invoke-Round7CompositeStabilitySceneAction {
             Start-Sleep -Seconds 3
             Add-LucernaControllerMarker $MarkerPath "round7.stability.scene=temporal sceneState=moved-disoccluded temporalSceneMarker=true historyMovedSceneMarker=true movedCameraTemporalPair=true finalCompositeStabilityScene=true temporalAsymmetricScene=true temporalCameraTranslation=true temporalWorldSurfaceRegion=upper-mid-no-hud"
         }
+        "user-visible" {
+            Send-MinecraftChatCommand "/tp @s 0 181 -10 0 8"
+            Start-Sleep -Seconds 1
+            Send-MinecraftChatCommand "/effect clear @s"
+            Send-MinecraftChatCommand "/gamerule doWeatherCycle false"
+            Send-MinecraftChatCommand "/weather clear"
+            if ($SetupScene) {
+                Send-MinecraftChatCommand "/difficulty peaceful"
+                Send-MinecraftChatCommand "/gamerule doMobSpawning false"
+                Send-MinecraftChatCommand "/kill @e[type=!player,distance=..96]"
+                Send-MinecraftChatCommand "/fill -28 176 -30 0 198 -1 minecraft:air"
+                Send-MinecraftChatCommand "/fill 1 176 -30 28 198 -1 minecraft:air"
+                Send-MinecraftChatCommand "/fill -28 176 0 0 198 28 minecraft:air"
+                Send-MinecraftChatCommand "/fill 1 176 0 28 198 28 minecraft:air"
+                Send-MinecraftChatCommand "/fill -28 176 -30 0 198 -1 minecraft:air replace minecraft:water"
+                Send-MinecraftChatCommand "/fill 1 176 -30 28 198 -1 minecraft:air replace minecraft:water"
+                Send-MinecraftChatCommand "/fill -28 176 0 0 198 28 minecraft:air replace minecraft:water"
+                Send-MinecraftChatCommand "/fill 1 176 0 28 198 28 minecraft:air replace minecraft:water"
+                Send-MinecraftChatCommand "/fill -24 178 -24 24 178 24 minecraft:stone"
+                Send-MinecraftChatCommand "/fill -24 179 -24 24 179 24 minecraft:grass_block"
+                Send-MinecraftChatCommand "/fill -22 178 -18 22 178 7 minecraft:dirt"
+                Send-MinecraftChatCommand "/fill -22 179 -18 22 179 7 minecraft:water"
+                Send-MinecraftChatCommand "/fill -4 180 -24 11 180 -18 minecraft:sand"
+                Send-MinecraftChatCommand "/fill -1 180 -23 8 180 -19 minecraft:mud"
+                Send-MinecraftChatCommand "/fill -24 180 -24 -10 180 -19 minecraft:grass_block"
+                Send-MinecraftChatCommand "/fill 12 180 -24 24 180 -19 minecraft:grass_block"
+                Send-MinecraftChatCommand "/fill -24 180 -18 -18 180 -12 minecraft:grass_block"
+                Send-MinecraftChatCommand "/fill 17 180 -18 24 180 -11 minecraft:grass_block"
+                Send-MinecraftChatCommand "/fill -15 180 -20 -11 180 -17 minecraft:sand"
+                Send-MinecraftChatCommand "/fill 10 180 -19 14 180 -16 minecraft:mud"
+                Send-MinecraftChatCommand "/setblock -17 180 -14 minecraft:grass_block"
+                Send-MinecraftChatCommand "/setblock -16 180 -13 minecraft:grass_block"
+                Send-MinecraftChatCommand "/setblock -13 180 -15 minecraft:sand"
+                Send-MinecraftChatCommand "/setblock 15 180 -14 minecraft:grass_block"
+                Send-MinecraftChatCommand "/setblock 16 180 -13 minecraft:grass_block"
+                Send-MinecraftChatCommand "/setblock 13 180 -15 minecraft:mud"
+                Send-MinecraftChatCommand "/fill -24 180 8 24 180 24 minecraft:dirt"
+                Send-MinecraftChatCommand "/fill -22 181 10 22 181 24 minecraft:grass_block"
+                Send-MinecraftChatCommand "/fill -18 182 13 18 182 24 minecraft:grass_block"
+                Send-MinecraftChatCommand "/fill -13 183 16 13 183 24 minecraft:grass_block"
+                Send-MinecraftChatCommand "/fill -8 184 19 8 184 24 minecraft:grass_block"
+                Send-MinecraftChatCommand "/fill -20 180 9 -18 185 11 minecraft:oak_log"
+                Send-MinecraftChatCommand "/fill -24 184 7 -15 190 15 minecraft:oak_leaves"
+                Send-MinecraftChatCommand "/fill 17 180 9 19 186 11 minecraft:spruce_log"
+                Send-MinecraftChatCommand "/fill 13 184 6 24 191 16 minecraft:spruce_leaves"
+                Send-MinecraftChatCommand "/fill -7 181 16 -5 186 18 minecraft:birch_log"
+                Send-MinecraftChatCommand "/fill -11 185 12 -2 191 22 minecraft:birch_leaves"
+                Send-MinecraftChatCommand "/fill 5 182 17 7 188 19 minecraft:jungle_log"
+                Send-MinecraftChatCommand "/fill 1 187 13 11 194 24 minecraft:jungle_leaves"
+                Send-MinecraftChatCommand "/fill -16 180 -4 -14 181 -2 minecraft:short_grass"
+                Send-MinecraftChatCommand "/fill -10 180 -6 -8 181 -4 minecraft:tall_grass"
+                Send-MinecraftChatCommand "/fill 10 180 -5 12 181 -3 minecraft:short_grass"
+                Send-MinecraftChatCommand "/fill 15 180 1 17 181 3 minecraft:tall_grass"
+                Send-MinecraftChatCommand "/fill -22 180 -2 -20 181 0 minecraft:fern"
+                Send-MinecraftChatCommand "/fill 20 180 -1 22 181 1 minecraft:fern"
+                Send-MinecraftChatCommand "/fill -18 180 -15 -15 181 -12 minecraft:tall_grass"
+                Send-MinecraftChatCommand "/fill -12 180 -16 -10 181 -13 minecraft:short_grass"
+                Send-MinecraftChatCommand "/fill -6 180 -15 -4 181 -12 minecraft:fern"
+                Send-MinecraftChatCommand "/fill 4 180 -15 6 181 -12 minecraft:short_grass"
+                Send-MinecraftChatCommand "/fill 10 180 -16 13 181 -13 minecraft:tall_grass"
+                Send-MinecraftChatCommand "/fill 16 180 -15 18 181 -12 minecraft:fern"
+                Send-MinecraftChatCommand "/fill -22 180 -11 -20 181 -8 minecraft:short_grass"
+                Send-MinecraftChatCommand "/fill 20 180 -11 22 181 -8 minecraft:short_grass"
+                Send-MinecraftChatCommand "/fill -24 181 -23 -20 182 -20 minecraft:tall_grass"
+                Send-MinecraftChatCommand "/fill 20 181 -23 24 182 -20 minecraft:tall_grass"
+                Send-MinecraftChatCommand "/fill -18 181 -24 -14 181 -21 minecraft:fern"
+                Send-MinecraftChatCommand "/fill 14 181 -24 18 181 -21 minecraft:fern"
+                Send-MinecraftChatCommand "/fill -24 181 -18 -21 182 -13 minecraft:tall_grass"
+                Send-MinecraftChatCommand "/fill 21 181 -18 24 182 -13 minecraft:tall_grass"
+                Send-MinecraftChatCommand "/fill -20 181 -17 -18 181 -14 minecraft:fern"
+                Send-MinecraftChatCommand "/fill 18 181 -17 20 181 -14 minecraft:fern"
+                Send-MinecraftChatCommand "/fill -12 181 -23 -8 182 -21 minecraft:tall_grass"
+                Send-MinecraftChatCommand "/fill 8 181 -23 12 182 -21 minecraft:tall_grass"
+                Send-MinecraftChatCommand "/fill -7 181 -22 -5 181 -20 minecraft:fern"
+                Send-MinecraftChatCommand "/fill 5 181 -22 7 181 -20 minecraft:fern"
+                Send-MinecraftChatCommand "/setblock -3 181 -22 minecraft:poppy"
+                Send-MinecraftChatCommand "/setblock 3 181 -22 minecraft:dandelion"
+                Send-MinecraftChatCommand "/setblock -1 181 -21 minecraft:azure_bluet"
+                Send-MinecraftChatCommand "/setblock 1 181 -21 minecraft:blue_orchid"
+                Send-MinecraftChatCommand "/setblock -19 181 -16 minecraft:poppy"
+                Send-MinecraftChatCommand "/setblock -22 181 -13 minecraft:dandelion"
+                Send-MinecraftChatCommand "/setblock 19 181 -16 minecraft:blue_orchid"
+                Send-MinecraftChatCommand "/setblock 22 181 -13 minecraft:azure_bluet"
+                Send-MinecraftChatCommand "/setblock -14 180 -10 minecraft:lily_pad"
+                Send-MinecraftChatCommand "/setblock -3 180 -13 minecraft:lily_pad"
+                Send-MinecraftChatCommand "/setblock 9 180 -8 minecraft:lily_pad"
+                Send-MinecraftChatCommand "/setblock 17 180 -12 minecraft:lily_pad"
+                Send-MinecraftChatCommand "/setblock -8 180 4 minecraft:glowstone"
+                Send-MinecraftChatCommand "/setblock 8 180 3 minecraft:sea_lantern"
+                Send-MinecraftChatCommand "/fill -24 180 -26 24 192 -24 minecraft:air"
+            }
+            Send-MinecraftChatCommand "/kill @e[type=!player,distance=..96]"
+            Send-MinecraftChatCommand "/time set 1000"
+            Send-MinecraftChatCommand "/tp @s -13 181.45 -22 24 4"
+            Start-Sleep -Seconds 3
+            Add-LucernaControllerMarker $MarkerPath "round7.stability.scene=natural-water-foliage-shader-showcase userVisibleComparisonScene=true dryCamera=true noWaterCamera=true bankCamera=true dayTime=true timeOfDay=1000 waterForeground=true foregroundWaterExpanded=true foregroundFoliage=true denseForegroundFoliage=true foregroundFlowers=true lilyPads=true foliage=true layeredTerrain=true cinematicSunBloom=true depthScene=true cinematicLowCamera=true sameCamera=true yaw=24 pitch=4"
+        }
         default {
             throw "Unsupported Round 7 composite stability scene action: $SceneAction"
         }
@@ -1299,6 +1662,8 @@ function Invoke-Round7EmissiveGiSurfaceSceneAction {
         Send-MinecraftChatCommand "/fill ~4 ~-1 ~-4 ~4 ~4 ~4 minecraft:smooth_stone"
         Send-MinecraftChatCommand "/fill ~3 ~-1 ~-4 ~7 ~-1 ~4 minecraft:smooth_stone"
         Send-MinecraftChatCommand "/setblock ~4 ~1 ~ minecraft:glowstone"
+        Send-MinecraftChatCommand "/setblock ~4 ~1 ~-2 minecraft:sea_lantern"
+        Send-MinecraftChatCommand "/setblock ~4 ~1 ~2 minecraft:lava"
         Send-MinecraftChatCommand "/setblock ~4 ~0 ~1 minecraft:orange_concrete"
         Send-MinecraftChatCommand "/setblock ~4 ~0 ~-1 minecraft:blue_concrete"
         Send-MinecraftChatCommand "/setblock ~3 ~0 ~2 minecraft:redstone_lamp[lit=true]"
@@ -1306,6 +1671,62 @@ function Invoke-Round7EmissiveGiSurfaceSceneAction {
 
     Send-MinecraftChatCommand "/tp @s ~ ~ ~ -90 0"
     Add-LucernaControllerMarker $MarkerPath "round7.emissiveGiSurface.scene=locked-wall surfaceProofScene=true handHudExcludedRegion=true fixedWorldSurfaceRegion=true"
+}
+
+function Invoke-VisualLightingMilestone1SceneAction {
+    param(
+        [string] $SceneAction,
+        [string] $MarkerPath
+    )
+
+    if ($SceneAction -ne "visual-lighting-milestone1") {
+        throw "Unsupported Visual Lighting Milestone 1 scene action: $SceneAction"
+    }
+
+    Send-MinecraftChatCommand "/gamerule sendCommandFeedback false"
+    Send-MinecraftChatCommand "/gamerule doDaylightCycle false"
+    Send-MinecraftChatCommand "/gamerule doWeatherCycle false"
+    Send-MinecraftChatCommand "/gamemode creative"
+    Send-MinecraftChatCommand "/weather clear"
+    Send-MinecraftChatCommand "/time set 6000"
+    Send-MinecraftChatCommand "/effect clear @s"
+
+    if ($SetupScene) {
+        Send-MinecraftChatCommand "/difficulty peaceful"
+        Send-MinecraftChatCommand "/gamerule doMobSpawning false"
+        Send-MinecraftChatCommand "/kill @e[type=!player,distance=..96]"
+        Send-MinecraftChatCommand "/fill -14 180 -30 14 190 -3 minecraft:air"
+        Send-MinecraftChatCommand "/fill -14 179 -30 14 179 -3 minecraft:smooth_stone"
+        Send-MinecraftChatCommand "/fill -14 180 -3 14 187 -3 minecraft:smooth_stone"
+        Send-MinecraftChatCommand "/fill -12 180 -4 -7 184 -4 minecraft:red_concrete"
+        Send-MinecraftChatCommand "/fill -6 180 -4 -1 184 -4 minecraft:blue_concrete"
+        Send-MinecraftChatCommand "/fill 1 180 -4 6 184 -4 minecraft:lime_concrete"
+        Send-MinecraftChatCommand "/fill 7 180 -4 12 184 -4 minecraft:yellow_concrete"
+        Send-MinecraftChatCommand "/fill -12 179 -22 -7 179 -15 minecraft:red_concrete"
+        Send-MinecraftChatCommand "/fill -6 179 -24 -1 179 -17 minecraft:blue_concrete"
+        Send-MinecraftChatCommand "/fill 1 179 -24 6 179 -17 minecraft:lime_concrete"
+        Send-MinecraftChatCommand "/fill 7 179 -22 12 179 -15 minecraft:yellow_concrete"
+        Send-MinecraftChatCommand "/setblock -9 182 -5 minecraft:glowstone"
+        Send-MinecraftChatCommand "/setblock 0 182 -5 minecraft:sea_lantern"
+        Send-MinecraftChatCommand "/setblock 9 182 -5 minecraft:redstone_lamp[lit=true]"
+        Send-MinecraftChatCommand "/setblock -4 180 -12 minecraft:glowstone"
+        Send-MinecraftChatCommand "/setblock 4 180 -12 minecraft:sea_lantern"
+        Send-MinecraftChatCommand "/fill -4 180 -17 -4 184 -17 minecraft:oak_log"
+        Send-MinecraftChatCommand "/fill 4 180 -16 4 184 -16 minecraft:spruce_log"
+        Send-MinecraftChatCommand "/fill -8 184 -21 0 186 -13 minecraft:oak_leaves"
+        Send-MinecraftChatCommand "/fill 1 184 -21 9 186 -13 minecraft:spruce_leaves"
+        Send-MinecraftChatCommand "/fill -13 180 -13 -13 183 -13 minecraft:smooth_stone"
+        Send-MinecraftChatCommand "/fill 13 180 -13 13 183 -13 minecraft:smooth_stone"
+        Send-MinecraftChatCommand "/setblock -7 180 -10 minecraft:cobblestone_wall"
+        Send-MinecraftChatCommand "/setblock 7 180 -10 minecraft:cobblestone_wall"
+    }
+
+    Send-MinecraftChatCommand "/kill @e[type=!player,distance=..96]"
+    Send-MinecraftChatCommand "/weather clear"
+    Send-MinecraftChatCommand "/time set 6000"
+    Send-MinecraftChatCommand "/tp @s 0 181.55 -27 0 7"
+    Start-Sleep -Seconds 3
+    Add-LucernaControllerMarker $MarkerPath "visualLightingMilestone1.scene=dry-daytime-colored-emissive-bounce dryScene=true dayTime=true timeOfDay=6000 weather=clear sameCamera=true yaw=0 pitch=7 camera=0,181.55,-27 coloredEmissiveSources=minecraft:glowstone,minecraft:sea_lantern,minecraft:redstone_lamp coloredBouncePanels=minecraft:red_concrete,minecraft:blue_concrete,minecraft:lime_concrete,minecraft:yellow_concrete worldSpaceShadowCasters=oak_log,spruce_log,oak_leaves,spruce_leaves realWorldSpaceShadowRequired=true rejectFixedBlobs=true rejectFullscreenWash=true rejectLowResDebugMarkers=true noWaterCamera=true dryCamera=true"
 }
 
 function Invoke-Round9SceneAction {
@@ -1626,12 +2047,16 @@ if (-not (Test-Path -LiteralPath $gradlew)) {
 $scenario = if ([string]::IsNullOrWhiteSpace($ScenarioName)) {
     if ($ValidationProfile -eq "Round56PhysicalLighting") {
         "round56-physical-lighting-$($Mode.ToLowerInvariant())"
+    } elseif ($ValidationProfile -eq "Round7FinalPhysicalComposite") {
+        "round7-final-physical-composite-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round7DenoiseComposite") {
         "round7-denoise-composite-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round7CompositeStability") {
         "round7-composite-stability-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round7EmissiveGiSurface") {
         "round7-emissive-gi-surface-$($Mode.ToLowerInvariant())"
+    } elseif ($ValidationProfile -eq "VisualLightingMilestone1") {
+        "visual-lighting-milestone1-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
         "round8-adaptive-heatmap-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round9VirtualizedGeometry") {
@@ -1662,7 +2087,13 @@ $configExisted = Test-Path -LiteralPath $configPath
 if ($configExisted) {
     $backupConfig = Get-Content -Raw -LiteralPath $configPath
 }
-
+$optionsPath = Join-Path $root "run\options.txt"
+$backupOptionsBytes = $null
+$optionsExisted = Test-Path -LiteralPath $optionsPath
+if ($optionsExisted) {
+    $backupOptionsBytes = [System.IO.File]::ReadAllBytes((Resolve-Path $optionsPath))
+}
+$optionsTemporarilyChanged = $false
 $aliasPath = $null
 $createdAlias = $false
 $process = $null
@@ -1675,6 +2106,8 @@ try {
     $round10CaptureIntent = $null
     $round11CaptureIntent = $null
     $round56PhysicalLightingCaptureIntent = $null
+    $round7FinalPhysicalCompositeCaptureIntent = $null
+    $visualLightingMilestone1CaptureIntent = $null
     if ($ValidationProfile -eq "Round56PhysicalLighting") {
         if ($ScreenshotSource -ne "InClient") {
             throw "Round56PhysicalLighting requires -ScreenshotSource InClient so capture provenance comes from the Minecraft client screenshot hook."
@@ -1686,6 +2119,28 @@ try {
             ([bool]$round56PhysicalLightingCaptureIntent.rendererEnabled) `
             ([string]$round56PhysicalLightingCaptureIntent.debugOverlay) `
             ([string]$round56PhysicalLightingCaptureIntent.compositeMode)
+    } elseif ($ValidationProfile -eq "Round7FinalPhysicalComposite") {
+        if ($ScreenshotSource -ne "InClient") {
+            throw "Round7FinalPhysicalComposite requires -ScreenshotSource InClient so capture provenance comes from the Minecraft client screenshot hook."
+        }
+        $RejectWindowScreenshotSource = $true
+        $round7FinalPhysicalCompositeCaptureIntent = Get-Round7FinalPhysicalCompositeCaptureIntent $Mode
+        Write-LucernaConfig `
+            $root `
+            ([bool]$round7FinalPhysicalCompositeCaptureIntent.rendererEnabled) `
+            ([string]$round7FinalPhysicalCompositeCaptureIntent.debugOverlay) `
+            ([string]$round7FinalPhysicalCompositeCaptureIntent.compositeMode)
+    } elseif ($ValidationProfile -eq "VisualLightingMilestone1") {
+        if ($ScreenshotSource -ne "InClient") {
+            throw "VisualLightingMilestone1 requires -ScreenshotSource InClient so capture provenance comes from the Minecraft client screenshot hook."
+        }
+        $RejectWindowScreenshotSource = $true
+        $visualLightingMilestone1CaptureIntent = Get-VisualLightingMilestone1CaptureIntent $Mode
+        Write-LucernaConfig `
+            $root `
+            ([bool]$visualLightingMilestone1CaptureIntent.rendererEnabled) `
+            ([string]$visualLightingMilestone1CaptureIntent.debugOverlay) `
+            ([string]$visualLightingMilestone1CaptureIntent.compositeMode)
     } elseif ($ValidationProfile -eq "Round7DenoiseComposite") {
         $round7CaptureIntent = Get-Round7CaptureIntent $Mode
         Write-LucernaConfig `
@@ -1785,14 +2240,44 @@ try {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
-    if ($ValidationProfile -eq "Round5DirectSurface" -or $ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round56PhysicalLighting" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing" -or $ValidationProfile -eq "Round11Restir") {
+    if ($ValidationProfile -eq "Round5DirectSurface" -or $ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round56PhysicalLighting" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round7FinalPhysicalComposite" -or $ValidationProfile -eq "VisualLightingMilestone1" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing" -or $ValidationProfile -eq "Round11Restir") {
         $psi.Environment["LUCERNA_HIDE_PROOF_OVERLAYS"] = "true"
+    }
+    if ($ValidationProfile -eq "Round5DirectSurface") {
+        $psi.Environment["LUCERNA_ENABLE_CPU_DIRECT_TEXTURE_COMPOSITE"] = "true"
     }
     if ($ValidationProfile -eq "Round56PhysicalLighting") {
         $psi.Environment["LUCERNA_PHYSICAL_LIGHTING_CAPTURE_MODE"] = [string]$round56PhysicalLightingCaptureIntent.artifactRole
         $psi.Environment["LUCERNA_PHYSICAL_LIGHTING_ARTIFACT_ROLE"] = [string]$round56PhysicalLightingCaptureIntent.artifactRole
         $psi.Environment["LUCERNA_PHYSICAL_LIGHTING_VISUAL_PROOF_OWNER"] = "controller"
         $psi.Environment["LUCERNA_PHYSICAL_LIGHTING_STRICT_PROOF"] = "true"
+    }
+    if ($ValidationProfile -eq "Round7FinalPhysicalComposite") {
+        $psi.Environment["LUCERNA_PHYSICAL_LIGHTING_CAPTURE_MODE"] = [string]$round7FinalPhysicalCompositeCaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_PHYSICAL_LIGHTING_ARTIFACT_ROLE"] = [string]$round7FinalPhysicalCompositeCaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_FINAL_PHYSICAL_COMPOSITE_CAPTURE_MODE"] = [string]$round7FinalPhysicalCompositeCaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_FINAL_PHYSICAL_COMPOSITE_SCENE"] = [string]$round7FinalPhysicalCompositeCaptureIntent.sceneKind
+        $psi.Environment["LUCERNA_FINAL_PHYSICAL_COMPOSITE_SCENE_STATE"] = [string]$round7FinalPhysicalCompositeCaptureIntent.sceneState
+        $psi.Environment["LUCERNA_FINAL_PHYSICAL_COMPOSITE_STRICT_PROOF"] = "true"
+        $psi.Environment["LUCERNA_REQUIRE_SAME_CAMERA_PHYSICAL_COMPOSITE"] = "true"
+    }
+    if ($ValidationProfile -eq "VisualLightingMilestone1") {
+        $psi.Environment["LUCERNA_VISUAL_LIGHTING_MILESTONE"] = "1"
+        $psi.Environment["LUCERNA_VISUAL_LIGHTING_MILESTONE1_CAPTURE_MODE"] = [string]$visualLightingMilestone1CaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_VISUAL_LIGHTING_MILESTONE1_ARTIFACT_ROLE"] = [string]$visualLightingMilestone1CaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_VISUAL_LIGHTING_MILESTONE1_SCENE"] = [string]$visualLightingMilestone1CaptureIntent.sceneKind
+        $psi.Environment["LUCERNA_VISUAL_LIGHTING_MILESTONE1_SCENE_STATE"] = [string]$visualLightingMilestone1CaptureIntent.sceneState
+        $psi.Environment["LUCERNA_VISUAL_LIGHTING_MILESTONE1_STRICT_PROOF"] = "true"
+        $psi.Environment["LUCERNA_REQUIRE_SAME_CAMERA_VISUAL_LIGHTING_MILESTONE1"] = "true"
+        $psi.Environment["LUCERNA_REJECT_FIXED_BLOB_VISUALS"] = "true"
+        $psi.Environment["LUCERNA_REJECT_FULLSCREEN_WASH_VISUALS"] = "true"
+        $psi.Environment["LUCERNA_REJECT_LOW_RES_DEBUG_MARKERS"] = "true"
+        $psi.Environment["LUCERNA_PHYSICAL_LIGHTING_CAPTURE_MODE"] = [string]$visualLightingMilestone1CaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_PHYSICAL_LIGHTING_ARTIFACT_ROLE"] = [string]$visualLightingMilestone1CaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_FINAL_PHYSICAL_COMPOSITE_CAPTURE_MODE"] = [string]$visualLightingMilestone1CaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_FINAL_PHYSICAL_COMPOSITE_SCENE"] = [string]$visualLightingMilestone1CaptureIntent.sceneKind
+        $psi.Environment["LUCERNA_FINAL_PHYSICAL_COMPOSITE_SCENE_STATE"] = [string]$visualLightingMilestone1CaptureIntent.sceneState
+        $psi.Environment["LUCERNA_FINAL_PHYSICAL_COMPOSITE_STRICT_PROOF"] = "true"
     }
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
         $psi.Environment["LUCERNA_ROUND7_CAPTURE_MODE"] = [string]$round7CaptureIntent.artifactRole
@@ -1890,6 +2375,18 @@ try {
         } else {
             @($round56PhysicalLightingCaptureIntent.requiredPatterns)
         }
+    } elseif ($ValidationProfile -eq "Round7FinalPhysicalComposite") {
+        if ($PhysicalLightingRequiredLogPattern.Count -gt 0) {
+            @($PhysicalLightingRequiredLogPattern)
+        } else {
+            @($round7FinalPhysicalCompositeCaptureIntent.requiredPatterns)
+        }
+    } elseif ($ValidationProfile -eq "VisualLightingMilestone1") {
+        if ($PhysicalLightingRequiredLogPattern.Count -gt 0) {
+            @($PhysicalLightingRequiredLogPattern)
+        } else {
+            @($visualLightingMilestone1CaptureIntent.requiredPatterns)
+        }
     } elseif ($ValidationProfile -eq "Round7DenoiseComposite") {
         @($round7CaptureIntent.requiredPatterns)
     } elseif ($ValidationProfile -eq "Round7CompositeStability") {
@@ -1935,8 +2432,8 @@ try {
     } elseif ($ValidationProfile -eq "Round5DirectSurface" -and $Mode -ne "Baseline") {
         @(
             "Lucerna direct lighting plan: .*emissive=[1-9][0-9]*.*shadowCandidates=[1-9][0-9]*.*surfaceSampleSections=[1-9][0-9]*.*surfaceSamples=[1-9][0-9]*\.",
-            "Lucerna native direct lighting execution: .*outputWriteRecorded=true.*resolveRecorded=true.*ready=true.*cpuOutput=true.*cpuOutputEnergy=[1-9][0-9.eE+-]*.*cpuOutputChecksum=[1-9][0-9]*.*reason=direct_lighting_(?:surface_sample|emissive_candidate)_cpu_output_generated",
-            "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true(?=[^`r`n]*mode=(?![^`r`n]*focus-window)[^`r`n]*(?:direct|emissive))(?=[^`r`n]*(?:surface|world|final|composite))"
+            "Lucerna native direct lighting execution: .*outputWriteRecorded=true.*resolveRecorded=true.*ready=true.*cpuOutput=true.*cpuOutputEnergy=[1-9][0-9.eE+-]*.*cpuOutputChecksum=[1-9][0-9]*",
+            "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true(?=[^`r`n]*cleanGameplayComposite=true)(?=[^`r`n]*experimentalVisualStack=false)(?=[^`r`n]*cinematicCompositeUsesShadowAndBloomPasses=false)"
         )
     } elseif ($ValidationProfile -eq "Round5DirectSurface") {
         @()
@@ -1979,6 +2476,93 @@ try {
             "R7 proof",
             "proofMarkerSource=true",
             "cpuOutputProofMarker=true",
+            "invalid descriptor",
+            "VK_ERROR",
+            "VK_[A-Z_]*ERROR",
+            "Lucerna native error",
+            "native error",
+            "Vulkan error"
+        ) + @($PhysicalLightingForbiddenLogPattern)
+    } elseif ($ValidationProfile -eq "Round7FinalPhysicalComposite") {
+        @(
+            "temporarySourceReady=true",
+            "temporaryDirectLightSubstitution=true",
+            "using the current direct-light RGBA payload as the temporary visible source",
+            "Lucerna public Mojang final composite: .*metadataOnlyPreview=true",
+            "Lucerna Round 6 diffuse GI preview composite: .*metadata-only",
+            "physicalLighting.*metadata scaffold",
+            "physicalLighting.*no_render_output",
+            "physicalGiTracingQuality=(?!open)",
+            "physical GI .*production-quality",
+            "physicallyCorrectGi=true",
+            "realPhysicalGiTracing=true",
+            "realGpuGiTracing=true",
+            "Lucerna public Mojang final composite: .*metadata scaffold",
+            "Lucerna public Mojang final composite: .*no_render_output",
+            "round6-diffuse-gi-focus-window-additive",
+            "final-composite-direct-light-focus-window-additive",
+            "sourceIdentity=native-direct-light-rgba8,focusWindowOnly=true",
+            "focusWindowOnly(?:Submitted)?=true",
+            "focus_window_only=true",
+            "round5-direct-proof",
+            "R5 visual proof",
+            "round6-gi-proof",
+            "R6 GI proof",
+            "R7 proof",
+            "proofMarkerSource=true",
+            "cpuOutputProofMarker=true",
+            "invalid descriptor",
+            "VK_ERROR",
+            "VK_[A-Z_]*ERROR",
+            "Lucerna native error",
+            "native error",
+            "Vulkan error"
+        ) + @($PhysicalLightingForbiddenLogPattern)
+    } elseif ($ValidationProfile -eq "VisualLightingMilestone1") {
+        @(
+            "temporarySourceReady=true",
+            "temporaryDirectLightSubstitution=true",
+            "using the current direct-light RGBA payload as the temporary visible source",
+            "Lucerna public Mojang final composite: .*metadataOnlyPreview=true",
+            "Lucerna public Mojang final composite: .*metadata scaffold",
+            "Lucerna public Mojang final composite: .*no_render_output",
+            "Lucerna Round 6 diffuse GI preview composite: .*metadata-only",
+            "round6-diffuse-gi-focus-window-additive",
+            "final-composite-direct-light-focus-window-additive",
+            "sourceIdentity=native-direct-light-rgba8,focusWindowOnly=true",
+            "focusWindowOnly(?:Submitted)?=true",
+            "focus_window_only=true",
+            "round5-direct-proof",
+            "R5 visual proof",
+            "round6-gi-proof",
+            "R6 GI proof",
+            "R7 proof",
+            "proofMarkerSource=true",
+            "cpuOutputProofMarker=true",
+            "screenSpaceBlobComposite=true",
+            "fixedDarkBlobRemoved=false",
+            "fixedBlobRejected=false",
+            "fixed_blob_rejected=false",
+            "rectangularWashoutRisk=true",
+            "rectangular_washout_rejected=false",
+            "fullScreenWash=true",
+            "fullscreen_wash=true",
+            "fullscreen-wash",
+            "diagnostic-fullscreen",
+            "fullscreen-warm-additive",
+            "lowResolutionDirectTextureDraw=true",
+            "low_resolution_direct_texture_draw=true",
+            "lowResDebugMarker=true",
+            "low_res_debug_marker=true",
+            "lowResolutionDebugMarker=true",
+            "low_resolution_debug_marker=true",
+            "debugMarkerOnly=true",
+            "debug_marker_only=true",
+            "realWorldSpaceShadow=false",
+            "real_world_space_shadow=false",
+            "screen-space-geometry-shaped-daytime-shadow-overlay",
+            "decalBoundary=.*not-shadow-map",
+            "realVoxelShadow=false[^`r`n]*realRayTracedShadow=false[^`r`n]*realWorldSpaceShadow=false",
             "invalid descriptor",
             "VK_ERROR",
             "VK_[A-Z_]*ERROR",
@@ -2163,6 +2747,14 @@ try {
         Invoke-Round7CompositeStabilitySceneAction ([string]$round7StabilityCaptureIntent.sceneAction) $markerLog
         Start-Sleep -Seconds 3
     }
+    if ($ValidationProfile -eq "Round7FinalPhysicalComposite") {
+        Invoke-Round7CompositeStabilitySceneAction ([string]$round7FinalPhysicalCompositeCaptureIntent.sceneAction) $markerLog
+        Start-Sleep -Seconds 3
+    }
+    if ($ValidationProfile -eq "VisualLightingMilestone1") {
+        Invoke-VisualLightingMilestone1SceneAction ([string]$visualLightingMilestone1CaptureIntent.sceneAction) $markerLog
+        Start-Sleep -Seconds 3
+    }
     if ($ValidationProfile -eq "Round7EmissiveGiSurface") {
         Invoke-Round7EmissiveGiSurfaceSceneAction $markerLog
         Start-Sleep -Seconds 5
@@ -2171,7 +2763,7 @@ try {
     if ($enabledPatterns.Count -gt 0) {
         Wait-LatestLogPattern $markerLog $enabledPatterns $deadline $earlyFailureLogPaths $forbiddenPatterns
     }
-    if (($ValidationProfile -eq "Round56PhysicalLighting" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing" -or $ValidationProfile -eq "Round11Restir") -and -not $SetupScene) {
+    if (($ValidationProfile -eq "Round56PhysicalLighting" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round7FinalPhysicalComposite" -or $ValidationProfile -eq "VisualLightingMilestone1" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing" -or $ValidationProfile -eq "Round11Restir") -and -not $SetupScene) {
         Start-Sleep -Seconds 8
     }
 
@@ -2185,14 +2777,58 @@ try {
         Add-LucernaControllerMarker $markerLog "round7.emissiveGiSurface.cameraLockedBeforeScreenshot=true yaw=-90 pitch=0"
     }
     Clear-MinecraftChat
+    if ($ValidationProfile -eq "Round7FinalPhysicalComposite") {
+        Send-MinecraftChatCommand "/time set 1000"
+        Send-MinecraftChatCommand "/weather clear"
+        Add-LucernaControllerMarker $markerLog "round7.finalPhysicalComposite.forceDaytimeBeforeScreenshot=true timeOfDay=1000 weather=clear"
+        Start-Sleep -Seconds 2
+        Send-MinecraftChatCommand "/tp @s -13 181.45 -22 24 4"
+        Add-LucernaControllerMarker $markerLog "round7.finalPhysicalComposite.cameraLockedBeforeScreenshot=true bankCamera=true dryCamera=true yaw=24 pitch=4"
+        Start-Sleep -Seconds 2
+        Clear-MinecraftChat
+    }
+    if ($ValidationProfile -eq "VisualLightingMilestone1") {
+        Send-MinecraftChatCommand "/time set 6000"
+        Send-MinecraftChatCommand "/weather clear"
+        Add-LucernaControllerMarker $markerLog "visualLightingMilestone1.forceDaytimeBeforeScreenshot=true timeOfDay=6000 weather=clear"
+        Start-Sleep -Seconds 2
+        Send-MinecraftChatCommand "/tp @s 0 181.55 -27 0 7"
+        Add-LucernaControllerMarker $markerLog "visualLightingMilestone1.cameraLockedBeforeScreenshot=true dryCamera=true sameCamera=true yaw=0 pitch=7 camera=0,181.55,-27"
+        Start-Sleep -Seconds 2
+        Clear-MinecraftChat
+    }
     $hudHiddenForScreenshot = $false
+    $hideHudForRound7FinalPhysical = (
+        $ValidationProfile -eq "Round7FinalPhysicalComposite" -and
+        $round7FinalPhysicalCompositeCaptureIntent -and
+        [bool]$round7FinalPhysicalCompositeCaptureIntent.hideHudForScreenshot
+    )
+    $hideHudForVisualLightingMilestone1 = (
+        $ValidationProfile -eq "VisualLightingMilestone1" -and
+        $visualLightingMilestone1CaptureIntent -and
+        [bool]$visualLightingMilestone1CaptureIntent.hideHudForScreenshot
+    )
     if ($ValidationProfile -eq "Round7EmissiveGiSurface" -and [bool]$round7SurfaceCaptureIntent.hideHudForScreenshot) {
         Add-LucernaControllerMarker $markerLog "round7.emissiveGiSurface.captureRole=$($round7SurfaceCaptureIntent.artifactRole) hideGuiBeforeScreenshot=true fixedWorldSurfaceRegion=true commandFeedback=false chatCleared=true"
         Send-MinecraftKeys "{F1}"
         $hudHiddenForScreenshot = $true
         Start-Sleep -Seconds 3
+    } elseif ($hideHudForRound7FinalPhysical) {
+        Add-LucernaControllerMarker $markerLog "round7.finalPhysicalComposite.captureRole=$($round7FinalPhysicalCompositeCaptureIntent.artifactRole) hideGuiBeforeScreenshot=true cinematicWorldScreenshot=true commandFeedback=false chatCleared=true"
+        Send-MinecraftKeys "{F1}"
+        $hudHiddenForScreenshot = $true
+        Start-Sleep -Seconds 3
+    } elseif ($hideHudForVisualLightingMilestone1) {
+        Add-LucernaControllerMarker $markerLog "visualLightingMilestone1.captureRole=$($visualLightingMilestone1CaptureIntent.artifactRole) hideGuiBeforeScreenshot=true dryDaytimeMilestoneScreenshot=true commandFeedback=false chatCleared=true"
+        Send-MinecraftKeys "{F1}"
+        $hudHiddenForScreenshot = $true
+        Start-Sleep -Seconds 3
     } elseif ($ValidationProfile -eq "Round7EmissiveGiSurface") {
         Add-LucernaControllerMarker $markerLog "round7.emissiveGiSurface.captureRole=$($round7SurfaceCaptureIntent.artifactRole) hideGuiBeforeScreenshot=false fixedWorldSurfaceRegion=true commandFeedback=false chatCleared=true"
+    } elseif ($ValidationProfile -eq "Round7FinalPhysicalComposite") {
+        Add-LucernaControllerMarker $markerLog "round7.finalPhysicalComposite.captureRole=$($round7FinalPhysicalCompositeCaptureIntent.artifactRole) hideGuiBeforeScreenshot=false cinematicWorldScreenshot=true commandFeedback=false chatCleared=true"
+    } elseif ($ValidationProfile -eq "VisualLightingMilestone1") {
+        Add-LucernaControllerMarker $markerLog "visualLightingMilestone1.captureRole=$($visualLightingMilestone1CaptureIntent.artifactRole) hideGuiBeforeScreenshot=false dryDaytimeMilestoneScreenshot=true commandFeedback=false chatCleared=true"
     }
     $temporalRepeatEnabled = (
         (
@@ -2378,6 +3014,33 @@ try {
         Write-Host "physicalLightingRequiredPatternCount=$($enabledPatterns.Count)"
         Write-Host "physicalLightingForbiddenPatternCount=$($forbiddenPatterns.Count)"
     }
+    if ($round7FinalPhysicalCompositeCaptureIntent) {
+        Write-Host "finalPhysicalCompositeArtifactRole=$($round7FinalPhysicalCompositeCaptureIntent.artifactRole)"
+        Write-Host "finalPhysicalCompositeScene=$($round7FinalPhysicalCompositeCaptureIntent.sceneKind)"
+        Write-Host "finalPhysicalCompositeSceneState=$($round7FinalPhysicalCompositeCaptureIntent.sceneState)"
+        Write-Host "finalPhysicalCompositeMode=$($round7FinalPhysicalCompositeCaptureIntent.compositeMode)"
+        Write-Host "finalPhysicalCompositeDebugOverlay=$($round7FinalPhysicalCompositeCaptureIntent.debugOverlay)"
+        Write-Host "finalPhysicalCompositeSameCameraRequired=true"
+        Write-Host "finalPhysicalCompositeStrictProof=true"
+        Write-Host "finalPhysicalCompositeRequiredPatternCount=$($enabledPatterns.Count)"
+        Write-Host "finalPhysicalCompositeForbiddenPatternCount=$($forbiddenPatterns.Count)"
+    }
+    if ($visualLightingMilestone1CaptureIntent) {
+        Write-Host "visualLightingMilestone1ArtifactRole=$($visualLightingMilestone1CaptureIntent.artifactRole)"
+        Write-Host "visualLightingMilestone1Scene=$($visualLightingMilestone1CaptureIntent.sceneKind)"
+        Write-Host "visualLightingMilestone1SceneState=$($visualLightingMilestone1CaptureIntent.sceneState)"
+        Write-Host "visualLightingMilestone1Mode=$($visualLightingMilestone1CaptureIntent.compositeMode)"
+        Write-Host "visualLightingMilestone1DebugOverlay=$($visualLightingMilestone1CaptureIntent.debugOverlay)"
+        Write-Host "visualLightingMilestone1SameCameraRequired=true"
+        Write-Host "visualLightingMilestone1DryDaytimeRequired=true"
+        Write-Host "visualLightingMilestone1RealWorldSpaceShadowRequired=true"
+        Write-Host "visualLightingMilestone1RejectFixedBlobs=true"
+        Write-Host "visualLightingMilestone1RejectFullscreenWash=true"
+        Write-Host "visualLightingMilestone1RejectLowResDebugMarkers=true"
+        Write-Host "visualLightingMilestone1HudHiddenForScreenshot=$hudHiddenForScreenshot"
+        Write-Host "visualLightingMilestone1RequiredPatternCount=$($enabledPatterns.Count)"
+        Write-Host "visualLightingMilestone1ForbiddenPatternCount=$($forbiddenPatterns.Count)"
+    }
     if ($round8CaptureIntent) {
         Write-Host "round8ArtifactRole=$($round8CaptureIntent.artifactRole)"
         Write-Host "round8Heatmap=$($round8CaptureIntent.heatmapKind)"
@@ -2422,6 +3085,13 @@ try {
         Set-Content -LiteralPath $configPath -Value $backupConfig -Encoding UTF8
     } elseif (Test-Path -LiteralPath $configPath) {
         Remove-Item -LiteralPath $configPath -Force
+    }
+    if ($optionsTemporarilyChanged) {
+        if ($optionsExisted -and $backupOptionsBytes) {
+            [System.IO.File]::WriteAllBytes((Join-Path $root "run\options.txt"), $backupOptionsBytes)
+        } elseif (Test-Path -LiteralPath $optionsPath) {
+            Remove-Item -LiteralPath $optionsPath -Force
+        }
     }
     if ($createdAlias -and $aliasPath -and (Test-Path -LiteralPath $aliasPath)) {
         try {

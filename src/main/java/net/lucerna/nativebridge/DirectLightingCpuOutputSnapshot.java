@@ -134,6 +134,34 @@ public record DirectLightingCpuOutputSnapshot(
         return this.hasCpuOutputTelemetry();
     }
 
+    public boolean directSurfaceSpillOutputReady() {
+        return this.hasCpuOutputTelemetry()
+                && this.candidateCount > 0
+                && this.outputCount > 0
+                && this.outputWriteRecorded
+                && this.resolveRecorded
+                && this.hasNonzeroEnergy();
+    }
+
+    public String directSurfaceSpillReadinessReason() {
+        if (!this.hasExecutionTelemetry()) {
+            return this.readinessReason;
+        }
+        if (this.candidateCount <= 0) {
+            return "native direct-light execution reported no receiver candidates";
+        }
+        if (!this.hasCpuOutputTelemetry()) {
+            return "native direct-light CPU output telemetry is incomplete";
+        }
+        if (!this.outputWriteRecorded || !this.resolveRecorded || this.outputCount <= 0) {
+            return "native direct-light output write/resolve markers are incomplete";
+        }
+        if (!this.hasNonzeroEnergy()) {
+            return "native direct-light output has no nonzero energy/checksum evidence";
+        }
+        return "native direct-light CPU output has receiver candidates, resolved output, and nonzero energy";
+    }
+
     public String pixelPayloadStatus() {
         if (!this.hasCpuOutputTelemetry()) {
             return "native CPU direct-light output telemetry is not available";
@@ -151,6 +179,8 @@ public record DirectLightingCpuOutputSnapshot(
                 + " pixels=" + this.outputPixels
                 + " energy=" + this.outputEnergy
                 + " checksum=" + this.outputChecksum
+                + " directSurfaceSpillReady=" + this.directSurfaceSpillOutputReady()
+                + " directSurfaceSpillReason=" + this.directSurfaceSpillReadinessReason()
                 + " reason=" + this.readinessReason;
     }
 

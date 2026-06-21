@@ -27,6 +27,19 @@ public record DirectLightColor(
         return new DirectLightColor(1.0F, 0.72F, 0.42F);
     }
 
+    public static DirectLightColor materialStableEmissive(int materialId, int blockLightLevel) {
+        if (blockLightLevel <= 0) {
+            return warmEmissive();
+        }
+        return switch (Math.floorMod(materialId, 5)) {
+            case 0 -> new DirectLightColor(1.0F, 0.70F, 0.36F);
+            case 1 -> new DirectLightColor(0.62F, 0.86F, 1.0F);
+            case 2 -> new DirectLightColor(1.0F, 0.44F, 0.12F);
+            case 3 -> new DirectLightColor(1.0F, 0.58F, 0.30F);
+            default -> new DirectLightColor(0.92F, 0.82F, 0.62F);
+        };
+    }
+
     public boolean hasEnergy() {
         return this.red > 0.0F || this.green > 0.0F || this.blue > 0.0F;
     }

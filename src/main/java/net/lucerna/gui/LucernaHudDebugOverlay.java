@@ -4,6 +4,7 @@ import net.lucerna.LucernaController;
 import net.lucerna.config.DebugOverlay;
 import net.lucerna.nativebridge.DirectLightingCpuOutputPayload;
 import net.lucerna.nativebridge.Round6DiffuseGiCpuOutputPayload;
+import net.lucerna.render.preview.ProofVisualMode;
 import net.lucerna.telemetry.LucernaStatusSnapshot;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -49,7 +50,7 @@ public final class LucernaHudDebugOverlay {
 
         boolean debugOverlayVisible = controller.getConfig().debugOverlay() != DebugOverlay.OFF;
         boolean proofOverlayVisible = shouldRenderDirectLightProofOverlay(snapshot);
-        boolean round6GiProofVisible = debugOverlayVisible && shouldRenderRound6GiProofOverlay(snapshot);
+        boolean round6GiProofVisible = shouldRenderRound6GiProofOverlay(snapshot);
         if (!debugOverlayVisible && !proofOverlayVisible && !round6GiProofVisible) {
             return;
         }
@@ -240,6 +241,9 @@ public final class LucernaHudDebugOverlay {
         if (proofOverlaysHiddenForValidation()) {
             return false;
         }
+        if (!ProofVisualMode.directLightProofOverlayAllowed(snapshot.debugOverlay())) {
+            return false;
+        }
         return LucernaController.getInstance().directLightingCpuOutputPayload().readyForPreviewDraw();
     }
 
@@ -283,11 +287,14 @@ public final class LucernaHudDebugOverlay {
         if (proofOverlaysHiddenForValidation()) {
             return false;
         }
+        if (!ProofVisualMode.round6GiProofOverlayAllowed(snapshot.debugOverlay())) {
+            return false;
+        }
         return LucernaController.getInstance().round6DiffuseGiCpuOutputPayload().readyForPreviewDraw();
     }
 
     private static boolean proofOverlaysHiddenForValidation() {
-        return "true".equalsIgnoreCase(System.getenv("LUCERNA_HIDE_PROOF_OVERLAYS"));
+        return ProofVisualMode.proofOverlaysHidden();
     }
 
     private static String round6GiEvidenceLabel(Round6DiffuseGiCpuOutputPayload payload) {

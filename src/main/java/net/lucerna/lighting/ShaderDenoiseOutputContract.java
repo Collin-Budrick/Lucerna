@@ -6,8 +6,15 @@ public record ShaderDenoiseOutputContract(
         boolean shaderWritableOutput,
         boolean shaderDispatchPrepared,
         boolean shaderOutputImageReady,
+        boolean shaderOutputImageOwnedByShaderPass,
+        boolean shaderOutputStorageWritable,
+        boolean shaderOutputBarrierReady,
+        boolean shaderOutputFinalCompositeConsumable,
         boolean shaderOutputMaterialReady,
         boolean shaderGeneratedOutput,
+        boolean publicMojangShaderVisualOutputAttempted,
+        boolean publicMojangShaderVisualOutputSubmitted,
+        boolean publicMojangShaderVisualOutputReady,
         boolean cpuReadbackFallbackActive,
         boolean realDenoiseShaderOutput,
         boolean geometryAwareInputsBound,
@@ -56,8 +63,13 @@ public record ShaderDenoiseOutputContract(
                 shaderWritableOutput,
                 shaderDispatchPrepared,
                 shaderOutputImageReady,
+                shaderOutputImageOwnedByShaderPass,
+                shaderOutputStorageWritable,
+                shaderOutputBarrierReady,
+                shaderOutputFinalCompositeConsumable,
                 shaderOutputMaterialReady,
                 shaderGeneratedOutput,
+                publicMojangShaderVisualOutputReady,
                 cpuReadbackFallbackActive,
                 realDenoiseShaderOutput
         ));
@@ -74,8 +86,13 @@ public record ShaderDenoiseOutputContract(
                 shaderWritableOutput,
                 shaderDispatchPrepared,
                 shaderOutputImageReady,
+                shaderOutputImageOwnedByShaderPass,
+                shaderOutputStorageWritable,
+                shaderOutputBarrierReady,
+                shaderOutputFinalCompositeConsumable,
                 shaderOutputMaterialReady,
                 shaderGeneratedOutput,
+                publicMojangShaderVisualOutputReady,
                 cpuReadbackFallbackActive,
                 realDenoiseShaderOutput
         ));
@@ -85,8 +102,13 @@ public record ShaderDenoiseOutputContract(
                 shaderWritableOutput,
                 shaderDispatchPrepared,
                 shaderOutputImageReady,
+                shaderOutputImageOwnedByShaderPass,
+                shaderOutputStorageWritable,
+                shaderOutputBarrierReady,
+                shaderOutputFinalCompositeConsumable,
                 shaderOutputMaterialReady,
                 shaderGeneratedOutput,
+                publicMojangShaderVisualOutputReady,
                 cpuReadbackFallbackActive,
                 realDenoiseShaderOutput
         ));
@@ -95,6 +117,13 @@ public record ShaderDenoiseOutputContract(
 
     public static ShaderDenoiseOutputContract disabled(String reason) {
         return new ShaderDenoiseOutputContract(
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
                 false,
                 false,
                 false,
@@ -153,6 +182,13 @@ public record ShaderDenoiseOutputContract(
                 false,
                 false,
                 false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
+                false,
                 true,
                 false,
                 geometryAwareInputsBound,
@@ -193,13 +229,18 @@ public record ShaderDenoiseOutputContract(
         return new ShaderDenoiseOutputContract(
                 snapshot.hasExecutionTelemetry(),
                 snapshot.shaderDenoiseDispatchPrepared(),
-                snapshot.shaderDenoiseOutputImageReady()
-                        && !snapshot.shaderDenoiseOutputImageCandidateCpuStaged()
-                        && !snapshot.shaderDenoiseOutputImageCandidateNonGpu(),
+                snapshot.shaderDenoiseRealOutputPathReady(),
                 snapshot.shaderDenoiseDispatchPrepared(),
                 snapshot.shaderDenoiseOutputImageReady(),
+                snapshot.shaderDenoiseOutputImageOwnedByShaderPass(),
+                snapshot.shaderDenoiseOutputStorageWritable(),
+                snapshot.shaderDenoiseOutputBarrierReady(),
+                snapshot.shaderDenoiseOutputFinalCompositeConsumable(),
                 snapshot.shaderDenoiseOutputMaterialReady(),
                 snapshot.shaderDenoiseShaderGeneratedOutput(),
+                snapshot.publicMojangShaderVisualOutputAttempted(),
+                snapshot.publicMojangShaderVisualOutputSubmitted(),
+                snapshot.publicMojangShaderVisualOutputReady(),
                 snapshot.shaderDenoiseCpuReadbackFallbackActive(),
                 snapshot.realShaderDenoiseOutputReady(),
                 snapshot.rawGiInputReady(),
@@ -238,8 +279,13 @@ public record ShaderDenoiseOutputContract(
                 && this.shaderWritableOutput
                 && this.shaderDispatchPrepared
                 && this.shaderOutputImageReady
+                && this.shaderOutputImageOwnedByShaderPass
+                && this.shaderOutputStorageWritable
+                && this.shaderOutputBarrierReady
+                && this.shaderOutputFinalCompositeConsumable
                 && this.shaderOutputMaterialReady
                 && this.shaderGeneratedOutput
+                && !this.publicMojangShaderVisualOutputReady
                 && !this.cpuReadbackFallbackActive
                 && this.realDenoiseShaderOutput
                 && !this.shaderOutputImageCandidateReady
@@ -255,8 +301,15 @@ public record ShaderDenoiseOutputContract(
                 + " shaderWritableOutput=" + this.shaderWritableOutput
                 + " shaderDispatchPrepared=" + this.shaderDispatchPrepared
                 + " shaderOutputImageReady=" + this.shaderOutputImageReady
+                + " shaderOutputImageOwnedByShaderPass=" + this.shaderOutputImageOwnedByShaderPass
+                + " shaderOutputStorageWritable=" + this.shaderOutputStorageWritable
+                + " shaderOutputBarrierReady=" + this.shaderOutputBarrierReady
+                + " shaderOutputFinalCompositeConsumable=" + this.shaderOutputFinalCompositeConsumable
                 + " shaderOutputMaterialReady=" + this.shaderOutputMaterialReady
                 + " shaderGeneratedOutput=" + this.shaderGeneratedOutput
+                + " publicMojangVisualAttempted=" + this.publicMojangShaderVisualOutputAttempted
+                + " publicMojangVisualSubmitted=" + this.publicMojangShaderVisualOutputSubmitted
+                + " publicMojangVisualReady=" + this.publicMojangShaderVisualOutputReady
                 + " cpuReadbackFallbackActive=" + this.cpuReadbackFallbackActive
                 + " realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
                 + " candidateOnly=" + this.shaderOutputImageCandidateReady
@@ -274,6 +327,7 @@ public record ShaderDenoiseOutputContract(
                 + " historyRejection=" + this.historyRejectionResource
                 + " varianceConfidence=" + this.varianceConfidenceResource
                 + " executionBoundary=" + this.outputExecutionBoundary
+                + " publicMojangVisualBoundary=" + this.publicMojangShaderVisualOutputBoundary()
                 + " qualityBoundary=" + this.rawVsDenoisedQualityBoundary
                 + " blocker=" + this.shaderOutputBlockerReason
                 + " reason=" + this.readinessReason;
@@ -298,8 +352,15 @@ public record ShaderDenoiseOutputContract(
                 + " shaderWritableOutput=" + this.shaderWritableOutput
                 + " shaderDispatchPrepared=" + this.shaderDispatchPrepared
                 + " shaderOutputImageReady=" + this.shaderOutputImageReady
+                + " shaderOutputImageOwnedByShaderPass=" + this.shaderOutputImageOwnedByShaderPass
+                + " shaderOutputStorageWritable=" + this.shaderOutputStorageWritable
+                + " shaderOutputBarrierReady=" + this.shaderOutputBarrierReady
+                + " shaderOutputFinalCompositeConsumable=" + this.shaderOutputFinalCompositeConsumable
                 + " shaderOutputMaterialReady=" + this.shaderOutputMaterialReady
                 + " shaderGeneratedOutput=" + this.shaderGeneratedOutput
+                + " publicMojangVisualAttempted=" + this.publicMojangShaderVisualOutputAttempted
+                + " publicMojangVisualSubmitted=" + this.publicMojangShaderVisualOutputSubmitted
+                + " publicMojangVisualReady=" + this.publicMojangShaderVisualOutputReady
                 + " cpuReadbackFallbackActive=" + this.cpuReadbackFallbackActive
                 + " realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
                 + " candidateOnly=" + this.shaderOutputImageCandidateReady
@@ -312,21 +373,43 @@ public record ShaderDenoiseOutputContract(
         return "shaderDenoiseOutputReadiness"
                 + " dispatchPrepared=" + this.shaderDispatchPrepared
                 + " imageReady=" + this.shaderOutputImageReady
+                + " imageOwnedByShaderPass=" + this.shaderOutputImageOwnedByShaderPass
+                + " storageWritable=" + this.shaderOutputStorageWritable
+                + " barrierReady=" + this.shaderOutputBarrierReady
+                + " finalCompositeConsumable=" + this.shaderOutputFinalCompositeConsumable
                 + " materialReady=" + this.shaderOutputMaterialReady
                 + " shaderGenerated=" + this.shaderGeneratedOutput
+                + " publicMojangVisualAttempted=" + this.publicMojangShaderVisualOutputAttempted
+                + " publicMojangVisualSubmitted=" + this.publicMojangShaderVisualOutputSubmitted
+                + " publicMojangVisualReady=" + this.publicMojangShaderVisualOutputReady
                 + " cpuFallback=" + this.cpuReadbackFallbackActive
                 + " realShaderOutput=" + this.realDenoiseShaderOutput
                 + " candidateOnly=" + this.shaderOutputImageCandidateReady
                 + " candidateCpuStaged=" + this.shaderOutputImageCandidateCpuStaged
                 + " candidateNonGpu=" + this.shaderOutputImageCandidateNonGpu
                 + " readyForProof=" + this.readyForControllerShaderProof()
+                + " publicMojangVisualBoundary=" + this.publicMojangShaderVisualOutputBoundary()
                 + " blocker=" + this.shaderOutputBlockerReason
                 + " reason=" + this.readinessReason;
     }
 
     public String qualityBoundarySummary() {
         return "rawVsDenoisedQualityBoundary=" + this.rawVsDenoisedQualityBoundary
-                + "; executionBoundary=" + this.outputExecutionBoundary;
+                + "; executionBoundary=" + this.outputExecutionBoundary
+                + "; publicMojangVisualBoundary=" + this.publicMojangShaderVisualOutputBoundary();
+    }
+
+    public String publicMojangShaderVisualOutputBoundary() {
+        if (this.publicMojangShaderVisualOutputReady) {
+            return "public Mojang shader visual output ready; not real compute/native shader denoise output";
+        }
+        if (this.publicMojangShaderVisualOutputSubmitted) {
+            return "public Mojang shader visual output submitted; readiness not proven";
+        }
+        if (this.publicMojangShaderVisualOutputAttempted) {
+            return "public Mojang shader visual output attempted; submission/readiness not proven";
+        }
+        return "public Mojang shader visual output not reported";
     }
 
     private static String defaultPendingReason(
@@ -335,8 +418,13 @@ public record ShaderDenoiseOutputContract(
             boolean shaderWritableOutput,
             boolean shaderDispatchPrepared,
             boolean shaderOutputImageReady,
+            boolean shaderOutputImageOwnedByShaderPass,
+            boolean shaderOutputStorageWritable,
+            boolean shaderOutputBarrierReady,
+            boolean shaderOutputFinalCompositeConsumable,
             boolean shaderOutputMaterialReady,
             boolean shaderGeneratedOutput,
+            boolean publicMojangShaderVisualOutputReady,
             boolean cpuReadbackFallbackActive,
             boolean realDenoiseShaderOutput
     ) {
@@ -355,8 +443,23 @@ public record ShaderDenoiseOutputContract(
         if (!shaderOutputImageReady) {
             return "shader denoise output image is not ready";
         }
+        if (!shaderOutputImageOwnedByShaderPass) {
+            return "shader denoise output image is not owned by the shader denoise pass";
+        }
+        if (!shaderOutputStorageWritable) {
+            return "shader denoise output storage/image binding is not writable";
+        }
+        if (!shaderOutputBarrierReady) {
+            return "shader denoise output memory/layout barrier is not ready";
+        }
+        if (!shaderOutputFinalCompositeConsumable) {
+            return "shader denoise output is not consumable by final composite";
+        }
         if (!shaderOutputMaterialReady) {
             return "shader denoise material/descriptors are not ready";
+        }
+        if (publicMojangShaderVisualOutputReady) {
+            return "public Mojang visual shader output is ready, but it is not a real shader denoise output target";
         }
         if (!shaderGeneratedOutput) {
             return cpuReadbackFallbackActive
@@ -375,8 +478,13 @@ public record ShaderDenoiseOutputContract(
             boolean shaderWritableOutput,
             boolean shaderDispatchPrepared,
             boolean shaderOutputImageReady,
+            boolean shaderOutputImageOwnedByShaderPass,
+            boolean shaderOutputStorageWritable,
+            boolean shaderOutputBarrierReady,
+            boolean shaderOutputFinalCompositeConsumable,
             boolean shaderOutputMaterialReady,
             boolean shaderGeneratedOutput,
+            boolean publicMojangShaderVisualOutputReady,
             boolean cpuReadbackFallbackActive,
             boolean realDenoiseShaderOutput
     ) {
@@ -394,6 +502,15 @@ public record ShaderDenoiseOutputContract(
         }
         if (!shaderOutputImageReady || !shaderOutputMaterialReady) {
             return "shader output target or descriptor material is not ready for generated output";
+        }
+        if (!shaderOutputImageOwnedByShaderPass
+                || !shaderOutputStorageWritable
+                || !shaderOutputBarrierReady
+                || !shaderOutputFinalCompositeConsumable) {
+            return "shader output target exists but lacks owned writable storage, barriers, or final-composite handoff";
+        }
+        if (publicMojangShaderVisualOutputReady) {
+            return "public Mojang visual shader output is separate from real shader-generated denoise output";
         }
         if (!shaderGeneratedOutput) {
             return cpuReadbackFallbackActive
@@ -434,8 +551,13 @@ public record ShaderDenoiseOutputContract(
             boolean shaderWritableOutput,
             boolean shaderDispatchPrepared,
             boolean shaderOutputImageReady,
+            boolean shaderOutputImageOwnedByShaderPass,
+            boolean shaderOutputStorageWritable,
+            boolean shaderOutputBarrierReady,
+            boolean shaderOutputFinalCompositeConsumable,
             boolean shaderOutputMaterialReady,
             boolean shaderGeneratedOutput,
+            boolean publicMojangShaderVisualOutputReady,
             boolean cpuReadbackFallbackActive,
             boolean realDenoiseShaderOutput
     ) {
@@ -444,8 +566,13 @@ public record ShaderDenoiseOutputContract(
                 && shaderWritableOutput
                 && shaderDispatchPrepared
                 && shaderOutputImageReady
+                && shaderOutputImageOwnedByShaderPass
+                && shaderOutputStorageWritable
+                && shaderOutputBarrierReady
+                && shaderOutputFinalCompositeConsumable
                 && shaderOutputMaterialReady
                 && shaderGeneratedOutput
+                && !publicMojangShaderVisualOutputReady
                 && !cpuReadbackFallbackActive
                 && realDenoiseShaderOutput) {
             return "real shader denoise output is available for validation";
@@ -456,8 +583,13 @@ public record ShaderDenoiseOutputContract(
                 shaderWritableOutput,
                 shaderDispatchPrepared,
                 shaderOutputImageReady,
+                shaderOutputImageOwnedByShaderPass,
+                shaderOutputStorageWritable,
+                shaderOutputBarrierReady,
+                shaderOutputFinalCompositeConsumable,
                 shaderOutputMaterialReady,
                 shaderGeneratedOutput,
+                publicMojangShaderVisualOutputReady,
                 cpuReadbackFallbackActive,
                 realDenoiseShaderOutput
         );

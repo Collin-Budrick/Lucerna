@@ -1,0 +1,18 @@
+{
+  "lucerna.name": "Lucerna",
+  "lucerna.options.title": "Lucerna",
+  "lucerna.options.status": "Status",
+  "lucerna.options.renderer_enabled": "Renderer enabled",
+  "lucerna.options.quality": "Quality",
+  "lucerna.options.debug_overlay": "Debug overlay",
+  "lucerna.status.active": "Lucerna Vulkan renderer active",
+  "lucerna.status.disabled": "Lucerna disabled",
+  "lucerna.status.iris_disabled": "Iris shader packs are disabled while Lucerna is active",
+  "lucerna.debug.status_line": "Lucerna status",
+  "lucerna.debug.backend": "Backend",
+  "lucerna.debug.native_bridge": "Native bridge",
+  "lucerna.debug.iris": "Iris",
+  "lucerna.debug.dirty_regions": "Dirty regions",
+  "lucerna.debug.upload_generations": "Upload generations",
+  "lucerna.debug.frame_timings": "Frame timings"
+}

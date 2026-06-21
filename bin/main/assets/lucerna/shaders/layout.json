@@ -1,0 +1,2090 @@
+{
+  "schemaVersion": 1,
+  "layoutVersion": "0.3.3",
+  "namespace": "lucerna",
+  "intent": "Stable shader/resource metadata for Lucerna-owned Vulkan passes. This file is descriptive until the native renderer consumes it.",
+  "subAgentRule": "Do not run shader compilation, Gradle checks, Minecraft launches, render smoke tests, or builds used as verification.",
+  "naming": {
+    "passIdFormat": "lucerna.<stage>.<name>",
+    "passNameFormat": "lowercase letters, numbers, and underscores; keep existing public ids stable",
+    "attachmentNameFormat": "lucerna.<stage>.<name>",
+    "descriptorNameFormat": "UpperCamelCase logical resource names with fixed set/binding numbers",
+    "shaderFileFormat": "<stage>/<name>.<stage-suffix>.glsl",
+    "placeholderShader": "noop.glsl"
+  },
+  "phase5Telemetry": {
+    "intent": "Canonical Phase 5 names and order for direct lighting, diffuse GI, denoise, composite, cache confidence, variance, and ray-budget debug targets.",
+    "dependencyOrder": [
+      {
+        "executionOrder": 200,
+        "passId": "lucerna.lighting.direct",
+        "writes": [
+          "lucerna.lighting.direct"
+        ],
+        "debugTargets": [
+          "overlay.direct_lighting"
+        ]
+      },
+      {
+        "executionOrder": 210,
+        "passId": "lucerna.lighting.gi",
+        "reads": [
+          "lucerna.lighting.direct"
+        ],
+        "writes": [
+          "lucerna.lighting.diffuseGi",
+          "lucerna.lighting.cacheConfidence",
+          "lucerna.lighting.variance",
+          "lucerna.lighting.rayBudget",
+          "RadianceHistory",
+          "VarianceConfidence"
+        ],
+        "debugTargets": [
+          "overlay.diffuse_gi",
+          "overlay.cache_confidence",
+          "overlay.variance",
+          "overlay.ray_budget"
+        ]
+      },
+      {
+        "executionOrder": 300,
+        "passId": "lucerna.denoise.diffuse",
+        "reads": [
+          "lucerna.lighting.direct",
+          "lucerna.lighting.diffuseGi",
+          "lucerna.lighting.cacheConfidence",
+          "lucerna.lighting.variance",
+          "lucerna.lighting.rayBudget"
+        ],
+        "writes": [
+          "lucerna.denoise.diffuse",
+          "lucerna.denoise.rejectionMask"
+        ],
+        "debugTargets": [
+          "overlay.denoised_diffuse",
+          "overlay.denoise_rejection"
+        ]
+      },
+      {
+        "executionOrder": 390,
+        "passId": "lucerna.debug.overlay",
+        "reads": [
+          "DebugLabelTable",
+          "lucerna.lighting.direct",
+          "lucerna.lighting.diffuseGi",
+          "lucerna.lighting.cacheConfidence",
+          "lucerna.lighting.variance",
+          "lucerna.lighting.rayBudget",
+          "lucerna.denoise.diffuse",
+          "lucerna.denoise.rejectionMask"
+        ],
+        "writes": [
+          "lucerna.debug.overlay"
+        ],
+        "debugTargets": [
+          "overlay.debug_overlay"
+        ]
+      },
+      {
+        "executionOrder": 400,
+        "passId": "lucerna.composite.final",
+        "reads": [
+          "lucerna.denoise.diffuse",
+          "lucerna.debug.overlay"
+        ],
+        "writes": [
+          "lucerna.composite.worldColor"
+        ],
+        "debugTargets": [
+          "overlay.final_composite"
+        ]
+      }
+    ],
+    "debugTargetNames": [
+      {
+        "key": "overlay.direct_lighting",
+        "label": "Direct Lighting",
+        "attachmentName": "lucerna.lighting.direct",
+        "resolution": "full",
+        "sourcePass": "lucerna.lighting.direct"
+      },
+      {
+        "key": "overlay.diffuse_gi",
+        "label": "Diffuse GI",
+        "attachmentName": "lucerna.lighting.diffuseGi",
+        "resolution": "half",
+        "sourcePass": "lucerna.lighting.gi"
+      },
+      {
+        "key": "overlay.cache_confidence",
+        "label": "Cache Confidence",
+        "attachmentName": "lucerna.lighting.cacheConfidence",
+        "resolution": "half",
+        "sourcePass": "lucerna.lighting.gi"
+      },
+      {
+        "key": "overlay.variance",
+        "label": "GI Variance",
+        "attachmentName": "lucerna.lighting.variance",
+        "resolution": "half",
+        "sourcePass": "lucerna.lighting.gi"
+      },
+      {
+        "key": "overlay.ray_budget",
+        "label": "Ray Budget",
+        "attachmentName": "lucerna.lighting.rayBudget",
+        "resolution": "half",
+        "sourcePass": "lucerna.lighting.gi",
+        "classification": "0 reuse-only, 1 low, 2 medium, 3 high"
+      },
+      {
+        "key": "overlay.denoised_diffuse",
+        "label": "Denoised Diffuse",
+        "attachmentName": "lucerna.denoise.diffuse",
+        "resolution": "full",
+        "sourcePass": "lucerna.denoise.diffuse"
+      },
+      {
+        "key": "overlay.denoise_rejection",
+        "label": "Denoise Rejection",
+        "attachmentName": "lucerna.denoise.rejectionMask",
+        "resolution": "full",
+        "sourcePass": "lucerna.denoise.diffuse"
+      },
+      {
+        "key": "overlay.debug_overlay",
+        "label": "Debug Overlay",
+        "attachmentName": "lucerna.debug.overlay",
+        "resolution": "full",
+        "sourcePass": "lucerna.debug.overlay"
+      },
+      {
+        "key": "overlay.final_composite",
+        "label": "Final Composite",
+        "attachmentName": "lucerna.composite.worldColor",
+        "resolution": "full",
+        "sourcePass": "lucerna.composite.final"
+      }
+    ],
+    "stageReadiness": [
+      {
+        "key": "readiness.lucerna.lighting.direct",
+        "passId": "lucerna.lighting.direct",
+        "status": "payload_contract_ready_algorithm_open",
+        "firstLightingMilestoneRole": "required_producer",
+        "readyWhen": [
+          "G-buffer attachment names and formats are bound",
+          "Frame constants provide sun, moon, time, weather, and viewport data",
+          "EmissiveBlockList generation matches the uploaded world/material generation",
+          "Shadow candidate budget and direct-light validation flags are supplied through push constants"
+        ],
+        "openUntil": "A non-placeholder direct-light shader writes visible sun, moon, emissive, and shadow-ray results into lucerna.lighting.direct."
+      },
+      {
+        "key": "readiness.lucerna.lighting.gi",
+        "passId": "lucerna.lighting.gi",
+        "status": "payload_contract_ready_algorithm_open",
+        "firstLightingMilestoneRole": "required_producer",
+        "readyWhen": [
+          "lucerna.lighting.direct is available for bounce input",
+          "VoxelOccupancy and DirtyRegionQueue generations are coherent",
+          "RadianceHistory and VarianceConfidence are valid or explicitly reset",
+          "Cache confidence, variance, and ray-budget attachments are allocated at half resolution"
+        ],
+        "openUntil": "A non-placeholder GI shader writes low-resolution diffuse radiance, confidence, variance, ray-budget classification, and temporal history updates."
+      },
+      {
+        "key": "readiness.lucerna.denoise.diffuse",
+        "passId": "lucerna.denoise.diffuse",
+        "status": "payload_contract_ready_algorithm_open",
+        "firstLightingMilestoneRole": "required_filter",
+        "readyWhen": [
+          "Direct lighting and diffuse GI outputs are readable",
+          "PreviousDepth, PreviousNormalRoughness, PreviousLighting, MotionHistory, and VarianceConfidence are valid or reset",
+          "Cache confidence and variance ranges are documented for clamp/rejection decisions"
+        ],
+        "openUntil": "A non-placeholder denoise shader writes full-resolution lucerna.denoise.diffuse and lucerna.denoise.rejectionMask."
+      },
+      {
+        "key": "readiness.lucerna.composite.final",
+        "passId": "lucerna.composite.final",
+        "status": "handoff_contract_ready_algorithm_open",
+        "firstLightingMilestoneRole": "required_consumer",
+        "readyWhen": [
+          "Denoised diffuse lighting is available at full resolution",
+          "Optional debug overlay target is readable when overlay mode is active",
+          "Borrowed Minecraft/Sodium world color target remains owned by the frame hook"
+        ],
+        "openUntil": "A non-placeholder composite path combines lighting with albedo and writes only lucerna.composite.worldColor before HUD and late translucency."
+      }
+    ],
+    "firstLightingMilestone": {
+      "id": "round4.first_lighting_milestone",
+      "round5FocusId": "round5.first_visible_direct_lighting",
+      "goal": "Visible basic emissive/direct light plus direct-light resolve through final composite, under controller-run screenshot and log validation.",
+      "entryBoundary": [
+        "Lucerna is active only on Sodium Vulkan",
+        "World/material upload generations have reached native queues",
+        "G-buffer targets are allocated and contain current-frame world data",
+        "No-op or flat composite path remains validated as non-corrupting"
+      ],
+      "inScope": [
+        "Direct sun and moon radiance",
+        "Bounded emissive block sampling",
+        "Voxel shadow-ray visibility for direct lighting",
+        "Half-resolution single-bounce diffuse GI",
+        "Cache confidence, variance, and ray-budget metadata",
+        "Edge-aware denoise and history rejection",
+        "Composite into the borrowed world color target before HUD and late translucency",
+        "Debug labels that expose stage readiness and milestone boundary state"
+      ],
+      "outOfScope": [
+        "Iris shader-pack rendering",
+        "Swapchain ownership or a separate render loop",
+        "Hardware ray tracing for entities or complex models",
+        "Volumetrics, water/transparency handling, temporal upscaling, and ReSTIR reservoirs"
+      ],
+      "exitBoundary": [
+        "Controller observes non-placeholder direct lighting in lucerna.lighting.direct",
+        "Controller observes a direct-light resolve into lucerna.composite.worldColor without consuming Iris shader-pack outputs",
+        "Controller observes the disabled or baseline screenshot return to vanilla/no-op behavior",
+        "Controller observes debug overlay telemetry for candidate counts, dispatch frame, output-buffer status, and no HUD corruption",
+        "Stage readiness debug labels distinguish contract-ready stages from algorithm-complete stages"
+      ],
+      "controllerScreenshotMarkers": [
+        "baseline_disabled_or_noop: Lucerna disabled or no-op path shows the same test wall without direct-light contribution",
+        "enabled_direct: Lucerna enabled shows nearby surfaces brightened by one emissive block, sun, or moon input",
+        "debug_overlay_direct: overlay text or heatmap shows direct lighting enabled, emissive candidate count, shadow candidate count, dispatch frame, and output/resolve status",
+        "hud_integrity: crosshair, hotbar, chat, and debug text remain readable and are not tinted or overwritten",
+        "iris_isolation: Iris may expose Lucerna status/settings, but no Iris shader-pack color, depth, or lighting output is sampled by this pass"
+      ]
+    },
+    "placeholderPolicy": "All noop.glsl files must remain side-effect free and document future reads/writes without declaring storage images, atomics, barriers, discard, color output, or depth output."
+  },
+  "phase5Payloads": {
+    "intent": "Descriptive payload contracts for the first lighting milestone. These entries do not add descriptor bindings or require shader algorithm implementation.",
+    "directLightPayload": {
+      "producerPass": "lucerna.lighting.direct",
+      "stableNumericId": 200,
+      "outputAttachment": "lucerna.lighting.direct",
+      "resolution": "full",
+      "descriptorInputs": [
+        {
+          "set": 0,
+          "binding": 0,
+          "name": "LucernaFrameConstants",
+          "payload": "camera, viewport, time, weather, dimension hash, active pass mask, and debug validation flags"
+        },
+        {
+          "set": 0,
+          "binding": 5,
+          "name": "BlueNoiseTexture",
+          "payload": "frame-indexed sampling offset for direct shadow rays and emissive sampling"
+        },
+        {
+          "set": 1,
+          "binding": 0,
+          "name": "MaterialTable",
+          "payload": "material opacity, emissive strength, and surface flags used by direct shadow rays"
+        },
+        {
+          "set": 1,
+          "binding": 2,
+          "name": "VoxelOccupancy",
+          "payload": "voxel visibility data for direct shadow-ray traversal"
+        },
+        {
+          "set": 1,
+          "binding": 4,
+          "name": "EmissiveBlockList",
+          "payload": "bounded world-space emissive candidates with generation tracking from native upload"
+        }
+      ],
+      "candidatePayloads": [
+        {
+          "name": "DirectionalLightCandidate",
+          "fields": [
+            "direction.xyz",
+            "radiance.rgb",
+            "sourceKind sun=0 moon=1",
+            "shadowRayBudget",
+            "visibilityFlags"
+          ]
+        },
+        {
+          "name": "EmissiveLightCandidate",
+          "fields": [
+            "worldPosition.xyz",
+            "emissiveColor.rgb",
+            "emissiveStrength",
+            "materialId",
+            "generation",
+            "candidateWeight"
+          ]
+        }
+      ],
+      "attachmentPayload": {
+        "format": "R16G16B16A16_SFLOAT",
+        "channels": "rgb direct radiance in linear scene space; alpha reserved for direct visibility or confidence",
+        "clearBeforeWrite": true,
+        "historySensitive": false
+      },
+      "round5ResolveContract": {
+        "resolveConsumerPass": "lucerna.composite.final",
+        "resolveTarget": "lucerna.composite.worldColor",
+        "baselineMode": "Lucerna disabled or direct-light resolve disabled must leave the borrowed world color target visually equivalent to the validated no-op or flat-composite path.",
+        "enabledMode": "Direct-light resolve samples lucerna.lighting.direct and current albedo/opacity to make one nearby surface visibly brighter when a bounded emissive, sun, or moon candidate is present.",
+        "minimalResourcePath": {
+          "producer": "lucerna.lighting.direct",
+          "directOutputTarget": "lucerna.lighting.direct",
+          "requiredDirectInputs": [
+            "lucerna.gbuffer.depth",
+            "lucerna.gbuffer.normalRoughness",
+            "lucerna.gbuffer.albedoOpacity",
+            "lucerna.gbuffer.materialId",
+            "lucerna.gbuffer.emissive",
+            "LucernaFrameConstants",
+            "MaterialTable",
+            "VoxelOccupancy",
+            "EmissiveBlockList"
+          ],
+          "resolveConsumer": "lucerna.composite.final",
+          "resolveInputs": [
+            "lucerna.gbuffer.albedoOpacity",
+            "lucerna.lighting.direct"
+          ],
+          "resolveOutput": "lucerna.composite.worldColor",
+          "baselineDisableBehavior": "If Lucerna, direct lighting, or direct resolve is disabled, composite must not add direct radiance and must preserve the borrowed world color target as the validated no-op or flat-composite baseline.",
+          "enabledBehavior": "When enabled, composite may add the direct radiance from lucerna.lighting.direct to the current albedo/world color path before vanilla HUD and late translucency.",
+          "forbiddenInputs": [
+            "Iris shader-pack color",
+            "Iris shader-pack depth",
+            "Iris shader-pack shadow",
+            "Iris shader-pack lighting"
+          ]
+        },
+        "outputMarkers": [
+          "native direct lighting dispatch logged for the current frame",
+          "emissive candidate count is greater than zero when a glowstone, lamp, lava, or torch candidate is near the viewed wall",
+          "direct output buffer write marker is present before resolve",
+          "direct resolve marker is present before vanilla HUD and late translucency",
+          "no native errors are reported"
+        ],
+        "irisIsolation": "The direct-light resolve must not read or derive color from Iris shader-pack outputs; Iris remains settings/status-visible only while Lucerna owns rendering."
+      },
+      "handoffRules": [
+        "Do not blend into lucerna.composite.worldColor.",
+        "Do not write GI, denoise, or debug targets.",
+        "Downstream GI may sample this as first-bounce input after compute_write_to_shader_read transition."
+      ]
+    },
+    "giCachePayload": {
+      "producerPass": "lucerna.lighting.gi",
+      "stableNumericId": 210,
+      "resolution": "half",
+      "descriptorInputs": [
+        {
+          "set": 1,
+          "binding": 2,
+          "name": "VoxelOccupancy",
+          "payload": "visibility and occupancy for low-resolution diffuse bounce tracing"
+        },
+        {
+          "set": 1,
+          "binding": 3,
+          "name": "DirtyRegionQueue",
+          "payload": "dirty-region generation used to invalidate cache records near changed blocks, fluids, chunks, and materials"
+        },
+        {
+          "set": 2,
+          "binding": 3,
+          "name": "RadianceHistory",
+          "payload": "temporal diffuse GI radiance cache, invalidated on resize, dimension switch, resource reload, or history reset"
+        },
+        {
+          "set": 2,
+          "binding": 4,
+          "name": "VarianceConfidence",
+          "payload": "temporal variance and confidence cache, paired with current-frame confidence and variance outputs"
+        }
+      ],
+      "outputs": [
+        {
+          "attachmentName": "lucerna.lighting.diffuseGi",
+          "format": "R16G16B16A16_SFLOAT",
+          "channels": "rgb single-bounce diffuse radiance; alpha reserved for history weight or validity"
+        },
+        {
+          "attachmentName": "lucerna.lighting.cacheConfidence",
+          "format": "R16G16_SFLOAT",
+          "channels": "x current confidence; y cache age or invalidation reason"
+        },
+        {
+          "attachmentName": "lucerna.lighting.variance",
+          "format": "R16_SFLOAT",
+          "channels": "x current diffuse GI variance"
+        },
+        {
+          "attachmentName": "lucerna.lighting.rayBudget",
+          "format": "R8_UINT",
+          "channels": "0 reuse-only, 1 low, 2 medium, 3 high"
+        }
+      ],
+      "cacheRecordRules": [
+        "A dirty-region generation mismatch forces confidence toward zero before denoise consumes the payload.",
+        "History reset on dimension switch, world leave, resource reload, or resize must reset RadianceHistory and VarianceConfidence.",
+        "The first lighting milestone needs current-frame confidence and variance even if richer adaptive sampling remains future work."
+      ]
+    },
+    "denoiseCompositeHandoff": {
+      "denoiseProducerPass": "lucerna.denoise.diffuse",
+      "compositeConsumerPass": "lucerna.composite.final",
+      "denoiseInputs": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.diffuseGi",
+        "lucerna.lighting.cacheConfidence",
+        "lucerna.lighting.variance",
+        "lucerna.lighting.rayBudget",
+        "PreviousDepth",
+        "PreviousNormalRoughness",
+        "PreviousLighting",
+        "MotionHistory",
+        "VarianceConfidence"
+      ],
+      "denoiseOutputs": [
+        {
+          "attachmentName": "lucerna.denoise.diffuse",
+          "format": "R16G16B16A16_SFLOAT",
+          "channels": "rgb full-resolution diffuse lighting; alpha reserved for resolved confidence"
+        },
+        {
+          "attachmentName": "lucerna.denoise.rejectionMask",
+          "format": "R8_UNORM",
+          "channels": "x temporal rejection, reactive, or history repair mask"
+        }
+      ],
+      "compositeInputs": [
+        "lucerna.gbuffer.albedoOpacity",
+        "lucerna.lighting.direct",
+        "lucerna.lighting.diffuseGi",
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ],
+      "compositeOutput": "lucerna.composite.worldColor",
+      "round5DirectResolveMode": {
+        "modeKey": "direct_only_or_final_direct",
+        "requiredInputs": [
+          "lucerna.gbuffer.albedoOpacity",
+          "lucerna.lighting.direct"
+        ],
+        "optionalInputs": [
+          "lucerna.debug.overlay",
+          "lucerna.denoise.diffuse",
+          "lucerna.lighting.diffuseGi"
+        ],
+        "resolveRules": [
+          "Resolve happens before vanilla HUD and late translucency.",
+          "Resolve must preserve Minecraft/Sodium ownership of the world color target.",
+          "Resolve must be disableable so controller screenshots can compare baseline and enabled frames from the same scene.",
+          "Resolve must not consume Iris shader-pack color, depth, shadow, or lighting textures."
+        ],
+        "modeStates": [
+          {
+            "key": "baseline_disabled",
+            "directResolveEnabled": false,
+            "reads": [
+              "lucerna.gbuffer.albedoOpacity"
+            ],
+            "writes": [
+              "lucerna.composite.worldColor"
+            ],
+            "expectedVisualResult": "World color remains visually equivalent to the validated no-op or flat-composite baseline."
+          },
+          {
+            "key": "enabled_direct_only",
+            "directResolveEnabled": true,
+            "reads": [
+              "lucerna.gbuffer.albedoOpacity",
+              "lucerna.lighting.direct"
+            ],
+            "writes": [
+              "lucerna.composite.worldColor"
+            ],
+            "expectedVisualResult": "A bounded emissive, sun, or moon candidate can visibly brighten a nearby surface before HUD and late translucency."
+          },
+          {
+            "key": "iris_isolated",
+            "directResolveEnabled": true,
+            "forbiddenReads": [
+              "Iris shader-pack color",
+              "Iris shader-pack depth",
+              "Iris shader-pack shadow",
+              "Iris shader-pack lighting"
+            ],
+            "expectedVisualResult": "Iris remains settings/status-visible only and does not provide resolve input."
+          }
+        ]
+      },
+      "handoffBoundary": [
+        "Denoise owns upsampling and history rejection before composite.",
+        "Composite owns final world color staging only and must preserve Minecraft/Sodium swapchain ownership.",
+        "Composite runs before vanilla HUD and late translucency; it must not consume Iris shader-pack outputs."
+      ]
+    },
+    "debugReadinessPayload": {
+      "descriptorSource": "DebugLabelTable",
+      "round5OverlayInputs": [
+        "lighting enabled/disabled state",
+        "emissive candidate count",
+        "direct shadow candidate count",
+        "last direct lighting dispatch frame",
+        "direct output buffer write status",
+        "direct resolve status",
+        "CPU/native/GPU timing placeholder or timing value when available",
+        "controller screenshot marker state"
+      ],
+      "stageReadinessKeys": [
+        "readiness.lucerna.lighting.direct",
+        "readiness.lucerna.lighting.gi",
+        "readiness.lucerna.denoise.diffuse",
+        "readiness.lucerna.composite.final"
+      ],
+      "milestoneBoundaryKeys": [
+        "milestone.round4.first_lighting.entry",
+        "milestone.round4.first_lighting.exit",
+        "milestone.round5.direct_lighting.baseline",
+        "milestone.round5.direct_lighting.enabled",
+        "milestone.round5.direct_lighting.debug_overlay",
+        "milestone.round5.direct_lighting.hud_integrity"
+      ],
+      "displayRules": [
+        "Readiness labels report contract-ready versus algorithm-complete state.",
+        "Milestone boundary labels must remain visible through debug overlay metadata even before real lighting shaders land.",
+        "Round 5 overlay text must identify whether visible direct output is still pending controller validation.",
+        "Overlay inputs are Lucerna-owned telemetry; they do not sample Iris shader-pack outputs.",
+        "Labels are descriptive until the debug telemetry worker backs DebugLabelTable with runtime data."
+      ]
+    }
+  },
+  "frameConstants": {
+    "name": "LucernaFrameConstants",
+    "descriptor": {
+      "set": 0,
+      "binding": 0
+    },
+    "packing": "std140",
+    "updateFrequency": "per-frame",
+    "fields": [
+      {
+        "name": "view",
+        "type": "mat4",
+        "description": "Current world-to-view matrix."
+      },
+      {
+        "name": "projection",
+        "type": "mat4",
+        "description": "Current projection matrix after Minecraft/Sodium viewport selection."
+      },
+      {
+        "name": "viewProjection",
+        "type": "mat4",
+        "description": "Current projection * view matrix."
+      },
+      {
+        "name": "previousViewProjection",
+        "type": "mat4",
+        "description": "Previous accepted frame matrix, invalidated on dimension switch, resource reload, or history reset."
+      },
+      {
+        "name": "inverseViewProjection",
+        "type": "mat4",
+        "description": "Inverse of current viewProjection for ray reconstruction."
+      },
+      {
+        "name": "cameraWorldPosition",
+        "type": "vec4",
+        "description": "xyz camera origin in world coordinates, w reserved."
+      },
+      {
+        "name": "viewport",
+        "type": "uvec4",
+        "description": "x, y, width, height in framebuffer pixels."
+      },
+      {
+        "name": "renderScale",
+        "type": "vec4",
+        "description": "full-resolution scale, GI scale, denoise scale, reserved."
+      },
+      {
+        "name": "clipPlanes",
+        "type": "vec4",
+        "description": "near, far, reversedZ flag, reserved."
+      },
+      {
+        "name": "frameInfo",
+        "type": "uvec4",
+        "description": "frameIndex, historyIndex, dimensionHash, qualityPreset."
+      },
+      {
+        "name": "worldInfo",
+        "type": "vec4",
+        "description": "timeOfDay, rainStrength, thunderStrength, skyDarken."
+      },
+      {
+        "name": "debugInfo",
+        "type": "uvec4",
+        "description": "debugOverlayMode, validationFlags, activePassMask, reserved."
+      }
+    ]
+  },
+  "pushConstants": {
+    "packing": "std430-compatible scalar values",
+    "maxBytes": 128,
+    "ranges": [
+      {
+        "name": "LucernaPassPushConstants",
+        "stages": [
+          "vertex",
+          "fragment",
+          "compute"
+        ],
+        "fields": [
+          {
+            "name": "passId",
+            "type": "uint",
+            "description": "Stable numeric id mapped from the pass id string by the native renderer."
+          },
+          {
+            "name": "passFlags",
+            "type": "uint",
+            "description": "Per-pass feature toggles and validation flags."
+          },
+          {
+            "name": "frameIndex",
+            "type": "uint",
+            "description": "Mirrors frame constants for lightweight dispatch-only passes."
+          },
+          {
+            "name": "debugMode",
+            "type": "uint",
+            "description": "Selected overlay or pass debug mode."
+          },
+          {
+            "name": "targetSize",
+            "type": "uvec2",
+            "description": "Dispatch or render target dimensions in pixels."
+          },
+          {
+            "name": "sourceSize",
+            "type": "uvec2",
+            "description": "Primary input dimensions in pixels."
+          },
+          {
+            "name": "params0",
+            "type": "vec4",
+            "description": "Pass-owned scalar values such as kernel radius, exposure, blend factor, or ray budget."
+          },
+          {
+            "name": "params1",
+            "type": "vec4",
+            "description": "Pass-owned scalar values for future expansion."
+          }
+        ]
+      }
+    ],
+    "perPassUse": [
+      {
+        "passId": "lucerna.voxel.first_pass",
+        "params0": "dirty region generation, voxel update count, upload batch id, reserved"
+      },
+      {
+        "passId": "lucerna.gbuffer.main",
+        "params0": "section generation, material generation, render flags, reserved"
+      },
+      {
+        "passId": "lucerna.lighting.direct",
+        "params0": "sun strength, moon strength, shadow ray budget, reserved",
+        "params1": "emissive list generation, blue-noise frame offset, direct-light validation flags, reserved"
+      },
+      {
+        "passId": "lucerna.lighting.gi",
+        "params0": "GI resolution scale, bounce count, cache confidence threshold, adaptive ray budget",
+        "params1": "variance target, adaptive sample floor, adaptive sample ceiling, history reset weight"
+      },
+      {
+        "passId": "lucerna.denoise.diffuse",
+        "params0": "kernel radius, history blend, variance clamp, rejection strength",
+        "params1": "cache confidence weight, variance floor, variance ceiling, reactive mask threshold"
+      },
+      {
+        "passId": "lucerna.debug.overlay",
+        "params0": "overlay mode, selected material id, min value, max value",
+        "params1": "debug label table offset, ray budget display scale, cache confidence display scale, variance display scale"
+      },
+      {
+        "passId": "lucerna.composite.final",
+        "params0": "flat red, flat green, flat blue, flat alpha",
+        "params1": "debug overlay blend, exposure, tonemap flags, borrowed target flags"
+      }
+    ]
+  },
+  "descriptorSets": [
+    {
+      "set": 0,
+      "name": "frame",
+      "scope": "per-frame global constants and immutable samplers",
+      "bindings": [
+        {
+          "binding": 0,
+          "name": "LucernaFrameConstants",
+          "descriptorType": "uniform_buffer",
+          "stages": [
+            "vertex",
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 1,
+          "name": "LucernaCameraHistory",
+          "descriptorType": "uniform_buffer",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame",
+          "notes": "Previous camera jitter, accepted history age, and history reset reason."
+        },
+        {
+          "binding": 2,
+          "name": "LucernaQualityConstants",
+          "descriptorType": "uniform_buffer",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "on-config-change"
+        },
+        {
+          "binding": 3,
+          "name": "LinearClampSampler",
+          "descriptorType": "sampler",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "immutable"
+        },
+        {
+          "binding": 4,
+          "name": "NearestClampSampler",
+          "descriptorType": "sampler",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "immutable"
+        },
+        {
+          "binding": 5,
+          "name": "BlueNoiseTexture",
+          "descriptorType": "sampled_image",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "resource-pack-reload"
+        }
+      ]
+    },
+    {
+      "set": 1,
+      "name": "world",
+      "scope": "material, chunk, voxel, and world-delta resources owned by world/material/upload agents",
+      "bindings": [
+        {
+          "binding": 0,
+          "name": "MaterialTable",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "material-generation-change"
+        },
+        {
+          "binding": 1,
+          "name": "ChunkSectionTable",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "chunk-streaming"
+        },
+        {
+          "binding": 2,
+          "name": "VoxelOccupancy",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read_write",
+          "updateFrequency": "dirty-region-upload",
+          "notes": "Updated by lucerna.voxel.first_pass and read by lucerna.gbuffer.main plus lighting passes."
+        },
+        {
+          "binding": 3,
+          "name": "DirtyRegionQueue",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-upload-batch"
+        },
+        {
+          "binding": 4,
+          "name": "EmissiveBlockList",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "emissive-generation-change"
+        },
+        {
+          "binding": 5,
+          "name": "WorldUploadScratch",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "compute"
+          ],
+          "access": "read_write",
+          "updateFrequency": "per-upload-batch",
+          "notes": "Reserved for GPU-side upload staging once native upload packets exist."
+        }
+      ]
+    },
+    {
+      "set": 2,
+      "name": "history",
+      "scope": "previous-frame and temporal accumulation resources",
+      "bindings": [
+        {
+          "binding": 0,
+          "name": "PreviousDepth",
+          "descriptorType": "sampled_image",
+          "format": "D32_SFLOAT or borrowed depth-compatible format",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 1,
+          "name": "PreviousNormalRoughness",
+          "descriptorType": "sampled_image",
+          "format": "R16G16B16A16_SFLOAT",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 2,
+          "name": "PreviousLighting",
+          "descriptorType": "sampled_image",
+          "format": "R16G16B16A16_SFLOAT",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 3,
+          "name": "RadianceHistory",
+          "descriptorType": "storage_image",
+          "format": "R16G16B16A16_SFLOAT",
+          "stages": [
+            "compute"
+          ],
+          "access": "read_write",
+          "updateFrequency": "per-frame",
+          "notes": "Temporal diffuse GI radiance accumulation written and read by lucerna.lighting.gi; denoise consumes the resolved lighting outputs instead."
+        },
+        {
+          "binding": 4,
+          "name": "VarianceConfidence",
+          "descriptorType": "storage_image",
+          "format": "R16G16_SFLOAT",
+          "stages": [
+            "compute"
+          ],
+          "access": "read_write",
+          "updateFrequency": "per-frame",
+          "notes": "Temporal aggregate for diffuse GI variance and cache confidence. Current-frame variance/cache confidence attachments are written by lucerna.lighting.gi before this history image is updated."
+        },
+        {
+          "binding": 5,
+          "name": "MotionHistory",
+          "descriptorType": "sampled_image",
+          "format": "R16G16B16A16_SFLOAT",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame"
+        }
+      ]
+    },
+    {
+      "set": 3,
+      "name": "debug",
+      "scope": "debug overlays, timing readback, and native queue telemetry",
+      "bindings": [
+        {
+          "binding": 0,
+          "name": "DebugConstants",
+          "descriptorType": "uniform_buffer",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 1,
+          "name": "TimingReadback",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 2,
+          "name": "NativeQueueTelemetry",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 3,
+          "name": "DebugOverlayTarget",
+          "descriptorType": "storage_image",
+          "format": "R8G8B8A8_UNORM",
+          "stages": [
+            "compute"
+          ],
+          "access": "write",
+          "updateFrequency": "resize-or-overlay-change"
+        },
+        {
+          "binding": 4,
+          "name": "DebugLabelTable",
+          "descriptorType": "storage_buffer",
+          "stages": [
+            "fragment",
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "resource-pack-reload",
+          "notes": "Stable debug labels for pass ids, attachment names, cache confidence, variance, and adaptive sampling overlays."
+        }
+      ]
+    }
+  ],
+  "attachments": [
+    {
+      "name": "lucerna.gbuffer.depth",
+      "ownerPass": "lucerna.gbuffer.main",
+      "format": "D32_SFLOAT",
+      "fallbackFormats": [
+        "D24_UNORM_S8_UINT when a borrowed Minecraft/Sodium depth target requires stencil compatibility"
+      ],
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "depth_stencil_attachment",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.gi",
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.gbuffer.normalRoughness",
+      "ownerPass": "lucerna.gbuffer.main",
+      "format": "R16G16B16A16_SFLOAT",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "color_attachment",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.gi",
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.gbuffer.albedoOpacity",
+      "ownerPass": "lucerna.gbuffer.main",
+      "format": "R8G8B8A8_UNORM",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "color_attachment",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.lighting.direct",
+        "lucerna.composite.final",
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.gbuffer.materialId",
+      "ownerPass": "lucerna.gbuffer.main",
+      "format": "R32_UINT",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "color_attachment",
+        "sampled",
+        "transfer_src"
+      ],
+      "consumers": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.gi",
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.gbuffer.emissive",
+      "ownerPass": "lucerna.gbuffer.main",
+      "format": "R16G16B16A16_SFLOAT",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "color_attachment",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.gi",
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.gbuffer.motionHistory",
+      "ownerPass": "lucerna.gbuffer.main",
+      "format": "R16G16B16A16_SFLOAT",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "color_attachment",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ]
+    },
+    {
+      "name": "lucerna.lighting.direct",
+      "ownerPass": "lucerna.lighting.direct",
+      "format": "R16G16B16A16_SFLOAT",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "storage_image",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.lighting.gi",
+        "lucerna.denoise.diffuse",
+        "lucerna.composite.final",
+        "lucerna.debug.overlay"
+      ],
+      "notes": "Full-resolution storage write for sun, moon, emissive block sampling, and direct shadow ray output. Clear before write; never blend with borrowed Minecraft color targets."
+    },
+    {
+      "name": "lucerna.lighting.diffuseGi",
+      "ownerPass": "lucerna.lighting.gi",
+      "format": "R16G16B16A16_SFLOAT",
+      "resolution": "half",
+      "samples": 1,
+      "usage": [
+        "storage_image",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.denoise.diffuse",
+        "lucerna.composite.final",
+        "lucerna.debug.overlay"
+      ],
+      "notes": "Half-resolution single-bounce diffuse GI radiance. Denoise owns upsampling and history rejection before final composite."
+    },
+    {
+      "name": "lucerna.lighting.cacheConfidence",
+      "ownerPass": "lucerna.lighting.gi",
+      "format": "R16G16_SFLOAT",
+      "resolution": "half",
+      "samples": 1,
+      "usage": [
+        "storage_image",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ],
+      "notes": "Half-resolution current-frame cache confidence. Channel x is confidence, y is reserved for cache age or invalidation reason."
+    },
+    {
+      "name": "lucerna.lighting.variance",
+      "ownerPass": "lucerna.lighting.gi",
+      "format": "R16_SFLOAT",
+      "resolution": "half",
+      "samples": 1,
+      "usage": [
+        "storage_image",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ],
+      "notes": "Half-resolution current-frame diffuse GI variance used for denoise clamps, history rejection, and debug visualization."
+    },
+    {
+      "name": "lucerna.lighting.rayBudget",
+      "ownerPass": "lucerna.lighting.gi",
+      "format": "R8_UINT",
+      "resolution": "half",
+      "samples": 1,
+      "usage": [
+        "storage_image",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ],
+      "notes": "Reserved ray-budget debug target and adaptive sampling classification for GI pixels or tiles: 0 reuse-only, 1 low, 2 medium, 3 high."
+    },
+    {
+      "name": "lucerna.denoise.diffuse",
+      "ownerPass": "lucerna.denoise.diffuse",
+      "format": "R16G16B16A16_SFLOAT",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "storage_image",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.composite.final",
+        "lucerna.debug.overlay"
+      ],
+      "notes": "Full-resolution denoised diffuse lighting. This is the composite input after cache-confidence weighting, variance clamp, and history rejection."
+    },
+    {
+      "name": "lucerna.denoise.rejectionMask",
+      "ownerPass": "lucerna.denoise.diffuse",
+      "format": "R8_UNORM",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "storage_image",
+        "sampled"
+      ],
+      "consumers": [
+        "lucerna.debug.overlay"
+      ],
+      "notes": "Full-resolution mask for temporal rejection, reactive pixels, and history repair diagnostics."
+    },
+    {
+      "name": "lucerna.composite.worldColor",
+      "ownerPass": "lucerna.composite.final",
+      "format": "borrowed Minecraft/Sodium world color target format",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "color_attachment",
+        "transfer_dst"
+      ],
+      "consumers": [
+        "Minecraft HUD and late translucency after Lucerna completes"
+      ],
+      "notes": "Lucerna must not own swapchain presentation; the frame hook borrows the active world color target."
+    },
+    {
+      "name": "lucerna.debug.overlay",
+      "ownerPass": "lucerna.debug.overlay",
+      "format": "R8G8B8A8_UNORM",
+      "resolution": "full",
+      "samples": 1,
+      "usage": [
+        "storage_image",
+        "sampled",
+        "color_attachment"
+      ],
+      "consumers": [
+        "lucerna.composite.final"
+      ],
+      "notes": "Optional full-resolution debug overlay composed by lucerna.composite.final when debug overlay mode is active."
+    }
+  ],
+  "passes": [
+    {
+      "id": "lucerna.voxel.first_pass",
+      "numericId": 90,
+      "stage": "voxel",
+      "directory": "voxel",
+      "type": "compute",
+      "executionOrder": 90,
+      "placeholderShader": "voxel/noop.glsl",
+      "descriptorSets": [
+        "frame",
+        "world"
+      ],
+      "reads": [
+        "MaterialTable",
+        "ChunkSectionTable",
+        "DirtyRegionQueue"
+      ],
+      "writes": [
+        "VoxelOccupancy",
+        "WorldUploadScratch"
+      ],
+      "pushConstants": "LucernaPassPushConstants",
+      "sideEffectFreePlaceholder": true,
+      "handoff": "Stages dirty voxel occupancy metadata consumed by the main G-buffer pass; placeholder remains side-effect free until native upload work lands."
+    },
+    {
+      "id": "lucerna.gbuffer.main",
+      "numericId": 100,
+      "stage": "gbuffer",
+      "directory": "gbuffer",
+      "type": "graphics",
+      "executionOrder": 100,
+      "placeholderShader": "gbuffer/noop.glsl",
+      "descriptorSets": [
+        "frame",
+        "world"
+      ],
+      "reads": [
+        "MaterialTable",
+        "ChunkSectionTable",
+        "VoxelOccupancy"
+      ],
+      "writes": [
+        "lucerna.gbuffer.depth",
+        "lucerna.gbuffer.normalRoughness",
+        "lucerna.gbuffer.albedoOpacity",
+        "lucerna.gbuffer.materialId",
+        "lucerna.gbuffer.emissive",
+        "lucerna.gbuffer.motionHistory"
+      ],
+      "pushConstants": "LucernaPassPushConstants",
+      "sideEffectFreePlaceholder": true,
+      "handoff": "Provides full-resolution geometry/material buffers for lighting, denoise, flat composite, and debug workers.",
+      "dependsOn": [
+        "lucerna.voxel.first_pass"
+      ],
+      "attachmentWriteSemantics": [
+        {
+          "semantic": "DEPTH",
+          "attachmentName": "lucerna.gbuffer.depth",
+          "producerPass": "lucerna.gbuffer.main",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": false,
+          "notes": "Matches GBufferWriteSemantic.DEPTH and GBufferTargetContract.DEPTH."
+        },
+        {
+          "semantic": "NORMAL_ROUGHNESS",
+          "attachmentName": "lucerna.gbuffer.normalRoughness",
+          "producerPass": "lucerna.gbuffer.main",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": false,
+          "notes": "Matches GBufferWriteSemantic.NORMAL_ROUGHNESS and GBufferTargetContract.NORMAL_ROUGHNESS."
+        },
+        {
+          "semantic": "ALBEDO_OPACITY",
+          "attachmentName": "lucerna.gbuffer.albedoOpacity",
+          "producerPass": "lucerna.gbuffer.main",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": false,
+          "notes": "Matches GBufferWriteSemantic.ALBEDO_OPACITY and GBufferTargetContract.ALBEDO_OPACITY."
+        },
+        {
+          "semantic": "MATERIAL_ID",
+          "attachmentName": "lucerna.gbuffer.materialId",
+          "producerPass": "lucerna.gbuffer.main",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": false,
+          "notes": "Matches GBufferWriteSemantic.MATERIAL_ID and GBufferTargetContract.MATERIAL_ID."
+        },
+        {
+          "semantic": "EMISSIVE",
+          "attachmentName": "lucerna.gbuffer.emissive",
+          "producerPass": "lucerna.gbuffer.main",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": false,
+          "notes": "Matches GBufferWriteSemantic.EMISSIVE and GBufferTargetContract.EMISSIVE."
+        },
+        {
+          "semantic": "MOTION_HISTORY",
+          "attachmentName": "lucerna.gbuffer.motionHistory",
+          "producerPass": "lucerna.gbuffer.main",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": true,
+          "notes": "Matches GBufferWriteSemantic.MOTION_HISTORY and GBufferTargetContract.MOTION_HISTORY."
+        }
+      ]
+    },
+    {
+      "id": "lucerna.lighting.direct",
+      "numericId": 200,
+      "stage": "lighting",
+      "directory": "lighting",
+      "type": "compute",
+      "executionOrder": 200,
+      "placeholderShader": "lighting/noop.glsl",
+      "descriptorSets": [
+        "frame",
+        "world",
+        "history"
+      ],
+      "reads": [
+        "lucerna.gbuffer.depth",
+        "lucerna.gbuffer.normalRoughness",
+        "lucerna.gbuffer.albedoOpacity",
+        "lucerna.gbuffer.materialId",
+        "lucerna.gbuffer.emissive",
+        "EmissiveBlockList",
+        "BlueNoiseTexture",
+        "VoxelOccupancy"
+      ],
+      "writes": [
+        "lucerna.lighting.direct"
+      ],
+      "pushConstants": "LucernaPassPushConstants",
+      "sideEffectFreePlaceholder": true,
+      "handoff": "Direct sun, moon, and emissive block lighting target for Round 5 direct-light resolve.",
+      "round5MinimalPath": {
+        "directOutputTarget": "lucerna.lighting.direct",
+        "consumerPass": "lucerna.composite.final",
+        "consumerOutput": "lucerna.composite.worldColor",
+        "baselineDisableMode": "No write to Minecraft/Sodium color targets from this pass; disabling direct resolve leaves the composite baseline unchanged.",
+        "irisIsolation": "This pass reads only Lucerna-owned G-buffer, world/material, voxel, frame, and emissive resources."
+      },
+      "dependsOn": [
+        "lucerna.gbuffer.main"
+      ],
+      "attachmentWriteSemantics": [
+        {
+          "semantic": "DIRECT_LIGHTING",
+          "attachmentName": "lucerna.lighting.direct",
+          "producerPass": "lucerna.lighting.direct",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": false,
+          "notes": "Writes full-resolution direct sun, moon, emissive, and shadow-ray lighting into a Lucerna-owned storage image. Round 5 composite resolve may sample this target to produce controller-visible lighting before HUD and late translucency."
+        }
+      ]
+    },
+    {
+      "id": "lucerna.lighting.gi",
+      "numericId": 210,
+      "stage": "lighting",
+      "directory": "lighting",
+      "type": "compute",
+      "executionOrder": 210,
+      "placeholderShader": "lighting/noop.glsl",
+      "descriptorSets": [
+        "frame",
+        "world",
+        "history"
+      ],
+      "reads": [
+        "lucerna.gbuffer.depth",
+        "lucerna.gbuffer.normalRoughness",
+        "lucerna.gbuffer.materialId",
+        "lucerna.gbuffer.emissive",
+        "lucerna.lighting.direct",
+        "BlueNoiseTexture",
+        "RadianceHistory",
+        "VarianceConfidence",
+        "VoxelOccupancy",
+        "DirtyRegionQueue"
+      ],
+      "writes": [
+        "lucerna.lighting.diffuseGi",
+        "lucerna.lighting.cacheConfidence",
+        "lucerna.lighting.variance",
+        "lucerna.lighting.rayBudget",
+        "RadianceHistory",
+        "VarianceConfidence"
+      ],
+      "pushConstants": "LucernaPassPushConstants",
+      "sideEffectFreePlaceholder": true,
+      "handoff": "Low-resolution first-bounce diffuse GI, cache confidence, variance, and ray-budget debug/adaptive sampling output.",
+      "dependsOn": [
+        "lucerna.gbuffer.main",
+        "lucerna.lighting.direct"
+      ],
+      "attachmentWriteSemantics": [
+        {
+          "semantic": "DIFFUSE_GI",
+          "attachmentName": "lucerna.lighting.diffuseGi",
+          "producerPass": "lucerna.lighting.gi",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": true,
+          "notes": "Writes half-resolution diffuse GI radiance before denoise upsampling and composite."
+        },
+        {
+          "semantic": "CACHE_CONFIDENCE",
+          "attachmentName": "lucerna.lighting.cacheConfidence",
+          "producerPass": "lucerna.lighting.gi",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": true,
+          "notes": "Writes current-frame cache confidence used by denoise, debug overlays, and temporal confidence history."
+        },
+        {
+          "semantic": "GI_VARIANCE",
+          "attachmentName": "lucerna.lighting.variance",
+          "producerPass": "lucerna.lighting.gi",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": true,
+          "notes": "Writes current-frame diffuse GI variance before denoise clamps and history rejection."
+        },
+        {
+          "semantic": "ADAPTIVE_RAY_BUDGET",
+          "attachmentName": "lucerna.lighting.rayBudget",
+          "producerPass": "lucerna.lighting.gi",
+          "required": false,
+          "clearBeforeWrite": true,
+          "historySensitive": true,
+          "notes": "Reserves ray-budget debug target and adaptive sampling classification output for future cache/adaptive sampling work; placeholder remains side-effect free."
+        }
+      ]
+    },
+    {
+      "id": "lucerna.denoise.diffuse",
+      "numericId": 300,
+      "stage": "denoise",
+      "directory": "denoise",
+      "type": "compute",
+      "executionOrder": 300,
+      "placeholderShader": "denoise/noop.glsl",
+      "descriptorSets": [
+        "frame",
+        "history"
+      ],
+      "reads": [
+        "lucerna.gbuffer.depth",
+        "lucerna.gbuffer.normalRoughness",
+        "lucerna.gbuffer.motionHistory",
+        "lucerna.lighting.direct",
+        "lucerna.lighting.diffuseGi",
+        "lucerna.lighting.cacheConfidence",
+        "lucerna.lighting.variance",
+        "lucerna.lighting.rayBudget",
+        "PreviousDepth",
+        "PreviousNormalRoughness",
+        "PreviousLighting",
+        "MotionHistory",
+        "VarianceConfidence"
+      ],
+      "writes": [
+        "lucerna.denoise.diffuse",
+        "lucerna.denoise.rejectionMask"
+      ],
+      "pushConstants": "LucernaPassPushConstants",
+      "sideEffectFreePlaceholder": true,
+      "handoff": "Edge-aware diffuse denoise, temporal rejection mask, and history repair input.",
+      "dependsOn": [
+        "lucerna.gbuffer.main",
+        "lucerna.lighting.direct",
+        "lucerna.lighting.gi"
+      ],
+      "attachmentWriteSemantics": [
+        {
+          "semantic": "DENOISED_DIFFUSE",
+          "attachmentName": "lucerna.denoise.diffuse",
+          "producerPass": "lucerna.denoise.diffuse",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": true,
+          "notes": "Writes full-resolution diffuse lighting after cache-confidence weighting, variance clamp, and temporal rejection."
+        },
+        {
+          "semantic": "DENOISE_REJECTION_MASK",
+          "attachmentName": "lucerna.denoise.rejectionMask",
+          "producerPass": "lucerna.denoise.diffuse",
+          "required": true,
+          "clearBeforeWrite": true,
+          "historySensitive": true,
+          "notes": "Writes an 8-bit rejection/reactive mask for debug overlays and later history repair."
+        }
+      ]
+    },
+    {
+      "id": "lucerna.debug.overlay",
+      "numericId": 500,
+      "stage": "debug",
+      "directory": "debug",
+      "type": "compute",
+      "executionOrder": 390,
+      "placeholderShader": "debug/noop.glsl",
+      "descriptorSets": [
+        "frame",
+        "world",
+        "history",
+        "debug"
+      ],
+      "reads": [
+        "lucerna.gbuffer.depth",
+        "lucerna.gbuffer.materialId",
+        "lucerna.lighting.direct",
+        "lucerna.lighting.diffuseGi",
+        "lucerna.lighting.cacheConfidence",
+        "lucerna.lighting.variance",
+        "lucerna.lighting.rayBudget",
+        "lucerna.denoise.diffuse",
+        "lucerna.denoise.rejectionMask",
+        "VarianceConfidence",
+        "DirtyRegionQueue",
+        "TimingReadback",
+        "NativeQueueTelemetry",
+        "DebugLabelTable"
+      ],
+      "writes": [
+        "lucerna.debug.overlay"
+      ],
+      "pushConstants": "LucernaPassPushConstants",
+      "sideEffectFreePlaceholder": true,
+      "handoff": "Backend, dirty-region, material-id, timing, native queue, direct lighting, diffuse GI, denoise, composite, cache confidence, variance, ray-budget, and debug label overlays.",
+      "dependsOn": [
+        "lucerna.gbuffer.main",
+        "lucerna.lighting.direct",
+        "lucerna.lighting.gi",
+        "lucerna.denoise.diffuse"
+      ],
+      "attachmentWriteSemantics": [
+        {
+          "semantic": "DEBUG_OVERLAY",
+          "attachmentName": "lucerna.debug.overlay",
+          "producerPass": "lucerna.debug.overlay",
+          "required": false,
+          "clearBeforeWrite": true,
+          "historySensitive": false,
+          "notes": "Writes optional debug visualization for backend status, dirty regions, material ids, timings, native queues, direct lighting, diffuse GI, denoise, composite, cache confidence, variance, and ray budget."
+        }
+      ]
+    },
+    {
+      "id": "lucerna.composite.final",
+      "numericId": 400,
+      "stage": "composite",
+      "directory": "composite",
+      "type": "graphics",
+      "executionOrder": 400,
+      "placeholderShader": "composite/noop.glsl",
+      "shaderResources": {
+        "finalCompositeFragment": "composite/final_composite.frag.glsl",
+        "previewFragment": null,
+        "notes": "The final composite shader resource is named for lucerna.composite.final and is distinct from core/direct_light_preview_*.fsh preview plumbing."
+      },
+      "descriptorSets": [
+        "frame",
+        "history",
+        "debug"
+      ],
+      "reads": [
+        "lucerna.gbuffer.albedoOpacity",
+        "lucerna.lighting.direct",
+        "lucerna.lighting.diffuseGi",
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ],
+      "writes": [
+        "lucerna.composite.worldColor"
+      ],
+      "pushConstants": "LucernaPassPushConstants",
+      "sideEffectFreePlaceholder": true,
+      "handoff": "Final composite staging output into the borrowed world color target before vanilla HUD and late translucency.",
+      "round5MinimalPath": {
+        "baselineDisableMode": "When direct resolve is disabled, do not add lucerna.lighting.direct; preserve the already validated no-op or flat-composite behavior.",
+        "enabledDirectMode": "When direct resolve is enabled, sample lucerna.lighting.direct with lucerna.gbuffer.albedoOpacity and write the resolved result to lucerna.composite.worldColor.",
+        "directResolveInput": "lucerna.lighting.direct",
+        "resolveOutput": "lucerna.composite.worldColor",
+        "finalCompositeShader": "composite/final_composite.frag.glsl",
+        "boundedOutput": "Clamp negative radiance to zero, cap direct and diffuse contribution before composition, and clamp final RGB to the world-color target range.",
+        "previewSeparation": "Do not use core/direct_light_preview_additive.fsh or core/direct_light_preview_diagnostic.fsh as the final composite resource.",
+        "forbiddenInputs": [
+          "Iris shader-pack color",
+          "Iris shader-pack depth",
+          "Iris shader-pack shadow",
+          "Iris shader-pack lighting"
+        ]
+      },
+      "dependsOn": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.gi",
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay"
+      ],
+      "attachmentWriteSemantics": [
+        {
+          "semantic": "FLAT_WORLD_COLOR",
+          "attachmentName": "lucerna.composite.worldColor",
+          "producerPass": "lucerna.composite.final",
+          "required": true,
+          "clearBeforeWrite": false,
+          "historySensitive": false,
+          "notes": "Matches final composite staging, writes only the borrowed Minecraft/Sodium world color target, preserves swapchain ownership, and keeps preview shaders out of the final composite resource path."
+        }
+      ]
+    }
+  ],
+  "barriers": [
+    {
+      "from": "lucerna.voxel.first_pass",
+      "to": [
+        "lucerna.gbuffer.main"
+      ],
+      "resources": [
+        "VoxelOccupancy",
+        "WorldUploadScratch"
+      ],
+      "requiredTransition": "storage_write_to_shader_read"
+    },
+    {
+      "from": "lucerna.voxel.first_pass",
+      "to": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.gi"
+      ],
+      "resources": [
+        "VoxelOccupancy"
+      ],
+      "requiredTransition": "storage_write_to_shader_read"
+    },
+    {
+      "from": "lucerna.gbuffer.main",
+      "to": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.gi",
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay",
+        "lucerna.composite.final"
+      ],
+      "resources": [
+        "lucerna.gbuffer.*"
+      ],
+      "requiredTransition": "attachment_write_to_shader_read"
+    },
+    {
+      "from": "lucerna.lighting.direct",
+      "to": [
+        "lucerna.lighting.gi",
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay",
+        "lucerna.composite.final"
+      ],
+      "resources": [
+        "lucerna.lighting.direct"
+      ],
+      "requiredTransition": "compute_write_to_shader_read"
+    },
+    {
+      "from": "lucerna.lighting.gi",
+      "to": [
+        "lucerna.denoise.diffuse",
+        "lucerna.debug.overlay",
+        "lucerna.composite.final"
+      ],
+      "resources": [
+        "lucerna.lighting.diffuseGi",
+        "lucerna.lighting.cacheConfidence",
+        "lucerna.lighting.variance",
+        "lucerna.lighting.rayBudget",
+        "RadianceHistory",
+        "VarianceConfidence"
+      ],
+      "requiredTransition": "compute_write_to_shader_read"
+    },
+    {
+      "from": "lucerna.denoise.diffuse",
+      "to": [
+        "lucerna.debug.overlay",
+        "lucerna.composite.final"
+      ],
+      "resources": [
+        "lucerna.denoise.diffuse",
+        "lucerna.denoise.rejectionMask"
+      ],
+      "requiredTransition": "compute_write_to_shader_read"
+    },
+    {
+      "from": "lucerna.debug.overlay",
+      "to": [
+        "lucerna.composite.final"
+      ],
+      "resources": [
+        "lucerna.debug.overlay"
+      ],
+      "requiredTransition": "compute_write_to_shader_read"
+    }
+  ],
+  "debugLabels": [
+    {
+      "key": "pass.lucerna.lighting.direct",
+      "label": "Direct Lighting",
+      "resources": [
+        "lucerna.lighting.direct"
+      ],
+      "notes": "Sun, moon, emissive block sampling, and direct shadow ray output."
+    },
+    {
+      "key": "overlay.direct_lighting",
+      "label": "Direct Lighting",
+      "resources": [
+        "lucerna.lighting.direct"
+      ],
+      "notes": "Full-resolution direct lighting debug target produced before diffuse GI, denoise, debug overlay, and composite."
+    },
+    {
+      "key": "pass.lucerna.lighting.gi",
+      "label": "Diffuse GI",
+      "resources": [
+        "lucerna.lighting.diffuseGi",
+        "lucerna.lighting.cacheConfidence",
+        "lucerna.lighting.variance",
+        "lucerna.lighting.rayBudget",
+        "RadianceHistory",
+        "VarianceConfidence"
+      ],
+      "notes": "Low-resolution GI, cache confidence, variance, temporal confidence, and adaptive sampling classification."
+    },
+    {
+      "key": "overlay.diffuse_gi",
+      "label": "Diffuse GI",
+      "resources": [
+        "lucerna.lighting.diffuseGi"
+      ],
+      "notes": "Half-resolution diffuse GI radiance target produced by lucerna.lighting.gi before denoise."
+    },
+    {
+      "key": "pass.lucerna.denoise.diffuse",
+      "label": "Diffuse Denoise",
+      "resources": [
+        "lucerna.denoise.diffuse",
+        "lucerna.denoise.rejectionMask"
+      ],
+      "notes": "Edge-aware denoise, temporal rejection, and history repair diagnostics."
+    },
+    {
+      "key": "overlay.denoised_diffuse",
+      "label": "Denoised Diffuse",
+      "resources": [
+        "lucerna.denoise.diffuse"
+      ],
+      "notes": "Full-resolution denoised diffuse lighting target consumed by final composite."
+    },
+    {
+      "key": "overlay.denoise_rejection",
+      "label": "Denoise Rejection",
+      "resources": [
+        "lucerna.denoise.rejectionMask"
+      ],
+      "notes": "Full-resolution temporal rejection and reactive mask visualization."
+    },
+    {
+      "key": "pass.lucerna.composite.final",
+      "label": "Final Composite",
+      "resources": [
+        "lucerna.composite.worldColor"
+      ],
+      "notes": "Borrowed world color target staging before vanilla HUD and late translucency."
+    },
+    {
+      "key": "overlay.final_composite",
+      "label": "Final Composite",
+      "resources": [
+        "lucerna.composite.worldColor"
+      ],
+      "notes": "Borrowed Minecraft/Sodium world color target after Lucerna composite staging."
+    },
+    {
+      "key": "pass.lucerna.debug.overlay",
+      "label": "Debug Overlay",
+      "resources": [
+        "lucerna.debug.overlay"
+      ],
+      "notes": "Optional overlay pass scheduled after denoise and before final composite."
+    },
+    {
+      "key": "overlay.debug_overlay",
+      "label": "Debug Overlay",
+      "resources": [
+        "lucerna.debug.overlay"
+      ],
+      "notes": "Full-resolution debug overlay target consumed by final composite when overlay mode is active."
+    },
+    {
+      "key": "overlay.cache_confidence",
+      "label": "Cache Confidence",
+      "resources": [
+        "lucerna.lighting.cacheConfidence",
+        "VarianceConfidence"
+      ],
+      "notes": "Current-frame confidence and temporal aggregate confidence visualization."
+    },
+    {
+      "key": "overlay.variance",
+      "label": "GI Variance",
+      "resources": [
+        "lucerna.lighting.variance",
+        "VarianceConfidence"
+      ],
+      "notes": "Current-frame variance and temporal aggregate variance visualization."
+    },
+    {
+      "key": "overlay.ray_budget",
+      "label": "Ray Budget",
+      "resources": [
+        "lucerna.lighting.rayBudget"
+      ],
+      "notes": "Canonical ray-budget overlay using 0 reuse-only, 1 low, 2 medium, 3 high."
+    },
+    {
+      "key": "overlay.adaptive_sampling",
+      "label": "Adaptive Sampling",
+      "resources": [
+        "lucerna.lighting.rayBudget"
+      ],
+      "notes": "Compatibility alias for the ray-budget overlay using 0 reuse-only, 1 low, 2 medium, 3 high."
+    },
+    {
+      "key": "readiness.lucerna.lighting.direct",
+      "label": "Direct Stage Readiness",
+      "resources": [
+        "lucerna.lighting.direct",
+        "EmissiveBlockList",
+        "BlueNoiseTexture"
+      ],
+      "notes": "Reports whether direct-light payloads are contract-ready and whether real direct lighting output has replaced the side-effect-free placeholder."
+    },
+    {
+      "key": "readiness.lucerna.lighting.gi",
+      "label": "GI Stage Readiness",
+      "resources": [
+        "lucerna.lighting.diffuseGi",
+        "lucerna.lighting.cacheConfidence",
+        "lucerna.lighting.variance",
+        "lucerna.lighting.rayBudget",
+        "RadianceHistory",
+        "VarianceConfidence"
+      ],
+      "notes": "Reports whether GI/cache payloads are contract-ready and whether low-resolution diffuse GI, confidence, variance, and ray-budget output are algorithm-complete."
+    },
+    {
+      "key": "readiness.lucerna.denoise.diffuse",
+      "label": "Denoise Stage Readiness",
+      "resources": [
+        "lucerna.denoise.diffuse",
+        "lucerna.denoise.rejectionMask",
+        "PreviousLighting",
+        "MotionHistory"
+      ],
+      "notes": "Reports whether denoise inputs and history-rejection payloads are contract-ready and whether a real denoise output has replaced the placeholder."
+    },
+    {
+      "key": "readiness.lucerna.composite.final",
+      "label": "Composite Stage Readiness",
+      "resources": [
+        "lucerna.composite.worldColor",
+        "lucerna.debug.overlay"
+      ],
+      "notes": "Reports whether the final composite handoff into the borrowed Minecraft/Sodium world color target is ready and whether visible lighting is being composed."
+    },
+    {
+      "key": "milestone.round4.first_lighting.entry",
+      "label": "First Lighting Entry Boundary",
+      "resources": [
+        "lucerna.gbuffer.depth",
+        "lucerna.gbuffer.normalRoughness",
+        "lucerna.gbuffer.albedoOpacity",
+        "lucerna.gbuffer.materialId",
+        "lucerna.gbuffer.emissive",
+        "lucerna.gbuffer.motionHistory"
+      ],
+      "notes": "Boundary label for the precondition that active Sodium Vulkan rendering, native uploads, and G-buffer payloads are ready before real lighting executes."
+    },
+    {
+      "key": "milestone.round4.first_lighting.exit",
+      "label": "First Lighting Exit Boundary",
+      "resources": [
+        "lucerna.lighting.direct",
+        "lucerna.lighting.diffuseGi",
+        "lucerna.denoise.diffuse",
+        "lucerna.composite.worldColor"
+      ],
+      "notes": "Boundary label for controller-observable visible direct light, low-resolution GI, denoise, and composite behavior without HUD or late-translucency corruption."
+    }
+  ],
+  "validationScenarios": [
+    {
+      "id": "metadata.json.parse",
+      "owner": "controller",
+      "description": "Parse layout.json and verify unique pass ids, numeric ids, descriptor set/binding pairs, and attachment names."
+    },
+    {
+      "id": "metadata.pass_dependencies",
+      "owner": "controller",
+      "description": "Verify dependsOn edges point at declared earlier passes and that attachmentWriteSemantics reference attachments written by their owning pass."
+    },
+    {
+      "id": "metadata.phase5_write_semantics",
+      "owner": "controller",
+      "description": "Verify direct lighting, GI, denoise, debug, and composite passes declare attachmentWriteSemantics for every Lucerna-owned attachment they write."
+    },
+    {
+      "id": "metadata.phase5_temporal_outputs",
+      "owner": "controller",
+      "description": "Confirm cache confidence, current-frame variance, adaptive ray budget, RadianceHistory, and VarianceConfidence are produced before denoise and debug overlays consume them."
+    },
+    {
+      "id": "metadata.phase5_telemetry_names",
+      "owner": "controller",
+      "description": "Confirm phase5Telemetry.debugTargetNames mirrors declared attachments and debugLabels for direct lighting, diffuse GI, denoise, composite, cache confidence, variance, and ray budget."
+    },
+    {
+      "id": "metadata.phase5_payload_contracts",
+      "owner": "controller",
+      "description": "Confirm phase5Payloads references only declared pass ids, descriptor set/binding pairs, attachments, and history resources while preserving existing numeric ids."
+    },
+    {
+      "id": "metadata.first_lighting_milestone_boundaries",
+      "owner": "controller",
+      "description": "Confirm the first lighting milestone entry and exit boundaries cover direct lighting, GI/cache, denoise, composite, and debug-readiness handoff states."
+    },
+    {
+      "id": "metadata.gbuffer_contract_names",
+      "owner": "controller",
+      "description": "Confirm lucerna.gbuffer.main attachment names match GBufferTargetContract depth, normalRoughness, albedoOpacity, materialId, emissive, and motionHistory."
+    },
+    {
+      "id": "metadata.placeholders.side_effect_free",
+      "owner": "controller",
+      "description": "Confirm placeholder shaders do not declare storage writes, image writes, atomics, barriers, discard, or fixed color/depth outputs."
+    },
+    {
+      "id": "framehook.noop_order",
+      "owner": "controller",
+      "description": "When Lucerna is active on Sodium Vulkan, execute future no-op passes in executionOrder without altering HUD, late translucency, or swapchain ownership."
+    },
+    {
+      "id": "framehook.flat_composite_staging",
+      "owner": "controller",
+      "description": "Confirm the flat composite staging pass writes only the borrowed world color target and keeps swapchain ownership with Minecraft/Sodium."
+    },
+    {
+      "id": "debug.label_table_contract",
+      "owner": "controller",
+      "description": "Confirm DebugLabelTable contains stable labels for pass ids, attachment names, direct lighting, diffuse GI, denoise, composite, cache confidence, variance, and ray-budget overlay modes."
+    },
+    {
+      "id": "debug.stage_readiness_labels",
+      "owner": "controller",
+      "description": "Confirm DebugLabelTable can expose readiness.lucerna.* stage labels and milestone.round4.first_lighting.* boundary labels before real lighting shaders replace placeholders."
+    },
+    {
+      "id": "round5.direct_lighting_screenshot_markers",
+      "owner": "controller",
+      "description": "Capture baseline/disabled, enabled direct-light, and direct debug-overlay screenshots for one emissive block lighting one visible surface; confirm HUD readability and matching native dispatch/output/resolve log markers."
+    },
+    {
+      "id": "round5.direct_lighting_iris_isolation",
+      "owner": "controller",
+      "description": "Confirm the Round 5 direct-light output and resolve path consumes Lucerna-owned G-buffer/direct-light/debug resources only and does not sample Iris shader-pack color, depth, shadow, or lighting outputs."
+    },
+    {
+      "id": "lighting.adaptive_sampling_metadata",
+      "owner": "controller",
+      "description": "Confirm lucerna.lighting.rayBudget uses the documented 0 reuse-only, 1 low, 2 medium, 3 high classification before cache/adaptive sampling work consumes it."
+    },
+    {
+      "id": "backend.disabled_no_resource_use",
+      "owner": "controller",
+      "description": "On no-Sodium, OpenGL-forced, or Vulkan-unavailable launches, Lucerna should not allocate or bind resources from this layout."
+    },
+    {
+      "id": "resize.recreate_resolution_classes",
+      "owner": "controller",
+      "description": "Resize full-resolution and half-resolution attachments from the active viewport, refresh debug overlay target, and preserve stable pass ids."
+    },
+    {
+      "id": "reload.invalidate_external_resources",
+      "owner": "controller",
+      "description": "Resource-pack reload refreshes material, blue-noise, and debug label resources while invalidating temporal history."
+    },
+    {
+      "id": "world_transition.invalidate_history",
+      "owner": "controller",
+      "description": "Dimension switch, world leave, or world join clears PreviousDepth, PreviousLighting, RadianceHistory, VarianceConfidence, and MotionHistory consumers."
+    },
+    {
+      "id": "streaming.dirty_region_generation",
+      "owner": "controller",
+      "description": "Chunk stream and block/material updates advance generation counters before lighting and debug passes consume DirtyRegionQueue."
+    },
+    {
+      "id": "debug.overlay_modes",
+      "owner": "controller",
+      "description": "Debug overlay modes can sample backend status, dirty regions, material ids, timing readback, native queue telemetry, direct lighting, diffuse GI, denoise, composite, cache confidence, variance, ray budget, and debug labels without requiring Iris shader-pack rendering."
+    }
+  ]
+}

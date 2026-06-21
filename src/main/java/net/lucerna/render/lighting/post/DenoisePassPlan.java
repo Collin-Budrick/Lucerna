@@ -154,6 +154,22 @@ public record DenoisePassPlan(
         return this.shaderOutputContract.shaderOutputImageReady();
     }
 
+    public boolean shaderDenoiseOutputImageOwnedByShaderPass() {
+        return this.shaderOutputContract.shaderOutputImageOwnedByShaderPass();
+    }
+
+    public boolean shaderDenoiseOutputStorageWritable() {
+        return this.shaderOutputContract.shaderOutputStorageWritable();
+    }
+
+    public boolean shaderDenoiseOutputBarrierReady() {
+        return this.shaderOutputContract.shaderOutputBarrierReady();
+    }
+
+    public boolean shaderDenoiseOutputFinalCompositeConsumable() {
+        return this.shaderOutputContract.shaderOutputFinalCompositeConsumable();
+    }
+
     public boolean shaderDenoiseOutputMaterialReady() {
         return this.shaderOutputContract.shaderOutputMaterialReady();
     }
@@ -195,11 +211,9 @@ public record DenoisePassPlan(
     }
 
     public String denoisedSourceIdentityForFinalComposite() {
-        if (this.realDenoiseShaderOutput()
-                && this.shaderDenoiseOutputImageReady()
-                && this.shaderDenoiseGeneratedOutput()) {
+        if (this.readyForControllerShaderDenoiseProof()) {
             return this.writesDiffuseOutput()
-                    ? "mixed-cpu-readback-plus-true-shader-generated-output"
+                    ? "mixed-cpu-readback-plus-controller-ready-true-shader-generated-output"
                     : "true-shader-generated-output";
         }
         if (this.writesDiffuseOutput()) {
@@ -209,27 +223,23 @@ public record DenoisePassPlan(
     }
 
     public String shaderDenoiseOutputSourceForFinalComposite() {
-        if (this.realDenoiseShaderOutput()
-                && this.shaderDenoiseOutputImageReady()
-                && this.shaderDenoiseGeneratedOutput()) {
-            return "true-shader-generated-denoised-gi";
+        if (this.readyForControllerShaderDenoiseProof()) {
+            return "true-shader-generated-denoised-gi;owned-writable-output;barrier-ready;final-composite-consumable";
         }
         if (this.shaderDenoiseOutputImageReady()) {
-            return "shader-output-image-ready-without-real-generated-output";
+            return "shader-output-image-ready-without-owned-writable-real-generated-output";
         }
         if (this.shaderDenoiseDispatchPrepared()) {
             return "shader-dispatch-prepared-no-output-image";
         }
         if (this.writesDiffuseOutput()) {
-            return "cpu-readback-denoised-gi-fallback";
+            return "cpu-readback-denoised-gi-fallback;public-mojang-visual-shader-output-requires-submitted-draw";
         }
         return "none";
     }
 
     public String shaderDenoiseOutputBlockerForFinalComposite() {
-        if (this.realDenoiseShaderOutput()
-                && this.shaderDenoiseOutputImageReady()
-                && this.shaderDenoiseGeneratedOutput()) {
+        if (this.readyForControllerShaderDenoiseProof()) {
             return "none:true-shader-generated-output-ready";
         }
         String readiness = this.shaderDenoiseReadinessReason();
@@ -297,7 +307,7 @@ public record DenoisePassPlan(
                 : "shader denoise resource contract is not schedulable yet";
         String qualityBoundary = "raw GI, denoised GI, rejection mask, variance, and history confidence must be captured from shader-written resources before quality can be claimed";
         String pendingReason = contractReady
-                ? "shader-side denoise dispatch/output path is pending; CPU/readback denoise evidence remains separate"
+                ? "shader-side denoise dispatch/output path is pending; CPU/readback denoise evidence and public Mojang visual-shader draw submission remain separate"
                 : "shader-side denoise contract awaits enabled settings, required inputs, and fresh output generation";
         return ShaderDenoiseOutputContract.contractOnly(
                 contractReady,

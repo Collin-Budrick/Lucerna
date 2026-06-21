@@ -101,6 +101,26 @@ public record GBufferWriteIntent(
                 .toList();
     }
 
+    public boolean writesRequiredSceneDataAttachments() {
+        return this.missingRequiredSceneDataAttachmentNames().isEmpty();
+    }
+
+    public List<GBufferSceneDataKind> missingRequiredSceneDataKinds() {
+        List<GBufferSceneDataKind> missing = new ArrayList<>();
+        for (GBufferSceneDataKind kind : GBufferSceneDataKind.lightingRequired()) {
+            if (!this.writesAttachment(kind.attachmentName())) {
+                missing.add(kind);
+            }
+        }
+        return List.copyOf(missing);
+    }
+
+    public List<String> missingRequiredSceneDataAttachmentNames() {
+        return this.missingRequiredSceneDataKinds().stream()
+                .map(GBufferSceneDataKind::attachmentName)
+                .toList();
+    }
+
     public boolean dimensionsAvailable() {
         return this.width > 0 && this.height > 0;
     }
