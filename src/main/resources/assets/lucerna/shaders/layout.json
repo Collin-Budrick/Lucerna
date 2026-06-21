@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "layoutVersion": "0.3.3",
+  "layoutVersion": "0.3.5",
   "namespace": "lucerna",
   "intent": "Stable shader/resource metadata for Lucerna-owned Vulkan passes. This file is descriptive until the native renderer consumes it.",
   "subAgentRule": "Do not run shader compilation, Gradle checks, Minecraft launches, render smoke tests, or builds used as verification.",
@@ -89,8 +89,12 @@
         "executionOrder": 400,
         "passId": "lucerna.composite.final",
         "reads": [
+          "lucerna.gbuffer.depth",
+          "lucerna.gbuffer.normalRoughness",
+          "lucerna.lighting.direct",
           "lucerna.denoise.diffuse",
-          "lucerna.debug.overlay"
+          "lucerna.debug.overlay",
+          "lucerna.lighting.nativeConservativeShadowMask"
         ],
         "writes": [
           "lucerna.composite.worldColor"
@@ -152,11 +156,37 @@
         "sourcePass": "lucerna.denoise.diffuse"
       },
       {
+        "key": "overlay.shader_generated_denoise_output",
+        "label": "Shader-Generated Denoise Output Contract",
+        "attachmentName": "lucerna.denoise.diffuse",
+        "resolution": "full",
+        "sourcePass": "lucerna.denoise.diffuse",
+        "contractResource": "denoise/shader_generated_diffuse_output_contract.glsl",
+        "resource": "denoise/shader_generated_diffuse_output.frag.glsl",
+        "runtimeMojangFragmentResource": "denoise/shader_generated_diffuse_output.fsh",
+        "ownedRenderTarget": "lucerna.denoise.diffuse",
+        "executionKind": "public_mojang_fragment_color_attachment",
+        "computeDispatch": false,
+        "storageImageWrite": false,
+        "currentInputPreservationMode": "raw_signal_edge_fallback_until_depth_normal_material_history_samplers_are_bound",
+        "currentExecutionState": "mojang_fragment_color_attachment_resource_present_pending_full_depth_material_history_bindings"
+      },
+      {
         "key": "overlay.debug_overlay",
         "label": "Debug Overlay",
         "attachmentName": "lucerna.debug.overlay",
         "resolution": "full",
         "sourcePass": "lucerna.debug.overlay"
+      },
+      {
+        "key": "overlay.native_shadow_mask",
+        "label": "Native Conservative Shadow Mask",
+        "attachmentName": "lucerna.lighting.nativeConservativeShadowMask",
+        "resolution": "full",
+        "sourcePass": "lucerna.lighting.direct",
+        "resource": "composite/native_shadow_mask_composite.fsh",
+        "depthAwareResource": "composite/depth_aware_shadow_mask_composite.frag.glsl",
+        "currentExecutionState": "public_mojang_consumer_validated_depth_aware_resource_pending_sampler_bindings"
       },
       {
         "key": "overlay.final_composite",
@@ -200,10 +230,11 @@
         "firstLightingMilestoneRole": "required_filter",
         "readyWhen": [
           "Direct lighting and diffuse GI outputs are readable",
-          "PreviousDepth, PreviousNormalRoughness, PreviousLighting, MotionHistory, and VarianceConfidence are valid or reset",
+          "Current depth, normal/roughness, material id, and motion/history buffers are readable",
+          "PreviousDepth, PreviousNormalRoughness, PreviousMaterialId when available, PreviousLighting, MotionHistory, and VarianceConfidence are valid or reset",
           "Cache confidence and variance ranges are documented for clamp/rejection decisions"
         ],
-        "openUntil": "A non-placeholder denoise shader writes full-resolution lucerna.denoise.diffuse and lucerna.denoise.rejectionMask."
+        "openUntil": "A non-placeholder denoise shader writes full-resolution lucerna.denoise.diffuse and lucerna.denoise.rejectionMask from raw GI, normal/depth/material, motion/history/confidence inputs."
       },
       {
         "key": "readiness.lucerna.composite.final",
@@ -212,6 +243,7 @@
         "firstLightingMilestoneRole": "required_consumer",
         "readyWhen": [
           "Denoised diffuse lighting is available at full resolution",
+          "Native conservative shadow-mask payload is optional and, when present, is readable as a composite consumer input",
           "Optional debug overlay target is readable when overlay mode is active",
           "Borrowed Minecraft/Sodium world color target remains owned by the frame hook"
         ],
@@ -232,6 +264,7 @@
         "Direct sun and moon radiance",
         "Bounded emissive block sampling",
         "Voxel shadow-ray visibility for direct lighting",
+        "Native conservative shadow-map/mask payload consumption in final composite",
         "Half-resolution single-bounce diffuse GI",
         "Cache confidence, variance, and ray-budget metadata",
         "Edge-aware denoise and history rejection",
@@ -440,6 +473,10 @@
       "denoiseProducerPass": "lucerna.denoise.diffuse",
       "compositeConsumerPass": "lucerna.composite.final",
       "denoiseInputs": [
+        "lucerna.gbuffer.depth",
+        "lucerna.gbuffer.normalRoughness",
+        "lucerna.gbuffer.materialId",
+        "lucerna.gbuffer.motionHistory",
         "lucerna.lighting.direct",
         "lucerna.lighting.diffuseGi",
         "lucerna.lighting.cacheConfidence",
@@ -447,8 +484,10 @@
         "lucerna.lighting.rayBudget",
         "PreviousDepth",
         "PreviousNormalRoughness",
+        "PreviousMaterialId",
         "PreviousLighting",
         "MotionHistory",
+        "RadianceHistory",
         "VarianceConfidence"
       ],
       "denoiseOutputs": [
@@ -464,13 +503,155 @@
         }
       ],
       "compositeInputs": [
+        "lucerna.gbuffer.depth",
+        "lucerna.gbuffer.normalRoughness",
         "lucerna.gbuffer.albedoOpacity",
         "lucerna.lighting.direct",
         "lucerna.lighting.diffuseGi",
+        "lucerna.lighting.nativeConservativeShadowMask",
         "lucerna.denoise.diffuse",
         "lucerna.debug.overlay"
       ],
       "compositeOutput": "lucerna.composite.worldColor",
+      "sourceIdentityStates": [
+        {
+          "key": "cpu-readback-visual-denoise",
+          "mayFeed": [
+            "core/round7_denoised_gi_visual.fsh",
+            "candidate image readiness"
+          ],
+          "mustNotSet": [
+            "shaderDenoiseOutputImageReady",
+            "shaderDenoiseShaderGeneratedOutput",
+            "realDenoiseShaderOutput",
+            "realShaderDenoiseOutputReady"
+          ]
+        },
+        {
+          "key": "public-mojang-final-visual-shaping",
+          "resource": "composite/final_composite.frag.glsl",
+          "role": "consumer of LucernaDenoisedDiffuse and borrowed world color target",
+          "mustNotClaim": "producer of shader-generated lucerna.denoise.diffuse"
+        },
+        {
+          "key": "public-mojang-native-shadow-mask-consumer",
+          "resource": "composite/native_shadow_mask_composite.fsh",
+          "role": "consumer of native conservative shadow-map/mask payload before HUD composition",
+          "mustNotClaim": "producer of path-traced shadows, screen-space decal proof, or shader-generated denoise output"
+        },
+        {
+          "key": "depth-aware-native-shadow-mask-consumer",
+          "resource": "composite/depth_aware_shadow_mask_composite.frag.glsl",
+          "role": "depth/normal-gated consumer of native conservative shadow-map/mask payload before HUD composition",
+          "requiredSamplerBindings": [
+            "ShadowMaskSampler -> lucerna.lighting.nativeConservativeShadowMask",
+            "CurrentDepthSampler -> lucerna.gbuffer.depth",
+            "CurrentNormalRoughnessSampler -> lucerna.gbuffer.normalRoughness",
+            "SourceLightingSampler -> lucerna.lighting.direct"
+          ],
+          "currentExecutionState": "resource_present_pending_depth_sampler_binding",
+          "mustNotClaim": "runtime execution, path-traced shadows, shader-generated shadow-map output, or screen-space fallback proof until the scheduler binds the depth-aware sampler set"
+        },
+        {
+          "key": "shader-generated-denoise-output-image",
+          "resource": "denoise/shader_generated_diffuse_output.frag.glsl",
+          "runtimeMojangFragmentResource": "denoise/shader_generated_diffuse_output.fsh",
+          "contractResource": "denoise/shader_generated_diffuse_output_contract.glsl",
+          "generatedBy": "public Mojang fragment pass into an owned Lucerna denoise output texture",
+          "ownedRenderTarget": "lucerna.denoise.diffuse",
+          "executionKind": "fragment_color_attachment",
+          "currentOutputWriteKind": "public Mojang fragment color attachment",
+          "notComputeDenoiseYet": true,
+          "computeDispatch": false,
+          "storageImageWrite": false,
+          "currentMaterialDepthPreservation": "runtime .fsh uses raw luminance/chroma/confidence edge fallback; strict .frag.glsl preserves depth/normal/material when those samplers are bound",
+          "requiredInputs": [
+            "raw-diffuse-gi-rgba8 from lucerna.lighting.diffuseGi",
+            "public Mojang InSampler raw-diffuse-gi-rgba8",
+            "normal/depth/material",
+            "motion/history/confidence"
+          ],
+          "runtimeSamplerBindings": [
+            "InSampler -> lucerna.lighting.diffuseGi raw-diffuse-gi-rgba8, not lucerna.lighting.direct or native direct-light validation RGBA"
+          ],
+          "currentRuntimeSamplerBindings": [
+            "InSampler only; depth, normal, material, variance, and history samplers are pending scheduler work for the public Mojang runtime path"
+          ],
+          "requiredSamplerBindings": [
+            "RawDiffuseGiSampler -> lucerna.lighting.diffuseGi raw-diffuse-gi-rgba8, not lucerna.lighting.direct or native direct-light validation RGBA",
+            "RawGiConfidenceSampler -> lucerna.lighting.cacheConfidence",
+            "RawGiVarianceSampler -> lucerna.lighting.variance",
+            "CurrentDepthSampler -> lucerna.gbuffer.depth",
+            "CurrentNormalRoughnessSampler -> lucerna.gbuffer.normalRoughness",
+            "CurrentMaterialIdSampler -> lucerna.gbuffer.materialId",
+            "CurrentMotionHistorySampler -> lucerna.gbuffer.motionHistory",
+            "PreviousDepthSampler -> PreviousDepth",
+            "PreviousNormalRoughnessSampler -> PreviousNormalRoughness",
+            "PreviousLightingSampler -> PreviousLighting"
+          ],
+          "requiredOutputs": [
+            "lucerna.denoise.diffuse",
+            "lucerna.denoise.rejectionMask"
+          ],
+          "acceptedInputKind": "raw-diffuse-gi-rgba8",
+          "rejectedInputKinds": [
+            "native-direct-light-rgba8-validation-input",
+            "lucerna.lighting.direct",
+            "temporary-direct-light-rgba"
+          ],
+          "documentationMarkers": [
+            "tracedRawGiInputConsumed",
+            "shaderDenoiseInputKind=raw-diffuse-gi-rgba8",
+            "shaderDenoiseColorAttachmentWrite=true",
+            "shaderDenoiseComputeDispatch=false",
+            "shaderDenoiseStorageImageWrite=false",
+            "shaderDenoiseDepthMaterialInputsBound=false",
+            "directLightValidationInput=false",
+            "diagnosticDirectLightValidationFallback=false"
+          ],
+          "physicalGiBoundary": "Traced raw-GI input consumption means this pass sampled raw-diffuse-gi-rgba8 that may carry upstream traced lighting evidence; physical GI quality still requires separate traced lighting evidence and controller validation.",
+          "currentExecutionState": "mojang_fsh_fragment_color_attachment_path_present_pending_full_depth_material_history_bindings"
+        }
+      ],
+      "shaderGeneratedOutputReadiness": {
+        "resource": "denoise/shader_generated_diffuse_output.frag.glsl",
+        "runtimeMojangFragmentResource": "denoise/shader_generated_diffuse_output.fsh",
+        "contractResource": "denoise/shader_generated_diffuse_output_contract.glsl",
+        "ownedRenderTarget": "lucerna.denoise.diffuse",
+        "currentFragmentOutputClaim": [
+          "shaderDenoiseFragmentPassPrepared",
+          "shaderDenoiseFragmentInputsCompleteForCurrentMojangPass",
+          "shaderDenoiseColorAttachmentWrite",
+          "shaderDenoiseOutputFinalCompositeConsumable"
+        ],
+        "requiredTrueBeforeFullDenoiseClaim": [
+          "shaderDenoiseInputPrerequisitesReady",
+          "shaderDenoiseOutputImageReadinessReady",
+          "shaderDenoiseTemporalHistoryReady",
+          "shaderDenoiseRealOutputPrerequisitesReady",
+          "shaderDenoiseOutputImageOwnedByShaderPass",
+          "shaderDenoiseOutputBarrierReady",
+          "shaderDenoiseOutputFinalCompositeConsumable"
+        ],
+        "requiredTrueBeforeComputeStorageClaim": [
+          "shaderDenoiseComputeDispatch",
+          "shaderDenoiseOutputStorageWritable",
+          "shaderDenoiseStorageImageWrite",
+          "shaderDenoiseOutputBarrierReady"
+        ],
+        "requiredFalseForCurrentFragmentPath": [
+          "shaderDenoiseComputeDispatch",
+          "shaderDenoiseStorageImageWrite",
+          "shaderDenoiseOutputStorageWritable"
+        ],
+        "requiredFalseWhileContractOnly": [
+          "shaderDenoiseOutputImageReady",
+          "shaderDenoiseShaderGeneratedOutput",
+          "realDenoiseShaderOutput",
+          "realShaderDenoiseOutputReady"
+        ],
+        "boundary": "The public Mojang .fsh resource can generate denoised diffuse RGBA into the owned lucerna.denoise.diffuse color target once InSampler is bound to lucerna.lighting.diffuseGi raw-diffuse-gi-rgba8 and the target is bound. Direct-light validation input is not an accepted substitute. tracedRawGiInputConsumed may be reported only when the raw-GI payload carries upstream traced lighting evidence; physical GI quality still requires separate traced evidence. The runtime .fsh is a single-sampler fragment color-attachment path with raw-signal edge/material-depth fallback; the .frag.glsl resource remains the stricter depth/normal/material/history dual-output contract for rejection-mask work. Current runtime must report shaderDenoiseColorAttachmentWrite=true, shaderDenoiseComputeDispatch=false, shaderDenoiseStorageImageWrite=false, and pending full depth/material/history inputs unless those samplers are actually bound. This is public Mojang fragment output, not compute denoise or a storage-image write."
+      },
       "round5DirectResolveMode": {
         "modeKey": "direct_only_or_final_direct",
         "requiredInputs": [
@@ -480,7 +661,8 @@
         "optionalInputs": [
           "lucerna.debug.overlay",
           "lucerna.denoise.diffuse",
-          "lucerna.lighting.diffuseGi"
+          "lucerna.lighting.diffuseGi",
+          "lucerna.lighting.nativeConservativeShadowMask"
         ],
         "resolveRules": [
           "Resolve happens before vanilla HUD and late translucency.",
@@ -531,6 +713,49 @@
         "Composite runs before vanilla HUD and late translucency; it must not consume Iris shader-pack outputs."
       ]
     },
+    "nativeShadowMaskCompositeHandoff": {
+      "producer": "native conservative directional shadow-map/mask output",
+      "consumerPass": "lucerna.composite.final",
+      "resource": "composite/native_shadow_mask_composite.fsh",
+      "depthAwareResource": "composite/depth_aware_shadow_mask_composite.frag.glsl",
+      "attachmentName": "lucerna.lighting.nativeConservativeShadowMask",
+      "resolution": "full",
+      "channels": {
+        "r": "native conservative shadow coverage for receiver pixels",
+        "g": "world/depth/material receiver-support mask",
+        "b": "optional contact or edge confidence",
+        "a": "payload validity or frame confidence"
+      },
+      "compositeBehavior": [
+        "The public Mojang shader samples only the supplied native mask payload.",
+        "The depth-aware fragment resource additionally requires CurrentDepthSampler, CurrentNormalRoughnessSampler, and SourceLightingSampler and emits transparent output when LucernaDepthBindingReady is false.",
+        "The shader emits neutral black alpha for source-over darkening of the borrowed world target before HUD composition.",
+        "Receiver support or local payload structure gates the effect so a flat texture is not valid shadow proof.",
+        "The shader does not add bloom, fog, vignette, focus-window brightening, proof markers, or debug-color overlays."
+      ],
+      "depthAwareBindingBoundary": {
+        "currentExecutionState": "resource_present_pending_depth_sampler_binding",
+        "requiredSamplerBindings": [
+          "ShadowMaskSampler -> lucerna.lighting.nativeConservativeShadowMask",
+          "CurrentDepthSampler -> lucerna.gbuffer.depth",
+          "CurrentNormalRoughnessSampler -> lucerna.gbuffer.normalRoughness",
+          "SourceLightingSampler -> lucerna.lighting.direct"
+        ],
+        "pendingUntil": "The composite scheduler binds Lucerna-owned depth/normal/direct-light samplers for the same frame; without that binding the shader must stay transparent and cannot be screenshot proof."
+      },
+      "mustNotClaim": [
+        "path-traced shadows",
+        "screen-space decal proof",
+        "shader-generated denoise",
+        "shader-generated shadow-map output"
+      ],
+      "controllerEvidenceRequired": [
+        "native shadow-map/mask output-ready telemetry",
+        "nonzero receiver-support or structured mask coverage",
+        "same-scene baseline and enabled in-client screenshots showing receiver-tied darkening",
+        "absence of screen-space shadow decal, fixed blob, proof marker, focus-window, bloom, and fog fallback markers"
+      ]
+    },
     "debugReadinessPayload": {
       "descriptorSource": "DebugLabelTable",
       "round5OverlayInputs": [
@@ -540,6 +765,7 @@
         "last direct lighting dispatch frame",
         "direct output buffer write status",
         "direct resolve status",
+        "native conservative shadow-mask output/read status",
         "CPU/native/GPU timing placeholder or timing value when available",
         "controller screenshot marker state"
       ],
@@ -952,6 +1178,18 @@
           ],
           "access": "read",
           "updateFrequency": "per-frame"
+        },
+        {
+          "binding": 6,
+          "name": "PreviousMaterialId",
+          "descriptorType": "sampled_image",
+          "format": "R32_UINT",
+          "stages": [
+            "compute"
+          ],
+          "access": "read",
+          "updateFrequency": "per-frame",
+          "notes": "Optional previous-frame material id for denoise history rejection; required before material-mismatch history reuse can be claimed."
         }
       ]
     },
@@ -1085,6 +1323,7 @@
       "consumers": [
         "lucerna.lighting.direct",
         "lucerna.lighting.gi",
+        "lucerna.denoise.diffuse",
         "lucerna.debug.overlay"
       ]
     },
@@ -1126,6 +1365,7 @@
       "resolution": "full",
       "samples": 1,
       "usage": [
+        "color_attachment",
         "storage_image",
         "sampled"
       ],
@@ -1152,7 +1392,7 @@
         "lucerna.composite.final",
         "lucerna.debug.overlay"
       ],
-      "notes": "Half-resolution single-bounce diffuse GI radiance. Denoise owns upsampling and history rejection before final composite."
+      "notes": "Half-resolution raw-diffuse-gi-rgba8 single-bounce diffuse GI radiance. Denoise owns upsampling and history rejection before final composite. This payload may carry traced raw-GI evidence, but physical GI quality must be proven by separate traced-lighting telemetry and controller validation."
     },
     {
       "name": "lucerna.lighting.cacheConfidence",
@@ -1216,7 +1456,7 @@
         "lucerna.composite.final",
         "lucerna.debug.overlay"
       ],
-      "notes": "Full-resolution denoised diffuse lighting. This is the composite input after cache-confidence weighting, variance clamp, and history rejection."
+      "notes": "Full-resolution denoised diffuse lighting. The current runtime-loadable path is denoise/shader_generated_diffuse_output.fsh as a public Mojang fragment pass into this owned color target. Its strict accepted input is raw-diffuse-gi-rgba8 from lucerna.lighting.diffuseGi, not lucerna.lighting.direct or native direct-light validation RGBA; future compute/storage-image denoise remains separate. CPU/readback visual denoise and public-Mojang final visual shaping remain separate source identities."
     },
     {
       "name": "lucerna.denoise.rejectionMask",
@@ -1517,6 +1757,16 @@
       "type": "compute",
       "executionOrder": 300,
       "placeholderShader": "denoise/noop.glsl",
+      "shaderResources": {
+        "placeholderCompute": "denoise/noop.glsl",
+        "edgeAwareContract": "denoise/diffuse_edge_aware_contract.glsl",
+        "historyVarianceQualityContract": "denoise/history_variance_quality_contract.glsl",
+        "shaderGeneratedOutputContract": "denoise/shader_generated_diffuse_output_contract.glsl",
+        "shaderGeneratedOutputFragment": "denoise/shader_generated_diffuse_output.frag.glsl",
+        "runtimeMojangOutputFragment": "denoise/shader_generated_diffuse_output.fsh",
+        "publicMojangVisualShaping": "core/round7_denoised_gi_visual.fsh",
+        "executionBoundary": "Only denoise/noop.glsl is the current compute placeholder. The public Mojang denoise output fragment is a separate color-attachment route: it can count only after the scheduler binds raw-diffuse-gi-rgba8 from lucerna.lighting.diffuseGi through InSampler, rejects direct-light validation input as a substitute, binds lucerna.denoise.diffuse as the owned draw target, and publishes the color-attachment handoff. Its current runtime material/depth preservation is a raw-signal edge fallback. tracedRawGiInputConsumed requires upstream traced raw-GI evidence and still does not prove physical GI quality. The stricter .frag.glsl contract remains pending for normal/material/history and rejection-mask output bindings."
+      },
       "descriptorSets": [
         "frame",
         "history"
@@ -1524,6 +1774,7 @@
       "reads": [
         "lucerna.gbuffer.depth",
         "lucerna.gbuffer.normalRoughness",
+        "lucerna.gbuffer.materialId",
         "lucerna.gbuffer.motionHistory",
         "lucerna.lighting.direct",
         "lucerna.lighting.diffuseGi",
@@ -1532,7 +1783,9 @@
         "lucerna.lighting.rayBudget",
         "PreviousDepth",
         "PreviousNormalRoughness",
+        "PreviousMaterialId",
         "PreviousLighting",
+        "RadianceHistory",
         "MotionHistory",
         "VarianceConfidence"
       ],
@@ -1543,6 +1796,69 @@
       "pushConstants": "LucernaPassPushConstants",
       "sideEffectFreePlaceholder": true,
       "handoff": "Edge-aware diffuse denoise, temporal rejection mask, and history repair input.",
+      "shaderGeneratedOutputBoundary": {
+        "resource": "denoise/shader_generated_diffuse_output.frag.glsl",
+        "runtimeMojangFragmentResource": "denoise/shader_generated_diffuse_output.fsh",
+        "contractResource": "denoise/shader_generated_diffuse_output_contract.glsl",
+        "generatedBy": "public Mojang fragment pass into lucerna.denoise.diffuse owned color target",
+        "requiredInputGroups": {
+          "rawGi": [
+            "lucerna.lighting.diffuseGi",
+            "lucerna.lighting.cacheConfidence",
+            "lucerna.lighting.variance",
+            "lucerna.lighting.rayBudget"
+          ],
+          "normalDepthMaterial": [
+            "lucerna.gbuffer.depth",
+            "lucerna.gbuffer.normalRoughness",
+            "lucerna.gbuffer.materialId"
+          ],
+          "motionHistoryConfidence": [
+            "lucerna.gbuffer.motionHistory",
+            "PreviousDepth",
+            "PreviousNormalRoughness",
+            "PreviousMaterialId",
+            "PreviousLighting",
+            "MotionHistory",
+            "RadianceHistory",
+            "VarianceConfidence"
+          ]
+        },
+        "outputImageTarget": "lucerna.denoise.diffuse",
+        "rejectionMaskTarget": "lucerna.denoise.rejectionMask",
+        "fragmentOutputs": [
+          "layout(location = 0) DenoisedDiffuseOutput -> lucerna.denoise.diffuse",
+          "layout(location = 1) RejectionMaskOutput -> lucerna.denoise.rejectionMask"
+        ],
+        "mojangFragmentOutput": "fragColor -> lucerna.denoise.diffuse",
+        "mojangFragmentSamplerBindings": [
+          "InSampler -> lucerna.lighting.diffuseGi raw-diffuse-gi-rgba8, not lucerna.lighting.direct or native direct-light validation RGBA"
+        ],
+        "acceptedInputKind": "raw-diffuse-gi-rgba8",
+        "rejectedInputKinds": [
+          "native-direct-light-rgba8-validation-input",
+          "lucerna.lighting.direct",
+          "temporary-direct-light-rgba"
+        ],
+        "documentationMarkers": [
+          "tracedRawGiInputConsumed",
+          "shaderDenoiseInputKind=raw-diffuse-gi-rgba8",
+          "rawGiInputReady=true",
+          "shaderDenoiseColorAttachmentWrite=true",
+          "shaderDenoiseComputeDispatch=false",
+          "shaderDenoiseStorageImageWrite=false",
+          "shaderDenoiseDepthMaterialInputsBound=false",
+          "directLightValidationInput=false",
+          "diagnosticDirectLightValidationFallback=false"
+        ],
+        "sourceIdentitySeparation": [
+          "cpu-readback-visual-denoise",
+          "public-mojang-final-visual-shaping",
+          "shader-generated-denoise-output-image"
+        ],
+        "currentExecutionState": "mojang_fsh_fragment_color_attachment_path_present_pending_full_depth_material_history_bindings",
+        "noOverclaim": "Do not set shaderDenoiseOutputImageReady, shaderDenoiseShaderGeneratedOutput, realDenoiseShaderOutput, or realShaderDenoiseOutputReady until the public Mojang fragment pass consumes raw-diffuse-gi-rgba8 from lucerna.lighting.diffuseGi rather than direct-light validation input, actually writes lucerna.denoise.diffuse as an owned output target, and its color-attachment handoff is validated. This is public Mojang fragment output, not compute denoise or a storage-image write; report shaderDenoiseComputeDispatch=false and shaderDenoiseStorageImageWrite=false on this route. Physical GI quality still needs traced lighting evidence beyond this resource contract."
+      },
       "dependsOn": [
         "lucerna.gbuffer.main",
         "lucerna.lighting.direct",
@@ -1556,7 +1872,7 @@
           "required": true,
           "clearBeforeWrite": true,
           "historySensitive": true,
-          "notes": "Writes full-resolution diffuse lighting after cache-confidence weighting, variance clamp, and temporal rejection."
+          "notes": "Writes full-resolution diffuse lighting after raw-diffuse-gi-rgba8 upsample from lucerna.lighting.diffuseGi, cache-confidence weighting, variance clamp, depth/normal/material rejection, motion/history reprojection, and temporal confidence validation. Direct-light validation payloads are not valid raw-GI substitutes for this strict path. Current resources document this contract only; no shader-generated output image is claimed until an executable implementation replaces the placeholder."
         },
         {
           "semantic": "DENOISE_REJECTION_MASK",
@@ -1633,8 +1949,15 @@
       "placeholderShader": "composite/noop.glsl",
       "shaderResources": {
         "finalCompositeFragment": "composite/final_composite.frag.glsl",
+        "nativeShadowMaskPublicMojangFragment": "composite/native_shadow_mask_composite.fsh",
+        "depthAwareShadowMaskFragment": "composite/depth_aware_shadow_mask_composite.frag.glsl",
         "previewFragment": null,
-        "notes": "The final composite shader resource is named for lucerna.composite.final and is distinct from core/direct_light_preview_*.fsh preview plumbing."
+        "denoisedDiffuseInputSourceIdentity": [
+          "cpu-readback-visual-denoise",
+          "public-mojang-final-visual-shaping",
+          "shader-generated-denoise-output-image"
+        ],
+        "notes": "The final composite shader resource is named for lucerna.composite.final and is distinct from core/direct_light_preview_*.fsh preview plumbing. The depth-aware shadow-mask resource is pending explicit depth/normal/source-lighting sampler bindings; sampling LucernaDenoisedDiffuse is a consumer handoff and does not prove that the source was shader-generated."
       },
       "descriptorSets": [
         "frame",
@@ -1642,9 +1965,12 @@
         "debug"
       ],
       "reads": [
+        "lucerna.gbuffer.depth",
+        "lucerna.gbuffer.normalRoughness",
         "lucerna.gbuffer.albedoOpacity",
         "lucerna.lighting.direct",
         "lucerna.lighting.diffuseGi",
+        "lucerna.lighting.nativeConservativeShadowMask",
         "lucerna.denoise.diffuse",
         "lucerna.debug.overlay"
       ],
@@ -1660,6 +1986,7 @@
         "directResolveInput": "lucerna.lighting.direct",
         "resolveOutput": "lucerna.composite.worldColor",
         "finalCompositeShader": "composite/final_composite.frag.glsl",
+        "depthAwareShadowMaskShader": "composite/depth_aware_shadow_mask_composite.frag.glsl",
         "boundedOutput": "Clamp negative radiance to zero, cap direct and diffuse contribution before composition, and clamp final RGB to the world-color target range.",
         "previewSeparation": "Do not use core/direct_light_preview_additive.fsh or core/direct_light_preview_diagnostic.fsh as the final composite resource.",
         "forbiddenInputs": [
@@ -1765,7 +2092,8 @@
         "lucerna.denoise.diffuse",
         "lucerna.denoise.rejectionMask"
       ],
-      "requiredTransition": "compute_write_to_shader_read"
+      "requiredTransition": "compute_write_to_shader_read",
+      "mojangFragmentAlternativeTransition": "color_attachment_write_to_shader_read for denoise/shader_generated_diffuse_output.fsh writing lucerna.denoise.diffuse"
     },
     {
       "from": "lucerna.debug.overlay",
@@ -2050,6 +2378,21 @@
       "id": "round5.direct_lighting_iris_isolation",
       "owner": "controller",
       "description": "Confirm the Round 5 direct-light output and resolve path consumes Lucerna-owned G-buffer/direct-light/debug resources only and does not sample Iris shader-pack color, depth, shadow, or lighting outputs."
+    },
+    {
+      "id": "round5.native_shadow_mask_composite",
+      "owner": "controller",
+      "description": "Confirm composite/native_shadow_mask_composite.fsh consumes a native conservative shadow-map/mask payload and produces receiver-tied darkening without screen-space decal proof, fixed blobs, focus-window markers, bloom, fog, or shader-denoise overclaims."
+    },
+    {
+      "id": "round5.depth_aware_shadow_mask_resource",
+      "owner": "controller",
+      "description": "Confirm composite/depth_aware_shadow_mask_composite.frag.glsl binds ShadowMaskSampler, CurrentDepthSampler, CurrentNormalRoughnessSampler, and SourceLightingSampler from the same frame; with depth binding missing it must emit transparent output and no screen-space fallback proof."
+    },
+    {
+      "id": "round7.shader_generated_denoise_resource",
+      "owner": "controller",
+      "description": "Confirm denoise/shader_generated_diffuse_output.fsh is a runtime-loadable public Mojang fragment resource that binds InSampler to lucerna.lighting.diffuseGi raw-diffuse-gi-rgba8, rejects lucerna.lighting.direct and native direct-light validation RGBA as substitutes, uses raw-GI luminance/chroma/confidence edges as the current material/depth-preserving fallback instead of proof masks/fullscreen wash/focus-window shortcuts, and writes fragColor into the owned lucerna.denoise.diffuse target. tracedRawGiInputConsumed requires upstream traced raw-GI evidence and still does not prove physical GI quality. The stricter denoise/shader_generated_diffuse_output.frag.glsl contract still covers confidence, variance, current depth/normal/material/motion, previous depth/normal/lighting, DenoisedDiffuseOutput, and RejectionMaskOutput before any broader full shader-denoise readiness claim; the current public Mojang route remains fragment color-attachment output, not compute/storage-image denoise."
     },
     {
       "id": "lighting.adaptive_sampling_metadata",

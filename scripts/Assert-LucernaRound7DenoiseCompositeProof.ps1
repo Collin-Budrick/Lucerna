@@ -5,7 +5,15 @@ Controller-only Round 7 assertion helper for raw GI, denoised GI, and final comp
 .DESCRIPTION
 This script checks already captured screenshots and an optional controller launch log. It does not
 launch Minecraft, run Gradle, compile shaders, build native code, or create validation evidence by
-itself. Use it after the controller has captured same-scene Round 7 artifacts.
+itself. Use it after the controller has captured same-scene Round 7 artifacts. Use
+-RequireShaderGeneratedDenoiseOutput only when the log should prove a consumed, shader-generated
+denoise output image rather than the older open-boundary shader-denoise evidence. Use
+-RequireTracedGiConsumption when the same proof must also show traced raw diffuse-GI consumption
+by the final in-game composite.
+Use -RequireFullRendererMilestoneProof when the log should prove the next full-renderer
+milestone in one in-world run: physical GI evidence, real shadow-map output and final
+composite consumption, true depth/G-buffer sampling, traced lighting consumption, and
+shader-generated denoise output, with screenshot/proof-overlay/metadata shortcuts rejected.
 #>
 param(
     [Parameter(Mandatory = $true)]
@@ -182,6 +190,22 @@ param(
         "(?:denoiseShaderInput|denoise_shader_input).*?(?:ready|available)=true"
     ),
 
+    [string[]] $ShaderDenoiseRawGiCpuReadbackInputPatterns = @(
+        "(?:round7\.shaderDenoise\.rawGiCpuReadbackInput|rawGiCpuReadbackInput|raw_gi_cpu_readback_input)=true"
+    ),
+
+    [string[]] $ShaderDenoiseRawDiffuseGiInputSourcePatterns = @(
+        "(?:round7\.shaderDenoise\.inputKind|shaderDenoiseInputKind|shader_denoise_input_kind|shaderInputKind|shader_input_kind)=raw-diffuse-gi-rgba8",
+        "shader input kind=raw-diffuse-gi-rgba8",
+        "public Mojang Round 7 shader-denoise output mode can bind the raw diffuse-GI input texture"
+    ),
+
+    [string[]] $ShaderDenoiseDirectLightValidationInputPatterns = @(
+        "(?:round7\.shaderDenoise\.directLightValidationInput|directLightValidationInput|direct_light_validation_input)=true",
+        "(?:round7\.shaderDenoise\.inputKind|shaderDenoiseInputKind|shader_denoise_input_kind|shaderInputKind|shader_input_kind)=native-direct-light-rgba8-validation-input",
+        "native-direct-light-rgba8-validation-input"
+    ),
+
     [string[]] $ShaderDenoiseDispatchPreparedPatterns = @(
         "(?:round7\.shaderDenoise\.dispatchPrepared|shaderDenoiseDispatchPrepared|shader_denoise_dispatch_prepared)=true"
     ),
@@ -243,9 +267,116 @@ param(
         "Lucerna native shader denoise output image candidate: .*realOutput=false"
     ),
 
+    [string[]] $ShaderGeneratedDenoiseOutputEvidenceReadyPatterns = @(
+        "(?:shaderGeneratedDenoiseOutputEvidence|shaderGeneratedDenoiseOutputEvidenceReady|shader_generated_denoise_output_evidence|shader_generated_denoise_output_evidence_ready)=true"
+    ),
+
     [string[]] $ShaderDenoiseNoOverclaimPatterns = @(
         "(?:round7\.shaderDenoise\.noOverclaim|shaderDenoiseNoOverclaim|shader_denoise_no_overclaim)=true",
         "shader_denoise_no_overclaim=true;[^`r`n]*(?:real_shader_output_ready|real_shader_output)=false"
+    ),
+
+    [string[]] $ShaderDenoiseOutputConsumedPatterns = @(
+        "(?:shaderOutputSourceConsumed|shaderDenoiseOutputSourceConsumed|shader_denoise_output_source_consumed)=true"
+    ),
+
+    [string[]] $ShaderDenoiseFinalCompositeConsumablePatterns = @(
+        "(?:shaderDenoiseFinalCompositeConsumable|shader_denoise_final_composite_consumable|finalCompositeConsumable)=true"
+    ),
+
+    [string[]] $TracedGiConsumedPatterns = @(
+        "(?:realTracedLightingConsumed|tracedLightingConsumed|traced_lighting_consumed|voxelRayTracedLightingConsumed|rayTracedLightingConsumed)=true",
+        "(?:tracedLightingConsumedByFinalComposite|traced_lighting_consumed_by_final_composite|traceFinalGiSourceConsumed|trace_final_gi_source_consumed|finalGiSourceConsumed|final_gi_source_consumed)=true"
+    ),
+
+    [string[]] $TracedGiFinalCompositeConsumptionPatterns = @(
+        "(?:tracedLightingConsumedByFinalComposite|traced_lighting_consumed_by_final_composite|traceFinalGiSourceConsumed|trace_final_gi_source_consumed|finalGiSourceConsumed|final_gi_source_consumed)=true",
+        "(?:Lucerna real renderer milestone 1: |finalCompositeSubmitted=true|final_composite_submitted=true)[^`r`n]*(?:realTracedLightingConsumed|tracedLightingConsumed|traced_lighting_consumed|voxelRayTracedLightingConsumed|rayTracedLightingConsumed)=true"
+    ),
+
+    [string[]] $TracedGiMetadataOnlyPatterns = @(
+        "(?:metadataOnlyTracing|metadata_only_tracing)=true",
+        "(?:tracedLightingMetadataOnly|traced_lighting_metadata_only)=true"
+    ),
+
+    [string[]] $RealGpuTraversalExecutedPatterns = @(
+        "(?:realGpuTraversalExecuted|real_gpu_traversal_executed|round10\.realGpuTraversalExecuted)=true",
+        "(?:realGpuTracedLightingConsumed|real_gpu_traced_lighting_consumed|traceRealGpuTraversalConsumed|trace_real_gpu_traversal_consumed)=true"
+    ),
+
+    [string[]] $RealGpuTraversalAllowedEvidencePatterns = @(
+        "(?:realGpuTraversalEvidence|real_gpu_traversal_evidence|gpuTraversalEvidence|gpu_traversal_evidence)=true",
+        "(?:gpuTraversalOutputReady|gpu_traversal_output_ready|hardwareRtExecutionProven|hardware_rt_execution_proven)=true",
+        "(?:traversalBackend|traversal_backend|traceEvidenceSource|trace_evidence_source)=(?:gpu|vulkan-gpu|hardware-rt|hardware_rt|rt-hardware|compute)"
+    ),
+
+    [string[]] $FullRendererProofProfilePatterns = @(
+        "realRendererMilestone1\.fullRendererProofProfile=true.*sameInWorldRunRequired=true",
+        "realRendererMilestone1\.proofScope=full-renderer-proof",
+        "realRendererMilestone1ProofScope=full-renderer-proof"
+    ),
+
+    [string[]] $CleanInWorldCaptureContractPatterns = @(
+        "realRendererMilestone1\.cleanCaptureContract=.*inWorldOnly.*menuClosedRequired=true.*chatClosedRequired=true",
+        "realRendererMilestone1CleanInWorldScreenshotRequired=True",
+        "realRendererMilestone1CleanInWorldScreenshotRequired=true"
+    ),
+
+    [string[]] $MenuChatScreenshotContaminationPatterns = @(
+        "(?:pauseMenuOpen|pause_menu_open|menuOpen|menu_open|screenOpen|screen_open)=true",
+        "(?:chatOpen|chat_open|chatScreenOpen|chat_screen_open)=true",
+        "(?:screenshotContainsMenu|screenshot_contains_menu|menuScreenshot|menu_screenshot)=true",
+        "(?:screenshotContainsChat|screenshot_contains_chat|chatScreenshot|chat_screenshot)=true"
+    ),
+
+    [string[]] $ProofOverlayEvidencePatterns = @(
+        "(?:proofOverlayVisible|proof_overlay_visible)=true",
+        "(?:proofOverlayForbidden|proof_overlay_forbidden)=false",
+        "(?:debugOverlay|debug\.overlay)=SHADER_DENOISE_OUTPUT_PROOF",
+        "Overlay state: SHADER_DENOISE_OUTPUT_PROOF"
+    ),
+
+    [string[]] $LowResDebugSubstitutionPatterns = @(
+        "(?:lowResolutionDirectTextureDraw|low_resolution_direct_texture_draw)=true",
+        "(?:lowResDebugMarker|low_res_debug_marker|lowResolutionDebugMarker|low_resolution_debug_marker)=true",
+        "(?:debugMarkerOnly|debug_marker_only)=true",
+        "(?:cpuDirectTextureComposite|cpu_direct_texture_composite)=true",
+        "diagnostic-fullscreen",
+        "fullscreen-warm-additive"
+    ),
+
+    [string[]] $TrueDepthGBufferSamplingPatterns = @(
+        "(?:trueDepthSampling|trueDepthGBufferSampling|realDepthGBufferSampling|real_depth_gbuffer_sampling|g_buffer_depth_texture_sampled|gBufferDepthTextureSampled)=true",
+        "(?:depthSamplingPassOutputsReady|depth_sampling_pass_outputs_ready)=true",
+        "(?:g_buffer_depth_sampling_evidence|gBufferDepthSamplingEvidence|shaderPassDepthSamplingEvidence|shader_pass_depth_sampling_evidence)=true"
+    ),
+
+    [string[]] $DepthGBufferSourcePatterns = @(
+        "(?:depthSamplingEvidenceSources|depth_sampling_evidence_sources)=[^`r`n]*(?:java)[^`r`n]*(?:native)[^`r`n]*(?:shader)",
+        "(?:depthSamplingPassOutputsMarker|depth_sampling_pass_outputs_marker)=java_native_shader_depth_sampling_evidence_parsed"
+    ),
+
+    [string[]] $DepthGBufferMetadataOnlyPatterns = @(
+        "(?:gBufferDepthMetadataOnly|g_buffer_depth_metadata_only|depth_sampling_metadata_only)=true"
+    ),
+
+    [string[]] $RealShadowMapOutputPatterns = @(
+        "(?:realShadowMapAttempted|shadowMapAttempted|shadow_map_attempted|shadowMapPassSubmitted|shadow_map_pass_submitted|realShadowMapPassSubmitted)=true",
+        "(?:nativeShadowMapGenerated|realShadowMapGenerated|native_shadow_map_generated)=true",
+        "(?:realShadowMapOutputReady|shadowMapOutputReady|shadow_map_output_ready|shadowMapDepthWritten|shadow_map_depth_written|shadowMapOutputWritten|shadow_map_output_written)=true"
+    ),
+
+    [string[]] $ShadowMapConsumptionPatterns = @(
+        "(?:shadowMapOutputConsumedByFinalComposite|nativeShadowMapConsumedByFinalComposite|realShadowMapConsumedByFinalComposite|shadow_map_output_consumed_by_final_composite|shadowMapOutputConsumed|shadow_map_output_consumed)=true",
+        "(?:shadowMapConsumptionMarker|shadow_map_consumption_marker)=native_shadow_map_sampled_by_final_composite",
+        "(?:finalCompositeSubmitted|final_composite_submitted)=true[^`r`n]*(?:shadowMapOutputConsumed|shadow_map_output_consumed|shadowMapOutputConsumedByFinalComposite|shadow_map_output_consumed_by_final_composite)=true"
+    ),
+
+    [string[]] $FullRendererOverclaimPatterns = @(
+        "(?:fullRendererProofOverclaimPresent|full_renderer_proof_overclaim_present|realRendererMilestone1OverclaimPresent|real_renderer_milestone1_overclaim_present)=true",
+        "(?:metadataOnlyProofAccepted|metadata_only_proof_accepted)=true",
+        "(?:focusWindowProofAccepted|focus_window_proof_accepted)=true",
+        "(?:lowResDebugSubstitutionAccepted|low_res_debug_substitution_accepted)=true"
     ),
 
     [string[]] $ShaderDenoiseOutputCandidateOnlySourcePatterns = @(
@@ -296,7 +427,13 @@ param(
 
     [switch] $RequireShaderDenoiseEvidence,
 
-    [switch] $RequirePhysicalGiEvidence
+    [switch] $RequireShaderGeneratedDenoiseOutput,
+
+    [switch] $RequireTracedGiConsumption,
+
+    [switch] $RequirePhysicalGiEvidence,
+
+    [switch] $RequireFullRendererMilestoneProof
 )
 
 $ErrorActionPreference = "Stop"
@@ -661,6 +798,49 @@ function Get-Round7PhysicalGiEvidence {
     }
 }
 
+function Get-Round7TracedGiConsumptionEvidence {
+    param([string] $LogText)
+
+    $rayCount = Get-MaxRegexNumber $LogText "(?:tracedLighting(?:Ray|Sample)Count|traced_lighting_(?:ray|sample)_count|traceRayCount|trace_ray_count|ray_count|rays)=(\d+)"
+    $hitCount = Get-MaxRegexNumber $LogText "(?:tracedLightingHitCount|traced_lighting_hit_count|traceHitCount|trace_hit_count|hit_count|hits)=(\d+)"
+    $materialCoupledHitCount = Get-MaxRegexNumber $LogText "(?:tracedLightingMaterialCoupledHitCount|traced_lighting_material_coupled_hit_count|traceMaterialCoupledHitCount|trace_material_coupled_hit_count|materialCoupledHitCount|material_coupled_hit_count|materialHits)=(\d+)"
+    $depthCoupledHitCount = Get-MaxRegexNumber $LogText "(?:tracedLightingDepthCoupledHitCount|traced_lighting_depth_coupled_hit_count|traceDepthCoupledHitCount|trace_depth_coupled_hit_count|depthCoupledHitCount|depth_coupled_hit_count|depthHits)=(\d+)"
+    $sourceCoupledBounceCount = Get-MaxRegexNumber $LogText "(?:tracedLightingSourceCoupledBounceCount|traced_lighting_source_coupled_bounce_count|traceSourceCoupledBounceCount|trace_source_coupled_bounce_count|sourceCoupledBounceCount|source_coupled_bounce_count|sourceBounce(?:s)?|source_bounce_count)=(\d+)"
+    $consumedPresent = Test-AnyRegex $LogText $TracedGiConsumedPatterns
+    $finalCompositeConsumptionPresent = Test-AnyRegex $LogText $TracedGiFinalCompositeConsumptionPatterns
+    $sourcePresent = Test-Regex $LogText "(?:tracedLightingSource|consumedLightingSource|lightingConsumptionSource|lighting_source|traceEvidenceSource|trace_evidence_source|finalGiSource|final_gi_source)=[^`r`n]*(?:voxel|ray|rt|trace|traced|hybrid|final_gi|diffuse)"
+    $metadataOnlyTracingPresent = Test-AnyRegex $LogText $TracedGiMetadataOnlyPatterns
+    $realGpuTraversalExecutedPresent = Test-AnyRegex $LogText $RealGpuTraversalExecutedPatterns
+    $realGpuTraversalAllowedEvidencePresent = Test-AnyRegex $LogText $RealGpuTraversalAllowedEvidencePatterns
+    $realGpuTraversalOverclaimPresent = $realGpuTraversalExecutedPresent -and -not $realGpuTraversalAllowedEvidencePresent
+    $materialDepthSourceCoupled = $materialCoupledHitCount -ge 1 -and $depthCoupledHitCount -ge 1 -and $sourceCoupledBounceCount -ge 1
+    $present = $consumedPresent `
+        -and $finalCompositeConsumptionPresent `
+        -and ($rayCount -ge 1) `
+        -and ($hitCount -ge 1) `
+        -and $materialDepthSourceCoupled `
+        -and $sourcePresent `
+        -and -not $metadataOnlyTracingPresent `
+        -and -not $realGpuTraversalOverclaimPresent
+
+    return [ordered]@{
+        present = $present
+        consumedPresent = $consumedPresent
+        finalCompositeConsumptionPresent = $finalCompositeConsumptionPresent
+        sourcePresent = $sourcePresent
+        rayCount = $rayCount
+        hitCount = $hitCount
+        materialCoupledHitCount = $materialCoupledHitCount
+        depthCoupledHitCount = $depthCoupledHitCount
+        sourceCoupledBounceCount = $sourceCoupledBounceCount
+        materialDepthSourceCoupled = $materialDepthSourceCoupled
+        metadataOnlyTracingPresent = $metadataOnlyTracingPresent
+        realGpuTraversalExecutedPresent = $realGpuTraversalExecutedPresent
+        realGpuTraversalAllowedEvidencePresent = $realGpuTraversalAllowedEvidencePresent
+        realGpuTraversalOverclaimPresent = $realGpuTraversalOverclaimPresent
+    }
+}
+
 function Get-Round7ShaderOutputImageCandidateEvidence {
     param([string] $LogText)
 
@@ -735,6 +915,9 @@ function Get-Round7ShaderDenoiseBoundaryEvidence {
         [object] $ImageCandidateEvidence,
         [bool] $IntentPresent,
         [bool] $InputReadyPresent,
+        [bool] $RawGiCpuReadbackInputPresent,
+        [bool] $RawDiffuseGiInputSourcePresent,
+        [bool] $DirectLightValidationInputPresent,
         [bool] $DispatchPreparedPresent,
         [bool] $OutputImageReadyPresent,
         [bool] $OutputImageStateExplicitPresent,
@@ -769,6 +952,12 @@ function Get-Round7ShaderDenoiseBoundaryEvidence {
         "shader_denoise_intent_missing"
     } elseif (-not $InputReadyPresent) {
         "shader_denoise_input_not_ready"
+    } elseif (-not $RawGiCpuReadbackInputPresent) {
+        "raw_gi_cpu_readback_input_missing"
+    } elseif (-not $RawDiffuseGiInputSourcePresent) {
+        "raw_diffuse_gi_input_source_missing"
+    } elseif ($DirectLightValidationInputPresent) {
+        "direct_light_validation_input_present"
     } elseif (-not $DispatchPreparedPresent) {
         "shader_denoise_dispatch_not_prepared"
     } elseif (-not $OutputImageStateExplicitPresent) {
@@ -824,6 +1013,9 @@ function Get-Round7ShaderDenoiseBoundaryEvidence {
         prerequisites = [ordered]@{
             intent = $IntentPresent
             inputReady = $InputReadyPresent
+            rawGiCpuReadbackInput = $RawGiCpuReadbackInputPresent
+            rawDiffuseGiInputSource = $RawDiffuseGiInputSourcePresent
+            directLightValidationInputRejected = -not $DirectLightValidationInputPresent
             dispatchPrepared = $DispatchPreparedPresent
             outputAttempted = $OutputAttemptedMarkerPresent
             outputAttemptGeneration = $OutputAttemptGeneration
@@ -849,6 +1041,23 @@ function Measure-Round7LogProof {
     $log = Get-Content -Raw -LiteralPath $ResolvedLogPath
     $shaderOutputImageCandidateEvidence = Get-Round7ShaderOutputImageCandidateEvidence $log
     $physicalGiEvidence = Get-Round7PhysicalGiEvidence $log
+    $tracedGiConsumptionEvidence = Get-Round7TracedGiConsumptionEvidence $log
+    $fullRendererProofProfilePresent = Test-AnyRegex $log $FullRendererProofProfilePatterns
+    $cleanInWorldCaptureContractPresent = Test-AnyRegex $log $CleanInWorldCaptureContractPatterns
+    $menuChatScreenshotContaminationPresent = Test-AnyRegex $log $MenuChatScreenshotContaminationPatterns
+    $proofOverlayEvidencePresent = Test-AnyRegex $log $ProofOverlayEvidencePatterns
+    $lowResDebugSubstitutionPresent = Test-AnyRegex $log $LowResDebugSubstitutionPatterns
+    $trueDepthGBufferSamplingMarkerPresent = Test-AnyRegex $log $TrueDepthGBufferSamplingPatterns
+    $depthGBufferSourcePresent = Test-AnyRegex $log $DepthGBufferSourcePatterns
+    $depthGBufferSampleCount = Get-MaxRegexNumber $log "(?:depthGBufferSampleCount|depth_gbuffer_sample_count|gBufferSampleCount|gbuffer_sample_count|g_buffer_depth_sample_count|depthSampleCount|depth_samples)=(\d+)"
+    $depthGBufferMetadataOnlyPresent = Test-AnyRegex $log $DepthGBufferMetadataOnlyPatterns
+    $trueDepthGBufferSamplingProven = $trueDepthGBufferSamplingMarkerPresent -and $depthGBufferSourcePresent -and ($depthGBufferSampleCount -ge 1) -and -not $depthGBufferMetadataOnlyPresent
+    $realShadowMapOutputMarkerPresent = Test-AnyRegex $log $RealShadowMapOutputPatterns
+    $shadowMapSampleCount = Get-MaxRegexNumber $log "(?:shadowMap(?:Texel|Sample|Receiver|Caster|Output)(?:Count|s)?|shadow_map_(?:texel|sample|receiver|caster|output)_count)=(\d+)"
+    $realShadowMapOutputProven = $realShadowMapOutputMarkerPresent -and ($shadowMapSampleCount -ge 1)
+    $shadowMapOutputConsumedPresent = Test-AnyRegex $log $ShadowMapConsumptionPatterns
+    $fullRendererMilestoneProofPresent = Test-Regex $log "(?:realRendererMilestone1\.proof|realRendererMilestone1Proof|real_renderer_milestone1_proof)=true"
+    $fullRendererOverclaimPresent = Test-AnyRegex $log $FullRendererOverclaimPatterns
     $acceptedFinalCompositePresent = Test-Regex $log "sourceIdentity=native-direct-light-rgba8\+native-diffuse-gi-rgba8\+cpu-denoised-diffuse-gi-rgba8.*sourceAuthenticity=accepted:final-composite-direct-plus-raw-gi-plus-(?:cpu-)?denoised-gi.*evidence=round7\.composite\.final\.direct_raw_denoised.*finalBlendComplete=true.*metadataOnly=false"
     $acceptedRound7DenoiseDrawPresent = Test-Regex $log "(?:Lucerna public Mojang final composite: .*round7\.finalCompositeSubmission=state=submitted-with-draw.*metadataOnly=false|public Mojang Round 7 DENOISED_GI visual render pass submitted.*metadataOnly=false|denoised diffuse GI RGBA8 payload is ready for preview draw.*metadataOnly=false)"
     $directSourcePresent = Test-AnyRegex $log $DirectSourcePatterns
@@ -865,6 +1074,10 @@ function Measure-Round7LogProof {
     $realDenoiseShaderOutputFalsePresent = Test-Regex $log "realDenoiseShaderOutput=false|real_denoise_shader_output=false"
     $shaderDenoiseIntentPresent = Test-AnyRegex $log $ShaderDenoiseIntentPatterns
     $shaderDenoiseInputReadyPresent = Test-AnyRegex $log $ShaderDenoiseInputReadyPatterns
+    $shaderDenoiseRawGiCpuReadbackInputPresent = Test-AnyRegex $log $ShaderDenoiseRawGiCpuReadbackInputPatterns
+    $shaderDenoiseRawDiffuseGiInputSourcePresent = Test-AnyRegex $log $ShaderDenoiseRawDiffuseGiInputSourcePatterns
+    $shaderDenoiseDirectLightValidationInputPresent = Test-AnyRegex $log $ShaderDenoiseDirectLightValidationInputPatterns
+    $shaderDenoiseRawGiInputProven = $shaderDenoiseRawGiCpuReadbackInputPresent -and $shaderDenoiseRawDiffuseGiInputSourcePresent -and -not $shaderDenoiseDirectLightValidationInputPresent
     $shaderDenoiseDispatchPreparedPresent = Test-AnyRegex $log $ShaderDenoiseDispatchPreparedPatterns
     $shaderDenoiseOutputAttemptedPresent = Test-AnyRegex $log $ShaderDenoiseOutputAttemptedPatterns
     $shaderDenoiseOutputAttemptGenerationMatch = Get-LastRegexMatch $log "(?:round7\.shaderDenoise\.outputAttemptGeneration|shaderDenoiseOutputAttemptGeneration|shader_denoise_output_attempt_generation)=(?<generation>[0-9]+)"
@@ -890,17 +1103,24 @@ function Measure-Round7LogProof {
     $realShaderDenoiseOutputStateExplicitPresent = $realShaderDenoiseOutputReadyPresent -or $realShaderDenoiseOutputNotReadyPresent
     $cpuReadbackDenoiseSourcePresent = Test-AnyRegex $log $CpuReadbackDenoiseSourcePatterns
     $shaderDenoiseOutputCandidateOnlySourcePresent = (Test-AnyRegex $log $ShaderDenoiseOutputCandidateOnlySourcePatterns) -or ([bool]$shaderOutputImageCandidateEvidence.boundaryOnly)
+    $shaderGeneratedDenoiseOutputEvidenceReadyPresent = Test-AnyRegex $log $ShaderGeneratedDenoiseOutputEvidenceReadyPatterns
+    $shaderDenoiseOutputConsumedPresent = Test-AnyRegex $log $ShaderDenoiseOutputConsumedPatterns
+    $shaderDenoiseFinalCompositeConsumablePresent = Test-AnyRegex $log $ShaderDenoiseFinalCompositeConsumablePatterns
     $shaderDenoiseNoOverclaimPresent = Test-AnyRegex $log $ShaderDenoiseNoOverclaimPatterns
     $shaderDenoiseOutputReadyPresent = $realShaderDenoiseOutputReadyPresent
     $shaderDenoiseSourceClaimPresent = Test-AnyRegex $log $ShaderDenoiseSourceClaimPatterns
     $shaderDenoiseOutputOpenPresent = (Test-AnyRegex $log $ShaderDenoiseOutputOpenPatterns) -or $realShaderDenoiseOutputNotReadyPresent -or $shaderDenoiseOutputImageNotReadyPresent -or $shaderDenoiseOutputMaterialNotReadyPresent -or $shaderDenoiseShaderGeneratedOutputFalsePresent
     $shaderDenoiseOutputStateExplicitPresent = $realShaderDenoiseOutputStateExplicitPresent
-    $realShaderDenoiseOutputProven = $shaderDenoiseDispatchPreparedPresent -and $shaderDenoiseOutputImageReadyPresent -and $shaderDenoiseOutputMaterialReadyPresent -and $shaderDenoiseShaderGeneratedOutputTruePresent -and $realShaderDenoiseOutputReadyPresent -and -not $shaderDenoiseCpuReadbackFallbackActivePresent
+    $realShaderDenoiseOutputProven = $shaderDenoiseRawGiInputProven -and $shaderDenoiseDispatchPreparedPresent -and $shaderDenoiseOutputImageReadyPresent -and $shaderDenoiseOutputMaterialReadyPresent -and $shaderDenoiseShaderGeneratedOutputTruePresent -and $shaderGeneratedDenoiseOutputEvidenceReadyPresent -and $realShaderDenoiseOutputReadyPresent -and -not $shaderDenoiseCpuReadbackFallbackActivePresent
+    $shaderGeneratedDenoiseOutputImageSliceProven = $realShaderDenoiseOutputProven -and $shaderDenoiseOutputConsumedPresent -and $shaderDenoiseFinalCompositeConsumablePresent
     $shaderDenoiseBoundaryEvidence = Get-Round7ShaderDenoiseBoundaryEvidence `
         -LogText $log `
         -ImageCandidateEvidence $shaderOutputImageCandidateEvidence `
         -IntentPresent $shaderDenoiseIntentPresent `
         -InputReadyPresent $shaderDenoiseInputReadyPresent `
+        -RawGiCpuReadbackInputPresent $shaderDenoiseRawGiCpuReadbackInputPresent `
+        -RawDiffuseGiInputSourcePresent $shaderDenoiseRawDiffuseGiInputSourcePresent `
+        -DirectLightValidationInputPresent $shaderDenoiseDirectLightValidationInputPresent `
         -DispatchPreparedPresent $shaderDenoiseDispatchPreparedPresent `
         -OutputImageReadyPresent $shaderDenoiseOutputImageReadyPresent `
         -OutputImageStateExplicitPresent $shaderDenoiseOutputImageStateExplicitPresent `
@@ -919,7 +1139,7 @@ function Measure-Round7LogProof {
         -NoOverclaimMarkerPresent $shaderDenoiseNoOverclaimPresent `
         -RealOutputProven $realShaderDenoiseOutputProven
     $shaderDenoiseOpenBoundaryPresent = $shaderDenoiseOutputOpenPresent -or $shaderDenoiseCpuReadbackFallbackActivePresent -or $cpuReadbackDenoiseSourcePresent -or ([bool]$shaderOutputImageCandidateEvidence.boundaryOnly)
-    $shaderDenoiseOverclaimPresent = (Test-AnyRegex $log $ShaderDenoiseOverclaimPatterns) -or ($shaderDenoiseSourceClaimPresent -and -not $realShaderDenoiseOutputProven) -or ($realShaderDenoiseOutputReadyPresent -and ($shaderDenoiseCpuReadbackFallbackActivePresent -or -not $shaderDenoiseShaderGeneratedOutputTruePresent -or -not $shaderDenoiseOutputImageReadyPresent -or -not $shaderDenoiseOutputMaterialReadyPresent))
+    $shaderDenoiseOverclaimPresent = (Test-AnyRegex $log $ShaderDenoiseOverclaimPatterns) -or ($shaderDenoiseSourceClaimPresent -and -not $realShaderDenoiseOutputProven) -or ($realShaderDenoiseOutputReadyPresent -and ($shaderDenoiseCpuReadbackFallbackActivePresent -or -not $shaderDenoiseShaderGeneratedOutputTruePresent -or -not $shaderGeneratedDenoiseOutputEvidenceReadyPresent -or -not $shaderDenoiseOutputImageReadyPresent -or -not $shaderDenoiseOutputMaterialReadyPresent))
     $physicalGiOverclaimPresent = [bool]$physicalGiEvidence.overclaimPresent
     $proofMarkerPresent = Test-Regex $log "proofMarkerSource=true|cpuOutputProofMarker=true|round6-gi-proof|round7-proof-marker|R6 GI proof|R7 proof|CPU output proof"
     $submittedFocusWindowOnlyPresent = Test-Regex $log "sourceIdentity=native-direct-light-rgba8,focusWindowOnly=true|mode=final-composite-direct-light-focus-window-additive"
@@ -944,6 +1164,10 @@ function Measure-Round7LogProof {
             realDenoiseShaderOutputFalsePresent = $realDenoiseShaderOutputFalsePresent
             shaderDenoiseIntentPresent = $shaderDenoiseIntentPresent
             shaderDenoiseInputReadyPresent = $shaderDenoiseInputReadyPresent
+            shaderDenoiseRawGiCpuReadbackInputPresent = $shaderDenoiseRawGiCpuReadbackInputPresent
+            shaderDenoiseRawDiffuseGiInputSourcePresent = $shaderDenoiseRawDiffuseGiInputSourcePresent
+            shaderDenoiseDirectLightValidationInputPresent = $shaderDenoiseDirectLightValidationInputPresent
+            shaderDenoiseRawGiInputProven = $shaderDenoiseRawGiInputProven
             shaderDenoiseDispatchPreparedPresent = $shaderDenoiseDispatchPreparedPresent
             shaderDenoiseOutputAttemptedPresent = $shaderDenoiseOutputAttemptedPresent
             shaderDenoiseOutputAttemptGenerationPresent = $shaderDenoiseOutputAttemptGenerationPresent
@@ -962,6 +1186,7 @@ function Measure-Round7LogProof {
             shaderDenoiseShaderGeneratedOutputTruePresent = $shaderDenoiseShaderGeneratedOutputTruePresent
             shaderDenoiseShaderGeneratedOutputFalsePresent = $shaderDenoiseShaderGeneratedOutputFalsePresent
             shaderDenoiseShaderGeneratedOutputExplicitPresent = $shaderDenoiseShaderGeneratedOutputExplicitPresent
+            shaderGeneratedDenoiseOutputEvidenceReadyPresent = $shaderGeneratedDenoiseOutputEvidenceReadyPresent
             shaderDenoiseCpuReadbackFallbackActivePresent = $shaderDenoiseCpuReadbackFallbackActivePresent
             shaderDenoiseCpuReadbackFallbackInactivePresent = $shaderDenoiseCpuReadbackFallbackInactivePresent
             shaderDenoiseCpuReadbackFallbackExplicitPresent = $shaderDenoiseCpuReadbackFallbackExplicitPresent
@@ -969,6 +1194,9 @@ function Measure-Round7LogProof {
             realShaderDenoiseOutputNotReadyPresent = $realShaderDenoiseOutputNotReadyPresent
             realShaderDenoiseOutputStateExplicitPresent = $realShaderDenoiseOutputStateExplicitPresent
             realShaderDenoiseOutputProven = $realShaderDenoiseOutputProven
+            shaderDenoiseOutputConsumedPresent = $shaderDenoiseOutputConsumedPresent
+            shaderDenoiseFinalCompositeConsumablePresent = $shaderDenoiseFinalCompositeConsumablePresent
+            shaderGeneratedDenoiseOutputImageSliceProven = $shaderGeneratedDenoiseOutputImageSliceProven
             shaderDenoiseOpenBoundaryPresent = $shaderDenoiseOpenBoundaryPresent
             cpuReadbackDenoiseSourcePresent = $cpuReadbackDenoiseSourcePresent
             shaderDenoiseOutputCandidateOnlySourcePresent = $shaderDenoiseOutputCandidateOnlySourcePresent
@@ -981,6 +1209,32 @@ function Measure-Round7LogProof {
             shaderDenoiseHonestNonOverclaimPresent = [bool]$shaderDenoiseBoundaryEvidence.honestNonOverclaim -and -not $shaderDenoiseOverclaimPresent
             physicalGiEvidencePresent = [bool]$physicalGiEvidence.present
             physicalGiOverclaimPresent = $physicalGiOverclaimPresent
+            fullRendererProofProfilePresent = $fullRendererProofProfilePresent
+            cleanInWorldCaptureContractPresent = $cleanInWorldCaptureContractPresent
+            menuChatScreenshotContaminationPresent = $menuChatScreenshotContaminationPresent
+            proofOverlayEvidencePresent = $proofOverlayEvidencePresent
+            lowResDebugSubstitutionPresent = $lowResDebugSubstitutionPresent
+            trueDepthGBufferSamplingMarkerPresent = $trueDepthGBufferSamplingMarkerPresent
+            depthGBufferSourcePresent = $depthGBufferSourcePresent
+            depthGBufferSampleCount = $depthGBufferSampleCount
+            depthGBufferMetadataOnlyPresent = $depthGBufferMetadataOnlyPresent
+            trueDepthGBufferSamplingProven = $trueDepthGBufferSamplingProven
+            realShadowMapOutputMarkerPresent = $realShadowMapOutputMarkerPresent
+            shadowMapSampleCount = $shadowMapSampleCount
+            realShadowMapOutputProven = $realShadowMapOutputProven
+            shadowMapOutputConsumedPresent = $shadowMapOutputConsumedPresent
+            fullRendererMilestoneProofPresent = $fullRendererMilestoneProofPresent
+            fullRendererOverclaimPresent = $fullRendererOverclaimPresent
+            tracedGiConsumptionPresent = [bool]$tracedGiConsumptionEvidence.present
+            tracedGiConsumedPresent = [bool]$tracedGiConsumptionEvidence.consumedPresent
+            tracedGiFinalCompositeConsumptionPresent = [bool]$tracedGiConsumptionEvidence.finalCompositeConsumptionPresent
+            tracedGiSourcePresent = [bool]$tracedGiConsumptionEvidence.sourcePresent
+            tracedGiTraceCountersPresent = [bool]($tracedGiConsumptionEvidence.rayCount -ge 1 -and $tracedGiConsumptionEvidence.hitCount -ge 1)
+            tracedGiMaterialDepthSourceCoupled = [bool]$tracedGiConsumptionEvidence.materialDepthSourceCoupled
+            metadataOnlyTracingPresent = [bool]$tracedGiConsumptionEvidence.metadataOnlyTracingPresent
+            realGpuTraversalExecutedPresent = [bool]$tracedGiConsumptionEvidence.realGpuTraversalExecutedPresent
+            realGpuTraversalAllowedEvidencePresent = [bool]$tracedGiConsumptionEvidence.realGpuTraversalAllowedEvidencePresent
+            realGpuTraversalOverclaimPresent = [bool]$tracedGiConsumptionEvidence.realGpuTraversalOverclaimPresent
             proofMarkerPresent = $proofMarkerPresent
             focusWindowOnlyPresent = $focusWindowOnlyPresent
             submittedFocusWindowOnlyPresent = $submittedFocusWindowOnlyPresent
@@ -990,6 +1244,7 @@ function Measure-Round7LogProof {
         shaderOutputImageCandidate = $shaderOutputImageCandidateEvidence
         shaderDenoiseBoundary = $shaderDenoiseBoundaryEvidence
         physicalGiEvidence = $physicalGiEvidence
+        tracedGiConsumptionEvidence = $tracedGiConsumptionEvidence
         patterns = [ordered]@{
             rawGiSourcePatterns = @($RawGiSourcePatterns)
             directSourcePatterns = @($DirectSourcePatterns)
@@ -1000,6 +1255,9 @@ function Measure-Round7LogProof {
             hudSafeFinalCompositePatterns = @($HudSafeFinalCompositePatterns)
             shaderDenoiseIntentPatterns = @($ShaderDenoiseIntentPatterns)
             shaderDenoiseInputReadyPatterns = @($ShaderDenoiseInputReadyPatterns)
+            shaderDenoiseRawGiCpuReadbackInputPatterns = @($ShaderDenoiseRawGiCpuReadbackInputPatterns)
+            shaderDenoiseRawDiffuseGiInputSourcePatterns = @($ShaderDenoiseRawDiffuseGiInputSourcePatterns)
+            shaderDenoiseDirectLightValidationInputPatterns = @($ShaderDenoiseDirectLightValidationInputPatterns)
             shaderDenoiseDispatchPreparedPatterns = @($ShaderDenoiseDispatchPreparedPatterns)
             shaderDenoiseOutputAttemptedPatterns = @($ShaderDenoiseOutputAttemptedPatterns)
             shaderDenoiseOutputAttemptGenerationPatterns = @($ShaderDenoiseOutputAttemptGenerationPatterns)
@@ -1013,7 +1271,15 @@ function Measure-Round7LogProof {
             shaderDenoiseCpuReadbackFallbackInactivePatterns = @($ShaderDenoiseCpuReadbackFallbackInactivePatterns)
             realShaderDenoiseOutputReadyPatterns = @($RealShaderDenoiseOutputReadyPatterns)
             realShaderDenoiseOutputNotReadyPatterns = @($RealShaderDenoiseOutputNotReadyPatterns)
+            shaderGeneratedDenoiseOutputEvidenceReadyPatterns = @($ShaderGeneratedDenoiseOutputEvidenceReadyPatterns)
             shaderDenoiseNoOverclaimPatterns = @($ShaderDenoiseNoOverclaimPatterns)
+            shaderDenoiseOutputConsumedPatterns = @($ShaderDenoiseOutputConsumedPatterns)
+            shaderDenoiseFinalCompositeConsumablePatterns = @($ShaderDenoiseFinalCompositeConsumablePatterns)
+            tracedGiConsumedPatterns = @($TracedGiConsumedPatterns)
+            tracedGiFinalCompositeConsumptionPatterns = @($TracedGiFinalCompositeConsumptionPatterns)
+            tracedGiMetadataOnlyPatterns = @($TracedGiMetadataOnlyPatterns)
+            realGpuTraversalExecutedPatterns = @($RealGpuTraversalExecutedPatterns)
+            realGpuTraversalAllowedEvidencePatterns = @($RealGpuTraversalAllowedEvidencePatterns)
             shaderDenoiseOutputCandidateOnlySourcePatterns = @($ShaderDenoiseOutputCandidateOnlySourcePatterns)
             cpuReadbackDenoiseSourcePatterns = @($CpuReadbackDenoiseSourcePatterns)
             shaderDenoiseOutputReadyPatterns = @($ShaderDenoiseOutputReadyPatterns)
@@ -1048,6 +1314,11 @@ $denoisedRoughnessInDenoiseRegion = Measure-ImageRoughness $denoisedResolved $de
 $denoiseQuality = Compare-Roughness $rawRoughnessInDenoiseRegion $denoisedRoughnessInDenoiseRegion
 
 $logProof = if ([string]::IsNullOrWhiteSpace($logResolved)) { $null } else { Measure-Round7LogProof $logResolved }
+$fullRendererMilestoneProofRequired = [bool]$RequireFullRendererMilestoneProof
+$physicalGiEvidenceRequired = [bool]($RequirePhysicalGiEvidence -or $fullRendererMilestoneProofRequired)
+$tracedGiConsumptionRequired = [bool]($RequireTracedGiConsumption -or $fullRendererMilestoneProofRequired)
+$shaderDenoiseEvidenceRequired = [bool]($RequireShaderDenoiseEvidence -or $RequireShaderGeneratedDenoiseOutput -or $tracedGiConsumptionRequired -or $fullRendererMilestoneProofRequired)
+$shaderGeneratedOutputRequiredForProof = [bool]($RequireShaderGeneratedDenoiseOutput -or $tracedGiConsumptionRequired -or $fullRendererMilestoneProofRequired)
 $failures = New-Object System.Collections.Generic.List[string]
 
 foreach ($entry in @(
@@ -1103,8 +1374,14 @@ if ($RequireDebugScreenshot -and [string]::IsNullOrWhiteSpace($debugResolved)) {
 if ($RequireLogProof -and [string]::IsNullOrWhiteSpace($logResolved)) {
     $failures.Add("Log proof was required but no -LogPath was provided.")
 }
-if ($RequireShaderDenoiseEvidence -and [string]::IsNullOrWhiteSpace($logResolved)) {
+if ($shaderDenoiseEvidenceRequired -and [string]::IsNullOrWhiteSpace($logResolved)) {
     $failures.Add("Shader-denoise evidence requires -LogPath so intent, input readiness, source identity, and output readiness can be checked.")
+}
+if ($tracedGiConsumptionRequired -and [string]::IsNullOrWhiteSpace($logResolved)) {
+    $failures.Add("Traced GI consumption proof requires -LogPath so traced consumption and coupling counters can be checked.")
+}
+if ($fullRendererMilestoneProofRequired -and [string]::IsNullOrWhiteSpace($logResolved)) {
+    $failures.Add("Full renderer milestone proof requires -LogPath so physical GI, depth/G-buffer, shadow-map, traced lighting, shader-denoise, and contamination rejection markers can be checked.")
 }
 if ($logProof) {
     if (-not $logProof.markers.directSourcePresent) {
@@ -1146,15 +1423,24 @@ if ($logProof) {
     if ($logProof.markers.physicalGiOverclaimPresent) {
         $failures.Add("Log overclaims physical GI/tracing quality; Round 7 proof must preserve the open physicalGiTracingQuality boundary.")
     }
-    if ($RequirePhysicalGiEvidence -and -not $logProof.markers.physicalGiEvidencePresent) {
+    if ($physicalGiEvidenceRequired -and -not $logProof.markers.physicalGiEvidencePresent) {
         $failures.Add("Missing native physical GI sample/coupling evidence markers for Round 7 raw/final GI source.")
     }
-    if ($RequireShaderDenoiseEvidence) {
+    if ($shaderDenoiseEvidenceRequired) {
         if (-not $logProof.markers.shaderDenoiseIntentPresent) {
             $failures.Add("Missing shader-denoise intent marker.")
         }
         if (-not $logProof.markers.shaderDenoiseInputReadyPresent) {
             $failures.Add("Missing shader-denoise input readiness marker.")
+        }
+        if ($shaderGeneratedOutputRequiredForProof -and -not $logProof.markers.shaderDenoiseRawGiCpuReadbackInputPresent) {
+            $failures.Add("Shader-generated denoise output proof requires rawGiCpuReadbackInput=true.")
+        }
+        if ($shaderGeneratedOutputRequiredForProof -and -not $logProof.markers.shaderDenoiseRawDiffuseGiInputSourcePresent) {
+            $failures.Add("Shader-generated denoise output proof requires shaderDenoiseInputKind=raw-diffuse-gi-rgba8 or equivalent raw diffuse-GI source evidence.")
+        }
+        if ($shaderGeneratedOutputRequiredForProof -and $logProof.markers.shaderDenoiseDirectLightValidationInputPresent) {
+            $failures.Add("Shader-generated denoise output proof rejects directLightValidationInput=true/native-direct-light-rgba8-validation-input; raw diffuse-GI input is required.")
         }
         if (-not $logProof.markers.shaderDenoiseDispatchPreparedPresent) {
             $failures.Add("Missing explicit shader-denoise dispatch prepared marker.")
@@ -1180,7 +1466,7 @@ if ($logProof) {
         if (-not $logProof.markers.shaderDenoiseOutputStateExplicitPresent) {
             $failures.Add("Missing explicit real shader-denoise output readiness marker.")
         }
-        if (-not $logProof.markers.realShaderDenoiseOutputNotReadyPresent) {
+        if (-not $shaderGeneratedOutputRequiredForProof -and -not $logProof.markers.realShaderDenoiseOutputNotReadyPresent) {
             $failures.Add("Missing explicit realShaderDenoiseOutputReady=false marker for current shader-output attempt/no-overclaim proof.")
         }
         if (-not $logProof.markers.shaderDenoiseNoOverclaimPresent) {
@@ -1197,6 +1483,105 @@ if ($logProof) {
         }
         if (-not $logProof.markers.shaderDenoiseHonestNonOverclaimPresent) {
             $failures.Add("Missing honest shader-denoise non-overclaim boundary marker; proof must either prove real shader output or explicitly report CPU fallback/candidate/open blocker state.")
+        }
+        if ($shaderGeneratedOutputRequiredForProof) {
+            if (-not $logProof.markers.shaderDenoiseOutputImageReadyPresent) {
+                $failures.Add("Shader-generated denoise output proof requires shader-denoise output image ready=true.")
+            }
+            if (-not $logProof.markers.shaderDenoiseOutputMaterialReadyPresent) {
+                $failures.Add("Shader-generated denoise output proof requires shader-denoise output material ready=true.")
+            }
+            if (-not $logProof.markers.shaderDenoiseShaderGeneratedOutputTruePresent) {
+                $failures.Add("Shader-generated denoise output proof requires shaderGeneratedOutput=true.")
+            }
+            if (-not $logProof.markers.shaderGeneratedDenoiseOutputEvidenceReadyPresent) {
+                $failures.Add("Shader-generated denoise output proof requires shaderGeneratedDenoiseOutputEvidenceReady=true.")
+            }
+            if (-not $logProof.markers.realShaderDenoiseOutputReadyPresent) {
+                $failures.Add("Shader-generated denoise output proof requires realShaderDenoiseOutputReady=true.")
+            }
+            if ($logProof.markers.shaderDenoiseCpuReadbackFallbackActivePresent) {
+                $failures.Add("Shader-generated denoise output proof requires CPU/readback fallback inactive; active fallback marker is present.")
+            }
+            if (-not $logProof.markers.shaderDenoiseCpuReadbackFallbackInactivePresent) {
+                $failures.Add("Shader-generated denoise output proof requires explicit CPU/readback fallback active=false marker.")
+            }
+            if (-not $logProof.markers.shaderDenoiseOutputConsumedPresent) {
+                $failures.Add("Shader-generated denoise output proof requires shaderDenoiseOutputSourceConsumed=true.")
+            }
+            if (-not $logProof.markers.shaderDenoiseFinalCompositeConsumablePresent) {
+                $failures.Add("Shader-generated denoise output proof requires shaderDenoiseFinalCompositeConsumable/finalCompositeConsumable=true.")
+            }
+            if (-not $logProof.markers.shaderDenoiseRawGiInputProven) {
+                $failures.Add("Shader-generated denoise output proof requires raw GI CPU/readback input provenance and must not use the direct-light validation input.")
+            }
+            if (-not $logProof.markers.shaderGeneratedDenoiseOutputImageSliceProven) {
+                $failures.Add("Shader-generated denoise output image slice is not fully proven: raw GI CPU/readback input, raw diffuse-GI source kind, dispatch, output image, material, shader-generated evidence, real output, consumed source, final composite consumable, CPU fallback false, and no direct-light validation input must all be present.")
+            }
+        }
+    }
+    if ($tracedGiConsumptionRequired) {
+        if (-not $logProof.markers.tracedGiConsumedPresent) {
+            $failures.Add("Traced GI consumption proof requires realTracedLightingConsumed=true or tracedLightingConsumedByFinalComposite=true.")
+        }
+        if (-not $logProof.markers.tracedGiFinalCompositeConsumptionPresent) {
+            $failures.Add("Traced GI consumption proof requires traced lighting consumed by the final in-game composite.")
+        }
+        if (-not $logProof.markers.tracedGiTraceCountersPresent) {
+            $failures.Add("Traced GI consumption proof requires positive trace ray and hit counters.")
+        }
+        if (-not $logProof.markers.tracedGiMaterialDepthSourceCoupled) {
+            $failures.Add("Traced GI consumption proof requires positive material-coupled, depth-coupled, and source-bounce counters.")
+        }
+        if (-not $logProof.markers.tracedGiSourcePresent) {
+            $failures.Add("Traced GI consumption proof requires a traced/voxel/ray/hybrid final GI source marker.")
+        }
+        if (-not $logProof.markers.tracedGiConsumptionPresent) {
+            $failures.Add("Traced GI consumption proof is not fully proven from log markers.")
+        }
+        if ($logProof.markers.metadataOnlyTracingPresent) {
+            $failures.Add("Traced GI consumption proof rejects metadataOnlyTracing=true/tracedLightingMetadataOnly=true.")
+        }
+        if ($logProof.markers.realGpuTraversalOverclaimPresent) {
+            $failures.Add("Traced GI consumption proof rejects realGpuTraversalExecuted=true unless explicit GPU traversal evidence is present.")
+        }
+    }
+    if ($fullRendererMilestoneProofRequired) {
+        if (-not $logProof.markers.fullRendererProofProfilePresent) {
+            $failures.Add("Full renderer milestone proof requires a RealRendererMilestone1 full-renderer profile marker from the controller harness.")
+        }
+        if (-not $logProof.markers.cleanInWorldCaptureContractPresent) {
+            $failures.Add("Full renderer milestone proof requires a clean in-world capture contract marker: menu closed, chat closed, proof overlays forbidden, wrong-window/blank capture forbidden.")
+        }
+        if ($logProof.markers.menuChatScreenshotContaminationPresent) {
+            $failures.Add("Full renderer milestone proof rejects menu/chat screenshot contamination markers.")
+        }
+        if ($logProof.markers.proofOverlayEvidencePresent -or $logProof.markers.proofMarkerPresent) {
+            $failures.Add("Full renderer milestone proof rejects proof overlays and proof-marker evidence.")
+        }
+        if ($logProof.markers.focusWindowOnlyPresent) {
+            $failures.Add("Full renderer milestone proof rejects focus-window-only final composite paths.")
+        }
+        if ($logProof.markers.lowResDebugSubstitutionPresent) {
+            $failures.Add("Full renderer milestone proof rejects low-resolution debug substitutions and CPU direct texture composites.")
+        }
+        if ($logProof.markers.metadataOnlyPreviewPresent -or $logProof.markers.metadataOnlyTracingPresent -or $logProof.markers.depthGBufferMetadataOnlyPresent) {
+            $failures.Add("Full renderer milestone proof rejects metadata-only preview, tracing, or depth/G-buffer evidence.")
+        }
+        if (-not $logProof.markers.trueDepthGBufferSamplingProven) {
+            $failures.Add("Full renderer milestone proof requires true depth/G-buffer sampling: positive sample count, Java/native/shader evidence source, and metadata-only=false.")
+        }
+        if (-not $logProof.markers.realShadowMapOutputProven) {
+            $failures.Add("Full renderer milestone proof requires real/native shadow-map output with positive shadow-map sample/caster/receiver/output counters.")
+        }
+        if (-not $logProof.markers.shadowMapOutputConsumedPresent) {
+            $failures.Add("Full renderer milestone proof requires shadow-map output consumed by the final in-world composite.")
+        }
+        if (-not $logProof.markers.fullRendererMilestoneProofPresent) {
+            $failures.Add("Full renderer milestone proof requires realRendererMilestone1.proof=true or equivalent final proof marker.")
+        }
+        if ($logProof.markers.fullRendererOverclaimPresent -or $logProof.markers.physicalGiOverclaimPresent -or $logProof.markers.shaderDenoiseOverclaimPresent -or $logProof.markers.realGpuTraversalOverclaimPresent) {
+            $failures.Add("Full renderer milestone proof rejects physical GI, shader-denoise, GPU traversal, or full-renderer overclaim markers.")
         }
     }
 }
@@ -1237,6 +1622,13 @@ $result = [ordered]@{
         requireDirectImage = [bool]$RequireDirectImage
         requireDebugScreenshot = [bool]$RequireDebugScreenshot
         requireShaderDenoiseEvidence = [bool]$RequireShaderDenoiseEvidence
+        requireShaderGeneratedDenoiseOutput = [bool]$RequireShaderGeneratedDenoiseOutput
+        requireTracedGiConsumption = [bool]$RequireTracedGiConsumption
+        requireFullRendererMilestoneProof = [bool]$RequireFullRendererMilestoneProof
+        shaderDenoiseEvidenceRequired = $shaderDenoiseEvidenceRequired
+        shaderGeneratedOutputRequiredForProof = $shaderGeneratedOutputRequiredForProof
+        physicalGiEvidenceRequired = $physicalGiEvidenceRequired
+        tracedGiConsumptionRequired = $tracedGiConsumptionRequired
         requirePhysicalGiEvidence = [bool]$RequirePhysicalGiEvidence
     }
     screenshots = [ordered]@{
@@ -1297,11 +1689,11 @@ $result = [ordered]@{
                 nativeGiLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.nativeGiSourcePresent } else { $null }
             }
             physicalGi = [ordered]@{
-                required = [bool]$RequirePhysicalGiEvidence
+                required = $physicalGiEvidenceRequired
                 evidence = if ($logProof) { $logProof.physicalGiEvidence } else { $null }
                 evidencePresent = if ($logProof) { [bool]$logProof.markers.physicalGiEvidencePresent } else { $null }
                 overclaimPresent = if ($logProof) { [bool]$logProof.markers.physicalGiOverclaimPresent } else { $null }
-                classification = if (-not $RequirePhysicalGiEvidence) {
+                classification = if (-not $physicalGiEvidenceRequired) {
                     "recorded_only"
                 } elseif (-not $logProof) {
                     "missing_log"
@@ -1309,6 +1701,67 @@ $result = [ordered]@{
                     "native_physical_gi_sample_coupling_evidence_present"
                 } else {
                     "native_physical_gi_sample_coupling_evidence_missing"
+                }
+            }
+            tracedGiConsumption = [ordered]@{
+                required = $tracedGiConsumptionRequired
+                evidence = if ($logProof) { $logProof.tracedGiConsumptionEvidence } else { $null }
+                evidencePresent = if ($logProof) { [bool]$logProof.markers.tracedGiConsumptionPresent } else { $null }
+                consumedPresent = if ($logProof) { [bool]$logProof.markers.tracedGiConsumedPresent } else { $null }
+                finalCompositeConsumptionPresent = if ($logProof) { [bool]$logProof.markers.tracedGiFinalCompositeConsumptionPresent } else { $null }
+                traceCountersPresent = if ($logProof) { [bool]$logProof.markers.tracedGiTraceCountersPresent } else { $null }
+                materialDepthSourceCoupled = if ($logProof) { [bool]$logProof.markers.tracedGiMaterialDepthSourceCoupled } else { $null }
+                metadataOnlyTracingPresent = if ($logProof) { [bool]$logProof.markers.metadataOnlyTracingPresent } else { $null }
+                realGpuTraversalExecutedPresent = if ($logProof) { [bool]$logProof.markers.realGpuTraversalExecutedPresent } else { $null }
+                realGpuTraversalAllowedEvidencePresent = if ($logProof) { [bool]$logProof.markers.realGpuTraversalAllowedEvidencePresent } else { $null }
+                realGpuTraversalOverclaimPresent = if ($logProof) { [bool]$logProof.markers.realGpuTraversalOverclaimPresent } else { $null }
+                classification = if (-not $tracedGiConsumptionRequired) {
+                    "recorded_only"
+                } elseif (-not $logProof) {
+                    "missing_log"
+                } elseif ([bool]$logProof.markers.tracedGiConsumptionPresent) {
+                    "traced_raw_diffuse_gi_consumption_present"
+                } else {
+                    "traced_raw_diffuse_gi_consumption_missing"
+                }
+            }
+            fullRendererMilestone = [ordered]@{
+                required = $fullRendererMilestoneProofRequired
+                profileMarkerPresent = if ($logProof) { [bool]$logProof.markers.fullRendererProofProfilePresent } else { $null }
+                cleanInWorldCaptureContractPresent = if ($logProof) { [bool]$logProof.markers.cleanInWorldCaptureContractPresent } else { $null }
+                menuChatScreenshotContaminationPresent = if ($logProof) { [bool]$logProof.markers.menuChatScreenshotContaminationPresent } else { $null }
+                proofOverlayEvidencePresent = if ($logProof) { [bool]$logProof.markers.proofOverlayEvidencePresent } else { $null }
+                lowResDebugSubstitutionPresent = if ($logProof) { [bool]$logProof.markers.lowResDebugSubstitutionPresent } else { $null }
+                trueDepthGBufferSamplingProven = if ($logProof) { [bool]$logProof.markers.trueDepthGBufferSamplingProven } else { $null }
+                trueDepthGBufferSamplingMarkerPresent = if ($logProof) { [bool]$logProof.markers.trueDepthGBufferSamplingMarkerPresent } else { $null }
+                depthGBufferSourcePresent = if ($logProof) { [bool]$logProof.markers.depthGBufferSourcePresent } else { $null }
+                depthGBufferSampleCount = if ($logProof) { $logProof.markers.depthGBufferSampleCount } else { $null }
+                depthGBufferMetadataOnlyPresent = if ($logProof) { [bool]$logProof.markers.depthGBufferMetadataOnlyPresent } else { $null }
+                realShadowMapOutputProven = if ($logProof) { [bool]$logProof.markers.realShadowMapOutputProven } else { $null }
+                realShadowMapOutputMarkerPresent = if ($logProof) { [bool]$logProof.markers.realShadowMapOutputMarkerPresent } else { $null }
+                shadowMapSampleCount = if ($logProof) { $logProof.markers.shadowMapSampleCount } else { $null }
+                shadowMapOutputConsumedPresent = if ($logProof) { [bool]$logProof.markers.shadowMapOutputConsumedPresent } else { $null }
+                finalProofMarkerPresent = if ($logProof) { [bool]$logProof.markers.fullRendererMilestoneProofPresent } else { $null }
+                overclaimPresent = if ($logProof) { [bool]$logProof.markers.fullRendererOverclaimPresent } else { $null }
+                classification = if (-not $fullRendererMilestoneProofRequired) {
+                    "not_required"
+                } elseif (-not $logProof) {
+                    "missing_log"
+                } elseif (
+                    [bool]$logProof.markers.fullRendererProofProfilePresent -and
+                    [bool]$logProof.markers.cleanInWorldCaptureContractPresent -and
+                    [bool]$logProof.markers.trueDepthGBufferSamplingProven -and
+                    [bool]$logProof.markers.realShadowMapOutputProven -and
+                    [bool]$logProof.markers.shadowMapOutputConsumedPresent -and
+                    [bool]$logProof.markers.fullRendererMilestoneProofPresent -and
+                    -not [bool]$logProof.markers.menuChatScreenshotContaminationPresent -and
+                    -not [bool]$logProof.markers.proofOverlayEvidencePresent -and
+                    -not [bool]$logProof.markers.lowResDebugSubstitutionPresent -and
+                    -not [bool]$logProof.markers.fullRendererOverclaimPresent
+                ) {
+                    "full_renderer_milestone_log_proof_present"
+                } else {
+                    "full_renderer_milestone_log_proof_missing_or_contaminated"
                 }
             }
             denoisedGi = [ordered]@{
@@ -1325,9 +1778,16 @@ $result = [ordered]@{
                 edgeDetailPreserved = $denoiseQuality.edgeDetailPreserved
             }
             shaderDenoise = [ordered]@{
-                required = [bool]$RequireShaderDenoiseEvidence
+                required = $shaderDenoiseEvidenceRequired
+                boundaryEvidenceRequired = [bool]$RequireShaderDenoiseEvidence
+                shaderGeneratedOutputRequired = [bool]$RequireShaderGeneratedDenoiseOutput
+                shaderGeneratedOutputRequiredForProof = $shaderGeneratedOutputRequiredForProof
                 intentLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseIntentPresent } else { $null }
                 inputReadyLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseInputReadyPresent } else { $null }
+                rawGiCpuReadbackInputLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseRawGiCpuReadbackInputPresent } else { $null }
+                rawDiffuseGiInputSourceLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseRawDiffuseGiInputSourcePresent } else { $null }
+                directLightValidationInputLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseDirectLightValidationInputPresent } else { $null }
+                rawGiInputProven = if ($logProof) { [bool]$logProof.markers.shaderDenoiseRawGiInputProven } else { $null }
                 dispatchPreparedLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseDispatchPreparedPresent } else { $null }
                 outputAttemptedLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputAttemptedPresent } else { $null }
                 outputAttemptGenerationLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputAttemptGenerationPresent } else { $null }
@@ -1348,6 +1808,7 @@ $result = [ordered]@{
                 shaderGeneratedOutputTrueLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseShaderGeneratedOutputTruePresent } else { $null }
                 shaderGeneratedOutputFalseLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseShaderGeneratedOutputFalsePresent } else { $null }
                 shaderGeneratedOutputExplicitLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseShaderGeneratedOutputExplicitPresent } else { $null }
+                shaderGeneratedOutputEvidenceReadyLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderGeneratedDenoiseOutputEvidenceReadyPresent } else { $null }
                 cpuReadbackFallbackActiveLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseCpuReadbackFallbackActivePresent } else { $null }
                 cpuReadbackFallbackInactiveLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseCpuReadbackFallbackInactivePresent } else { $null }
                 cpuReadbackFallbackExplicitLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseCpuReadbackFallbackExplicitPresent } else { $null }
@@ -1358,6 +1819,9 @@ $result = [ordered]@{
                 realOutputNotReadyLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.realShaderDenoiseOutputNotReadyPresent } else { $null }
                 realOutputStateExplicitLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.realShaderDenoiseOutputStateExplicitPresent } else { $null }
                 realOutputProven = if ($logProof) { [bool]$logProof.markers.realShaderDenoiseOutputProven } else { $null }
+                outputConsumedLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputConsumedPresent } else { $null }
+                finalCompositeConsumableLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseFinalCompositeConsumablePresent } else { $null }
+                shaderGeneratedOutputImageSliceProven = if ($logProof) { [bool]$logProof.markers.shaderGeneratedDenoiseOutputImageSliceProven } else { $null }
                 openBoundaryPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOpenBoundaryPresent } else { $null }
                 shaderOutputReadyLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputReadyPresent } else { $null }
                 shaderSourceClaimLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseSourceClaimPresent } else { $null }
@@ -1369,10 +1833,14 @@ $result = [ordered]@{
                 sourceIdentity = if ($logProof) { $logProof.shaderDenoiseBoundary.sourceIdentity } else { $null }
                 sourceKind = if ($logProof) { $logProof.shaderDenoiseBoundary.sourceKind } else { $null }
                 blockerReason = if ($logProof) { $logProof.shaderDenoiseBoundary.blockerReason } else { $null }
-                classification = if (-not $RequireShaderDenoiseEvidence) {
+                classification = if (-not $shaderDenoiseEvidenceRequired) {
                     "not_required"
                 } elseif (-not $logProof) {
                     "missing_log"
+                } elseif ($shaderGeneratedOutputRequiredForProof -and [bool]$logProof.markers.shaderGeneratedDenoiseOutputImageSliceProven) {
+                    "shader_generated_denoise_output_image_slice_proven"
+                } elseif ($shaderGeneratedOutputRequiredForProof) {
+                    "shader_generated_denoise_output_image_slice_missing"
                 } elseif ([bool]$logProof.markers.realShaderDenoiseOutputProven) {
                     "real_shader_denoise_output_proven"
                 } elseif ([bool]$logProof.markers.shaderDenoiseOutputImageCandidateBoundaryOnly) {
@@ -1399,6 +1867,10 @@ $result = [ordered]@{
                 realDenoiseShaderOutputFalsePresent = if ($logProof) { [bool]$logProof.markers.realDenoiseShaderOutputFalsePresent } else { $null }
                 shaderDenoiseIntentPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseIntentPresent } else { $null }
                 shaderDenoiseInputReadyPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseInputReadyPresent } else { $null }
+                shaderDenoiseRawGiCpuReadbackInputPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseRawGiCpuReadbackInputPresent } else { $null }
+                shaderDenoiseRawDiffuseGiInputSourcePresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseRawDiffuseGiInputSourcePresent } else { $null }
+                shaderDenoiseDirectLightValidationInputPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseDirectLightValidationInputPresent } else { $null }
+                shaderDenoiseRawGiInputProven = if ($logProof) { [bool]$logProof.markers.shaderDenoiseRawGiInputProven } else { $null }
                 shaderDenoiseDispatchPreparedPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseDispatchPreparedPresent } else { $null }
                 shaderDenoiseOutputAttemptedPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputAttemptedPresent } else { $null }
                 shaderDenoiseOutputAttemptGenerationPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputAttemptGenerationPresent } else { $null }
@@ -1433,6 +1905,22 @@ $result = [ordered]@{
                 shaderDenoiseBlockerReason = if ($logProof) { $logProof.shaderDenoiseBoundary.blockerReason } else { $null }
                 physicalGiEvidencePresent = if ($logProof) { [bool]$logProof.markers.physicalGiEvidencePresent } else { $null }
                 physicalGiOverclaimPresent = if ($logProof) { [bool]$logProof.markers.physicalGiOverclaimPresent } else { $null }
+                tracedGiConsumptionPresent = if ($logProof) { [bool]$logProof.markers.tracedGiConsumptionPresent } else { $null }
+                tracedGiConsumedPresent = if ($logProof) { [bool]$logProof.markers.tracedGiConsumedPresent } else { $null }
+                tracedGiFinalCompositeConsumptionPresent = if ($logProof) { [bool]$logProof.markers.tracedGiFinalCompositeConsumptionPresent } else { $null }
+                tracedGiTraceCountersPresent = if ($logProof) { [bool]$logProof.markers.tracedGiTraceCountersPresent } else { $null }
+                tracedGiMaterialDepthSourceCoupled = if ($logProof) { [bool]$logProof.markers.tracedGiMaterialDepthSourceCoupled } else { $null }
+                metadataOnlyTracingPresent = if ($logProof) { [bool]$logProof.markers.metadataOnlyTracingPresent } else { $null }
+                realGpuTraversalExecutedPresent = if ($logProof) { [bool]$logProof.markers.realGpuTraversalExecutedPresent } else { $null }
+                realGpuTraversalAllowedEvidencePresent = if ($logProof) { [bool]$logProof.markers.realGpuTraversalAllowedEvidencePresent } else { $null }
+                realGpuTraversalOverclaimPresent = if ($logProof) { [bool]$logProof.markers.realGpuTraversalOverclaimPresent } else { $null }
+                fullRendererProofProfilePresent = if ($logProof) { [bool]$logProof.markers.fullRendererProofProfilePresent } else { $null }
+                cleanInWorldCaptureContractPresent = if ($logProof) { [bool]$logProof.markers.cleanInWorldCaptureContractPresent } else { $null }
+                menuChatScreenshotContaminationPresent = if ($logProof) { [bool]$logProof.markers.menuChatScreenshotContaminationPresent } else { $null }
+                proofOverlayEvidencePresent = if ($logProof) { [bool]$logProof.markers.proofOverlayEvidencePresent } else { $null }
+                lowResDebugSubstitutionPresent = if ($logProof) { [bool]$logProof.markers.lowResDebugSubstitutionPresent } else { $null }
+                depthGBufferMetadataOnlyPresent = if ($logProof) { [bool]$logProof.markers.depthGBufferMetadataOnlyPresent } else { $null }
+                fullRendererOverclaimPresent = if ($logProof) { [bool]$logProof.markers.fullRendererOverclaimPresent } else { $null }
                 proofMarkerPresent = if ($logProof) { [bool]$logProof.markers.proofMarkerPresent } else { $null }
                 focusWindowOnlyPresent = if ($logProof) { [bool]$logProof.markers.focusWindowOnlyPresent } else { $null }
                 nativeErrorPresent = if ($logProof) { [bool]$logProof.markers.nativeErrorPresent } else { $null }
@@ -1494,6 +1982,10 @@ if ($logProof) {
     Write-Host "realDenoiseShaderOutputFalsePresent=$($logProof.markers.realDenoiseShaderOutputFalsePresent)"
     Write-Host "shaderDenoiseIntentPresent=$($logProof.markers.shaderDenoiseIntentPresent)"
     Write-Host "shaderDenoiseInputReadyPresent=$($logProof.markers.shaderDenoiseInputReadyPresent)"
+    Write-Host "shaderDenoiseRawGiCpuReadbackInputPresent=$($logProof.markers.shaderDenoiseRawGiCpuReadbackInputPresent)"
+    Write-Host "shaderDenoiseRawDiffuseGiInputSourcePresent=$($logProof.markers.shaderDenoiseRawDiffuseGiInputSourcePresent)"
+    Write-Host "shaderDenoiseDirectLightValidationInputPresent=$($logProof.markers.shaderDenoiseDirectLightValidationInputPresent)"
+    Write-Host "shaderDenoiseRawGiInputProven=$($logProof.markers.shaderDenoiseRawGiInputProven)"
     Write-Host "shaderDenoiseDispatchPreparedPresent=$($logProof.markers.shaderDenoiseDispatchPreparedPresent)"
     Write-Host "shaderDenoiseOutputAttemptedPresent=$($logProof.markers.shaderDenoiseOutputAttemptedPresent)"
     Write-Host "shaderDenoiseOutputAttemptGenerationPresent=$($logProof.markers.shaderDenoiseOutputAttemptGenerationPresent)"
@@ -1519,6 +2011,7 @@ if ($logProof) {
     Write-Host "shaderDenoiseShaderGeneratedOutputTruePresent=$($logProof.markers.shaderDenoiseShaderGeneratedOutputTruePresent)"
     Write-Host "shaderDenoiseShaderGeneratedOutputFalsePresent=$($logProof.markers.shaderDenoiseShaderGeneratedOutputFalsePresent)"
     Write-Host "shaderDenoiseShaderGeneratedOutputExplicitPresent=$($logProof.markers.shaderDenoiseShaderGeneratedOutputExplicitPresent)"
+    Write-Host "shaderGeneratedDenoiseOutputEvidenceReadyPresent=$($logProof.markers.shaderGeneratedDenoiseOutputEvidenceReadyPresent)"
     Write-Host "shaderDenoiseCpuReadbackFallbackActivePresent=$($logProof.markers.shaderDenoiseCpuReadbackFallbackActivePresent)"
     Write-Host "shaderDenoiseCpuReadbackFallbackInactivePresent=$($logProof.markers.shaderDenoiseCpuReadbackFallbackInactivePresent)"
     Write-Host "shaderDenoiseCpuReadbackFallbackExplicitPresent=$($logProof.markers.shaderDenoiseCpuReadbackFallbackExplicitPresent)"
@@ -1529,6 +2022,9 @@ if ($logProof) {
     Write-Host "realShaderDenoiseOutputNotReadyPresent=$($logProof.markers.realShaderDenoiseOutputNotReadyPresent)"
     Write-Host "realShaderDenoiseOutputStateExplicitPresent=$($logProof.markers.realShaderDenoiseOutputStateExplicitPresent)"
     Write-Host "realShaderDenoiseOutputProven=$($logProof.markers.realShaderDenoiseOutputProven)"
+    Write-Host "shaderDenoiseOutputConsumedPresent=$($logProof.markers.shaderDenoiseOutputConsumedPresent)"
+    Write-Host "shaderDenoiseFinalCompositeConsumablePresent=$($logProof.markers.shaderDenoiseFinalCompositeConsumablePresent)"
+    Write-Host "shaderGeneratedDenoiseOutputImageSliceProven=$($logProof.markers.shaderGeneratedDenoiseOutputImageSliceProven)"
     Write-Host "shaderDenoiseOpenBoundaryPresent=$($logProof.markers.shaderDenoiseOpenBoundaryPresent)"
     Write-Host "shaderDenoiseOutputReadyPresent=$($logProof.markers.shaderDenoiseOutputReadyPresent)"
     Write-Host "shaderDenoiseSourceClaimPresent=$($logProof.markers.shaderDenoiseSourceClaimPresent)"
@@ -1542,6 +2038,9 @@ if ($logProof) {
     Write-Host "shaderDenoiseBlockerReason=$($logProof.shaderDenoiseBoundary.blockerReason)"
     Write-Host "shaderDenoisePrereq.intent=$($logProof.shaderDenoiseBoundary.prerequisites.intent)"
     Write-Host "shaderDenoisePrereq.inputReady=$($logProof.shaderDenoiseBoundary.prerequisites.inputReady)"
+    Write-Host "shaderDenoisePrereq.rawGiCpuReadbackInput=$($logProof.shaderDenoiseBoundary.prerequisites.rawGiCpuReadbackInput)"
+    Write-Host "shaderDenoisePrereq.rawDiffuseGiInputSource=$($logProof.shaderDenoiseBoundary.prerequisites.rawDiffuseGiInputSource)"
+    Write-Host "shaderDenoisePrereq.directLightValidationInputRejected=$($logProof.shaderDenoiseBoundary.prerequisites.directLightValidationInputRejected)"
     Write-Host "shaderDenoisePrereq.dispatchPrepared=$($logProof.shaderDenoiseBoundary.prerequisites.dispatchPrepared)"
     Write-Host "shaderDenoisePrereq.outputAttempted=$($logProof.shaderDenoiseBoundary.prerequisites.outputAttempted)"
     Write-Host "shaderDenoisePrereq.outputAttemptGeneration=$($logProof.shaderDenoiseBoundary.prerequisites.outputAttemptGeneration)"
@@ -1554,6 +2053,22 @@ if ($logProof) {
     Write-Host "shaderDenoisePrereq.candidateOnlySource=$($logProof.shaderDenoiseBoundary.prerequisites.candidateOnlySource)"
     Write-Host "physicalGiEvidencePresent=$($logProof.markers.physicalGiEvidencePresent)"
     Write-Host "physicalGiOverclaimPresent=$($logProof.markers.physicalGiOverclaimPresent)"
+    Write-Host "fullRendererProofProfilePresent=$($logProof.markers.fullRendererProofProfilePresent)"
+    Write-Host "cleanInWorldCaptureContractPresent=$($logProof.markers.cleanInWorldCaptureContractPresent)"
+    Write-Host "menuChatScreenshotContaminationPresent=$($logProof.markers.menuChatScreenshotContaminationPresent)"
+    Write-Host "proofOverlayEvidencePresent=$($logProof.markers.proofOverlayEvidencePresent)"
+    Write-Host "lowResDebugSubstitutionPresent=$($logProof.markers.lowResDebugSubstitutionPresent)"
+    Write-Host "trueDepthGBufferSamplingProven=$($logProof.markers.trueDepthGBufferSamplingProven)"
+    Write-Host "trueDepthGBufferSamplingMarkerPresent=$($logProof.markers.trueDepthGBufferSamplingMarkerPresent)"
+    Write-Host "depthGBufferSourcePresent=$($logProof.markers.depthGBufferSourcePresent)"
+    Write-Host "depthGBufferSampleCount=$($logProof.markers.depthGBufferSampleCount)"
+    Write-Host "depthGBufferMetadataOnlyPresent=$($logProof.markers.depthGBufferMetadataOnlyPresent)"
+    Write-Host "realShadowMapOutputProven=$($logProof.markers.realShadowMapOutputProven)"
+    Write-Host "realShadowMapOutputMarkerPresent=$($logProof.markers.realShadowMapOutputMarkerPresent)"
+    Write-Host "shadowMapSampleCount=$($logProof.markers.shadowMapSampleCount)"
+    Write-Host "shadowMapOutputConsumedPresent=$($logProof.markers.shadowMapOutputConsumedPresent)"
+    Write-Host "fullRendererMilestoneProofPresent=$($logProof.markers.fullRendererMilestoneProofPresent)"
+    Write-Host "fullRendererOverclaimPresent=$($logProof.markers.fullRendererOverclaimPresent)"
     Write-Host "physicalSceneLinkedPresent=$($logProof.physicalGiEvidence.physicalSceneLinkedPresent)"
     Write-Host "physicalSurfaceContributionPresent=$($logProof.physicalGiEvidence.physicalSurfaceContributionPresent)"
     Write-Host "physicalGiSampleMarkerPresent=$($logProof.physicalGiEvidence.physicalGiSampleMarkerPresent)"
@@ -1566,6 +2081,21 @@ if ($logProof) {
     Write-Host "max.geometryHitCoupling=$($logProof.physicalGiEvidence.geometryHitCoupling)"
     Write-Host "max.physicalSceneLinkScore=$($logProof.physicalGiEvidence.physicalSceneLinkScore)"
     Write-Host "max.physicalOutputChecksum=$($logProof.physicalGiEvidence.physicalOutputChecksum)"
+    Write-Host "tracedGiConsumptionPresent=$($logProof.markers.tracedGiConsumptionPresent)"
+    Write-Host "tracedGiConsumedPresent=$($logProof.markers.tracedGiConsumedPresent)"
+    Write-Host "tracedGiFinalCompositeConsumptionPresent=$($logProof.markers.tracedGiFinalCompositeConsumptionPresent)"
+    Write-Host "tracedGiTraceCountersPresent=$($logProof.markers.tracedGiTraceCountersPresent)"
+    Write-Host "tracedGiSourcePresent=$($logProof.markers.tracedGiSourcePresent)"
+    Write-Host "tracedGiMaterialDepthSourceCoupled=$($logProof.markers.tracedGiMaterialDepthSourceCoupled)"
+    Write-Host "max.tracedGiRayCount=$($logProof.tracedGiConsumptionEvidence.rayCount)"
+    Write-Host "max.tracedGiHitCount=$($logProof.tracedGiConsumptionEvidence.hitCount)"
+    Write-Host "max.tracedGiMaterialCoupledHitCount=$($logProof.tracedGiConsumptionEvidence.materialCoupledHitCount)"
+    Write-Host "max.tracedGiDepthCoupledHitCount=$($logProof.tracedGiConsumptionEvidence.depthCoupledHitCount)"
+    Write-Host "max.tracedGiSourceCoupledBounceCount=$($logProof.tracedGiConsumptionEvidence.sourceCoupledBounceCount)"
+    Write-Host "metadataOnlyTracingPresent=$($logProof.markers.metadataOnlyTracingPresent)"
+    Write-Host "realGpuTraversalExecutedPresent=$($logProof.markers.realGpuTraversalExecutedPresent)"
+    Write-Host "realGpuTraversalAllowedEvidencePresent=$($logProof.markers.realGpuTraversalAllowedEvidencePresent)"
+    Write-Host "realGpuTraversalOverclaimPresent=$($logProof.markers.realGpuTraversalOverclaimPresent)"
     Write-Host "proofMarkerPresent=$($logProof.markers.proofMarkerPresent)"
     Write-Host "focusWindowOnlyPresent=$($logProof.markers.focusWindowOnlyPresent)"
     Write-Host "nativeErrorPresent=$($logProof.markers.nativeErrorPresent)"

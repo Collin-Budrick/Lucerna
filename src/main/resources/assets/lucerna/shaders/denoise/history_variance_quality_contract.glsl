@@ -5,7 +5,12 @@
 //
 // This is intentionally side-effect free. It exists so Java/runtime telemetry
 // and controller logs can refer to a concrete shader resource while the real
-// dispatch path is still pending.
+// output path is still pending.
+//
+// The concrete output-image contract is documented in
+// shader_generated_diffuse_output_contract.glsl. This quality contract depends
+// on that shader-written target; CPU/readback visual denoise and public-Mojang
+// final visual shaping are separate evidence paths.
 //
 // Required future inputs:
 // - lucerna.denoise.diffuse shader-written output from the current frame
@@ -19,6 +24,7 @@
 // - lucerna.gbuffer.depth
 // - lucerna.gbuffer.normalRoughness
 // - lucerna.gbuffer.materialId
+// - PreviousMaterialId when history reprojection needs material mismatch checks
 //
 // Required future proof outputs:
 // - lucerna.denoise.historyRejectionMask
@@ -33,8 +39,9 @@
 // - Rejection/debug outputs must not be synthesized from the public Mojang
 //   core/round7_denoised_gi_visual.fsh preview path.
 // - A candidate output image can be logged for readiness only; it is not the
-//   shader-written lucerna.denoise.diffuse contract until shader dispatch writes
-//   the declared attachment and the controller validates the result.
+//   shader-written lucerna.denoise.diffuse contract until the public Mojang
+//   fragment pass or a future compute path writes the declared attachment and
+//   the controller validates the result.
 //
 // Quality boundary:
 // - realDenoiseShaderOutput must stay false until shader execution writes a
@@ -47,7 +54,9 @@
 //   shaderDenoiseOutputImageCandidateReady,
 //   shaderDenoiseOutputImageCandidateNonGpu,
 //   shaderDenoiseOutputImageReady, shaderDenoiseOutputImageOwnedByShaderPass,
-//   shaderDenoiseOutputStorageWritable, shaderDenoiseOutputBarrierReady,
+//   shaderDenoiseColorAttachmentWrite for the current public Mojang fragment
+//   path, shaderDenoiseOutputStorageWritable for a future compute/storage-image
+//   path, shaderDenoiseOutputBarrierReady,
 //   shaderDenoiseOutputFinalCompositeConsumable, and
 //   realShaderDenoiseOutputReady.
 // - Temporal/history readiness is a separate gate from output image readiness:

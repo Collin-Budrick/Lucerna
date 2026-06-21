@@ -164,6 +164,14 @@ std::string read_string(JNIEnv* env, jstring value, const char* name) {
     return result;
 }
 
+std::string read_optional_string(JNIEnv* env, jstring value, const char* name, const char* fallback) {
+    if (value == nullptr) {
+        return fallback == nullptr ? "" : fallback;
+    }
+
+    return read_string(env, value, name);
+}
+
 std::vector<std::string> read_string_array(JNIEnv* env, jobjectArray array, const char* name) {
     const auto length = array_length(env, array, name);
     std::vector<std::string> values;
@@ -1029,6 +1037,91 @@ Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeUploadGBufferStaging(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeReportGBufferDepthSamplingEvidence(
+        JNIEnv* env,
+        jclass,
+        jlong gbuffer_generation,
+        jlong depth_view_handle,
+        jint width,
+        jint height,
+        jint format_tag,
+        jstring format_label,
+        jstring layout_label,
+        jlong sample_count,
+        jlong nonzero_sample_count,
+        jdouble min_normalized_depth,
+        jdouble max_normalized_depth,
+        jlong checksum,
+        jstring marker,
+        jstring blocker,
+        jboolean shader_sampled,
+        jboolean metadata_only) {
+    std::lock_guard lock(g_renderer_mutex);
+    return call_initialized_renderer("reportGBufferDepthSamplingEvidence", [=](lucerna::Renderer& renderer) {
+        renderer.report_gbuffer_depth_sampling_evidence(lucerna::GBufferDepthSamplingEvidence{
+            0,
+            to_non_negative_uint64(gbuffer_generation, "gbufferGeneration"),
+            to_handle(depth_view_handle),
+            static_cast<std::int32_t>(width),
+            static_cast<std::int32_t>(height),
+            static_cast<std::int32_t>(format_tag),
+            read_optional_string(env, format_label, "gbufferDepthFormatLabel", "unknown"),
+            read_optional_string(env, layout_label, "gbufferDepthLayoutLabel", "unknown"),
+            to_non_negative_uint64(sample_count, "gbufferDepthSampleCount"),
+            to_non_negative_uint64(nonzero_sample_count, "gbufferDepthNonzeroSampleCount"),
+            static_cast<double>(min_normalized_depth),
+            static_cast<double>(max_normalized_depth),
+            to_non_negative_uint64(checksum, "gbufferDepthChecksum"),
+            false,
+            shader_sampled == JNI_TRUE,
+            false,
+            metadata_only == JNI_TRUE,
+            read_optional_string(env, marker, "gbufferDepthSamplingMarker", ""),
+            read_optional_string(env, blocker, "gbufferDepthSamplingBlocker", "")
+        });
+    });
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
+Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeReportShaderGeneratedDenoiseOutputEvidence(
+        JNIEnv* env,
+        jclass,
+        jlong generation,
+        jint width,
+        jint height,
+        jlong texel_count,
+        jlong sample_count,
+        jlong checksum,
+        jstring identity,
+        jstring marker,
+        jstring blocker,
+        jboolean output_image_ready,
+        jboolean shader_generated_output,
+        jboolean final_composite_consumed) {
+    std::lock_guard lock(g_renderer_mutex);
+    return call_initialized_renderer("reportShaderGeneratedDenoiseOutputEvidence", [=](lucerna::Renderer& renderer) {
+        renderer.report_shader_denoise_output_evidence(lucerna::ShaderDenoiseOutputEvidence{
+            0,
+            to_non_negative_uint64(generation, "shaderDenoiseOutputEvidenceGeneration"),
+            to_non_negative_uint64(width, "shaderDenoiseOutputEvidenceWidth"),
+            to_non_negative_uint64(height, "shaderDenoiseOutputEvidenceHeight"),
+            to_non_negative_uint64(texel_count, "shaderDenoiseOutputEvidenceTexelCount"),
+            to_non_negative_uint64(sample_count, "shaderDenoiseOutputEvidenceSampleCount"),
+            to_non_negative_uint64(checksum, "shaderDenoiseOutputEvidenceChecksum"),
+            false,
+            output_image_ready == JNI_TRUE,
+            shader_generated_output == JNI_TRUE,
+            final_composite_consumed == JNI_TRUE,
+            false,
+            true,
+            read_optional_string(env, identity, "shaderDenoiseOutputEvidenceIdentity", ""),
+            read_optional_string(env, marker, "shaderDenoiseOutputEvidenceMarker", ""),
+            read_optional_string(env, blocker, "shaderDenoiseOutputEvidenceBlocker", "")
+        });
+    });
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeUploadDirectLighting(
         JNIEnv* env,
         jclass,
@@ -1157,6 +1250,47 @@ Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeUploadLightingDispatch(
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
+Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeReportTracedLightingConsumptionEvidence(
+        JNIEnv* env,
+        jclass,
+        jlong generation,
+        jlong ray_count,
+        jlong hit_count,
+        jlong miss_count,
+        jlong material_coupled_hit_count,
+        jlong source_coupled_bounce_count,
+        jlong cache_read_count,
+        jlong cache_write_count,
+        jboolean final_gi_source_consumed,
+        jstring final_gi_source,
+        jstring evidence_source,
+        jstring boundary) {
+    std::lock_guard lock(g_renderer_mutex);
+    return call_initialized_renderer("reportTracedLightingConsumptionEvidence", [=](lucerna::Renderer& renderer) {
+        renderer.report_traced_lighting_consumption_evidence(lucerna::TracedLightingConsumptionEvidence{
+            0,
+            to_non_negative_uint64(generation, "tracedLightingGeneration"),
+            to_non_negative_uint64(ray_count, "tracedLightingRayCount"),
+            to_non_negative_uint64(hit_count, "tracedLightingHitCount"),
+            to_non_negative_uint64(miss_count, "tracedLightingMissCount"),
+            to_non_negative_uint64(material_coupled_hit_count, "tracedLightingMaterialCoupledHitCount"),
+            0,
+            to_non_negative_uint64(source_coupled_bounce_count, "tracedLightingSourceCoupledBounceCount"),
+            to_non_negative_uint64(cache_read_count, "tracedLightingCacheReadCount"),
+            to_non_negative_uint64(cache_write_count, "tracedLightingCacheWriteCount"),
+            false,
+            final_gi_source_consumed == JNI_TRUE,
+            false,
+            true,
+            read_optional_string(env, final_gi_source, "tracedLightingFinalGiSource", "not_consumed"),
+            read_optional_string(env, evidence_source, "tracedLightingEvidenceSource", "trace_consumption_evidence_unavailable"),
+            read_optional_string(env, boundary, "tracedLightingBoundary", ""),
+            read_optional_string(env, boundary, "tracedLightingBoundary", "")
+        });
+    });
+}
+
+extern "C" JNIEXPORT jboolean JNICALL
 Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeRenderLighting(JNIEnv*, jclass) {
     std::lock_guard lock(g_renderer_mutex);
     return call_initialized_renderer("renderLighting", [](lucerna::Renderer& renderer) {
@@ -1259,6 +1393,45 @@ Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeDirectLightingCpuOutputP
         set_last_error("directLightingCpuOutputPreviewRgba8", exception.what());
     } catch (...) {
         set_last_error("directLightingCpuOutputPreviewRgba8", "unknown native exception");
+    }
+    return env->NewByteArray(0);
+}
+
+extern "C" JNIEXPORT jbyteArray JNICALL
+Java_net_lucerna_nativebridge_LucernaNativeBridge_nativeShadowMapCpuOutputPreviewRgba8(JNIEnv* env, jclass) {
+    std::lock_guard lock(g_renderer_mutex);
+    try {
+        const auto rgba8 = initialized_renderer().shadow_map_cpu_output_preview_rgba8();
+        constexpr std::size_t kMaxShadowMapPreviewRgba8Bytes = 64 * 64 * 4;
+        if (rgba8.size() > kMaxShadowMapPreviewRgba8Bytes || rgba8.size() % 4 != 0) {
+            set_last_error("shadowMapCpuOutputPreviewRgba8", "native conservative shadow-map RGBA8 mask payload size is invalid");
+            return env->NewByteArray(0);
+        }
+        if (rgba8.size() > static_cast<std::size_t>(std::numeric_limits<jsize>::max())) {
+            set_last_error("shadowMapCpuOutputPreviewRgba8", "native conservative shadow-map RGBA8 mask payload exceeds JNI byte array limit");
+            return nullptr;
+        }
+        auto result = env->NewByteArray(static_cast<jsize>(rgba8.size()));
+        if (result == nullptr) {
+            set_last_error("shadowMapCpuOutputPreviewRgba8", "failed to allocate Java byte array");
+            return nullptr;
+        }
+        if (!rgba8.empty()) {
+            env->SetByteArrayRegion(
+                    result,
+                    0,
+                    static_cast<jsize>(rgba8.size()),
+                    reinterpret_cast<const jbyte*>(rgba8.data()));
+            if (env->ExceptionCheck()) {
+                return nullptr;
+            }
+        }
+        clear_last_error();
+        return result;
+    } catch (const std::exception& exception) {
+        set_last_error("shadowMapCpuOutputPreviewRgba8", exception.what());
+    } catch (...) {
+        set_last_error("shadowMapCpuOutputPreviewRgba8", "unknown native exception");
     }
     return env->NewByteArray(0);
 }

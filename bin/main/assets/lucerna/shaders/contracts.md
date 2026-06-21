@@ -34,8 +34,11 @@ Debug overlay runs before final composite so `lucerna.composite.final` can blend
 - GI writes `lucerna.lighting.diffuseGi`, `lucerna.lighting.cacheConfidence`, `lucerna.lighting.variance`, and `lucerna.lighting.rayBudget` after clearing them. `lucerna.lighting.rayBudget` is the canonical ray-budget debug target and reserved adaptive sampling metadata with values `0` reuse-only, `1` low, `2` medium, and `3` high.
 - Denoise writes `lucerna.denoise.diffuse` and `lucerna.denoise.rejectionMask` after clearing them. Both are history-sensitive and depend on cache confidence plus variance metadata.
 - Debug writes `lucerna.debug.overlay` only when overlay mode needs it. It is optional, clear-before-write, and consumes `DebugLabelTable` for stable display names.
+- Native conservative shadow-map/mask output may provide `lucerna.lighting.nativeConservativeShadowMask` as a full-resolution mask payload for composite consumption. Composite may darken only receiver-supported regions from that payload; it must not synthesize shadows from screen coordinates or claim path-traced/shader-generated shadow output.
 - Composite writes only `lucerna.composite.worldColor`, the borrowed Minecraft/Sodium world color target. It must not own presentation or the swapchain.
 - `composite/final_composite.frag.glsl` is the distinct final composite shader resource. Preview shaders in `core/direct_light_preview_*.fsh` remain preview/diagnostic plumbing only and must not be treated as the final composite path.
+- `composite/native_shadow_mask_composite.fsh` is a public Mojang composite consumer for the native conservative mask. It emits neutral darkening alpha from the mask payload only and must not add bloom, fog, proof markers, fixed blobs, focus-window behavior, or shader-denoise claims.
+- `composite/depth_aware_shadow_mask_composite.frag.glsl` is the pending depth-aware consumer for the same native mask. It requires `ShadowMaskSampler`, `CurrentDepthSampler`, `CurrentNormalRoughnessSampler`, and `SourceLightingSampler`; without depth binding it must output transparent pixels and cannot be used as visual proof.
 
 ## Round 4 Payload Contracts
 
@@ -46,7 +49,7 @@ Debug overlay runs before final composite so `lucerna.composite.final` can blend
 - GI/cache reads direct lighting, voxel occupancy, dirty-region generation, blue noise, `RadianceHistory`, and `VarianceConfidence`. It writes half-resolution diffuse radiance, cache confidence, current-frame variance, and ray-budget classification before updating history resources.
 - `lucerna.lighting.cacheConfidence` uses x for current confidence and reserves y for cache age or invalidation reason. `VarianceConfidence` is the temporal aggregate paired with current-frame confidence and variance attachments.
 - Denoise owns upsampling, variance-aware clamps, temporal rejection, and history repair inputs. Its composite handoff is `lucerna.denoise.diffuse` plus `lucerna.denoise.rejectionMask`.
-- Composite consumes albedo/opacity, direct lighting, diffuse GI, denoised diffuse, and optional debug overlay. It writes only `lucerna.composite.worldColor` before vanilla HUD and late translucency, and never consumes Iris shader-pack outputs.
+- Composite consumes albedo/opacity, direct lighting, optional native conservative shadow mask, diffuse GI, denoised diffuse, and optional debug overlay. It writes only `lucerna.composite.worldColor` before vanilla HUD and late translucency, and never consumes Iris shader-pack outputs.
 
 ## First Lighting Milestone
 
@@ -74,6 +77,21 @@ The Round 5 path must not consume Iris shader-pack color, depth, shadow, or ligh
 
 Visible direct output is not considered complete from metadata alone. It remains controller-validated only after screenshots show an emissive, sun, or moon candidate brightening a visible surface and logs show native direct dispatch, candidate count, direct output write, direct resolve, and no native errors.
 
+## Native Conservative Shadow-Mask Composite
+
+`composite/native_shadow_mask_composite.fsh` reserves the public resource id `lucerna:shaders/composite/native_shadow_mask_composite.fsh` for final-composite consumption of a native conservative shadow-map/mask payload. The expected payload is `lucerna.lighting.nativeConservativeShadowMask` with R coverage, G receiver support, B optional contact/edge confidence, and A validity/confidence. The shader samples this payload through public Mojang `InSampler` and emits black alpha for conservative source-over darkening before HUD composition.
+
+This resource is a consumer only. It is not a path-traced shadow system, not a screen-space shadow decal proof, not a shader-generated shadow-map output, and not shader-generated denoise. Controller proof must compare same-scene baseline/enabled screenshots and logs that show native mask output readiness, nonzero receiver-supported mask coverage, and absence of fixed screen-space blob, proof-marker, focus-window, bloom, fog, or denoise-overclaim fallbacks.
+
+`composite/depth_aware_shadow_mask_composite.frag.glsl` reserves the resource id `lucerna:shaders/composite/depth_aware_shadow_mask_composite.frag.glsl` for a later scheduler path that can bind Lucerna-owned same-frame depth and normal inputs. Its sampler contract is:
+
+- `ShadowMaskSampler`: `lucerna.lighting.nativeConservativeShadowMask`
+- `CurrentDepthSampler`: `lucerna.gbuffer.depth`
+- `CurrentNormalRoughnessSampler`: `lucerna.gbuffer.normalRoughness`
+- `SourceLightingSampler`: `lucerna.lighting.direct`
+
+The shader attenuates the native mask by depth continuity, optional normal agreement, receiver support, and source-lighting support. This is deliberately not a decorative screen-space darkener: `LucernaDepthBindingReady=false` makes the resource transparent, and missing depth binding must be logged as a pending binding rather than a fallback visual path.
+
 ## Round 5 Debug Overlay Inputs
 
 The debug overlay contract reserves Lucerna-owned inputs for direct-light validation:
@@ -91,14 +109,21 @@ Overlay text or visualization must remain readable with the vanilla HUD and must
 
 ## Round 7 Shader Denoise Output Boundary
 
-Round 7 currently has two separate shader-resource concepts that must not be collapsed:
+Round 7 currently has three separate shader-resource concepts that must not be collapsed:
 
-- `denoise/diffuse_edge_aware_contract.glsl` and `denoise/history_variance_quality_contract.glsl` describe the future real shader denoise dispatch. That path must read raw GI, cache confidence, variance, ray-budget, current G-buffer, previous-frame history, and motion resources, then write `lucerna.denoise.diffuse` plus `lucerna.denoise.rejectionMask` from shader execution.
+- `denoise/diffuse_edge_aware_contract.glsl`, `denoise/history_variance_quality_contract.glsl`, and `denoise/shader_generated_diffuse_output_contract.glsl` describe the real shader denoise output contracts. That path must read `raw-diffuse-gi-rgba8` from `lucerna.lighting.diffuseGi`, cache confidence, variance, ray-budget, current depth/normal/material G-buffer data, previous-frame history, motion, and confidence resources, then write `lucerna.denoise.diffuse` plus `lucerna.denoise.rejectionMask` from shader execution.
+- `denoise/shader_generated_diffuse_output.frag.glsl` reserves the resource id `lucerna:shaders/denoise/shader_generated_diffuse_output.frag.glsl` for the shader-generated output pass. It names the concrete sampler interface: `RawDiffuseGiSampler`, `RawGiConfidenceSampler`, `RawGiVarianceSampler`, `CurrentDepthSampler`, `CurrentNormalRoughnessSampler`, `CurrentMaterialIdSampler`, `CurrentMotionHistorySampler`, `PreviousDepthSampler`, `PreviousNormalRoughnessSampler`, and `PreviousLightingSampler`; it writes `DenoisedDiffuseOutput` and `RejectionMaskOutput`. `RawDiffuseGiSampler` must be `raw-diffuse-gi-rgba8`, never direct-light validation input.
+- `denoise/shader_generated_diffuse_output.fsh` reserves the runtime-loadable public Mojang fragment resource id `lucerna:shaders/denoise/shader_generated_diffuse_output.fsh` for the first separate denoise-output pass. It keeps the existing public Mojang one-sampler contract, binds `InSampler` to `lucerna.lighting.diffuseGi` `raw-diffuse-gi-rgba8`, then writes `fragColor` into the owned `lucerna.denoise.diffuse` render target. Depth/albedo/history inputs remain in the stricter `.frag.glsl` contract until those bindings are scheduled.
+- CPU/readback visual denoise or candidate images may prove only a staged payload or readiness boundary. They are not shader output-image producers and must keep CPU/readback source identity.
 - `core/round7_denoised_gi_visual.fsh` is only the public Mojang visual-shaping draw path for an already supplied payload. It has one `InSampler`, no depth/normal/material/motion/history/variance bindings, no storage-image writes, and no rejection-mask output.
 
-Candidate output images are boundary evidence only. `shaderDenoiseOutputImageCandidateReady` may report a CPU-staged or non-GPU candidate image, but `shaderDenoiseOutputImageReady`, `shaderDenoiseShaderGeneratedOutput`, `realDenoiseShaderOutput`, and `realShaderDenoiseOutputReady` must remain false until a shader dispatch writes the declared denoise output image and the controller validates raw-GI, shader-denoised, final-composite, rejection/debug, and no-overclaim evidence.
+Candidate output images are boundary evidence only. `shaderDenoiseOutputImageCandidateReady` may report a CPU-staged or non-GPU candidate image, but `shaderDenoiseOutputImageReady`, `shaderDenoiseShaderGeneratedOutput`, `realDenoiseShaderOutput`, and `realShaderDenoiseOutputReady` must remain false until the public Mojang fragment pass or a future compute path writes the declared denoise output image and the controller validates raw-GI, shader-denoised, final-composite, rejection/debug, and no-overclaim evidence. Direct-light validation input, `lucerna.lighting.direct`, and temporary direct-light RGBA payloads are not accepted substitutes for `raw-diffuse-gi-rgba8` on this strict path. Parser-facing evidence should include `shaderDenoiseInputKind=raw-diffuse-gi-rgba8`, `rawGiInputReady=true`, `directLightValidationInput=false`, and `diagnosticDirectLightValidationFallback=false`.
 
-Required no-overclaim markers for the current visual path are: CPU/readback or candidate source identity preserved, `shaderDenoiseOutputImageCandidateBoundaryOnly=true` when a candidate image is present, `realShaderDenoiseOutputProven=false`, no proof marker, no focus-window-only fallback, no rectangular full-screen wash, and no substitution of temporary direct-light payloads for denoised GI.
+`tracedRawGiInputConsumed` is the documentation marker for the stricter next boundary: the shader consumed `raw-diffuse-gi-rgba8` whose upstream GI producer exposed traced lighting evidence. This remains a public Mojang fragment output path into `lucerna.denoise.diffuse`, not compute denoise and not a storage-image write. Physical GI quality still requires traced evidence from the GI producer plus controller validation; the shader/resource contract alone must not claim physically correct GI, voxel/ray-traced lighting consumption, hardware RT, or production denoise quality.
+
+`composite/final_composite.frag.glsl` may sample `LucernaDenoisedDiffuse`, but final visual shaping is a consumer, not proof that the input was shader-generated. Runtime/source labels must distinguish `cpu-readback-visual-denoise`, `public-mojang-final-visual-shaping`, and `shader-generated-denoise-output-image`.
+
+Required no-overclaim markers for the current visual path are: CPU/readback or candidate source identity preserved, `shaderDenoiseOutputImageCandidateBoundaryOnly=true` when a candidate image is present, `realShaderDenoiseOutputProven=false`, no proof marker, no focus-window-only fallback, no rectangular full-screen wash, and no substitution of temporary direct-light payloads for denoised GI. The `.fsh` resource is explicitly a public Mojang fragment pass into an owned output texture that preserves local raw-GI contrast from `raw-diffuse-gi-rgba8`, not compute denoise, not a storage-image write, and not proof that the pass ran until scheduler bindings and controller evidence exist.
 
 ## Phase 5 Telemetry Names
 
@@ -111,7 +136,9 @@ Required no-overclaim markers for the current visual path are: CPU/readback or c
 - `overlay.ray_budget`: `lucerna.lighting.rayBudget`
 - `overlay.denoised_diffuse`: `lucerna.denoise.diffuse`
 - `overlay.denoise_rejection`: `lucerna.denoise.rejectionMask`
+- `overlay.shader_generated_denoise_output`: `lucerna.denoise.diffuse` contract-only shader output-image readiness
 - `overlay.debug_overlay`: `lucerna.debug.overlay`
+- `overlay.native_shadow_mask`: `lucerna.lighting.nativeConservativeShadowMask` native conservative mask consumer evidence
 - `overlay.final_composite`: `lucerna.composite.worldColor`
 
 `overlay.adaptive_sampling` remains a debug-label alias for `lucerna.lighting.rayBudget`; new code should prefer `overlay.ray_budget`.

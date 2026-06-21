@@ -1,6 +1,7 @@
 package net.lucerna.upload;
 
 import net.lucerna.render.lighting.post.FinalCompositeHandoff;
+import net.lucerna.render.tracing.TracedLightingConsumptionEvidence;
 
 import java.util.Arrays;
 import java.util.List;
@@ -17,6 +18,8 @@ public final class NativePostProcessingCompositeUpload {
     public static final int FLAG_USES_DIRECT_LIGHTING = 1 << 7;
     public static final int FLAG_USES_RAW_DIFFUSE_GI = 1 << 8;
     public static final int FLAG_BLENDS_DIRECT_RAW_AND_DENOISED = 1 << 9;
+    public static final int FLAG_TRACE_LIGHTING_CONSUMED_BY_FINAL_COMPOSITE = 1 << 10;
+    public static final int FLAG_REAL_GPU_TRACE_LIGHTING_CONSUMED = 1 << 11;
 
     private final long frameIndex;
     private final long sourceGeneration;
@@ -38,6 +41,15 @@ public final class NativePostProcessingCompositeUpload {
     private final boolean debugOverlayAvailable;
     private final boolean writesWorldColorTarget;
     private final boolean readyForWorldColorHandoff;
+    private final long tracedLightingGeneration;
+    private final long tracedLightingRayCount;
+    private final long tracedLightingHitCount;
+    private final long tracedLightingMaterialCoupledHitCount;
+    private final long tracedLightingDepthCoupledHitCount;
+    private final boolean tracedLightingConsumedByFinalComposite;
+    private final boolean realGpuTracedLightingConsumed;
+    private final String tracedLightingSource;
+    private final String tracedLightingBlocker;
     private final int flags;
 
     private NativePostProcessingCompositeUpload(
@@ -59,6 +71,15 @@ public final class NativePostProcessingCompositeUpload {
             boolean debugOverlayAvailable,
             boolean writesWorldColorTarget,
             boolean readyForWorldColorHandoff,
+            long tracedLightingGeneration,
+            long tracedLightingRayCount,
+            long tracedLightingHitCount,
+            long tracedLightingMaterialCoupledHitCount,
+            long tracedLightingDepthCoupledHitCount,
+            boolean tracedLightingConsumedByFinalComposite,
+            boolean realGpuTracedLightingConsumed,
+            String tracedLightingSource,
+            String tracedLightingBlocker,
             int flags
     ) {
         this.frameIndex = frameIndex;
@@ -81,13 +102,42 @@ public final class NativePostProcessingCompositeUpload {
         this.debugOverlayAvailable = debugOverlayAvailable;
         this.writesWorldColorTarget = writesWorldColorTarget;
         this.readyForWorldColorHandoff = readyForWorldColorHandoff;
+        this.tracedLightingGeneration = tracedLightingGeneration;
+        this.tracedLightingRayCount = tracedLightingRayCount;
+        this.tracedLightingHitCount = tracedLightingHitCount;
+        this.tracedLightingMaterialCoupledHitCount = tracedLightingMaterialCoupledHitCount;
+        this.tracedLightingDepthCoupledHitCount = tracedLightingDepthCoupledHitCount;
+        this.tracedLightingConsumedByFinalComposite = tracedLightingConsumedByFinalComposite;
+        this.realGpuTracedLightingConsumed = realGpuTracedLightingConsumed;
+        this.tracedLightingSource = requireText(tracedLightingSource, "tracedLightingSource");
+        this.tracedLightingBlocker = requireText(tracedLightingBlocker, "tracedLightingBlocker");
         this.flags = flags;
 
         this.validate();
     }
 
     public static NativePostProcessingCompositeUpload from(FinalCompositeHandoff handoff) {
+        return from(handoff, null);
+    }
+
+    public static NativePostProcessingCompositeUpload from(
+            FinalCompositeHandoff handoff,
+            TracedLightingConsumptionEvidence traceEvidence
+    ) {
         Objects.requireNonNull(handoff, "handoff");
+        TracedLightingConsumptionEvidence resolvedTraceEvidence = traceEvidence == null
+                ? TracedLightingConsumptionEvidence.notConsumed(
+                        handoff.sourceGeneration(),
+                        "final_composite_trace_consumption_not_supplied"
+                )
+                : traceEvidence;
+        boolean compositeUsesDiffuseGi = handoff.readyForWorldColorHandoff()
+                && handoff.writesWorldColorTarget()
+                && (handoff.usesRawDiffuseGi() || handoff.usesDenoisedDiffuse());
+        boolean tracedLightingConsumed = compositeUsesDiffuseGi
+                && resolvedTraceEvidence.finalGiSourceConsumed();
+        boolean realGpuTraceConsumed = tracedLightingConsumed
+                && resolvedTraceEvidence.realGpuTraversalConsumed();
         return new NativePostProcessingCompositeUpload(
                 handoff.frameIndex(),
                 handoff.sourceGeneration(),
@@ -107,7 +157,16 @@ public final class NativePostProcessingCompositeUpload {
                 handoff.debugOverlayAvailable(),
                 handoff.writesWorldColorTarget(),
                 handoff.readyForWorldColorHandoff(),
-                flags(handoff)
+                resolvedTraceEvidence.generation(),
+                resolvedTraceEvidence.rayCount(),
+                resolvedTraceEvidence.hitCount(),
+                resolvedTraceEvidence.materialCoupledHitCount(),
+                resolvedTraceEvidence.depthCoupledHitCount(),
+                tracedLightingConsumed,
+                realGpuTraceConsumed,
+                resolvedTraceEvidence.finalGiSource() + " via " + resolvedTraceEvidence.evidenceSource(),
+                resolvedTraceEvidence.blocker(),
+                flags(handoff, tracedLightingConsumed, realGpuTraceConsumed)
         );
     }
 
@@ -195,6 +254,66 @@ public final class NativePostProcessingCompositeUpload {
         return this.flags;
     }
 
+    public long tracedLightingGeneration() {
+        return this.tracedLightingGeneration;
+    }
+
+    public long tracedLightingRayCount() {
+        return this.tracedLightingRayCount;
+    }
+
+    public long tracedLightingHitCount() {
+        return this.tracedLightingHitCount;
+    }
+
+    public long tracedLightingMaterialCoupledHitCount() {
+        return this.tracedLightingMaterialCoupledHitCount;
+    }
+
+    public long tracedLightingDepthCoupledHitCount() {
+        return this.tracedLightingDepthCoupledHitCount;
+    }
+
+    public boolean tracedLightingConsumedByFinalComposite() {
+        return this.tracedLightingConsumedByFinalComposite;
+    }
+
+    public boolean realGpuTracedLightingConsumed() {
+        return this.realGpuTracedLightingConsumed;
+    }
+
+    public String tracedLightingSource() {
+        return this.tracedLightingSource;
+    }
+
+    public String tracedLightingBlocker() {
+        return this.tracedLightingBlocker;
+    }
+
+    public long[] traceConsumptionCounts() {
+        return new long[]{
+                this.tracedLightingGeneration,
+                this.tracedLightingRayCount,
+                this.tracedLightingHitCount,
+                this.tracedLightingMaterialCoupledHitCount,
+                this.tracedLightingDepthCoupledHitCount
+        };
+    }
+
+    public int[] traceConsumptionFlags() {
+        return new int[]{
+                this.tracedLightingConsumedByFinalComposite ? 1 : 0,
+                this.realGpuTracedLightingConsumed ? 1 : 0
+        };
+    }
+
+    public String[] traceConsumptionLabels() {
+        return new String[]{
+                this.tracedLightingSource,
+                this.tracedLightingBlocker
+        };
+    }
+
     private void validate() {
         requireNonNegative(this.frameIndex, "frameIndex");
         requireNonNegative(this.sourceGeneration, "sourceGeneration");
@@ -210,6 +329,34 @@ public final class NativePostProcessingCompositeUpload {
                 != (this.usesDirectLighting && this.usesRawDiffuseGi && this.usesDenoisedDiffuse)) {
             throw new IllegalArgumentException("blendsDirectRawAndDenoised must match direct/raw/denoised source state");
         }
+        requireNonNegative(this.tracedLightingGeneration, "tracedLightingGeneration");
+        requireNonNegative(this.tracedLightingRayCount, "tracedLightingRayCount");
+        requireNonNegative(this.tracedLightingHitCount, "tracedLightingHitCount");
+        requireNonNegative(this.tracedLightingMaterialCoupledHitCount, "tracedLightingMaterialCoupledHitCount");
+        requireNonNegative(this.tracedLightingDepthCoupledHitCount, "tracedLightingDepthCoupledHitCount");
+        if (this.tracedLightingMaterialCoupledHitCount > this.tracedLightingHitCount) {
+            throw new IllegalArgumentException("tracedLightingMaterialCoupledHitCount cannot exceed tracedLightingHitCount");
+        }
+        if (this.tracedLightingDepthCoupledHitCount > this.tracedLightingHitCount) {
+            throw new IllegalArgumentException("tracedLightingDepthCoupledHitCount cannot exceed tracedLightingHitCount");
+        }
+        if (this.tracedLightingConsumedByFinalComposite
+                && (!this.readyForWorldColorHandoff
+                || !this.writesWorldColorTarget
+                || (!this.usesRawDiffuseGi && !this.usesDenoisedDiffuse)
+                || this.tracedLightingRayCount == 0L
+                || this.tracedLightingHitCount == 0L
+                || this.tracedLightingMaterialCoupledHitCount == 0L
+                || this.tracedLightingDepthCoupledHitCount == 0L)) {
+            throw new IllegalArgumentException(
+                    "tracedLightingConsumedByFinalComposite requires ready diffuse-GI composite and trace coupling counts"
+            );
+        }
+        if (this.realGpuTracedLightingConsumed && !this.tracedLightingConsumedByFinalComposite) {
+            throw new IllegalArgumentException(
+                    "realGpuTracedLightingConsumed requires tracedLightingConsumedByFinalComposite"
+            );
+        }
         int expectedFlags = flags(
                 this.readyForWorldColorHandoff,
                 this.borrowedWorldColorTarget,
@@ -220,14 +367,20 @@ public final class NativePostProcessingCompositeUpload {
                 this.usesDenoisedDiffuse,
                 this.blendsDirectRawAndDenoised,
                 this.debugOverlayAvailable,
-                this.writesWorldColorTarget
+                this.writesWorldColorTarget,
+                this.tracedLightingConsumedByFinalComposite,
+                this.realGpuTracedLightingConsumed
         );
         if (this.flags != expectedFlags) {
             throw new IllegalArgumentException("flags must match composite upload state");
         }
     }
 
-    private static int flags(FinalCompositeHandoff handoff) {
+    private static int flags(
+            FinalCompositeHandoff handoff,
+            boolean tracedLightingConsumedByFinalComposite,
+            boolean realGpuTracedLightingConsumed
+    ) {
         return flags(
                 handoff.readyForWorldColorHandoff(),
                 handoff.borrowedWorldColorTarget(),
@@ -238,7 +391,9 @@ public final class NativePostProcessingCompositeUpload {
                 handoff.usesDenoisedDiffuse(),
                 handoff.blendsDirectRawAndDenoisedSources(),
                 handoff.debugOverlayAvailable(),
-                handoff.writesWorldColorTarget()
+                handoff.writesWorldColorTarget(),
+                tracedLightingConsumedByFinalComposite,
+                realGpuTracedLightingConsumed
         );
     }
 
@@ -252,7 +407,9 @@ public final class NativePostProcessingCompositeUpload {
             boolean usesDenoisedDiffuse,
             boolean blendsDirectRawAndDenoised,
             boolean debugOverlayAvailable,
-            boolean writesWorldColorTarget
+            boolean writesWorldColorTarget,
+            boolean tracedLightingConsumedByFinalComposite,
+            boolean realGpuTracedLightingConsumed
     ) {
         int flags = 0;
         if (readyForWorldColorHandoff) {
@@ -284,6 +441,12 @@ public final class NativePostProcessingCompositeUpload {
         }
         if (writesWorldColorTarget) {
             flags |= FLAG_WRITES_WORLD_COLOR_TARGET;
+        }
+        if (tracedLightingConsumedByFinalComposite) {
+            flags |= FLAG_TRACE_LIGHTING_CONSUMED_BY_FINAL_COMPOSITE;
+        }
+        if (realGpuTracedLightingConsumed) {
+            flags |= FLAG_REAL_GPU_TRACE_LIGHTING_CONSUMED;
         }
         return flags;
     }

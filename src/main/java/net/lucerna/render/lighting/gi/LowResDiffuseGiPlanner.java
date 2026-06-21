@@ -119,6 +119,7 @@ public final class LowResDiffuseGiPlanner {
                 rayBudget,
                 resolvedSourceSummary,
                 sceneInputSummary,
+                null,
                 validationReport
         );
     }
@@ -175,13 +176,21 @@ public final class LowResDiffuseGiPlanner {
             ));
         }
         for (String missingConstant : frameInput.frameConstants().missingRequiredConstants()) {
-            findings.add(DiffuseGiValidationFinding.error(
-                    "MISSING_FRAME_CONSTANT",
-                    "$.frameConstants." + missingConstant,
-                    "Diffuse GI requires complete frame constants"
-            ));
+            if ("viewport".equals(missingConstant) && !frameInput.gBufferWriteIntent().dimensionsAvailable()) {
+                findings.add(DiffuseGiValidationFinding.error(
+                        "MISSING_FRAME_CONSTANT",
+                        "$.frameConstants." + missingConstant,
+                        "Diffuse GI scheduling requires a viewport or G-buffer dimensions"
+                ));
+            } else {
+                findings.add(DiffuseGiValidationFinding.warning(
+                        "MISSING_FRAME_CONSTANT_PREVIEW_BOUNDARY",
+                        "$.frameConstants." + missingConstant,
+                        "Raw diffuse GI preview scheduling is allowed, but complete physical GI still needs this frame constant"
+                ));
+            }
         }
-        if (!frameInput.frameConstants().flags().diffuseGiEnabled()) {
+        if (frameInput.frameConstants().hasRenderFlags() && !frameInput.frameConstants().flags().diffuseGiEnabled()) {
             findings.add(DiffuseGiValidationFinding.warning(
                     "FRAME_FLAG_DIFFUSE_GI_DISABLED",
                     "$.frameConstants.flags.diffuseGiEnabled",

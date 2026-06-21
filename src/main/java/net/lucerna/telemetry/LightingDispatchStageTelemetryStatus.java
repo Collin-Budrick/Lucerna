@@ -51,6 +51,7 @@ public record LightingDispatchStageTelemetryStatus(
         Boolean shaderOutputImageReady,
         Boolean shaderOutputMaterialReady,
         Boolean shaderGeneratedOutput,
+        Boolean shaderGeneratedDenoiseOutputEvidence,
         Boolean publicMojangShaderVisualOutputAttempted,
         Boolean publicMojangShaderVisualOutputSubmitted,
         Boolean publicMojangShaderVisualOutputReady,
@@ -91,6 +92,23 @@ public record LightingDispatchStageTelemetryStatus(
         Boolean hueShiftedBounce,
         Boolean contactShadowDarkening,
         Boolean finalPhysicalCompositeReady,
+        Boolean gBufferDepthSamplingEvidence,
+        Boolean gBufferDepthTextureSampled,
+        Boolean gBufferDepthMetadataOnly,
+        Long gBufferDepthSampleCount,
+        Boolean realShadowMapEvidence,
+        Boolean shadowMapRendered,
+        Boolean shadowMapSampled,
+        Boolean shadowMapMetadataOnly,
+        Boolean nativeShadowMapMask,
+        Boolean shadowMapOutputConsumed,
+        Boolean realShadowMapComposite,
+        Boolean screenSpaceShadowDecal,
+        Boolean lowResDirectTextureShadowProof,
+        Boolean voxelRayTracedLightingConsumedEvidence,
+        Boolean realTracedLightingConsumed,
+        Boolean realGpuTraversalExecuted,
+        Boolean tracedLightingMetadataOnly,
         Boolean previewFallbackContribution,
         Boolean metadataOnlyProofRejected,
         Boolean focusWindowCaptureRejected,
@@ -105,6 +123,10 @@ public record LightingDispatchStageTelemetryStatus(
         String coloredBounceMarker,
         String contactShadowMarker,
         String finalPhysicalCompositeMarker,
+        String gBufferDepthSamplingMarker,
+        String shadowMapEvidenceMarker,
+        String voxelRayTracedLightingMarker,
+        String shaderGeneratedDenoiseOutputMarker,
         String proofBoundaryMarker,
         Map<String, String> details
 ) {
@@ -131,6 +153,10 @@ public record LightingDispatchStageTelemetryStatus(
         coloredBounceMarker = blankToEmpty(stripQuotes(coloredBounceMarker));
         contactShadowMarker = blankToEmpty(stripQuotes(contactShadowMarker));
         finalPhysicalCompositeMarker = blankToEmpty(stripQuotes(finalPhysicalCompositeMarker));
+        gBufferDepthSamplingMarker = blankToEmpty(stripQuotes(gBufferDepthSamplingMarker));
+        shadowMapEvidenceMarker = blankToEmpty(stripQuotes(shadowMapEvidenceMarker));
+        voxelRayTracedLightingMarker = blankToEmpty(stripQuotes(voxelRayTracedLightingMarker));
+        shaderGeneratedDenoiseOutputMarker = blankToEmpty(stripQuotes(shaderGeneratedDenoiseOutputMarker));
         proofBoundaryMarker = blankToEmpty(stripQuotes(proofBoundaryMarker));
         shaderOutputImageCandidateDimensions = blankToEmpty(stripQuotes(shaderOutputImageCandidateDimensions));
         shaderOutputImageCandidateMarker = blankToEmpty(stripQuotes(shaderOutputImageCandidateMarker));
@@ -441,6 +467,14 @@ public record LightingDispatchStageTelemetryStatus(
                 "real_shader_denoise_generated_output",
                 "real_denoise_shader_generated_output",
                 "gpu_denoise_generated_output"
+        ));
+        Boolean shaderGeneratedDenoiseOutputEvidence = parseBoolean(firstPresent(
+                normalizedFields,
+                "shader_generated_denoise_output_evidence",
+                "shader_denoise_generated_output_evidence",
+                "real_shader_denoise_output_evidence",
+                "shader_denoise_output_evidence",
+                "shader_generated_denoise_output_proven"
         ));
         Boolean publicMojangShaderVisualOutputAttempted = parseBoolean(firstPresent(
                 normalizedFields,
@@ -763,6 +797,157 @@ public record LightingDispatchStageTelemetryStatus(
                 "final_composite_physical_ready",
                 "final_physical_composite"
         ));
+        Boolean gBufferDepthSamplingEvidence = parseBoolean(firstPresent(
+                normalizedFields,
+                "g_buffer_depth_sampling_evidence",
+                "gbuffer_depth_sampling_evidence",
+                "depth_sampling_evidence",
+                "real_gbuffer_depth_sampling",
+                "real_depth_texture_sampled",
+                "g_buffer_depth_sampled",
+                "gbuffer_depth_sampled"
+        ));
+        Boolean gBufferDepthTextureSampled = parseBoolean(firstPresent(
+                normalizedFields,
+                "g_buffer_depth_texture_sampled",
+                "gbuffer_depth_texture_sampled",
+                "depth_texture_sampled",
+                "real_depth_texture_sampled",
+                "g_buffer_depth_sampled",
+                "gbuffer_depth_sampled"
+        ));
+        Boolean gBufferDepthMetadataOnly = parseBoolean(firstPresent(
+                normalizedFields,
+                "g_buffer_depth_metadata_only",
+                "gbuffer_depth_metadata_only",
+                "depth_sampling_metadata_only",
+                "g_buffer_depth_sampling_metadata_only",
+                "depth_texture_metadata_only"
+        ));
+        Long gBufferDepthSampleCount = parseLong(firstPresent(
+                normalizedFields,
+                "g_buffer_depth_sample_count",
+                "gbuffer_depth_sample_count",
+                "depth_sample_count",
+                "g_buffer_depth_samples",
+                "gbuffer_depth_samples",
+                "depth_samples"
+        ));
+        Boolean realShadowMapEvidence = parseBoolean(firstPresent(
+                normalizedFields,
+                "real_shadow_map_evidence",
+                "real_shadow_map",
+                "shadow_map_evidence",
+                "shadowmap_evidence",
+                "real_shadow_map_ready",
+                "shadow_map_ready"
+        ));
+        Boolean shadowMapRendered = parseBoolean(firstPresent(
+                normalizedFields,
+                "shadow_map_rendered",
+                "shadowmap_rendered",
+                "real_shadow_map_rendered",
+                "shadow_map_output_rendered"
+        ));
+        Boolean shadowMapSampled = parseBoolean(firstPresent(
+                normalizedFields,
+                "shadow_map_sampled",
+                "shadowmap_sampled",
+                "real_shadow_map_sampled",
+                "shadow_map_depth_sampled"
+        ));
+        Boolean shadowMapMetadataOnly = parseBoolean(firstPresent(
+                normalizedFields,
+                "shadow_map_metadata_only",
+                "shadowmap_metadata_only",
+                "real_shadow_map_metadata_only",
+                "shadow_map_evidence_metadata_only"
+        ));
+        Boolean nativeShadowMapMask = parseBoolean(firstPresent(
+                normalizedFields,
+                "native_shadow_map_mask",
+                "nativeshadowmapmask",
+                "native_shadowmap_mask",
+                "native_shadow_map_output_mask",
+                "nativeshadowmapoutputmask",
+                "shadow_map_mask_native",
+                "shadowmap_mask_native",
+                "shadow_map_source_native"
+        ));
+        Boolean shadowMapOutputConsumed = parseBoolean(firstPresent(
+                normalizedFields,
+                "shadow_map_output_consumed",
+                "shadowmapoutputconsumed",
+                "shadowmap_output_consumed",
+                "native_shadow_map_consumed",
+                "nativeshadowmapconsumed",
+                "native_shadowmap_consumed",
+                "shadow_map_consumed",
+                "shadowmapconsumed",
+                "shadowmap_consumed"
+        ));
+        Boolean realShadowMapComposite = parseBoolean(firstPresent(
+                normalizedFields,
+                "real_shadow_map_composite",
+                "realshadowmapcomposite",
+                "shadow_map_final_composite",
+                "shadowmapfinalcomposite",
+                "shadowmap_final_composite",
+                "native_shadow_map_composited",
+                "nativeshadowmapcomposited",
+                "native_shadowmap_composited"
+        ));
+        Boolean screenSpaceShadowDecal = parseBoolean(firstPresent(
+                normalizedFields,
+                "screen_space_shadow_decal",
+                "screenspaceshadowdecal",
+                "screenspace_shadow_decal",
+                "screen_space_shadow",
+                "screenspaceshadow",
+                "shadow_decal_screen_space"
+        ));
+        Boolean lowResDirectTextureShadowProof = parseBoolean(firstPresent(
+                normalizedFields,
+                "low_res_direct_texture_shadow_proof",
+                "lowresdirecttextureshadowproof",
+                "lowres_direct_texture_shadow_proof",
+                "low_res_direct_texture",
+                "cpu_direct_texture_composite",
+                "cpudirecttexturecomposite",
+                "directlightlowrestexture",
+                "direct_light_low_res_texture"
+        ));
+        Boolean voxelRayTracedLightingConsumedEvidence = parseBoolean(firstPresent(
+                normalizedFields,
+                "voxel_ray_traced_lighting_consumed_evidence",
+                "voxel_traced_lighting_consumed_evidence",
+                "ray_traced_lighting_consumed_evidence",
+                "traced_lighting_consumed_evidence",
+                "voxel_ray_traced_lighting_consumed",
+                "ray_traced_lighting_consumed"
+        ));
+        Boolean realTracedLightingConsumed = parseBoolean(firstPresent(
+                normalizedFields,
+                "real_traced_lighting_consumed",
+                "traced_lighting_consumed",
+                "real_ray_traced_lighting_consumed",
+                "real_voxel_traced_lighting_consumed"
+        ));
+        Boolean realGpuTraversalExecuted = parseBoolean(firstPresent(
+                normalizedFields,
+                "real_gpu_traversal_executed",
+                "gpu_voxel_traversal_executed",
+                "real_gpu_voxel_traversal_executed",
+                "real_ray_tracing_executed",
+                "hardware_ray_tracing_executed"
+        ));
+        Boolean tracedLightingMetadataOnly = parseBoolean(firstPresent(
+                normalizedFields,
+                "traced_lighting_metadata_only",
+                "ray_traced_lighting_metadata_only",
+                "voxel_ray_traced_lighting_metadata_only",
+                "traced_lighting_consumed_metadata_only"
+        ));
         Boolean previewFallbackContribution = parseBoolean(firstPresent(
                 normalizedFields,
                 "preview_fallback_contribution",
@@ -851,6 +1036,34 @@ public record LightingDispatchStageTelemetryStatus(
                 "physical_final_composite_marker",
                 "physical_composite_marker"
         );
+        String gBufferDepthSamplingMarker = firstPresent(
+                normalizedFields,
+                "g_buffer_depth_sampling_marker",
+                "gbuffer_depth_sampling_marker",
+                "depth_sampling_marker",
+                "depth_texture_sample_marker"
+        );
+        String shadowMapEvidenceMarker = firstPresent(
+                normalizedFields,
+                "shadow_map_evidence_marker",
+                "shadowmap_evidence_marker",
+                "real_shadow_map_marker",
+                "shadow_map_marker"
+        );
+        String voxelRayTracedLightingMarker = firstPresent(
+                normalizedFields,
+                "voxel_ray_traced_lighting_marker",
+                "ray_traced_lighting_marker",
+                "traced_lighting_consumed_marker",
+                "voxel_traced_lighting_marker"
+        );
+        String shaderGeneratedDenoiseOutputMarker = firstPresent(
+                normalizedFields,
+                "shader_generated_denoise_output_marker",
+                "shader_denoise_generated_output_marker",
+                "real_shader_denoise_output_marker",
+                "shader_denoise_output_evidence_marker"
+        );
         String proofBoundaryMarker = firstPresent(
                 normalizedFields,
                 "proof_boundary_marker",
@@ -905,6 +1118,7 @@ public record LightingDispatchStageTelemetryStatus(
                 shaderOutputImageReady,
                 shaderOutputMaterialReady,
                 shaderGeneratedOutput,
+                shaderGeneratedDenoiseOutputEvidence,
                 publicMojangShaderVisualOutputAttempted,
                 publicMojangShaderVisualOutputSubmitted,
                 publicMojangShaderVisualOutputReady,
@@ -945,6 +1159,23 @@ public record LightingDispatchStageTelemetryStatus(
                 hueShiftedBounce,
                 contactShadowDarkening,
                 finalPhysicalCompositeReady,
+                gBufferDepthSamplingEvidence,
+                gBufferDepthTextureSampled,
+                gBufferDepthMetadataOnly,
+                gBufferDepthSampleCount,
+                realShadowMapEvidence,
+                shadowMapRendered,
+                shadowMapSampled,
+                shadowMapMetadataOnly,
+                nativeShadowMapMask,
+                shadowMapOutputConsumed,
+                realShadowMapComposite,
+                screenSpaceShadowDecal,
+                lowResDirectTextureShadowProof,
+                voxelRayTracedLightingConsumedEvidence,
+                realTracedLightingConsumed,
+                realGpuTraversalExecuted,
+                tracedLightingMetadataOnly,
                 previewFallbackContribution,
                 metadataOnlyProofRejected,
                 focusWindowCaptureRejected,
@@ -959,6 +1190,10 @@ public record LightingDispatchStageTelemetryStatus(
                 coloredBounceMarker,
                 contactShadowMarker,
                 finalPhysicalCompositeMarker,
+                gBufferDepthSamplingMarker,
+                shadowMapEvidenceMarker,
+                voxelRayTracedLightingMarker,
+                shaderGeneratedDenoiseOutputMarker,
                 proofBoundaryMarker,
                 normalizedFields
         );
@@ -1115,6 +1350,281 @@ public record LightingDispatchStageTelemetryStatus(
                 + " boundary=" + shorten(valueOrUnknown(this.proofBoundaryMarker), 64);
     }
 
+    public boolean gBufferDepthSamplingEvidenceReady() {
+        return genericGBufferDepthSamplingEvidenceReady() || depthSamplingPassOutputsReady();
+    }
+
+    public boolean javaDepthSamplingEvidenceReady() {
+        return depthSamplingEvidenceReady(
+                new String[]{
+                        "java_g_buffer_depth_sampling_evidence",
+                        "java_gbuffer_depth_sampling_evidence",
+                        "javaDepthSamplingEvidence",
+                        "javaGBufferDepthSamplingEvidence",
+                        "java_depth_sampling_evidence",
+                        "java_true_depth_sampling",
+                        "java_depth_texture_sampled",
+                        "java_depth_buffer_sampled",
+                        "java_g_buffer_depth_sampled",
+                        "java_gbuffer_depth_sampled",
+                        "java_gbuffer_sampled"
+                },
+                new String[]{
+                        "java_g_buffer_depth_metadata_only",
+                        "java_gbuffer_depth_metadata_only",
+                        "javaDepthMetadataOnly",
+                        "javaGBufferDepthMetadataOnly",
+                        "java_depth_sampling_metadata_only",
+                        "java_depth_texture_metadata_only"
+                },
+                new String[]{
+                        "java_g_buffer_depth_sample_count",
+                        "java_gbuffer_depth_sample_count",
+                        "javaDepthSampleCount",
+                        "javaGBufferDepthSampleCount",
+                        "java_depth_sample_count",
+                        "java_depth_samples"
+                }
+        );
+    }
+
+    public boolean nativeDepthSamplingEvidenceReady() {
+        return depthSamplingEvidenceReady(
+                new String[]{
+                        "native_g_buffer_depth_sampling_evidence",
+                        "native_gbuffer_depth_sampling_evidence",
+                        "nativeDepthSamplingEvidence",
+                        "nativeGBufferDepthSamplingEvidence",
+                        "native_depth_sampling_evidence",
+                        "native_true_depth_sampling",
+                        "native_depth_texture_sampled",
+                        "native_depth_buffer_sampled",
+                        "native_g_buffer_depth_sampled",
+                        "native_gbuffer_depth_sampled",
+                        "native_gbuffer_sampled"
+                },
+                new String[]{
+                        "native_g_buffer_depth_metadata_only",
+                        "native_gbuffer_depth_metadata_only",
+                        "nativeDepthMetadataOnly",
+                        "nativeGBufferDepthMetadataOnly",
+                        "native_depth_sampling_metadata_only",
+                        "native_depth_texture_metadata_only"
+                },
+                new String[]{
+                        "native_g_buffer_depth_sample_count",
+                        "native_gbuffer_depth_sample_count",
+                        "nativeDepthSampleCount",
+                        "nativeGBufferDepthSampleCount",
+                        "native_depth_sample_count",
+                        "native_depth_samples"
+                }
+        );
+    }
+
+    public boolean shaderPassDepthSamplingEvidenceReady() {
+        return depthSamplingEvidenceReady(
+                new String[]{
+                        "shader_pass_g_buffer_depth_sampling_evidence",
+                        "shader_pass_gbuffer_depth_sampling_evidence",
+                        "shaderPassDepthSamplingEvidence",
+                        "shaderPassGBufferDepthSamplingEvidence",
+                        "shaderDepthSamplingEvidence",
+                        "shader_pass_depth_sampling_evidence",
+                        "shader_depth_sampling_evidence",
+                        "shader_true_depth_sampling",
+                        "shader_pass_depth_texture_sampled",
+                        "shader_depth_texture_sampled",
+                        "shader_pass_depth_buffer_sampled",
+                        "shader_depth_buffer_sampled",
+                        "shader_pass_g_buffer_depth_sampled",
+                        "shader_g_buffer_depth_sampled",
+                        "shader_pass_gbuffer_depth_sampled",
+                        "shader_gbuffer_depth_sampled",
+                        "shader_pass_gbuffer_sampled",
+                        "shader_gbuffer_sampled"
+                },
+                new String[]{
+                        "shader_pass_g_buffer_depth_metadata_only",
+                        "shader_pass_gbuffer_depth_metadata_only",
+                        "shaderPassDepthMetadataOnly",
+                        "shaderPassGBufferDepthMetadataOnly",
+                        "shaderDepthMetadataOnly",
+                        "shader_pass_depth_sampling_metadata_only",
+                        "shader_depth_sampling_metadata_only",
+                        "shader_pass_depth_texture_metadata_only",
+                        "shader_depth_texture_metadata_only"
+                },
+                new String[]{
+                        "shader_pass_g_buffer_depth_sample_count",
+                        "shader_pass_gbuffer_depth_sample_count",
+                        "shaderPassDepthSampleCount",
+                        "shaderPassGBufferDepthSampleCount",
+                        "shaderDepthSampleCount",
+                        "shader_g_buffer_depth_sample_count",
+                        "shader_gbuffer_depth_sample_count",
+                        "shader_pass_depth_sample_count",
+                        "shader_depth_sample_count",
+                        "shader_pass_depth_samples",
+                        "shader_depth_samples"
+                }
+        );
+    }
+
+    public boolean depthSamplingPassOutputsReady() {
+        return javaDepthSamplingEvidenceReady()
+                || nativeDepthSamplingEvidenceReady()
+                || shaderPassDepthSamplingEvidenceReady();
+    }
+
+    public long maxGBufferDepthSampleCount() {
+        long max = this.gBufferDepthSampleCount == null ? 0L : Math.max(0L, this.gBufferDepthSampleCount);
+        max = Math.max(max, positiveDetailLong(
+                "java_g_buffer_depth_sample_count",
+                "java_gbuffer_depth_sample_count",
+                "javaDepthSampleCount",
+                "javaGBufferDepthSampleCount",
+                "java_depth_sample_count",
+                "java_depth_samples"
+        ));
+        max = Math.max(max, positiveDetailLong(
+                "native_g_buffer_depth_sample_count",
+                "native_gbuffer_depth_sample_count",
+                "nativeDepthSampleCount",
+                "nativeGBufferDepthSampleCount",
+                "native_depth_sample_count",
+                "native_depth_samples"
+        ));
+        max = Math.max(max, positiveDetailLong(
+                "shader_pass_g_buffer_depth_sample_count",
+                "shader_pass_gbuffer_depth_sample_count",
+                "shaderPassDepthSampleCount",
+                "shaderPassGBufferDepthSampleCount",
+                "shaderDepthSampleCount",
+                "shader_g_buffer_depth_sample_count",
+                "shader_gbuffer_depth_sample_count",
+                "shader_pass_depth_sample_count",
+                "shader_depth_sample_count",
+                "shader_pass_depth_samples",
+                "shader_depth_samples"
+        ));
+        return max;
+    }
+
+    public String depthSamplingEvidenceSources() {
+        StringBuilder sources = new StringBuilder();
+        appendSource(sources, "java", javaDepthSamplingEvidenceReady());
+        appendSource(sources, "native", nativeDepthSamplingEvidenceReady());
+        appendSource(sources, "shader", shaderPassDepthSamplingEvidenceReady());
+        appendSource(sources, "generic", genericGBufferDepthSamplingEvidenceReady() && sources.length() == 0);
+        return sources.length() == 0 ? "none" : sources.toString();
+    }
+
+    public boolean physicalGiEvidenceReady() {
+        boolean sceneLinked = Boolean.TRUE.equals(this.physicalSceneLinked)
+                || (this.physicalSceneLinkScore != null && this.physicalSceneLinkScore > 0L);
+        boolean surfaceContribution = Boolean.TRUE.equals(this.physicalSurfaceContribution);
+        boolean outputReady = Boolean.TRUE.equals(this.finalPhysicalCompositeReady)
+                || (this.physicalOutputChecksum != null && this.physicalOutputChecksum > 0L);
+        return sceneLinked
+                && surfaceContribution
+                && outputReady
+                && !Boolean.TRUE.equals(this.previewFallbackContribution)
+                && !Boolean.TRUE.equals(this.metadataOnly);
+    }
+
+    private boolean genericGBufferDepthSamplingEvidenceReady() {
+        return (Boolean.TRUE.equals(this.gBufferDepthSamplingEvidence)
+                || Boolean.TRUE.equals(this.gBufferDepthTextureSampled)
+                || (this.gBufferDepthSampleCount != null && this.gBufferDepthSampleCount > 0L))
+                && !Boolean.TRUE.equals(this.gBufferDepthMetadataOnly)
+                && !Boolean.TRUE.equals(this.metadataOnly);
+    }
+
+    public boolean realShadowMapEvidenceReady() {
+        return (Boolean.TRUE.equals(this.realShadowMapEvidence)
+                || (Boolean.TRUE.equals(this.shadowMapRendered) && Boolean.TRUE.equals(this.shadowMapSampled)))
+                && !Boolean.TRUE.equals(this.shadowMapMetadataOnly);
+    }
+
+    public boolean nativeShadowMapMaskReady() {
+        return Boolean.TRUE.equals(this.nativeShadowMapMask)
+                && !Boolean.TRUE.equals(this.shadowMapMetadataOnly);
+    }
+
+    public boolean shadowMapOutputConsumedReady() {
+        return (Boolean.TRUE.equals(this.shadowMapOutputConsumed)
+                || Boolean.TRUE.equals(this.realShadowMapComposite))
+                && this.nativeShadowMapMaskReady()
+                && this.shadowMapCompositeNoOverclaimBoundary();
+    }
+
+    public boolean realShadowMapCompositeReady() {
+        return Boolean.TRUE.equals(this.realShadowMapComposite)
+                && this.realShadowMapEvidenceReady()
+                && this.shadowMapOutputConsumedReady();
+    }
+
+    public boolean shadowMapCompositeNoOverclaimBoundary() {
+        return !Boolean.TRUE.equals(this.screenSpaceShadowDecal)
+                && !Boolean.TRUE.equals(this.lowResDirectTextureShadowProof)
+                && !Boolean.TRUE.equals(this.shadowMapMetadataOnly)
+                && !Boolean.TRUE.equals(this.metadataOnly);
+    }
+
+    public boolean voxelRayTracedLightingConsumedEvidenceReady() {
+        return (Boolean.TRUE.equals(this.voxelRayTracedLightingConsumedEvidence)
+                || Boolean.TRUE.equals(this.realTracedLightingConsumed)
+                || (Boolean.TRUE.equals(this.realGpuTraversalExecuted) && Boolean.TRUE.equals(this.realTracedLightingConsumed)))
+                && !Boolean.TRUE.equals(this.tracedLightingMetadataOnly);
+    }
+
+    public boolean shaderGeneratedDenoiseOutputEvidenceReady() {
+        return (Boolean.TRUE.equals(this.shaderGeneratedDenoiseOutputEvidence)
+                || Boolean.TRUE.equals(this.shaderGeneratedOutput))
+                && Boolean.TRUE.equals(this.realShaderDenoiseOutputReady)
+                && !Boolean.TRUE.equals(this.cpuReadbackFallback)
+                && !Boolean.TRUE.equals(this.shaderOutputImageCandidateCpuStaged)
+                && !Boolean.TRUE.equals(this.shaderOutputImageCandidateNonGpu);
+    }
+
+    public String advancedLightingEvidenceLine() {
+        return this.stageDisplayName()
+                + " advancedLighting gBufferDepthEvidence=" + booleanOrUnknown(this.gBufferDepthSamplingEvidence)
+                + " gBufferDepthTextureSampled=" + booleanOrUnknown(this.gBufferDepthTextureSampled)
+                + " gBufferDepthSamples=" + valueOrUnknown(this.gBufferDepthSampleCount)
+                + " gBufferDepthMetadataOnly=" + booleanOrUnknown(this.gBufferDepthMetadataOnly)
+                + " javaDepthSamplingEvidence=" + javaDepthSamplingEvidenceReady()
+                + " nativeDepthSamplingEvidence=" + nativeDepthSamplingEvidenceReady()
+                + " shaderPassDepthSamplingEvidence=" + shaderPassDepthSamplingEvidenceReady()
+                + " depthSamplingEvidenceSources=" + depthSamplingEvidenceSources()
+                + " gBufferDepthReady=" + this.gBufferDepthSamplingEvidenceReady()
+                + " shadowMapEvidence=" + booleanOrUnknown(this.realShadowMapEvidence)
+                + " shadowMapRendered=" + booleanOrUnknown(this.shadowMapRendered)
+                + " shadowMapSampled=" + booleanOrUnknown(this.shadowMapSampled)
+                + " shadowMapMetadataOnly=" + booleanOrUnknown(this.shadowMapMetadataOnly)
+                + " shadowMapReady=" + this.realShadowMapEvidenceReady()
+                + " nativeShadowMapMask=" + booleanOrUnknown(this.nativeShadowMapMask)
+                + " shadowMapOutputConsumed=" + booleanOrUnknown(this.shadowMapOutputConsumed)
+                + " realShadowMapComposite=" + booleanOrUnknown(this.realShadowMapComposite)
+                + " shadowMapCompositeNoOverclaim=" + this.shadowMapCompositeNoOverclaimBoundary()
+                + " screenSpaceShadowDecal=" + booleanOrUnknown(this.screenSpaceShadowDecal)
+                + " lowResDirectTextureShadowProof=" + booleanOrUnknown(this.lowResDirectTextureShadowProof)
+                + " tracedLightingEvidence=" + booleanOrUnknown(this.voxelRayTracedLightingConsumedEvidence)
+                + " realTracedLightingConsumed=" + booleanOrUnknown(this.realTracedLightingConsumed)
+                + " realGpuTraversalExecuted=" + booleanOrUnknown(this.realGpuTraversalExecuted)
+                + " tracedLightingMetadataOnly=" + booleanOrUnknown(this.tracedLightingMetadataOnly)
+                + " tracedLightingReady=" + this.voxelRayTracedLightingConsumedEvidenceReady()
+                + " shaderGeneratedDenoiseEvidence=" + booleanOrUnknown(this.shaderGeneratedDenoiseOutputEvidence)
+                + " shaderGeneratedDenoiseReady=" + this.shaderGeneratedDenoiseOutputEvidenceReady()
+                + " cpuReadbackFallback=" + booleanOrUnknown(this.cpuReadbackFallback)
+                + " metadataOnly=" + booleanOrUnknown(this.metadataOnly)
+                + " markers=" + shorten(valueOrUnknown(this.gBufferDepthSamplingMarker), 32)
+                + "/" + shorten(valueOrUnknown(this.shadowMapEvidenceMarker), 32)
+                + "/" + shorten(valueOrUnknown(this.voxelRayTracedLightingMarker), 32)
+                + "/" + shorten(valueOrUnknown(this.shaderGeneratedDenoiseOutputMarker), 32);
+    }
+
     public String denoiseReadinessStatusLine() {
         return this.stageDisplayName()
                 + " denoise rawSource=" + booleanOrUnknown(this.rawSourceReady)
@@ -1122,6 +1632,8 @@ public record LightingDispatchStageTelemetryStatus(
                 + " shaderIntent=" + booleanOrUnknown(this.shaderDenoiseIntended)
                 + " shaderOutput=" + booleanOrUnknown(this.shaderOutputReady)
                 + " shaderGenerated=" + booleanOrUnknown(this.shaderGeneratedOutput)
+                + " shaderGeneratedEvidence=" + booleanOrUnknown(this.shaderGeneratedDenoiseOutputEvidence)
+                + " shaderGeneratedEvidenceReady=" + this.shaderGeneratedDenoiseOutputEvidenceReady()
                 + " publicMojangVisual=" + publicMojangShaderVisualOutputLabel()
                 + " realShaderOutput=" + booleanOrUnknown(this.realShaderDenoiseOutputReady)
                 + " cpuFallback=" + booleanOrUnknown(this.cpuReadbackFallback)
@@ -1159,6 +1671,9 @@ public record LightingDispatchStageTelemetryStatus(
                 + " shader denoise output realShaderOutputReady=" + realShaderOutputReady
                 + " outputReady=" + booleanOrUnknown(this.shaderOutputReady)
                 + " generatedOutput=" + booleanOrUnknown(this.shaderGeneratedOutput)
+                + " generatedOutputEvidence=" + booleanOrUnknown(this.shaderGeneratedDenoiseOutputEvidence)
+                + " generatedOutputEvidenceReady=" + this.shaderGeneratedDenoiseOutputEvidenceReady()
+                + " generatedOutputMarker=" + valueOrUnknown(this.shaderGeneratedDenoiseOutputMarker)
                 + " outputImage=" + booleanOrUnknown(this.shaderOutputImageReady)
                 + " outputMaterial=" + booleanOrUnknown(this.shaderOutputMaterialReady)
                 + " publicMojangVisualAttempted=" + booleanOrUnknown(this.publicMojangShaderVisualOutputAttempted)
@@ -1222,6 +1737,9 @@ public record LightingDispatchStageTelemetryStatus(
         }
         if (isPhysicalGiLikeStage() || hasAnyPhysicalGiEvidence()) {
             fields.put(normalizedPrefix + ".physicalGiTracingEvidence", this.physicalGiTracingEvidenceLine());
+        }
+        if (hasAnyAdvancedLightingEvidence()) {
+            fields.put(normalizedPrefix + ".advancedLightingEvidence", this.advancedLightingEvidenceLine());
         }
         if (this.enabled != null) {
             fields.put(normalizedPrefix + ".enabled", Boolean.toString(this.enabled));
@@ -1358,6 +1876,16 @@ public record LightingDispatchStageTelemetryStatus(
         if (this.shaderGeneratedOutput != null) {
             fields.put(normalizedPrefix + ".shaderGeneratedOutput", Boolean.toString(this.shaderGeneratedOutput));
         }
+        if (this.shaderGeneratedDenoiseOutputEvidence != null) {
+            fields.put(
+                    normalizedPrefix + ".shaderGeneratedDenoiseOutputEvidence",
+                    Boolean.toString(this.shaderGeneratedDenoiseOutputEvidence)
+            );
+            fields.put(
+                    normalizedPrefix + ".shaderGeneratedDenoiseOutputEvidenceReady",
+                    Boolean.toString(this.shaderGeneratedDenoiseOutputEvidenceReady())
+            );
+        }
         if (this.publicMojangShaderVisualOutputAttempted != null) {
             fields.put(
                     normalizedPrefix + ".publicMojangShaderVisualOutputAttempted",
@@ -1479,6 +2007,102 @@ public record LightingDispatchStageTelemetryStatus(
         if (this.physicalSurfaceContribution != null) {
             fields.put(normalizedPrefix + ".physicalSurfaceContribution", Boolean.toString(this.physicalSurfaceContribution));
         }
+        if (this.gBufferDepthSamplingEvidence != null) {
+            fields.put(normalizedPrefix + ".gBufferDepthSamplingEvidence", Boolean.toString(this.gBufferDepthSamplingEvidence));
+            fields.put(
+                    normalizedPrefix + ".gBufferDepthSamplingEvidenceReady",
+                    Boolean.toString(this.gBufferDepthSamplingEvidenceReady())
+            );
+        }
+        if (this.gBufferDepthTextureSampled != null) {
+            fields.put(normalizedPrefix + ".gBufferDepthTextureSampled", Boolean.toString(this.gBufferDepthTextureSampled));
+        }
+        if (this.gBufferDepthMetadataOnly != null) {
+            fields.put(normalizedPrefix + ".gBufferDepthMetadataOnly", Boolean.toString(this.gBufferDepthMetadataOnly));
+        }
+        if (this.gBufferDepthSampleCount != null) {
+            fields.put(normalizedPrefix + ".gBufferDepthSampleCount", Long.toString(this.gBufferDepthSampleCount));
+        }
+        if (hasAnyDepthSamplingSourceDetail() || depthSamplingPassOutputsReady()) {
+            fields.put(normalizedPrefix + ".javaDepthSamplingEvidence", Boolean.toString(javaDepthSamplingEvidenceReady()));
+            fields.put(normalizedPrefix + ".nativeDepthSamplingEvidence", Boolean.toString(nativeDepthSamplingEvidenceReady()));
+            fields.put(
+                    normalizedPrefix + ".shaderPassDepthSamplingEvidence",
+                    Boolean.toString(shaderPassDepthSamplingEvidenceReady())
+            );
+            fields.put(normalizedPrefix + ".depthSamplingPassOutputsReady", Boolean.toString(depthSamplingPassOutputsReady()));
+            fields.put(normalizedPrefix + ".depthSamplingEvidenceSources", depthSamplingEvidenceSources());
+            fields.put(normalizedPrefix + ".maxGBufferDepthSampleCount", Long.toString(maxGBufferDepthSampleCount()));
+        }
+        if (hasAnyPhysicalGiEvidence()) {
+            fields.put(normalizedPrefix + ".physicalGiEvidenceReady", Boolean.toString(physicalGiEvidenceReady()));
+        }
+        if (this.realShadowMapEvidence != null) {
+            fields.put(normalizedPrefix + ".realShadowMapEvidence", Boolean.toString(this.realShadowMapEvidence));
+            fields.put(normalizedPrefix + ".realShadowMapEvidenceReady", Boolean.toString(this.realShadowMapEvidenceReady()));
+        }
+        if (this.shadowMapRendered != null) {
+            fields.put(normalizedPrefix + ".shadowMapRendered", Boolean.toString(this.shadowMapRendered));
+        }
+        if (this.shadowMapSampled != null) {
+            fields.put(normalizedPrefix + ".shadowMapSampled", Boolean.toString(this.shadowMapSampled));
+        }
+        if (this.shadowMapMetadataOnly != null) {
+            fields.put(normalizedPrefix + ".shadowMapMetadataOnly", Boolean.toString(this.shadowMapMetadataOnly));
+        }
+        if (this.nativeShadowMapMask != null) {
+            fields.put(normalizedPrefix + ".nativeShadowMapMask", Boolean.toString(this.nativeShadowMapMask));
+            fields.put(normalizedPrefix + ".nativeShadowMapMaskReady", Boolean.toString(this.nativeShadowMapMaskReady()));
+        }
+        if (this.shadowMapOutputConsumed != null) {
+            fields.put(normalizedPrefix + ".shadowMapOutputConsumed", Boolean.toString(this.shadowMapOutputConsumed));
+            fields.put(
+                    normalizedPrefix + ".shadowMapOutputConsumedReady",
+                    Boolean.toString(this.shadowMapOutputConsumedReady())
+            );
+        }
+        if (this.realShadowMapComposite != null) {
+            fields.put(normalizedPrefix + ".realShadowMapComposite", Boolean.toString(this.realShadowMapComposite));
+            fields.put(normalizedPrefix + ".realShadowMapCompositeReady", Boolean.toString(this.realShadowMapCompositeReady()));
+        }
+        if (this.screenSpaceShadowDecal != null) {
+            fields.put(normalizedPrefix + ".screenSpaceShadowDecal", Boolean.toString(this.screenSpaceShadowDecal));
+        }
+        if (this.lowResDirectTextureShadowProof != null) {
+            fields.put(
+                    normalizedPrefix + ".lowResDirectTextureShadowProof",
+                    Boolean.toString(this.lowResDirectTextureShadowProof)
+            );
+        }
+        if (this.nativeShadowMapMask != null
+                || this.shadowMapOutputConsumed != null
+                || this.realShadowMapComposite != null
+                || this.screenSpaceShadowDecal != null
+                || this.lowResDirectTextureShadowProof != null) {
+            fields.put(
+                    normalizedPrefix + ".shadowMapCompositeNoOverclaim",
+                    Boolean.toString(this.shadowMapCompositeNoOverclaimBoundary())
+            );
+        }
+        if (this.voxelRayTracedLightingConsumedEvidence != null) {
+            fields.put(
+                    normalizedPrefix + ".voxelRayTracedLightingConsumedEvidence",
+                    Boolean.toString(this.voxelRayTracedLightingConsumedEvidence)
+            );
+            fields.put(
+                    normalizedPrefix + ".voxelRayTracedLightingConsumedEvidenceReady",
+                    Boolean.toString(this.voxelRayTracedLightingConsumedEvidenceReady())
+            );
+        }
+        if (this.realTracedLightingConsumed != null) {
+            fields.put(normalizedPrefix + ".realTracedLightingConsumed", Boolean.toString(this.realTracedLightingConsumed));
+        }
+        if (this.realGpuTraversalExecuted != null) {
+            fields.put(normalizedPrefix + ".realGpuTraversalExecuted", Boolean.toString(this.realGpuTraversalExecuted));
+        }
+        if (this.tracedLightingMetadataOnly != null) {
+            fields.put(normalizedPrefix + ".tracedLightingMetadataOnly", Boolean.toString(this.tracedLightingMetadataOnly));
+        }
         if (this.previewFallbackContribution != null) {
             fields.put(normalizedPrefix + ".previewFallbackContribution", Boolean.toString(this.previewFallbackContribution));
         }
@@ -1503,6 +2127,18 @@ public record LightingDispatchStageTelemetryStatus(
         if (!this.physicalOutputMarker.isBlank()) {
             fields.put(normalizedPrefix + ".physicalOutputMarker", this.physicalOutputMarker);
         }
+        if (!this.gBufferDepthSamplingMarker.isBlank()) {
+            fields.put(normalizedPrefix + ".gBufferDepthSamplingMarker", this.gBufferDepthSamplingMarker);
+        }
+        if (!this.shadowMapEvidenceMarker.isBlank()) {
+            fields.put(normalizedPrefix + ".shadowMapEvidenceMarker", this.shadowMapEvidenceMarker);
+        }
+        if (!this.voxelRayTracedLightingMarker.isBlank()) {
+            fields.put(normalizedPrefix + ".voxelRayTracedLightingMarker", this.voxelRayTracedLightingMarker);
+        }
+        if (!this.shaderGeneratedDenoiseOutputMarker.isBlank()) {
+            fields.put(normalizedPrefix + ".shaderGeneratedDenoiseOutputMarker", this.shaderGeneratedDenoiseOutputMarker);
+        }
         if (!this.proofBoundaryMarker.isBlank()) {
             fields.put(normalizedPrefix + ".proofBoundaryMarker", this.proofBoundaryMarker);
         }
@@ -1519,6 +2155,11 @@ public record LightingDispatchStageTelemetryStatus(
             case "denoise", "shader_denoise", "edge_aware_denoise", "diffuse_gi_denoise" -> "Denoise";
             case "composite", "final_composite" -> "Composite";
             case "cache", "radiance_cache", "sparse_radiance_cache", "sparse_voxel_radiance_cache" -> "Cache";
+            case "gbuffer", "g_buffer", "gbuffer_depth", "g_buffer_depth", "depth_sampling" -> "GBufferDepth";
+            case "shadow_map", "shadowmap" -> "ShadowMap";
+            case "voxel_tracing", "voxel_ray_tracing", "ray_traced_lighting",
+                    "traced_lighting", "hybrid_tracing" -> "TracedLighting";
+            case "advanced_lighting" -> "AdvancedLighting";
             case "adaptive_sampling", "ray_budget", "variance", "history_confidence" -> "Adaptive";
             default -> this.stageId;
         };
@@ -1661,6 +2302,7 @@ public record LightingDispatchStageTelemetryStatus(
                 || this.shaderOutputImageReady != null
                 || this.shaderOutputMaterialReady != null
                 || this.shaderGeneratedOutput != null
+                || this.shaderGeneratedDenoiseOutputEvidence != null
                 || this.publicMojangShaderVisualOutputAttempted != null
                 || this.publicMojangShaderVisualOutputSubmitted != null
                 || this.publicMojangShaderVisualOutputReady != null
@@ -1692,7 +2334,8 @@ public record LightingDispatchStageTelemetryStatus(
                 || this.temporalReady != null
                 || !this.temporalReadinessMarker.isBlank()
                 || !this.sourceIdentity.isBlank()
-                || !this.evidenceBoundary.isBlank();
+                || !this.evidenceBoundary.isBlank()
+                || !this.shaderGeneratedDenoiseOutputMarker.isBlank();
     }
 
     private boolean hasAnyPhysicalGiEvidence() {
@@ -1709,6 +2352,32 @@ public record LightingDispatchStageTelemetryStatus(
                 || !this.physicalSceneMarker.isBlank()
                 || !this.physicalOutputMarker.isBlank()
                 || !this.proofBoundaryMarker.isBlank();
+    }
+
+    private boolean hasAnyAdvancedLightingEvidence() {
+        return this.gBufferDepthSamplingEvidence != null
+                || this.gBufferDepthTextureSampled != null
+                || this.gBufferDepthMetadataOnly != null
+                || this.gBufferDepthSampleCount != null
+                || hasAnyDepthSamplingSourceDetail()
+                || this.realShadowMapEvidence != null
+                || this.shadowMapRendered != null
+                || this.shadowMapSampled != null
+                || this.shadowMapMetadataOnly != null
+                || this.nativeShadowMapMask != null
+                || this.shadowMapOutputConsumed != null
+                || this.realShadowMapComposite != null
+                || this.screenSpaceShadowDecal != null
+                || this.lowResDirectTextureShadowProof != null
+                || this.voxelRayTracedLightingConsumedEvidence != null
+                || this.realTracedLightingConsumed != null
+                || this.realGpuTraversalExecuted != null
+                || this.tracedLightingMetadataOnly != null
+                || this.shaderGeneratedDenoiseOutputEvidence != null
+                || !this.gBufferDepthSamplingMarker.isBlank()
+                || !this.shadowMapEvidenceMarker.isBlank()
+                || !this.voxelRayTracedLightingMarker.isBlank()
+                || !this.shaderGeneratedDenoiseOutputMarker.isBlank();
     }
 
     private String firstDetailOrFallback(String fallback, String... keys) {
@@ -1734,6 +2403,102 @@ public record LightingDispatchStageTelemetryStatus(
             }
         }
         return false;
+    }
+
+    private boolean hasAnyDepthSamplingSourceDetail() {
+        return hasAnyDetail(
+                "java_g_buffer_depth_sampling_evidence",
+                "java_gbuffer_depth_sampling_evidence",
+                "java_depth_sampling_evidence",
+                "java_true_depth_sampling",
+                "java_depth_texture_sampled",
+                "java_depth_buffer_sampled",
+                "java_g_buffer_depth_sampled",
+                "java_gbuffer_depth_sampled",
+                "java_gbuffer_sampled",
+                "java_g_buffer_depth_metadata_only",
+                "java_gbuffer_depth_metadata_only",
+                "java_depth_sampling_metadata_only",
+                "java_depth_texture_metadata_only",
+                "java_g_buffer_depth_sample_count",
+                "java_gbuffer_depth_sample_count",
+                "java_depth_sample_count",
+                "java_depth_samples",
+                "native_g_buffer_depth_sampling_evidence",
+                "native_gbuffer_depth_sampling_evidence",
+                "native_depth_sampling_evidence",
+                "native_true_depth_sampling",
+                "native_depth_texture_sampled",
+                "native_depth_buffer_sampled",
+                "native_g_buffer_depth_sampled",
+                "native_gbuffer_depth_sampled",
+                "native_gbuffer_sampled",
+                "native_g_buffer_depth_metadata_only",
+                "native_gbuffer_depth_metadata_only",
+                "native_depth_sampling_metadata_only",
+                "native_depth_texture_metadata_only",
+                "native_g_buffer_depth_sample_count",
+                "native_gbuffer_depth_sample_count",
+                "native_depth_sample_count",
+                "native_depth_samples",
+                "shader_pass_g_buffer_depth_sampling_evidence",
+                "shader_pass_gbuffer_depth_sampling_evidence",
+                "shader_pass_depth_sampling_evidence",
+                "shader_depth_sampling_evidence",
+                "shader_true_depth_sampling",
+                "shader_pass_depth_texture_sampled",
+                "shader_depth_texture_sampled",
+                "shader_pass_depth_buffer_sampled",
+                "shader_depth_buffer_sampled",
+                "shader_pass_g_buffer_depth_sampled",
+                "shader_g_buffer_depth_sampled",
+                "shader_pass_gbuffer_depth_sampled",
+                "shader_gbuffer_depth_sampled",
+                "shader_pass_gbuffer_sampled",
+                "shader_gbuffer_sampled",
+                "shader_pass_g_buffer_depth_metadata_only",
+                "shader_pass_gbuffer_depth_metadata_only",
+                "shader_pass_depth_sampling_metadata_only",
+                "shader_depth_sampling_metadata_only",
+                "shader_pass_depth_texture_metadata_only",
+                "shader_depth_texture_metadata_only",
+                "shader_pass_g_buffer_depth_sample_count",
+                "shader_pass_gbuffer_depth_sample_count",
+                "shader_g_buffer_depth_sample_count",
+                "shader_gbuffer_depth_sample_count",
+                "shader_pass_depth_sample_count",
+                "shader_depth_sample_count",
+                "shader_pass_depth_samples",
+                "shader_depth_samples"
+        );
+    }
+
+    private boolean depthSamplingEvidenceReady(String[] evidenceKeys, String[] metadataOnlyKeys, String[] sampleCountKeys) {
+        Boolean evidence = detailBoolean(evidenceKeys);
+        Boolean metadataOnly = detailBoolean(metadataOnlyKeys);
+        return (Boolean.TRUE.equals(evidence) || positiveDetailLong(sampleCountKeys) > 0L)
+                && !Boolean.TRUE.equals(metadataOnly)
+                && !Boolean.TRUE.equals(this.gBufferDepthMetadataOnly)
+                && !Boolean.TRUE.equals(this.metadataOnly);
+    }
+
+    private Boolean detailBoolean(String... keys) {
+        return parseBoolean(firstDetailOrFallback("", keys));
+    }
+
+    private long positiveDetailLong(String... keys) {
+        Long value = parseLong(firstDetailOrFallback("", keys));
+        return value == null ? 0L : Math.max(0L, value);
+    }
+
+    private static void appendSource(StringBuilder sources, String source, boolean ready) {
+        if (!ready) {
+            return;
+        }
+        if (sources.length() > 0) {
+            sources.append(',');
+        }
+        sources.append(source);
     }
 
     private String cacheLabel() {

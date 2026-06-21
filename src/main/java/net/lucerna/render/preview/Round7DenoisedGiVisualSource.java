@@ -211,13 +211,12 @@ public record Round7DenoisedGiVisualSource(
     }
 
     public String shaderOutputCandidateSummary() {
+        if (!this.shaderOutputImageCandidatePresent()) {
+            return "present=false,dims=none,checksum=none,source=none,blocker=not-provided,sourceKind=none";
+        }
         return "present=" + this.shaderOutputImageCandidatePresent()
-                + ",dims=" + (this.shaderOutputImageCandidatePresent()
-                ? this.shaderOutputCandidateWidth + "x" + this.shaderOutputCandidateHeight
-                : "none")
-                + ",checksum=" + (this.shaderOutputImageCandidatePresent()
-                ? Long.toUnsignedString(this.shaderOutputCandidateChecksum)
-                : "none")
+                + ",dims=" + this.shaderOutputCandidateWidth + "x" + this.shaderOutputCandidateHeight
+                + ",checksum=" + Long.toUnsignedString(this.shaderOutputCandidateChecksum)
                 + ",source=" + this.shaderOutputCandidateSource
                 + ",blocker=" + this.shaderOutputCandidateBlocker
                 + ",sourceKind=shader-output-image-candidate"

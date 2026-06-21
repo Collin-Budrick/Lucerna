@@ -2,6 +2,7 @@ package net.lucerna.upload;
 
 import net.lucerna.render.lighting.gi.DiffuseGiSourceSummary;
 import net.lucerna.render.lighting.gi.LowResDiffuseGiPlan;
+import net.lucerna.render.tracing.TracedLightingConsumptionEvidence;
 
 import java.util.Objects;
 
@@ -36,6 +37,15 @@ public final class NativeDiffuseGiUploadPacket {
             NativeDirectLightingUploadPacket directLightingUpload,
             NativeUploadStagingMetadata stagingMetadata
     ) {
+        return from(plan, directLightingUpload, stagingMetadata, null);
+    }
+
+    public static NativeDiffuseGiUploadPacket from(
+            LowResDiffuseGiPlan plan,
+            NativeDirectLightingUploadPacket directLightingUpload,
+            NativeUploadStagingMetadata stagingMetadata,
+            TracedLightingConsumptionEvidence traceConsumptionEvidence
+    ) {
         Objects.requireNonNull(plan, "plan");
         NativeUploadStagingMetadata resolvedMetadata = stagingMetadata == null
                 ? NativeUploadStagingMetadata.empty()
@@ -56,6 +66,9 @@ public final class NativeDiffuseGiUploadPacket {
                 resolvedMetadata.materialUpdateCount(),
                 "direct/upload + world/material/dirty staging"
         ));
+        if (traceConsumptionEvidence != null) {
+            planWithSources = planWithSources.withTraceConsumptionEvidence(traceConsumptionEvidence);
+        }
         return from(planWithSources);
     }
 
@@ -178,6 +191,30 @@ public final class NativeDiffuseGiUploadPacket {
         return this.planUpload.sourceCouplingFlags();
     }
 
+    public long[] traceConsumptionCounts() {
+        return this.planUpload.traceConsumptionCounts();
+    }
+
+    public int[] traceConsumptionFlags() {
+        return this.planUpload.traceConsumptionFlags();
+    }
+
+    public String[] traceConsumptionLabels() {
+        return this.planUpload.traceConsumptionLabels();
+    }
+
+    public boolean tracedLightingConsumedByFinalGiSource() {
+        return this.planUpload.traceFinalGiSourceConsumed();
+    }
+
+    public boolean tracedLightingHasMaterialDepthSourceCoupling() {
+        return this.planUpload.traceHasMaterialDepthSourceCoupling();
+    }
+
+    public boolean realGpuTracedLightingConsumedByFinalGiSource() {
+        return this.planUpload.traceRealGpuTraversalConsumed();
+    }
+
     public int[] sceneInputIntegers() {
         return this.planUpload.sceneInputIntegers();
     }
@@ -192,6 +229,10 @@ public final class NativeDiffuseGiUploadPacket {
 
     public int[] scenePhysicalCouplingFlags() {
         return this.planUpload.scenePhysicalCouplingFlags();
+    }
+
+    public int[] scenePhysicalCouplingCounts() {
+        return this.planUpload.scenePhysicalCouplingCounts();
     }
 
     public int[] sceneSurfaceRegionBounds() {

@@ -1,5 +1,9 @@
 package net.lucerna.upload;
 
+import net.lucerna.world.section.ChunkSectionOrigin;
+import net.lucerna.world.section.VoxelOccupancyMaskMetadata;
+import net.lucerna.world.section.VoxelOccupancyMaskSource;
+
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
@@ -37,6 +41,11 @@ public final class NativeSectionSnapshotUploadPacket {
     private final int[] translucentVoxelCounts;
     private final int[] fluidVoxelCounts;
     private final int[] emissiveVoxelCounts;
+    private final int[] solidWallHitEvidenceCounts;
+    private final int[] openSkyMissEvidenceCounts;
+    private final int[] glassVoxelCounts;
+    private final int[] waterVoxelCounts;
+    private final int[] opaqueMaterialFlagCounts;
     private final int[] voxelCounts;
     private final int[] occupancyBitOrderIds;
     private final String[] occupancyBitOrderNames;
@@ -44,8 +53,14 @@ public final class NativeSectionSnapshotUploadPacket {
     private final int[] occupancyMaskWordCounts;
     private final int[] occupancyMaskBitCounts;
     private final long[] occupancyMaskGenerations;
+    private final int[] occupancyMaskBitsReady;
+    private final String[] occupancyMaskSourceNames;
     private final int[] materialPaletteOffsets;
     private final long[] materialPaletteGenerations;
+    private final int[] materialLookupReady;
+    private final int[] opaqueMaterialFlagsReady;
+    private final int[] glassMaterialFlagsReady;
+    private final int[] waterMaterialFlagsReady;
     private final int[] materialPalettePayloadOffsets;
     private final int[] materialPalettePayloadCounts;
     private final int[] materialPaletteIds;
@@ -89,6 +104,11 @@ public final class NativeSectionSnapshotUploadPacket {
             int[] translucentVoxelCounts,
             int[] fluidVoxelCounts,
             int[] emissiveVoxelCounts,
+            int[] solidWallHitEvidenceCounts,
+            int[] openSkyMissEvidenceCounts,
+            int[] glassVoxelCounts,
+            int[] waterVoxelCounts,
+            int[] opaqueMaterialFlagCounts,
             int[] voxelCounts,
             int[] occupancyBitOrderIds,
             String[] occupancyBitOrderNames,
@@ -96,8 +116,14 @@ public final class NativeSectionSnapshotUploadPacket {
             int[] occupancyMaskWordCounts,
             int[] occupancyMaskBitCounts,
             long[] occupancyMaskGenerations,
+            int[] occupancyMaskBitsReady,
+            String[] occupancyMaskSourceNames,
             int[] materialPaletteOffsets,
             long[] materialPaletteGenerations,
+            int[] materialLookupReady,
+            int[] opaqueMaterialFlagsReady,
+            int[] glassMaterialFlagsReady,
+            int[] waterMaterialFlagsReady,
             int[] materialPalettePayloadOffsets,
             int[] materialPalettePayloadCounts,
             int[] materialPaletteIds,
@@ -140,6 +166,11 @@ public final class NativeSectionSnapshotUploadPacket {
         this.translucentVoxelCounts = copy(translucentVoxelCounts, "translucentVoxelCounts");
         this.fluidVoxelCounts = copy(fluidVoxelCounts, "fluidVoxelCounts");
         this.emissiveVoxelCounts = copy(emissiveVoxelCounts, "emissiveVoxelCounts");
+        this.solidWallHitEvidenceCounts = copy(solidWallHitEvidenceCounts, "solidWallHitEvidenceCounts");
+        this.openSkyMissEvidenceCounts = copy(openSkyMissEvidenceCounts, "openSkyMissEvidenceCounts");
+        this.glassVoxelCounts = copy(glassVoxelCounts, "glassVoxelCounts");
+        this.waterVoxelCounts = copy(waterVoxelCounts, "waterVoxelCounts");
+        this.opaqueMaterialFlagCounts = copy(opaqueMaterialFlagCounts, "opaqueMaterialFlagCounts");
         this.voxelCounts = copy(voxelCounts, "voxelCounts");
         this.occupancyBitOrderIds = copy(occupancyBitOrderIds, "occupancyBitOrderIds");
         this.occupancyBitOrderNames = copy(occupancyBitOrderNames, "occupancyBitOrderNames");
@@ -147,8 +178,14 @@ public final class NativeSectionSnapshotUploadPacket {
         this.occupancyMaskWordCounts = copy(occupancyMaskWordCounts, "occupancyMaskWordCounts");
         this.occupancyMaskBitCounts = copy(occupancyMaskBitCounts, "occupancyMaskBitCounts");
         this.occupancyMaskGenerations = copy(occupancyMaskGenerations, "occupancyMaskGenerations");
+        this.occupancyMaskBitsReady = copy(occupancyMaskBitsReady, "occupancyMaskBitsReady");
+        this.occupancyMaskSourceNames = copy(occupancyMaskSourceNames, "occupancyMaskSourceNames");
         this.materialPaletteOffsets = copy(materialPaletteOffsets, "materialPaletteOffsets");
         this.materialPaletteGenerations = copy(materialPaletteGenerations, "materialPaletteGenerations");
+        this.materialLookupReady = copy(materialLookupReady, "materialLookupReady");
+        this.opaqueMaterialFlagsReady = copy(opaqueMaterialFlagsReady, "opaqueMaterialFlagsReady");
+        this.glassMaterialFlagsReady = copy(glassMaterialFlagsReady, "glassMaterialFlagsReady");
+        this.waterMaterialFlagsReady = copy(waterMaterialFlagsReady, "waterMaterialFlagsReady");
         this.materialPalettePayloadOffsets = copy(materialPalettePayloadOffsets, "materialPalettePayloadOffsets");
         this.materialPalettePayloadCounts = copy(materialPalettePayloadCounts, "materialPalettePayloadCounts");
         this.materialPaletteIds = copy(materialPaletteIds, "materialPaletteIds");
@@ -199,14 +236,25 @@ public final class NativeSectionSnapshotUploadPacket {
         int[] translucentVoxelCounts = new int[sectionCount];
         int[] fluidVoxelCounts = new int[sectionCount];
         int[] emissiveVoxelCounts = new int[sectionCount];
+        int[] solidWallHitEvidenceCounts = new int[sectionCount];
+        int[] openSkyMissEvidenceCounts = new int[sectionCount];
+        int[] glassVoxelCounts = new int[sectionCount];
+        int[] waterVoxelCounts = new int[sectionCount];
+        int[] opaqueMaterialFlagCounts = new int[sectionCount];
         int[] occupancyBitOrderIds = new int[sectionCount];
         String[] occupancyBitOrderNames = new String[sectionCount];
         int[] occupancyMaskWordOffsets = new int[sectionCount];
         int[] occupancyMaskWordCounts = new int[sectionCount];
         int[] occupancyMaskBitCounts = new int[sectionCount];
         long[] occupancyMaskGenerations = new long[sectionCount];
+        int[] occupancyMaskBitsReady = new int[sectionCount];
+        String[] occupancyMaskSourceNames = new String[sectionCount];
         int[] materialPaletteOffsets = new int[sectionCount];
         long[] materialPaletteGenerations = new long[sectionCount];
+        int[] materialLookupReady = new int[sectionCount];
+        int[] opaqueMaterialFlagsReady = new int[sectionCount];
+        int[] glassMaterialFlagsReady = new int[sectionCount];
+        int[] waterMaterialFlagsReady = new int[sectionCount];
         int[] materialPalettePayloadOffsets = new int[sectionCount];
         int[] materialPalettePayloadCounts = new int[sectionCount];
         int[] materialPaletteIds = new int[materialPalettePayloadCount];
@@ -254,6 +302,11 @@ public final class NativeSectionSnapshotUploadPacket {
             translucentVoxelCounts[sectionIndex] = upload.translucentVoxelCount();
             fluidVoxelCounts[sectionIndex] = upload.fluidVoxelCount();
             emissiveVoxelCounts[sectionIndex] = upload.emissiveVoxelCount();
+            solidWallHitEvidenceCounts[sectionIndex] = upload.solidWallHitEvidenceCount();
+            openSkyMissEvidenceCounts[sectionIndex] = upload.openSkyMissEvidenceCount();
+            glassVoxelCounts[sectionIndex] = upload.glassVoxelCount();
+            waterVoxelCounts[sectionIndex] = upload.waterVoxelCount();
+            opaqueMaterialFlagCounts[sectionIndex] = upload.opaqueMaterialFlagCount();
             int voxelCountOffset = sectionIndex * 5;
             voxelCounts[voxelCountOffset] = upload.occupiedVoxelCount();
             voxelCounts[voxelCountOffset + 1] = upload.opaqueVoxelCount();
@@ -266,8 +319,14 @@ public final class NativeSectionSnapshotUploadPacket {
             occupancyMaskWordCounts[sectionIndex] = upload.occupancyMaskWordCount();
             occupancyMaskBitCounts[sectionIndex] = upload.occupancyMaskBitCount();
             occupancyMaskGenerations[sectionIndex] = upload.occupancyMaskGeneration();
+            occupancyMaskBitsReady[sectionIndex] = upload.occupancyMaskBitsReady() ? 1 : 0;
+            occupancyMaskSourceNames[sectionIndex] = upload.occupancyMaskSourceName();
             materialPaletteOffsets[sectionIndex] = upload.materialPaletteOffset();
             materialPaletteGenerations[sectionIndex] = upload.materialPaletteGeneration();
+            materialLookupReady[sectionIndex] = upload.materialLookupReady() ? 1 : 0;
+            opaqueMaterialFlagsReady[sectionIndex] = upload.opaqueMaterialFlagsReady() ? 1 : 0;
+            glassMaterialFlagsReady[sectionIndex] = upload.glassMaterialFlagsReady() ? 1 : 0;
+            waterMaterialFlagsReady[sectionIndex] = upload.waterMaterialFlagsReady() ? 1 : 0;
 
             int[] sectionMaterialPaletteIds = upload.materialPaletteIds();
             materialPalettePayloadOffsets[sectionIndex] = materialPalettePayloadOffset;
@@ -351,6 +410,11 @@ public final class NativeSectionSnapshotUploadPacket {
                 translucentVoxelCounts,
                 fluidVoxelCounts,
                 emissiveVoxelCounts,
+                solidWallHitEvidenceCounts,
+                openSkyMissEvidenceCounts,
+                glassVoxelCounts,
+                waterVoxelCounts,
+                opaqueMaterialFlagCounts,
                 voxelCounts,
                 occupancyBitOrderIds,
                 occupancyBitOrderNames,
@@ -358,8 +422,14 @@ public final class NativeSectionSnapshotUploadPacket {
                 occupancyMaskWordCounts,
                 occupancyMaskBitCounts,
                 occupancyMaskGenerations,
+                occupancyMaskBitsReady,
+                occupancyMaskSourceNames,
                 materialPaletteOffsets,
                 materialPaletteGenerations,
+                materialLookupReady,
+                opaqueMaterialFlagsReady,
+                glassMaterialFlagsReady,
+                waterMaterialFlagsReady,
                 materialPalettePayloadOffsets,
                 materialPalettePayloadCounts,
                 materialPaletteIds,
@@ -520,6 +590,26 @@ public final class NativeSectionSnapshotUploadPacket {
         return copy(this.emissiveVoxelCounts, "emissiveVoxelCounts");
     }
 
+    public int[] solidWallHitEvidenceCounts() {
+        return copy(this.solidWallHitEvidenceCounts, "solidWallHitEvidenceCounts");
+    }
+
+    public int[] openSkyMissEvidenceCounts() {
+        return copy(this.openSkyMissEvidenceCounts, "openSkyMissEvidenceCounts");
+    }
+
+    public int[] glassVoxelCounts() {
+        return copy(this.glassVoxelCounts, "glassVoxelCounts");
+    }
+
+    public int[] waterVoxelCounts() {
+        return copy(this.waterVoxelCounts, "waterVoxelCounts");
+    }
+
+    public int[] opaqueMaterialFlagCounts() {
+        return copy(this.opaqueMaterialFlagCounts, "opaqueMaterialFlagCounts");
+    }
+
     public int[] voxelCounts() {
         return copy(this.voxelCounts, "voxelCounts");
     }
@@ -548,12 +638,36 @@ public final class NativeSectionSnapshotUploadPacket {
         return copy(this.occupancyMaskGenerations, "occupancyMaskGenerations");
     }
 
+    public int[] occupancyMaskBitsReady() {
+        return copy(this.occupancyMaskBitsReady, "occupancyMaskBitsReady");
+    }
+
+    public String[] occupancyMaskSourceNames() {
+        return copy(this.occupancyMaskSourceNames, "occupancyMaskSourceNames");
+    }
+
     public int[] materialPaletteOffsets() {
         return copy(this.materialPaletteOffsets, "materialPaletteOffsets");
     }
 
     public long[] materialPaletteGenerations() {
         return copy(this.materialPaletteGenerations, "materialPaletteGenerations");
+    }
+
+    public int[] materialLookupReady() {
+        return copy(this.materialLookupReady, "materialLookupReady");
+    }
+
+    public int[] opaqueMaterialFlagsReady() {
+        return copy(this.opaqueMaterialFlagsReady, "opaqueMaterialFlagsReady");
+    }
+
+    public int[] glassMaterialFlagsReady() {
+        return copy(this.glassMaterialFlagsReady, "glassMaterialFlagsReady");
+    }
+
+    public int[] waterMaterialFlagsReady() {
+        return copy(this.waterMaterialFlagsReady, "waterMaterialFlagsReady");
     }
 
     public int[] materialPalettePayloadOffsets() {
@@ -635,6 +749,11 @@ public final class NativeSectionSnapshotUploadPacket {
         requireMatchingLength(this.sectionSnapshotCount, "translucentVoxelCounts", this.translucentVoxelCounts.length);
         requireMatchingLength(this.sectionSnapshotCount, "fluidVoxelCounts", this.fluidVoxelCounts.length);
         requireMatchingLength(this.sectionSnapshotCount, "emissiveVoxelCounts", this.emissiveVoxelCounts.length);
+        requireMatchingLength(this.sectionSnapshotCount, "solidWallHitEvidenceCounts", this.solidWallHitEvidenceCounts.length);
+        requireMatchingLength(this.sectionSnapshotCount, "openSkyMissEvidenceCounts", this.openSkyMissEvidenceCounts.length);
+        requireMatchingLength(this.sectionSnapshotCount, "glassVoxelCounts", this.glassVoxelCounts.length);
+        requireMatchingLength(this.sectionSnapshotCount, "waterVoxelCounts", this.waterVoxelCounts.length);
+        requireMatchingLength(this.sectionSnapshotCount, "opaqueMaterialFlagCounts", this.opaqueMaterialFlagCounts.length);
         requireMatchingLength(this.sectionSnapshotCount * 5, "voxelCounts", this.voxelCounts.length);
         requireMatchingLength(this.sectionSnapshotCount, "occupancyBitOrderIds", this.occupancyBitOrderIds.length);
         requireMatchingLength(this.sectionSnapshotCount, "occupancyBitOrderNames", this.occupancyBitOrderNames.length);
@@ -642,8 +761,14 @@ public final class NativeSectionSnapshotUploadPacket {
         requireMatchingLength(this.sectionSnapshotCount, "occupancyMaskWordCounts", this.occupancyMaskWordCounts.length);
         requireMatchingLength(this.sectionSnapshotCount, "occupancyMaskBitCounts", this.occupancyMaskBitCounts.length);
         requireMatchingLength(this.sectionSnapshotCount, "occupancyMaskGenerations", this.occupancyMaskGenerations.length);
+        requireMatchingLength(this.sectionSnapshotCount, "occupancyMaskBitsReady", this.occupancyMaskBitsReady.length);
+        requireMatchingLength(this.sectionSnapshotCount, "occupancyMaskSourceNames", this.occupancyMaskSourceNames.length);
         requireMatchingLength(this.sectionSnapshotCount, "materialPaletteOffsets", this.materialPaletteOffsets.length);
         requireMatchingLength(this.sectionSnapshotCount, "materialPaletteGenerations", this.materialPaletteGenerations.length);
+        requireMatchingLength(this.sectionSnapshotCount, "materialLookupReady", this.materialLookupReady.length);
+        requireMatchingLength(this.sectionSnapshotCount, "opaqueMaterialFlagsReady", this.opaqueMaterialFlagsReady.length);
+        requireMatchingLength(this.sectionSnapshotCount, "glassMaterialFlagsReady", this.glassMaterialFlagsReady.length);
+        requireMatchingLength(this.sectionSnapshotCount, "waterMaterialFlagsReady", this.waterMaterialFlagsReady.length);
         requireMatchingLength(this.sectionSnapshotCount, "materialPalettePayloadOffsets", this.materialPalettePayloadOffsets.length);
         requireMatchingLength(this.sectionSnapshotCount, "materialPalettePayloadCounts", this.materialPalettePayloadCounts.length);
         requireMatchingLength(this.sectionSnapshotCount, "emissivePayloadOffsets", this.emissivePayloadOffsets.length);
@@ -691,6 +816,88 @@ public final class NativeSectionSnapshotUploadPacket {
             requireMatchingValue(this.translucentVoxelCounts[index], "translucentVoxelCounts", this.voxelCounts[voxelCountOffset + 2]);
             requireMatchingValue(this.fluidVoxelCounts[index], "fluidVoxelCounts", this.voxelCounts[voxelCountOffset + 3]);
             requireMatchingValue(this.emissiveVoxelCounts[index], "emissiveVoxelCounts", this.voxelCounts[voxelCountOffset + 4]);
+            requireVoxelCount(this.occupiedVoxelCounts[index], "occupiedVoxelCounts entries");
+            requireVoxelCount(this.opaqueVoxelCounts[index], "opaqueVoxelCounts entries");
+            requireVoxelCount(this.translucentVoxelCounts[index], "translucentVoxelCounts entries");
+            requireVoxelCount(this.fluidVoxelCounts[index], "fluidVoxelCounts entries");
+            requireVoxelCount(this.emissiveVoxelCounts[index], "emissiveVoxelCounts entries");
+            requireVoxelCount(this.solidWallHitEvidenceCounts[index], "solidWallHitEvidenceCounts entries");
+            requireVoxelCount(this.openSkyMissEvidenceCounts[index], "openSkyMissEvidenceCounts entries");
+            requireVoxelCount(this.glassVoxelCounts[index], "glassVoxelCounts entries");
+            requireVoxelCount(this.waterVoxelCounts[index], "waterVoxelCounts entries");
+            requireVoxelCount(this.opaqueMaterialFlagCounts[index], "opaqueMaterialFlagCounts entries");
+            if (this.opaqueVoxelCounts[index] + this.translucentVoxelCounts[index] > this.occupiedVoxelCounts[index]) {
+                throw new IllegalArgumentException("opaque and translucent count entries cannot exceed occupiedVoxelCounts");
+            }
+            if (this.fluidVoxelCounts[index] > this.occupiedVoxelCounts[index]) {
+                throw new IllegalArgumentException("fluidVoxelCounts entries cannot exceed occupiedVoxelCounts");
+            }
+            if (this.emissiveVoxelCounts[index] > this.occupiedVoxelCounts[index]) {
+                throw new IllegalArgumentException("emissiveVoxelCounts entries cannot exceed occupiedVoxelCounts");
+            }
+            if (this.solidWallHitEvidenceCounts[index] > this.opaqueVoxelCounts[index]) {
+                throw new IllegalArgumentException("solidWallHitEvidenceCounts entries cannot exceed opaqueVoxelCounts");
+            }
+            if (this.glassVoxelCounts[index] > this.translucentVoxelCounts[index]) {
+                throw new IllegalArgumentException("glassVoxelCounts entries cannot exceed translucentVoxelCounts");
+            }
+            if (this.waterVoxelCounts[index] > this.fluidVoxelCounts[index]) {
+                throw new IllegalArgumentException("waterVoxelCounts entries cannot exceed fluidVoxelCounts");
+            }
+            if (this.opaqueMaterialFlagCounts[index] > this.opaqueVoxelCounts[index]) {
+                throw new IllegalArgumentException("opaqueMaterialFlagCounts entries cannot exceed opaqueVoxelCounts");
+            }
+            if (this.occupancyBitOrderIds[index] <= 0) {
+                throw new IllegalArgumentException("occupancyBitOrderIds entries must be positive");
+            }
+            if (this.occupancyMaskWordOffsets[index] < 0) {
+                throw new IllegalArgumentException("occupancyMaskWordOffsets entries must be non-negative");
+            }
+            if (this.occupancyMaskWordCounts[index] < 0
+                    || this.occupancyMaskWordCounts[index] > VoxelOccupancyMaskMetadata.SECTION_MASK_WORD_COUNT) {
+                throw new IllegalArgumentException("occupancyMaskWordCounts entries are outside section mask bounds");
+            }
+            if (this.occupancyMaskBitCounts[index] < 0
+                    || this.occupancyMaskBitCounts[index] > ChunkSectionOrigin.SECTION_VOLUME) {
+                throw new IllegalArgumentException("occupancyMaskBitCounts entries are outside section volume bounds");
+            }
+            if (this.occupancyMaskBitCounts[index] > this.occupancyMaskWordCounts[index] * Long.SIZE) {
+                throw new IllegalArgumentException("occupancyMaskBitCounts entries exceed word capacity");
+            }
+            requireNonNegative(this.occupancyMaskGenerations[index], "occupancyMaskGenerations entries");
+            requireBooleanInt(this.occupancyMaskBitsReady[index], "occupancyMaskBitsReady entries");
+            requireText(this.occupancyMaskSourceNames[index], "occupancyMaskSourceNames entries");
+            VoxelOccupancyMaskSource occupancyMaskSource = occupancyMaskSource(this.occupancyMaskSourceNames[index]);
+            if (this.occupancyMaskBitsReady[index] == 1
+                    && (this.occupancyMaskWordCounts[index] == 0 || this.occupancyMaskBitCounts[index] == 0)) {
+                throw new IllegalArgumentException("ready occupancy mask bits require non-empty mask metadata");
+            }
+            if (this.occupancyMaskBitsReady[index] == 1
+                    && (occupancyMaskSource == VoxelOccupancyMaskSource.NONE || occupancyMaskSource.metadataOnly())) {
+                throw new IllegalArgumentException("ready occupancy mask bits require a concrete mask source");
+            }
+            if (this.occupancyMaskBitsReady[index] == 0
+                    && occupancyMaskSource != VoxelOccupancyMaskSource.NONE
+                    && occupancyMaskSource != VoxelOccupancyMaskSource.METADATA_ONLY) {
+                throw new IllegalArgumentException("non-ready occupancy mask bits cannot claim a concrete source");
+            }
+            if (this.materialPaletteOffsets[index] < 0) {
+                throw new IllegalArgumentException("materialPaletteOffsets entries must be non-negative");
+            }
+            requireNonNegative(this.materialPaletteGenerations[index], "materialPaletteGenerations entries");
+            requireBooleanInt(this.materialLookupReady[index], "materialLookupReady entries");
+            requireBooleanInt(this.opaqueMaterialFlagsReady[index], "opaqueMaterialFlagsReady entries");
+            requireBooleanInt(this.glassMaterialFlagsReady[index], "glassMaterialFlagsReady entries");
+            requireBooleanInt(this.waterMaterialFlagsReady[index], "waterMaterialFlagsReady entries");
+            if (this.materialLookupReady[index] == 1 && this.materialPalettePayloadCounts[index] == 0) {
+                throw new IllegalArgumentException("materialLookupReady entries require material palette payloads");
+            }
+            if (this.materialLookupReady[index] == 0
+                    && (this.opaqueMaterialFlagsReady[index] == 1
+                    || this.glassMaterialFlagsReady[index] == 1
+                    || this.waterMaterialFlagsReady[index] == 1)) {
+                throw new IllegalArgumentException("material flag masks require materialLookupReady entries");
+            }
         }
         for (String bitOrderName : this.occupancyBitOrderNames) {
             requireText(bitOrderName, "occupancyBitOrderNames entries");
@@ -757,6 +964,26 @@ public final class NativeSectionSnapshotUploadPacket {
     private static void requireNonNegative(long value, String name) {
         if (value < 0) {
             throw new IllegalArgumentException(name + " must be non-negative");
+        }
+    }
+
+    private static void requireVoxelCount(int value, String name) {
+        if (value < 0 || value > ChunkSectionOrigin.SECTION_VOLUME) {
+            throw new IllegalArgumentException(name + " must be between 0 and " + ChunkSectionOrigin.SECTION_VOLUME);
+        }
+    }
+
+    private static void requireBooleanInt(int value, String name) {
+        if (value != 0 && value != 1) {
+            throw new IllegalArgumentException(name + " must be 0 or 1");
+        }
+    }
+
+    private static VoxelOccupancyMaskSource occupancyMaskSource(String name) {
+        try {
+            return VoxelOccupancyMaskSource.valueOf(name);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("occupancyMaskSourceNames entries are not supported", exception);
         }
     }
 

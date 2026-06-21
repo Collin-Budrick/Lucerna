@@ -16,7 +16,7 @@ public record NativePassTelemetryStatus(
     private static final int MAX_COMPACT_PASS_STATES = 4;
     private static final Pattern PASS_BLOCK_PATTERN = Pattern.compile("\\{([^}]*)}");
     private static final Pattern PASS_KEY_VALUE_PATTERN = Pattern.compile(
-            "(?i)\\b([a-z0-9_.-]*(?:pass|gbuffer|g-buffer|voxel|lighting|composite|denoise)[a-z0-9_.-]*)\\s*[:=]\\s*([^,;|}\\]]+)"
+            "(?i)\\b([a-z0-9_.-]*(?:pass|gbuffer|g-buffer|depth|shadow|voxel|ray|trac|lighting|composite|denoise)[a-z0-9_.-]*)\\s*[:=]\\s*([^,;|}\\]]+)"
     );
 
     public NativePassTelemetryStatus {

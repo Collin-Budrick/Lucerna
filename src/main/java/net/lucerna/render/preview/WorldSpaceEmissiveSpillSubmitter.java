@@ -25,6 +25,8 @@ import java.util.Map;
 public final class WorldSpaceEmissiveSpillSubmitter {
     private static final int SOURCE_SCAN_RADIUS = 10;
     private static final int SOURCE_SCAN_Y_RADIUS = 7;
+    private static final double SOURCE_SCAN_FORWARD_OFFSET = 12.0;
+    private static final double SOURCE_SCAN_DISTANCE_GATE = 15.0;
     private static final int RECEIVER_SCAN_RADIUS = 4;
     private static final int MAX_SOURCE_BLOCKS = 10;
     private static final int MAX_RECEIVER_QUADS = 72;
@@ -35,13 +37,16 @@ public final class WorldSpaceEmissiveSpillSubmitter {
     private static final double FACE_EPSILON = 0.006;
     private static final double FACE_INSET = 0.055;
     private static boolean loggedSubmission;
+    private static boolean loggedEmptySubmission;
+    private static String lastLoggedSubmissionSourceIds = "";
 
     private WorldSpaceEmissiveSpillSubmitter() {
     }
 
     public static void submit(PoseStack poseStack, SubmitNodeCollector collector, LevelRenderState levelRenderState) {
         LucernaController controller = LucernaController.getInstance();
-        if (!controller.isRendererActive() || !controller.getConfig().compositeMode().directLightingEnabled()) {
+        if (!controller.isWorldSpaceVisualPreviewActive()
+                || !controller.getConfig().compositeMode().directLightingEnabled()) {
             return;
         }
         if (poseStack == null || collector == null || levelRenderState == null || levelRenderState.cameraRenderState == null) {
@@ -62,16 +67,34 @@ public final class WorldSpaceEmissiveSpillSubmitter {
         DrawableGizmoPrimitives primitives = new DrawableGizmoPrimitives();
         SpillStats stats = submitNearbySpill(level, camera, primitives);
         if (stats.receiverQuadCount() + stats.secondaryBounceQuadCount() <= 0) {
+            if (!loggedEmptySubmission) {
+                loggedEmptySubmission = true;
+                Lucerna.LOGGER.info(
+                        "Lucerna world-space emissive spill scanner empty: worldSpaceEmissiveSpill=false sourceCount={} receiverQuadCount={} secondaryBounceQuadCount={} coloredPanelReceiverCount={} sourceIds=\"{}\" cameraInitialized={} cameraPos=\"{},{},{}\"",
+                        stats.sourceCount(),
+                        stats.receiverQuadCount(),
+                        stats.secondaryBounceQuadCount(),
+                        stats.coloredPanelReceiverCount(),
+                        stats.sourceIds(),
+                        camera.initialized,
+                        round3(camera.pos.x),
+                        round3(camera.pos.y),
+                        round3(camera.pos.z)
+                );
+            }
             return;
         }
 
         primitives.submit(collector, camera, false);
-        if (!loggedSubmission) {
+        if (!loggedSubmission || !stats.sourceIds().equals(lastLoggedSubmissionSourceIds)) {
             loggedSubmission = true;
+            lastLoggedSubmissionSourceIds = stats.sourceIds();
             Lucerna.LOGGER.info(
                     "Lucerna world-space emissive spill submitted: worldSpaceEmissiveSpill=true cleanGameplayComposite=true "
                             + "experimentalVisualStack={} proofMarker=false screenSpaceBlobComposite=false sourceCount={} "
                             + "receiverQuadCount={} secondaryColoredBounce=true secondaryBounceQuadCount={} coloredPanelReceiverCount={} "
+                            + "coloredBounce={} hueShiftedBounce={} coloredBounceSamples={} coloredBounceHits={} "
+                            + "colored_bounce_marker=\"material-tint-world-space-secondary-bounce\" "
                             + "emissiveSourceBlocks=\"{}\" blockMaterialSceneData=true faceNormalData=true "
                             + "sourceColorMaterialData=true sourceReceiverDistanceFalloff=true depthAwareSubmitNode=true "
                             + "worldSpaceBlockFaceQuads=true materialTintBounce=true sourcePanelReceiverBounce=true "
@@ -81,23 +104,29 @@ public final class WorldSpaceEmissiveSpillSubmitter {
                     stats.receiverQuadCount(),
                     stats.secondaryBounceQuadCount(),
                     stats.coloredPanelReceiverCount(),
+                    stats.secondaryBounceQuadCount() > 0,
+                    stats.secondaryBounceQuadCount() > 0,
+                    stats.coloredPanelReceiverCount(),
+                    stats.secondaryBounceQuadCount(),
                     stats.sourceIds()
             );
         }
     }
 
     private static SpillStats submitNearbySpill(ClientLevel level, CameraRenderState camera, DrawableGizmoPrimitives primitives) {
-        BlockPos cameraBlock = BlockPos.containing(camera.pos.x, camera.pos.y, camera.pos.z);
-        int minY = Math.max(level.getMinY(), cameraBlock.getY() - SOURCE_SCAN_Y_RADIUS);
-        int maxY = Math.min(level.getMaxY() - 1, cameraBlock.getY() + SOURCE_SCAN_Y_RADIUS);
+        Vec3 forward = cameraForward(camera);
+        Vec3 scanCenter = camera.pos.add(forward.scale(SOURCE_SCAN_FORWARD_OFFSET));
+        BlockPos scanCenterBlock = BlockPos.containing(scanCenter.x, scanCenter.y, scanCenter.z);
+        int minY = Math.max(level.getMinY(), scanCenterBlock.getY() - SOURCE_SCAN_Y_RADIUS);
+        int maxY = Math.min(level.getMaxY() - 1, scanCenterBlock.getY() + SOURCE_SCAN_Y_RADIUS);
         List<SourceCandidate> sources = new ArrayList<>(MAX_SOURCE_BLOCKS);
         Map<String, Integer> sourceCountsByBlock = new HashMap<>();
         StringBuilder sourceIds = new StringBuilder();
 
         sourceSearch:
         for (int y = minY; y <= maxY; y++) {
-            for (int z = cameraBlock.getZ() - SOURCE_SCAN_RADIUS; z <= cameraBlock.getZ() + SOURCE_SCAN_RADIUS; z++) {
-                for (int x = cameraBlock.getX() - SOURCE_SCAN_RADIUS; x <= cameraBlock.getX() + SOURCE_SCAN_RADIUS; x++) {
+            for (int z = scanCenterBlock.getZ() - SOURCE_SCAN_RADIUS; z <= scanCenterBlock.getZ() + SOURCE_SCAN_RADIUS; z++) {
+                for (int x = scanCenterBlock.getX() - SOURCE_SCAN_RADIUS; x <= scanCenterBlock.getX() + SOURCE_SCAN_RADIUS; x++) {
                     BlockPos sourcePos = new BlockPos(x, y, z);
                     BlockState sourceState = level.getBlockState(sourcePos);
                     SourceLight sourceLight = sourceLight(sourceState);
@@ -105,7 +134,9 @@ public final class WorldSpaceEmissiveSpillSubmitter {
                         continue;
                     }
                     Vec3 sourceCenter = Vec3.atCenterOf(sourcePos);
-                    if (camera.pos.distanceToSqr(sourceCenter) > (SOURCE_SCAN_RADIUS + 2.0) * (SOURCE_SCAN_RADIUS + 2.0)) {
+                    Vec3 cameraToSource = sourceCenter.subtract(camera.pos);
+                    if (cameraToSource.dot(forward) < 1.0
+                            || sourceCenter.distanceToSqr(scanCenter) > SOURCE_SCAN_DISTANCE_GATE * SOURCE_SCAN_DISTANCE_GATE) {
                         continue;
                     }
 
@@ -533,8 +564,19 @@ public final class WorldSpaceEmissiveSpillSubmitter {
         builder.append(blockId);
     }
 
+    private static Vec3 cameraForward(CameraRenderState camera) {
+        double yaw = Math.toRadians(camera.yRot);
+        double pitch = Math.toRadians(camera.xRot);
+        double cosPitch = Math.cos(pitch);
+        return new Vec3(-Math.sin(yaw) * cosPitch, -Math.sin(pitch), Math.cos(yaw) * cosPitch).normalize();
+    }
+
     private static int clampInt(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static double round3(double value) {
+        return Math.round(value * 1000.0) / 1000.0;
     }
 
     private record SourceLight(String blockId, int red, int green, int blue, double intensity) {

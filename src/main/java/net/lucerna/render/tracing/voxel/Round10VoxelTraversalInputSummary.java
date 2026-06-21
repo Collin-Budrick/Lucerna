@@ -64,6 +64,8 @@ public record Round10VoxelTraversalInputSummary(
         int occupiedSections = 0;
         int emptySections = 0;
         int maskSections = 0;
+        int readyMaskSections = 0;
+        int metadataOnlyMaskSections = 0;
         int missingMaskSections = 0;
         int materialPaletteSections = 0;
         long occupiedVoxels = 0L;
@@ -91,6 +93,12 @@ public record Round10VoxelTraversalInputSummary(
                 maskSections++;
                 maskWords += section.occupancyMaskWordCount();
                 maskBits += section.occupancyMaskBitCount();
+                if (section.hasConcreteOccupancyMaskPayload()) {
+                    readyMaskSections++;
+                }
+                if (section.occupancyMaskMetadataOnly()) {
+                    metadataOnlyMaskSections++;
+                }
             } else {
                 missingMaskSections++;
             }
@@ -114,7 +122,10 @@ public record Round10VoxelTraversalInputSummary(
                 paletteEntries,
                 new Round10VoxelOccupancyMaskSummary(
                         sections.size(),
+                        occupiedSections,
                         maskSections,
+                        readyMaskSections,
+                        metadataOnlyMaskSections,
                         missingMaskSections,
                         maskWords,
                         maskBits,

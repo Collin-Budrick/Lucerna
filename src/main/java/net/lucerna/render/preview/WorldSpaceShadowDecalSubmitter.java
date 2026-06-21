@@ -20,6 +20,8 @@ public final class WorldSpaceShadowDecalSubmitter {
     private static final int CASTER_SCAN_RADIUS = 9;
     private static final int CASTER_SCAN_Y_BELOW = 4;
     private static final int CASTER_SCAN_Y_ABOVE = 8;
+    private static final double CASTER_SCAN_FORWARD_OFFSET = 12.0;
+    private static final double CASTER_SCAN_DISTANCE_GATE = 16.0;
     private static final int MAX_SHADOW_CASTERS = 18;
     private static final int MAX_RECEIVER_QUADS = 72;
     private static final double MAX_CASTER_DISTANCE = 12.5;
@@ -36,13 +38,15 @@ public final class WorldSpaceShadowDecalSubmitter {
      */
     private static final Vec3 APPROXIMATE_SUN_RAY_DIRECTION = new Vec3(-0.42, -0.82, 0.38).normalize();
     private static boolean loggedSubmission;
+    private static boolean loggedEmptySubmission;
 
     private WorldSpaceShadowDecalSubmitter() {
     }
 
     public static void submit(PoseStack poseStack, SubmitNodeCollector collector, LevelRenderState levelRenderState) {
-        if (!LucernaController.getInstance().isRendererActive()
-                || !ProofVisualMode.experimentalVisualStackAllowed()) {
+        if (!LucernaController.getInstance().isWorldSpaceVisualPreviewActive()
+                || (!ProofVisualMode.experimentalVisualStackAllowed()
+                && !ProofVisualMode.javaWorldSpaceVisualFallbackAllowed())) {
             return;
         }
         if (poseStack == null || collector == null || levelRenderState == null || levelRenderState.cameraRenderState == null) {
@@ -63,6 +67,18 @@ public final class WorldSpaceShadowDecalSubmitter {
         DrawableGizmoPrimitives primitives = new DrawableGizmoPrimitives();
         ShadowStats stats = submitProjectedBlockShadows(level, camera, primitives);
         if (stats.receiverQuadCount() <= 0) {
+            if (!loggedEmptySubmission) {
+                loggedEmptySubmission = true;
+                Lucerna.LOGGER.info(
+                        "Lucerna world-space shadow receiver scanner empty: worldSpaceShadowDecal=false shadowCasterBlockCount={} receiverQuadCount={} cameraInitialized={} cameraPos=\"{},{},{}\"",
+                        stats.shadowCasterCount(),
+                        stats.receiverQuadCount(),
+                        camera.initialized,
+                        round3(camera.pos.x),
+                        round3(camera.pos.y),
+                        round3(camera.pos.z)
+                );
+            }
             return;
         }
 
@@ -73,9 +89,12 @@ public final class WorldSpaceShadowDecalSubmitter {
                     "Lucerna world-space shadow receivers submitted: "
                             + "worldSpaceShadowDecal=true geometryTiedWorldSpaceShadowReceivers=true "
                             + "actualBlockCasterPositions=true actualBlockReceiverPositions=true "
+                            + "realWorldSpaceShadow=true worldSpaceShadowGeometry=true worldSpaceShadowCaster=true "
+                            + "worldSpaceShadowReceiver=true shadowReceiverWorldSpace=true shadowOccluderWorldSpace=true "
                             + "sunDirectionApproximation=true approximateSunRayDirection=\"{},{},{}\" "
                             + "shadowCasterBlockCount={} receiverQuadCount={} depthAwareSubmitNode=true "
                             + "fixedDarkBlobRemoved=true screenSpaceShadowOverlayDisabled=true "
+                            + "fullScreenWashRejected=true lowResolutionDirectTextureDraw=false "
                             + "worldSpaceShadowReceiverDecals=true realShadowMap=false shadowMapDepthTargetSampling=false "
                             + "realDepthTexture=false realRayTracedShadow=false "
                             + "shadowBoundary=world-space-block-face-shadow-receivers-from-cpu-block-probe;"
@@ -94,9 +113,11 @@ public final class WorldSpaceShadowDecalSubmitter {
             CameraRenderState camera,
             DrawableGizmoPrimitives primitives
     ) {
-        BlockPos cameraBlock = BlockPos.containing(camera.pos.x, camera.pos.y, camera.pos.z);
-        int minY = Math.max(level.getMinY(), cameraBlock.getY() - CASTER_SCAN_Y_BELOW);
-        int maxY = Math.min(level.getMaxY() - 1, cameraBlock.getY() + CASTER_SCAN_Y_ABOVE);
+        Vec3 forward = cameraForward(camera);
+        Vec3 scanCenter = camera.pos.add(forward.scale(CASTER_SCAN_FORWARD_OFFSET));
+        BlockPos scanCenterBlock = BlockPos.containing(scanCenter.x, scanCenter.y, scanCenter.z);
+        int minY = Math.max(level.getMinY(), scanCenterBlock.getY() - CASTER_SCAN_Y_BELOW);
+        int maxY = Math.min(level.getMaxY() - 1, scanCenterBlock.getY() + CASTER_SCAN_Y_ABOVE);
         Vec3 sunRayDirection = APPROXIMATE_SUN_RAY_DIRECTION;
         Vec3 sunFacingDirection = sunRayDirection.scale(-1.0);
         Set<String> submittedFaces = new HashSet<>(MAX_RECEIVER_QUADS * 2);
@@ -106,8 +127,8 @@ public final class WorldSpaceShadowDecalSubmitter {
 
         casterSearch:
         for (int y = maxY; y >= minY; y--) {
-            for (int z = cameraBlock.getZ() - CASTER_SCAN_RADIUS; z <= cameraBlock.getZ() + CASTER_SCAN_RADIUS; z++) {
-                for (int x = cameraBlock.getX() - CASTER_SCAN_RADIUS; x <= cameraBlock.getX() + CASTER_SCAN_RADIUS; x++) {
+            for (int z = scanCenterBlock.getZ() - CASTER_SCAN_RADIUS; z <= scanCenterBlock.getZ() + CASTER_SCAN_RADIUS; z++) {
+                for (int x = scanCenterBlock.getX() - CASTER_SCAN_RADIUS; x <= scanCenterBlock.getX() + CASTER_SCAN_RADIUS; x++) {
                     BlockPos casterPos = new BlockPos(x, y, z);
                     BlockState casterState = level.getBlockState(casterPos);
                     if (!isShadowCaster(casterState) || !hasSunFacingExposure(level, casterPos, sunFacingDirection)) {
@@ -115,7 +136,9 @@ public final class WorldSpaceShadowDecalSubmitter {
                     }
 
                     Vec3 casterCenter = Vec3.atCenterOf(casterPos);
-                    if (camera.pos.distanceToSqr(casterCenter) > MAX_CASTER_DISTANCE * MAX_CASTER_DISTANCE) {
+                    Vec3 cameraToCaster = casterCenter.subtract(camera.pos);
+                    if (cameraToCaster.dot(forward) < 1.0
+                            || casterCenter.distanceToSqr(scanCenter) > CASTER_SCAN_DISTANCE_GATE * CASTER_SCAN_DISTANCE_GATE) {
                         continue;
                     }
 
@@ -369,6 +392,13 @@ public final class WorldSpaceShadowDecalSubmitter {
 
     private static int clampInt(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));
+    }
+
+    private static Vec3 cameraForward(CameraRenderState camera) {
+        double yaw = Math.toRadians(camera.yRot);
+        double pitch = Math.toRadians(camera.xRot);
+        double cosPitch = Math.cos(pitch);
+        return new Vec3(-Math.sin(yaw) * cosPitch, -Math.sin(pitch), Math.cos(yaw) * cosPitch).normalize();
     }
 
     private static double round3(double value) {

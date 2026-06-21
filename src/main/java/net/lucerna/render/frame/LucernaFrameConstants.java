@@ -1,6 +1,7 @@
 package net.lucerna.render.frame;
 
 import net.lucerna.render.gbuffer.GBufferSceneDataAttachment;
+import net.lucerna.render.gbuffer.GBufferSceneDataSamplingEvidence;
 import net.lucerna.render.gbuffer.GBufferWriteIntent;
 import net.lucerna.render.pass.LucernaFramePassTarget;
 
@@ -109,6 +110,29 @@ public record LucernaFrameConstants(
             List<GBufferSceneDataAttachment> frameDataAttachments
     ) {
         return SceneFrameDataReadiness.from(this, writeIntent, frameTarget, frameDataAttachments);
+    }
+
+    public SceneFrameDataReadiness liveFrameTargetSceneFrameDataReadiness(
+            GBufferWriteIntent writeIntent,
+            LucernaFramePassTarget frameTarget,
+            String depthSamplingMarker
+    ) {
+        return SceneFrameDataReadiness.fromLiveFrameTarget(this, writeIntent, frameTarget, depthSamplingMarker);
+    }
+
+    public SceneFrameDataReadiness liveFrameTargetSceneFrameDataReadiness(
+            GBufferWriteIntent writeIntent,
+            LucernaFramePassTarget frameTarget,
+            String depthSamplingMarker,
+            GBufferSceneDataSamplingEvidence depthSamplingEvidence
+    ) {
+        return SceneFrameDataReadiness.fromLiveFrameTarget(
+                this,
+                writeIntent,
+                frameTarget,
+                depthSamplingMarker,
+                depthSamplingEvidence
+        );
     }
 
     private static float clampTickDelta(float value) {

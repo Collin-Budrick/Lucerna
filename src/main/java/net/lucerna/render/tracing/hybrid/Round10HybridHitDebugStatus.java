@@ -1,5 +1,6 @@
 package net.lucerna.render.tracing.hybrid;
 
+import net.lucerna.render.tracing.TracedLightingConsumptionEvidence;
 import net.lucerna.telemetry.LightingDispatchStageTelemetryStatus;
 import net.lucerna.telemetry.LightingDispatchTelemetryStatus;
 import net.lucerna.telemetry.LucernaStatusSnapshot;
@@ -11,8 +12,15 @@ import java.util.Map;
 public record Round10HybridHitDebugStatus(
         boolean telemetryPresent,
         String summary,
+        String rayCount,
+        String hitCount,
+        String missCount,
         String wallHitCount,
         String openSkyMissCount,
+        String materialCoupledHitCount,
+        String sourceCoupledBounceCount,
+        String cacheReadCount,
+        String cacheWriteCount,
         String glassWaterMaterialHitCount,
         String opaqueMaterialHitCount,
         String materialIdConsistency,
@@ -38,8 +46,15 @@ public record Round10HybridHitDebugStatus(
 ) {
     public Round10HybridHitDebugStatus {
         summary = clean(summary, "hybrid hit telemetry unavailable");
+        rayCount = clean(rayCount, "unknown");
+        hitCount = clean(hitCount, "unknown");
+        missCount = clean(missCount, "unknown");
         wallHitCount = clean(wallHitCount, "unknown");
         openSkyMissCount = clean(openSkyMissCount, "unknown");
+        materialCoupledHitCount = clean(materialCoupledHitCount, "unknown");
+        sourceCoupledBounceCount = clean(sourceCoupledBounceCount, "unknown");
+        cacheReadCount = clean(cacheReadCount, "unknown");
+        cacheWriteCount = clean(cacheWriteCount, "unknown");
         glassWaterMaterialHitCount = clean(glassWaterMaterialHitCount, "unknown");
         opaqueMaterialHitCount = clean(opaqueMaterialHitCount, "unknown");
         materialIdConsistency = clean(materialIdConsistency, "unknown");
@@ -81,6 +96,13 @@ public record Round10HybridHitDebugStatus(
         this(
                 telemetryPresent,
                 summary,
+                "unknown",
+                "unknown",
+                "unknown",
+                "unknown",
+                "unknown",
+                "unknown",
+                "unknown",
                 "unknown",
                 "unknown",
                 "unknown",
@@ -141,6 +163,28 @@ public record Round10HybridHitDebugStatus(
                 "round10_voxel_traversal={"
         );
 
+        String rayCount = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativeVoxelDetails,
+                nativePasses,
+                "ray_count",
+                "rays",
+                "voxel_rays",
+                "round10_voxel_rays"
+        );
+        String hitCount = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativeVoxelDetails,
+                nativePasses,
+                "hit_count",
+                "hits",
+                "voxel_hits",
+                "round10_voxel_hits"
+        );
         String screenCount = firstValue(
                 hybridStage,
                 nativeHybridDetails,
@@ -210,6 +254,63 @@ public record Round10HybridHitDebugStatus(
                 "opaque_material_hit_count",
                 "opaque_hits",
                 "solid_material_hit_count"
+        );
+        String materialCoupledHitCount = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativeVoxelDetails,
+                nativePasses,
+                "material_coupled_hit_count",
+                "material_coupled_hits",
+                "traced_lighting_material_hit_count",
+                "tracedLightingMaterialCoupledHitCount",
+                "surface_material_hit_coupled_samples",
+                "material_hit_count",
+                "material_hits"
+        );
+        String sourceCoupledBounceCount = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativeVoxelDetails,
+                nativePasses,
+                "source_coupled_bounce_count",
+                "source_coupled_bounces",
+                "traceSourceCoupledBounceCount",
+                "tracedLightingSourceCoupledBounceCount",
+                "traced_lighting_source_bounce_count",
+                "traced_lighting_source_coupled_bounce_count",
+                "cpu_ray_traversal_bounce_samples",
+                "colored_bounce_hits",
+                "material_coupled_bounce_samples",
+                "emissive_source_bounce_count",
+                "source_bounce_count",
+                "bounce_count"
+        );
+        String cacheReadCount = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativeVoxelDetails,
+                nativePasses,
+                "cache_read_count",
+                "cache_reads",
+                "radiance_cache_reads",
+                "gi_cache_reads",
+                "trace_cache_reads"
+        );
+        String cacheWriteCount = firstValue(
+                hybridStage,
+                voxelStage,
+                nativeHybridDetails,
+                nativeVoxelDetails,
+                nativePasses,
+                "cache_write_count",
+                "cache_writes",
+                "radiance_cache_writes",
+                "gi_cache_writes",
+                "trace_cache_writes"
         );
         String selectedSource = firstValue(
                 hybridStage,
@@ -397,6 +498,8 @@ public record Round10HybridHitDebugStatus(
         boolean realTracedLightingConsumed = truthy(realTracedLightingConsumedValue);
 
         boolean hasTelemetry = hasAny(
+                rayCount,
+                hitCount,
                 screenCount,
                 voxelCount,
                 rtCount,
@@ -406,6 +509,10 @@ public record Round10HybridHitDebugStatus(
                 materialConsistent,
                 wallHitCount,
                 openSkyMissCount,
+                materialCoupledHitCount,
+                sourceCoupledBounceCount,
+                cacheReadCount,
+                cacheWriteCount,
                 glassWaterMaterialHitCount,
                 opaqueMaterialHitCount,
                 fallbackActive,
@@ -413,6 +520,8 @@ public record Round10HybridHitDebugStatus(
         );
         String fallbackSourceReasonResolved = firstNonBlank(fallbackSourceReason, fallbackReason);
         String summary = "selected=" + valueOrUnknown(selectedSource)
+                + ",rays=" + valueOrUnknown(rayCount)
+                + ",hits=" + valueOrUnknown(hitCount)
                 + ",screen=" + valueOrUnknown(screenCount)
                 + ",voxel=" + valueOrUnknown(voxelCount)
                 + ",rt=" + valueOrUnknown(rtCount)
@@ -420,6 +529,10 @@ public record Round10HybridHitDebugStatus(
                 + ",miss=" + valueOrUnknown(missCount)
                 + ",wallHitCount=" + valueOrUnknown(wallHitCount)
                 + ",openSkyMissCount=" + valueOrUnknown(openSkyMissCount)
+                + ",materialCoupledHitCount=" + valueOrUnknown(materialCoupledHitCount)
+                + ",sourceCoupledBounceCount=" + valueOrUnknown(sourceCoupledBounceCount)
+                + ",cacheReadCount=" + valueOrUnknown(cacheReadCount)
+                + ",cacheWriteCount=" + valueOrUnknown(cacheWriteCount)
                 + ",materialConsistent=" + valueOrUnknown(materialConsistent)
                 + ",materialIdConsistency=" + valueOrUnknown(materialIdConsistency)
                 + ",traversalBackend=" + valueOrUnknown(traversalBackend)
@@ -429,13 +542,19 @@ public record Round10HybridHitDebugStatus(
                 + ",entityMoveMaterialConsistent=" + valueOrUnknown(entityMoveMaterialConsistent)
                 + ",realTracedLightingConsumed=" + yesNo(realTracedLightingConsumed)
                 + ",fallback=" + valueOrUnknown(fallbackActive);
-        String countsLine = "Hybrid source counts: screen=" + valueOrUnknown(screenCount)
+        String countsLine = "Hybrid source counts: rays=" + valueOrUnknown(rayCount)
+                + " hits=" + valueOrUnknown(hitCount)
+                + " screen=" + valueOrUnknown(screenCount)
                 + " voxel=" + valueOrUnknown(voxelCount)
                 + " hardwareRt=" + valueOrUnknown(rtCount)
                 + " sky=" + valueOrUnknown(skyCount)
                 + " miss=" + valueOrUnknown(missCount)
                 + " wallHitCount=" + valueOrUnknown(wallHitCount)
-                + " openSkyMissCount=" + valueOrUnknown(openSkyMissCount);
+                + " openSkyMissCount=" + valueOrUnknown(openSkyMissCount)
+                + " materialCoupledHitCount=" + valueOrUnknown(materialCoupledHitCount)
+                + " sourceCoupledBounceCount=" + valueOrUnknown(sourceCoupledBounceCount)
+                + " cacheReadCount=" + valueOrUnknown(cacheReadCount)
+                + " cacheWriteCount=" + valueOrUnknown(cacheWriteCount);
         String priorityLine = "Hybrid priority: selected=" + valueOrUnknown(selectedSource)
                 + " rule=hardwareRt>voxel>screenSpace>sky>miss"
                 + " fallback=" + valueOrUnknown(fallbackActive);
@@ -462,6 +581,7 @@ public record Round10HybridHitDebugStatus(
                 : "Hybrid traced lighting boundary: realTracedLightingConsumed=false; open until native traced-light output is consumed";
         String readinessLine = "Round 10 hybrid readiness: telemetry=" + yesNo(hasTelemetry)
                 + " sources=" + readinessFrom(screenCount, voxelCount, rtCount, skyCount, missCount)
+                + " traceCounters=" + readinessFrom(rayCount, hitCount, missCount)
                 + " priority=" + readinessFrom(selectedSource)
                 + " material=" + readinessFrom(materialConsistent, materialId, expectedMaterialId)
                 + " terrainMaterial=" + readinessFrom(
@@ -471,6 +591,8 @@ public record Round10HybridHitDebugStatus(
                         opaqueMaterialHitCount,
                         materialIdConsistency
                 )
+                + " sourceBounce=" + readinessFrom(sourceCoupledBounceCount)
+                + " cacheTouch=" + readinessFrom(cacheReadCount, cacheWriteCount)
                 + " maskBitsReady=" + valueOrUnknown(maskBitsReady, "false")
                 + " maskBitsSource=" + valueOrUnknown(maskBitsSource)
                 + " traversalBackend=" + valueOrUnknown(traversalBackend)
@@ -495,8 +617,15 @@ public record Round10HybridHitDebugStatus(
         return new Round10HybridHitDebugStatus(
                 hasTelemetry,
                 summary,
+                rayCount,
+                hitCount,
+                missCount,
                 wallHitCount,
                 openSkyMissCount,
+                materialCoupledHitCount,
+                sourceCoupledBounceCount,
+                cacheReadCount,
+                cacheWriteCount,
                 glassWaterMaterialHitCount,
                 opaqueMaterialHitCount,
                 materialIdConsistency,
@@ -519,6 +648,41 @@ public record Round10HybridHitDebugStatus(
                 fallbackLine,
                 readinessLine,
                 boundaryLine
+        );
+    }
+
+    public TracedLightingConsumptionEvidence toTraceConsumptionEvidence(long generation, String finalGiSource) {
+        long explicitHitCount = countValue(this.hitCount);
+        long materialHitCount = Math.max(
+                countValue(this.materialCoupledHitCount),
+                saturatingAdd(countValue(this.glassWaterMaterialHitCount), countValue(this.opaqueMaterialHitCount))
+        );
+        long resolvedHitCount = Math.max(explicitHitCount, Math.max(countValue(this.wallHitCount), materialHitCount));
+        long resolvedMissCount = Math.max(countValue(this.missCount), countValue(this.openSkyMissCount));
+        long resolvedRayCount = Math.max(countValue(this.rayCount), saturatingAdd(resolvedHitCount, resolvedMissCount));
+        long depthHitCount = countValue(this.wallHitCount);
+        long resolvedSourceBounceCount = countValue(this.sourceCoupledBounceCount);
+        boolean consumed = this.realTracedLightingConsumed
+                && resolvedRayCount > 0L
+                && resolvedHitCount > 0L
+                && materialHitCount > 0L
+                && depthHitCount > 0L
+                && resolvedSourceBounceCount > 0L;
+        return new TracedLightingConsumptionEvidence(
+                generation,
+                resolvedRayCount,
+                resolvedHitCount,
+                resolvedMissCount,
+                materialHitCount,
+                depthHitCount,
+                resolvedSourceBounceCount,
+                countValue(this.cacheReadCount),
+                countValue(this.cacheWriteCount),
+                consumed,
+                consumed && this.realGpuTraversalExecuted,
+                finalGiSource,
+                "round10_hybrid_hit_status",
+                this.tracedLightingBoundaryLine
         );
     }
 
@@ -715,6 +879,37 @@ public record Round10HybridHitDebugStatus(
 
     private static String yesNo(boolean value) {
         return value ? "yes" : "no";
+    }
+
+    private static long countValue(String value) {
+        if (value == null || value.isBlank()) {
+            return 0L;
+        }
+        String trimmed = value.trim();
+        int start = 0;
+        while (start < trimmed.length() && !Character.isDigit(trimmed.charAt(start))) {
+            start++;
+        }
+        if (start == trimmed.length()) {
+            return 0L;
+        }
+        int end = start;
+        while (end < trimmed.length() && Character.isDigit(trimmed.charAt(end))) {
+            end++;
+        }
+        try {
+            return Long.parseLong(trimmed.substring(start, end));
+        } catch (NumberFormatException ignored) {
+            return 0L;
+        }
+    }
+
+    private static long saturatingAdd(long first, long second) {
+        long result = first + second;
+        if (result < 0L) {
+            return Long.MAX_VALUE;
+        }
+        return result;
     }
 
     private static String normalize(String value) {

@@ -63,6 +63,10 @@ public record DiffuseGiSceneInputSummary(
         float coloredBouncePhysicalScore,
         float emissiveSpillPhysicalScore,
         float previewPhysicalEvidenceScore,
+        int coloredBounceEvidenceSampleCount,
+        int emissiveBounceEvidenceSampleCount,
+        int receiverMaterialCoupledSampleCount,
+        int receiverDepthCoupledSampleCount,
         boolean emissiveProximityAvailable,
         boolean affectedSurfaceRegionAvailable,
         int affectedSurfaceMinBlockX,
@@ -139,6 +143,22 @@ public record DiffuseGiSceneInputSummary(
         coloredBouncePhysicalScore = clampUnit(coloredBouncePhysicalScore);
         emissiveSpillPhysicalScore = clampUnit(emissiveSpillPhysicalScore);
         previewPhysicalEvidenceScore = clampUnit(previewPhysicalEvidenceScore);
+        coloredBounceEvidenceSampleCount = Math.min(
+                Math.max(0, coloredBounceEvidenceSampleCount),
+                surfaceSampleCount
+        );
+        emissiveBounceEvidenceSampleCount = Math.min(
+                Math.max(0, emissiveBounceEvidenceSampleCount),
+                surfaceSampleCount
+        );
+        receiverMaterialCoupledSampleCount = Math.min(
+                Math.max(0, receiverMaterialCoupledSampleCount),
+                surfaceSampleCount
+        );
+        receiverDepthCoupledSampleCount = Math.min(
+                Math.max(0, receiverDepthCoupledSampleCount),
+                surfaceSampleCount
+        );
         if (!affectedSurfaceRegionAvailable) {
             affectedSurfaceMinBlockX = 0;
             affectedSurfaceMinBlockY = 0;
@@ -194,7 +214,11 @@ public record DiffuseGiSceneInputSummary(
                 occluderShadowCandidateScore,
                 coloredBouncePhysicalScore,
                 emissiveSpillPhysicalScore,
-                previewPhysicalEvidenceScore
+                previewPhysicalEvidenceScore,
+                coloredBounceEvidenceSampleCount,
+                emissiveBounceEvidenceSampleCount,
+                receiverMaterialCoupledSampleCount,
+                receiverDepthCoupledSampleCount
         ));
     }
 
@@ -258,6 +282,10 @@ public record DiffuseGiSceneInputSummary(
                 0.0F,
                 0.0F,
                 0.0F,
+                0,
+                0,
+                0,
+                0,
                 false,
                 false,
                 0,
@@ -302,6 +330,10 @@ public record DiffuseGiSceneInputSummary(
         float surfaceConfidenceTotal = 0.0F;
         int usableConfidenceCount = 0;
         int dirtySurfaceCount = 0;
+        int coloredBounceEvidenceSamples = 0;
+        int emissiveBounceEvidenceSamples = 0;
+        int receiverMaterialCoupledSamples = 0;
+        int receiverDepthCoupledSamples = 0;
         Set<Integer> materialIds = new HashSet<>();
         int minBlockX = Integer.MAX_VALUE;
         int minBlockY = Integer.MAX_VALUE;
@@ -331,8 +363,10 @@ public record DiffuseGiSceneInputSummary(
             normalYTotal += surface.normalY();
             normalZTotal += surface.normalZ();
             roughnessTotal += surface.roughness();
-            surfaceConfidenceTotal += surface.confidence().confidence();
-            if (surface.usable(resolvedConfidence.confidence())) {
+            float confidence = surface.confidence().confidence();
+            boolean usableSurface = surface.usable(resolvedConfidence.confidence());
+            surfaceConfidenceTotal += confidence;
+            if (usableSurface) {
                 usableConfidenceCount++;
             }
             if (surface.dirty()) {
@@ -355,6 +389,28 @@ public record DiffuseGiSceneInputSummary(
             }
             if (Math.abs(surface.normalY()) <= SEALED_NORMAL_Y) {
                 verticalCount++;
+            }
+            boolean receiverMaterialCoupled = surface.materialId() > 0
+                    && normalLength >= 0.25F
+                    && confidence > 0.01F;
+            boolean receiverDepthCoupled = receiverMaterialCoupled
+                    && (Math.abs(surface.normalY()) <= 0.92F || surface.dirty())
+                    && (blockY != 0 || blockX != 0 || blockZ != 0);
+            boolean sourceCanBounce = resolvedSource.directLightingReady()
+                    || resolvedSource.emissiveLightCount() > 0
+                    || resolvedSource.celestialLightCount() > 0
+                    || resolvedCache.hasRadianceRecords();
+            if (receiverMaterialCoupled) {
+                receiverMaterialCoupledSamples++;
+            }
+            if (receiverDepthCoupled) {
+                receiverDepthCoupledSamples++;
+            }
+            if (sourceCanBounce && receiverMaterialCoupled && saturation >= COLORED_SURFACE_SATURATION && luma > 0.05F) {
+                coloredBounceEvidenceSamples++;
+            }
+            if (resolvedSource.emissiveLightCount() > 0 && receiverDepthCoupled && usableSurface) {
+                emissiveBounceEvidenceSamples++;
             }
         }
 
@@ -453,6 +509,18 @@ public record DiffuseGiSceneInputSummary(
         float skylightInteriorContrast = clampUnit(Math.min(skylightRatio, sealedRatio) * 2.0F);
         int distinctMaterials = materialIds.size();
         float materialDiversity = surfaceCount == 0 ? 0.0F : (float) distinctMaterials / surfaceCount;
+        float coloredBounceEvidenceRatio = surfaceCount == 0
+                ? 0.0F
+                : (float) coloredBounceEvidenceSamples / surfaceCount;
+        float emissiveBounceEvidenceRatio = surfaceCount == 0
+                ? 0.0F
+                : (float) emissiveBounceEvidenceSamples / surfaceCount;
+        float receiverMaterialCouplingRatio = surfaceCount == 0
+                ? 0.0F
+                : (float) receiverMaterialCoupledSamples / surfaceCount;
+        float receiverDepthCouplingRatio = surfaceCount == 0
+                ? 0.0F
+                : (float) receiverDepthCoupledSamples / surfaceCount;
         float materialColorInfluence = clampUnit((materialDiversity * 0.35F)
                 + (coloredInfluence * 0.35F)
                 + (averageSaturation * 0.20F)
@@ -559,13 +627,15 @@ public record DiffuseGiSceneInputSummary(
                 + (usableSurfaceRatio * 0.18F)
                 + (surfaceOrientationConfidence * 0.16F)
                 + (materialDiversity * 0.12F)
+                + (receiverDepthCouplingRatio * 0.10F)
                 + (hasSurfaceRegion ? 0.08F : 0.0F));
         float materialPositionEvidenceScore = clampUnit((materialColorInfluence * 0.25F)
                 + (materialDiversity * 0.22F)
                 + (coloredRatio * 0.18F)
-                + (receiverSurfacePositionScore * 0.18F)
+                + (receiverSurfacePositionScore * 0.16F)
                 + (averageSurfaceConfidence * 0.10F)
-                + (dirtySurfaceRatio * 0.07F));
+                + (receiverMaterialCouplingRatio * 0.10F)
+                + (dirtySurfaceRatio * 0.05F));
         int shadowSourceSignals = resolvedSource.shadowCandidateCount()
                 + resolvedSource.budgetedShadowCandidateCount()
                 + resolvedSource.emissiveLightCount();
@@ -587,17 +657,19 @@ public record DiffuseGiSceneInputSummary(
                 + (cachePhysicalConfidence * 0.10F)
                 + (radianceDirectionConfidence * 0.08F));
         float coloredBouncePhysicalScore = clampUnit((coloredInfluence * 0.22F)
-                + (materialPositionEvidenceScore * 0.22F)
+                + (materialPositionEvidenceScore * 0.19F)
                 + (materialGeometryCoupling * 0.18F)
-                + (sourceReceiverEvidenceScore * 0.16F)
+                + (sourceReceiverEvidenceScore * 0.14F)
                 + (cachePhysicalConfidence * 0.12F)
-                + (radianceDirectionConfidence * 0.10F));
+                + (radianceDirectionConfidence * 0.09F)
+                + (coloredBounceEvidenceRatio * 0.13F));
         float emissiveSpillPhysicalScore = clampUnit((emissiveSourceCoupling * 0.28F)
-                + (emissiveProximity * 0.20F)
+                + (emissiveProximity * 0.18F)
                 + (sourceReceiverEvidenceScore * 0.18F)
                 + (occluderShadowCandidateScore * 0.16F)
-                + (materialPositionEvidenceScore * 0.10F)
-                + (cachePhysicalConfidence * 0.08F));
+                + (materialPositionEvidenceScore * 0.09F)
+                + (cachePhysicalConfidence * 0.07F)
+                + (emissiveBounceEvidenceRatio * 0.04F));
         float physicalGiInputScore = clampUnit((lightSourceSceneCoupling * 0.20F)
                 + (materialGeometryCoupling * 0.18F)
                 + (emissiveProximity * 0.14F)
@@ -607,12 +679,15 @@ public record DiffuseGiSceneInputSummary(
                 + (cachePhysicalConfidence * 0.08F)
                 + (radianceDirectionConfidence * 0.06F));
         float previewPhysicalEvidenceScore = clampUnit((physicalGiInputScore * 0.30F)
-                + (coloredBouncePhysicalScore * 0.18F)
-                + (emissiveSpillPhysicalScore * 0.18F)
-                + (sourceReceiverEvidenceScore * 0.15F)
+                + (coloredBouncePhysicalScore * 0.16F)
+                + (emissiveSpillPhysicalScore * 0.16F)
+                + (sourceReceiverEvidenceScore * 0.14F)
                 + (occluderShadowCandidateScore * 0.09F)
                 + (materialPositionEvidenceScore * 0.06F)
-                + (receiverSurfacePositionScore * 0.04F));
+                + (receiverSurfacePositionScore * 0.04F)
+                + (receiverMaterialCouplingRatio * 0.06F)
+                + (receiverDepthCouplingRatio * 0.05F)
+                + (emissiveBounceEvidenceRatio * 0.04F));
         boolean hasEmissiveProximity = resolvedSource.emissiveLightCount() > 0
                 || resolvedSource.budgetedShadowCandidateCount() > 0
                 || emissiveProximity > 0.0F;
@@ -676,6 +751,10 @@ public record DiffuseGiSceneInputSummary(
                 coloredBouncePhysicalScore,
                 emissiveSpillPhysicalScore,
                 previewPhysicalEvidenceScore,
+                coloredBounceEvidenceSamples,
+                emissiveBounceEvidenceSamples,
+                receiverMaterialCoupledSamples,
+                receiverDepthCoupledSamples,
                 hasEmissiveProximity,
                 hasSurfaceRegion,
                 hasSurfaceRegion ? minBlockX : 0,
@@ -718,6 +797,8 @@ public record DiffuseGiSceneInputSummary(
                 && this.materialColorInfluence > 0.03F
                 && this.materialGeometryCoupling >= 0.10F
                 && this.receiverSurfacePositionScore >= 0.08F
+                && this.receiverMaterialCoupledSampleCount > 0
+                && this.receiverDepthCoupledSampleCount > 0
                 && this.sourceReceiverEvidenceScore >= 0.05F
                 && this.previewPhysicalEvidenceScore >= 0.18F
                 && this.physicalGiInputScore >= 0.20F
@@ -729,6 +810,7 @@ public record DiffuseGiSceneInputSummary(
     public boolean hasColoredBounceEvidence() {
         return this.hasPhysicalGiEvidence()
                 && this.coloredSurfaceSampleCount > 0
+                && this.coloredBounceEvidenceSampleCount > 0
                 && this.averageAlbedoSaturation >= COLORED_SURFACE_SATURATION
                 && this.coloredBounceInfluence >= 0.08F
                 && this.materialColorInfluence >= 0.08F
@@ -745,6 +827,7 @@ public record DiffuseGiSceneInputSummary(
     public boolean hasEmissiveSpillEvidence() {
         return this.hasPhysicalGiEvidence()
                 && this.emissiveProximityAvailable
+                && this.emissiveBounceEvidenceSampleCount > 0
                 && this.emissiveSpillPhysicalScore >= 0.10F
                 && this.sourceReceiverEvidenceScore >= 0.06F
                 && this.occluderShadowCandidateScore >= 0.04F
@@ -920,7 +1003,11 @@ public record DiffuseGiSceneInputSummary(
             float occluderShadowCandidateScore,
             float coloredBouncePhysicalScore,
             float emissiveSpillPhysicalScore,
-            float previewPhysicalEvidenceScore
+            float previewPhysicalEvidenceScore,
+            int coloredBounceEvidenceSampleCount,
+            int emissiveBounceEvidenceSampleCount,
+            int receiverMaterialCoupledSampleCount,
+            int receiverDepthCoupledSampleCount
     ) {
         return "surfaces=" + surfaceSampleCount
                 + " colored=" + coloredSurfaceSampleCount + "/" + coloredBounceInfluence
@@ -953,7 +1040,11 @@ public record DiffuseGiSceneInputSummary(
                 + " materialGeometryCoupling=" + materialGeometryCoupling
                 + " physicalGiInputScore=" + physicalGiInputScore
                 + " coloredBouncePhysical=" + coloredBouncePhysicalScore
+                + "/samples:" + coloredBounceEvidenceSampleCount
                 + " emissiveSpillPhysical=" + emissiveSpillPhysicalScore
+                + "/emissiveBounceSamples:" + emissiveBounceEvidenceSampleCount
+                + " receiverMaterialSamples=" + receiverMaterialCoupledSampleCount
+                + " receiverDepthSamples=" + receiverDepthCoupledSampleCount
                 + " previewPhysicalEvidence=" + previewPhysicalEvidenceScore
                 + " boundary=preview-scene-coupling-not-physically-correct-gi";
     }

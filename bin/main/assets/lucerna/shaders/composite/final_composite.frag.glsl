@@ -4,6 +4,10 @@
 // This is distinct from core/direct_light_preview_*.fsh preview plumbing.
 // Descriptor bindings are intentionally semantic until the controller/native
 // descriptor tables assign concrete slots for the final composite path.
+// LucernaDenoisedDiffuse is a semantic composite input. Its runtime source
+// identity may be CPU/readback visual denoise, public-Mojang visual shaping, or
+// a future shader-generated lucerna.denoise.diffuse image; this fragment shader
+// does not prove which producer created the sampled pixels.
 
 in vec2 texCoord;
 out vec4 fragColor;
@@ -109,10 +113,10 @@ void main() {
         * directVisibility;
     vec3 coloredBounceGi = boundedRadiance(denoisedDiffuse.rgb, LUCERNA_MAX_DIFFUSE_RADIANCE)
         * max(LucernaDiffuseCompositeGain, 0.0);
-    vec3 shaderDenoisedGi = coloredBounceGi * mix(vec3(1.0), normalize(albedo + vec3(0.0001)) * 1.25, 0.34);
+    vec3 visualDenoiseContribution = coloredBounceGi * mix(vec3(1.0), normalize(albedo + vec3(0.0001)) * 1.25, 0.34);
 
     vec3 litColor = baseColor * (1.0 - contactShadow * surfaceMask)
-            + (directSpill + shaderDenoisedGi) * albedo * surfaceMask;
+            + (directSpill + visualDenoiseContribution) * albedo * surfaceMask;
     vec3 finalColor = mix(baseColor, clamp(litColor, vec3(0.0), vec3(1.0)), enabled);
 
     float overlayAlpha = clamp(debugOverlay.a * LucernaDebugOverlayAlpha, 0.0, 1.0);

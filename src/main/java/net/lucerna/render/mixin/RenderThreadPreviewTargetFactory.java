@@ -21,6 +21,8 @@ import net.lucerna.render.preview.PublicMojangPreviewDrawScaffolds;
 import net.lucerna.render.preview.Round7DenoisedGiVisualSource;
 import net.lucerna.render.preview.Round7RawGiVisualSource;
 import net.lucerna.render.preview.Round6DiffuseGiPreviewCompositeState;
+import net.lucerna.render.preview.ShaderDenoiseOutputRenderTarget;
+import net.lucerna.render.preview.ShaderGeneratedDenoiseOutputStatus;
 import net.lucerna.render.pass.LucernaFrameAttachmentMetadata;
 import net.lucerna.render.pass.LucernaJavaOpaqueRenderObjects;
 import net.lucerna.render.pass.LucernaFramePassPhase;
@@ -45,6 +47,11 @@ public final class RenderThreadPreviewTargetFactory {
                     "lucerna_direct_light_final_composite_rgba",
                     "direct-light final composite"
             );
+    private static final DirectLightPreviewTextureUploader NATIVE_SHADOW_MAP_FINAL_COMPOSITE_TEXTURE_UPLOADER =
+            new DirectLightPreviewTextureUploader(
+                    "lucerna_native_shadow_map_final_composite_mask_rgba",
+                    "native shadow-map final composite mask"
+            );
     private static final DirectLightPreviewTextureUploader ROUND6_DIFFUSE_GI_FINAL_COMPOSITE_TEXTURE_UPLOADER =
             new DirectLightPreviewTextureUploader(
                     "lucerna_round7_raw_gi_native_diffuse_source_rgba",
@@ -55,6 +62,15 @@ public final class RenderThreadPreviewTargetFactory {
                     "lucerna_round7_denoised_gi_cpu_output_rgba",
                     "Round 7 DENOISED_GI denoised diffuse-GI CPU output"
             );
+    private static final DirectLightPreviewTextureUploader ROUND7_SHADER_DENOISE_INPUT_TEXTURE_UPLOADER =
+            new DirectLightPreviewTextureUploader(
+                    "lucerna_round7_shader_denoise_input_rgba",
+                    "Round 7 shader denoise raw diffuse-GI input"
+            );
+    private static final String ROUND7_SHADER_DENOISE_DIRECT_LIGHT_VALIDATION_FALLBACK_ENV =
+            "LUCERNA_ROUND7_SHADER_DENOISE_DIRECT_LIGHT_VALIDATION_FALLBACK";
+    private static final ShaderDenoiseOutputRenderTarget SHADER_DENOISE_OUTPUT_RENDER_TARGET =
+            new ShaderDenoiseOutputRenderTarget();
     private static GpuTexture lastWorldColorTexture;
 
     private RenderThreadPreviewTargetFactory() {
@@ -139,6 +155,27 @@ public final class RenderThreadPreviewTargetFactory {
                 DIRECT_LIGHT_PREVIEW_TARGET,
                 metadata
         );
+    }
+
+    public static ShaderDenoiseOutputRenderTarget.StatusSnapshot ensureShaderDenoiseOutputRenderTarget(
+            LucernaFramePassTarget target
+    ) {
+        LucernaFrameAttachmentMetadata metadata = target == null ? null : target.attachmentMetadata();
+        int width = metadata == null ? 0 : metadata.width();
+        int height = metadata == null ? 0 : metadata.height();
+        return SHADER_DENOISE_OUTPUT_RENDER_TARGET.ensure(RenderSystem.tryGetDevice(), width, height);
+    }
+
+    public static ShaderDenoiseOutputRenderTarget.StatusSnapshot shaderDenoiseOutputRenderTargetStatus() {
+        return SHADER_DENOISE_OUTPUT_RENDER_TARGET.statusSnapshot();
+    }
+
+    public static ShaderDenoiseOutputRenderTarget.StatusSnapshot releaseShaderDenoiseOutputRenderTarget() {
+        return SHADER_DENOISE_OUTPUT_RENDER_TARGET.releaseResources();
+    }
+
+    public static void closeShaderDenoiseOutputRenderTarget() {
+        SHADER_DENOISE_OUTPUT_RENDER_TARGET.close();
     }
 
     public static PublicMojangPreviewPassSubmissionResult submitNoDrawPublicPreviewPass(
@@ -446,6 +483,608 @@ public final class RenderThreadPreviewTargetFactory {
         );
     }
 
+    public static PublicMojangFinalCompositeSubmissionResult submitNativeShadowMapFinalCompositePublicDraw(
+            LucernaFramePassTarget target,
+            ByteBuffer shadowMapMaskRgbaPayload,
+            int shadowMapMaskWidth,
+            int shadowMapMaskHeight,
+            boolean realShadowMapOutputReady,
+            String shadowMapPayloadSummary
+    ) {
+        String payloadSummary = shadowMapPayloadSummary == null || shadowMapPayloadSummary.isBlank()
+                ? "native shadow-map payload summary unavailable"
+                : shadowMapPayloadSummary.trim();
+        if (target == null || !target.available()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    false,
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.TARGET_MISSING,
+                    "public Mojang native shadow-map final composite skipped because no frame target is available; "
+                            + "nativeShadowMapComposite=false,shadowMapOutputConsumed=false,screenSpaceShadowDecal=false,"
+                            + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady="
+                            + realShadowMapOutputReady
+                            + "; payload: "
+                            + payloadSummary
+            );
+        }
+        if (!target.safeForAttachment()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang native shadow-map final composite skipped because the target is not HUD-safe; "
+                            + "nativeShadowMapComposite=false,shadowMapOutputConsumed=false,screenSpaceShadowDecal=false,"
+                            + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady="
+                            + realShadowMapOutputReady
+                            + "; payload: "
+                            + payloadSummary
+            );
+        }
+        if (!(target.commandEncoder() instanceof CommandEncoder commandEncoder)
+                || !(target.colorTarget() instanceof GpuTextureView colorView)) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    target.attachmentMetadata().javaOpaque()
+                            ? PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT
+                            : PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang native shadow-map final composite skipped because command encoder or color view is unavailable; "
+                            + "nativeShadowMapComposite=false,shadowMapOutputConsumed=false,screenSpaceShadowDecal=false,"
+                            + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady="
+                            + realShadowMapOutputReady
+                            + "; payload: "
+                            + payloadSummary
+            );
+        }
+        if (!realShadowMapOutputReady) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang native shadow-map final composite skipped because native shadow-map output is not ready; "
+                            + "nativeShadowMapComposite=false,shadowMapOutputConsumed=false,screenSpaceShadowDecal=false,"
+                            + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady=false; payload: "
+                            + payloadSummary
+            );
+        }
+        if (shadowMapMaskRgbaPayload == null) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang native shadow-map final composite skipped because native shadow-map RGBA8 mask payload is unavailable; "
+                            + "nativeShadowMapComposite=false,shadowMapOutputConsumed=false,screenSpaceShadowDecal=false,"
+                            + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady=true; payload: "
+                            + payloadSummary
+            );
+        }
+        if (shadowMapMaskWidth <= 0 || shadowMapMaskHeight <= 0) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang native shadow-map final composite skipped because native shadow-map mask dimensions are invalid; "
+                            + "nativeShadowMapComposite=false,shadowMapOutputConsumed=false,screenSpaceShadowDecal=false,"
+                            + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady=true,width="
+                            + shadowMapMaskWidth
+                            + ",height="
+                            + shadowMapMaskHeight
+                            + "; payload: "
+                            + payloadSummary
+            );
+        }
+        long pixelCount = (long) shadowMapMaskWidth * (long) shadowMapMaskHeight;
+        long maxUploadPixels = Integer.MAX_VALUE / (long) DirectLightPreviewTextureUploader.BYTES_PER_PIXEL;
+        if (pixelCount > maxUploadPixels) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang native shadow-map final composite skipped because native shadow-map RGBA8 mask dimensions exceed supported byte count; "
+                            + "nativeShadowMapComposite=false,shadowMapOutputConsumed=false,screenSpaceShadowDecal=false,"
+                            + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady=true,pixelCount="
+                            + pixelCount
+                            + ",maxUploadPixels="
+                            + maxUploadPixels
+                            + "; payload: "
+                            + payloadSummary
+            );
+        }
+        long requiredBytes = pixelCount * (long) DirectLightPreviewTextureUploader.BYTES_PER_PIXEL;
+        if (shadowMapMaskRgbaPayload.remaining() < requiredBytes) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang native shadow-map final composite skipped because native shadow-map RGBA8 mask byte count is incomplete; "
+                            + "nativeShadowMapComposite=false,shadowMapOutputConsumed=false,screenSpaceShadowDecal=false,"
+                            + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady=true,requiredBytes="
+                            + requiredBytes
+                            + ",suppliedBytes="
+                            + shadowMapMaskRgbaPayload.remaining()
+                            + "; payload: "
+                            + payloadSummary
+            );
+        }
+
+        ByteBuffer shadowMaskBuffer = shadowMapMaskRgbaPayload.duplicate();
+        DirectLightPreviewTextureUploadResult upload = NATIVE_SHADOW_MAP_FINAL_COMPOSITE_TEXTURE_UPLOADER.upload(
+                RenderSystem.getDevice(),
+                commandEncoder,
+                shadowMaskBuffer,
+                shadowMapMaskWidth,
+                shadowMapMaskHeight
+        );
+        if (!upload.availableForDraw()) {
+            Reference.reachabilityFence(shadowMaskBuffer);
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang native shadow-map final composite skipped because native shadow-map mask texture upload was unavailable; "
+                            + "nativeShadowMapComposite=false,shadowMapOutputConsumed=false,screenSpaceShadowDecal=false,"
+                            + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady=true; upload: "
+                            + upload.summary()
+                            + "; payload: "
+                            + payloadSummary
+            );
+        }
+
+        GpuTextureView depthView = target.depthTarget() instanceof GpuTextureView view ? view : null;
+        boolean depthTextureSampleBindingReady = target.attachmentMetadata().depthTextureSampleBindingReady()
+                && depthView != null;
+        PublicMojangPreviewDrawScaffold drawScaffold;
+        try (RenderPass renderPass = createFullTargetRenderPass(
+                commandEncoder,
+                () -> depthTextureSampleBindingReady
+                        ? "lucerna public final composite depth-aware native shadow-map occlusion draw pass"
+                        : "lucerna public final composite native shadow-map occlusion draw pass",
+                colorView,
+                target
+        )) {
+            renderPass.disableScissor();
+            if (depthTextureSampleBindingReady) {
+                drawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenDepthAwareNativeShadowMapFinalCompositeDraw(
+                        renderPass,
+                        upload.textureView(),
+                        upload.sampler(),
+                        depthView,
+                        upload.sampler(),
+                        realShadowMapOutputReady
+                );
+            } else {
+                drawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenNativeShadowMapFinalCompositeDraw(
+                        renderPass,
+                        upload.textureView(),
+                        upload.sampler(),
+                        realShadowMapOutputReady
+                );
+            }
+        }
+        commandEncoder.submit();
+        Reference.reachabilityFence(shadowMaskBuffer);
+        if (!drawScaffold.drawCallsIssued()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang native shadow-map final composite did not consume the uploaded shadow-map mask because the draw scaffold did not issue a draw; "
+                            + "nativeShadowMapComposite=false,shadowMapOutputConsumed=false,screenSpaceShadowDecal=false,"
+                            + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady=true; payload: "
+                            + payloadSummary
+                            + "; upload: "
+                            + upload.summary()
+                            + "; draw scaffold: "
+                            + drawScaffold.summary()
+            );
+        }
+        return PublicMojangFinalCompositeSubmissionResult.submitted(
+                drawScaffold.drawCallsIssued(),
+                target.attachmentMetadata().javaOpaque(),
+                PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
+                "public Mojang native shadow-map final-composite occlusion render pass submitted; "
+                        + "nativeShadowMapComposite=true,shadowMapOutputConsumed=true,screenSpaceShadowDecal=false,"
+                        + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady=true,"
+                        + "depthAwareShadowMaskComposite=" + depthTextureSampleBindingReady
+                        + ",shaderPassDepthSamplingEvidence=" + depthTextureSampleBindingReady
+                        + ",depthSamplingPassOutputsReady=" + depthTextureSampleBindingReady
+                        + ",g_buffer_depth_sampling_evidence=" + depthTextureSampleBindingReady
+                        + ",g_buffer_depth_texture_sampled=" + depthTextureSampleBindingReady
+                        + ",g_buffer_depth_sample_count="
+                        + (depthTextureSampleBindingReady
+                        ? Math.max(1L, (long) target.attachmentMetadata().width()
+                        * (long) target.attachmentMetadata().height())
+                        : 0L)
+                        + ",g_buffer_depth_metadata_only=" + !depthTextureSampleBindingReady
+                        + ",gBufferDepthSamplingMarker="
+                        + (depthTextureSampleBindingReady
+                        ? "shader_sampled_public_mojang_depth_view"
+                        : "depth_view_not_bound_to_shadow_composite")
+                        + ",depthSamplingPassOutputsMarker="
+                        + (depthTextureSampleBindingReady
+                        ? "java_native_shader_depth_sampling_evidence_parsed"
+                        : "java_native_shader_depth_sampling_evidence_missing")
+                        + ",depthSamplingBlocker="
+                        + (depthTextureSampleBindingReady ? "none" : "current-depth-view-unavailable")
+                        + ","
+                        + "shadowMaskPayloadTexture=true,finalCompositeBeforeHud=true,target="
+                        + targetAttachmentSummary(target)
+                        + "; payload: "
+                        + payloadSummary
+                        + "; upload: "
+                        + upload.summary()
+                        + "; draw scaffold: "
+                        + drawScaffold.summary()
+        );
+    }
+
+    public static PublicMojangFinalCompositeSubmissionResult submitRealRendererMilestone1FullCompositePublicDraw(
+            LucernaFramePassTarget target,
+            ByteBuffer shadowMapMaskRgbaPayload,
+            int shadowMapMaskWidth,
+            int shadowMapMaskHeight,
+            boolean realShadowMapOutputReady,
+            String shadowMapPayloadSummary,
+            Round6DiffuseGiCpuOutputPayload rawGiPayload,
+            Round6DiffuseGiPreviewCompositeState previewState
+    ) {
+        String payloadSummary = shadowMapPayloadSummary == null || shadowMapPayloadSummary.isBlank()
+                ? "native shadow-map payload summary unavailable"
+                : shadowMapPayloadSummary.trim();
+        boolean rawGiInputReady = previewState != null && previewState.rawGiInputReady(rawGiPayload);
+        String rawGiEvidence = previewState == null
+                ? "rawGiInputReady=false,rawGiInputSource=\"missing Round 6 diffuse GI preview state\""
+                : previewState.rawGiInputSourceEvidence(rawGiPayload);
+        String skippedBoundary =
+                "realRendererMilestone1FullComposite=false,nativeShadowMapComposite=false,"
+                        + "shadowMapOutputConsumed=false,depthAwareShadowMaskComposite=false,"
+                        + "shaderGeneratedDenoiseOutputEvidence=false,shaderDenoiseOutputConsumedByFinalComposite=false,"
+                        + "realShaderDenoiseOutputReady=false,shaderDenoiseNoOverclaim=true,"
+                        + "shaderDenoiseOverclaimRejected=true,screenSpaceShadowDecal=false,"
+                        + "lowResolutionDirectTextureDraw=false,metadataOnly=false,proofMarker=false,"
+                        + "focusWindowOnly=false,temporaryDirectLightSubstitution=false,rectangularWashout=false";
+        if (target == null || !target.available()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    false,
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.TARGET_MISSING,
+                    "public Mojang real renderer milestone 1 full composite skipped because no frame target is available; "
+                            + skippedBoundary
+                            + "; payload: "
+                            + payloadSummary
+                            + "; raw source: "
+                            + rawGiEvidence
+            );
+        }
+        if (!target.safeForAttachment()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang real renderer milestone 1 full composite skipped because the target is not HUD-safe; "
+                            + skippedBoundary
+                            + "; payload: "
+                            + payloadSummary
+                            + "; raw source: "
+                            + rawGiEvidence
+            );
+        }
+        if (!(target.commandEncoder() instanceof CommandEncoder commandEncoder)
+                || !(target.colorTarget() instanceof GpuTextureView colorView)) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    target.attachmentMetadata().javaOpaque()
+                            ? PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT
+                            : PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang real renderer milestone 1 full composite skipped because command encoder or color view is unavailable; "
+                            + skippedBoundary
+                            + "; payload: "
+                            + payloadSummary
+                            + "; raw source: "
+                            + rawGiEvidence
+            );
+        }
+        if (!realShadowMapOutputReady || shadowMapMaskRgbaPayload == null || shadowMapMaskWidth <= 0 || shadowMapMaskHeight <= 0) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang real renderer milestone 1 full composite skipped because native shadow-map output is not drawable; "
+                            + skippedBoundary
+                            + ",realShadowMapOutputReady="
+                            + realShadowMapOutputReady
+                            + ",width="
+                            + shadowMapMaskWidth
+                            + ",height="
+                            + shadowMapMaskHeight
+                            + "; payload: "
+                            + payloadSummary
+                            + "; raw source: "
+                            + rawGiEvidence
+            );
+        }
+        if (!rawGiInputReady) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang real renderer milestone 1 full composite skipped because strict raw diffuse-GI input is not ready for shader-generated denoise; "
+                            + skippedBoundary
+                            + "; payload: "
+                            + payloadSummary
+                            + "; raw source: "
+                            + rawGiEvidence
+            );
+        }
+        long shadowPixelCount = (long) shadowMapMaskWidth * (long) shadowMapMaskHeight;
+        long requiredShadowBytes = shadowPixelCount * (long) DirectLightPreviewTextureUploader.BYTES_PER_PIXEL;
+        if (shadowPixelCount > Integer.MAX_VALUE / (long) DirectLightPreviewTextureUploader.BYTES_PER_PIXEL
+                || shadowMapMaskRgbaPayload.remaining() < requiredShadowBytes) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang real renderer milestone 1 full composite skipped because native shadow-map byte payload is invalid; "
+                            + skippedBoundary
+                            + ",requiredBytes="
+                            + requiredShadowBytes
+                            + ",suppliedBytes="
+                            + shadowMapMaskRgbaPayload.remaining()
+                            + "; payload: "
+                            + payloadSummary
+                            + "; raw source: "
+                            + rawGiEvidence
+            );
+        }
+
+        ByteBuffer shadowMaskBuffer = shadowMapMaskRgbaPayload.duplicate();
+        DirectLightPreviewTextureUploadResult shadowUpload = NATIVE_SHADOW_MAP_FINAL_COMPOSITE_TEXTURE_UPLOADER.upload(
+                RenderSystem.getDevice(),
+                commandEncoder,
+                shadowMaskBuffer,
+                shadowMapMaskWidth,
+                shadowMapMaskHeight
+        );
+        ByteBuffer rawSourceBuffer = rawGiPayload.copyToByteBuffer();
+        DirectLightPreviewTextureUploadResult rawUpload = ROUND7_SHADER_DENOISE_INPUT_TEXTURE_UPLOADER.upload(
+                RenderSystem.getDevice(),
+                commandEncoder,
+                rawSourceBuffer,
+                rawGiPayload.width(),
+                rawGiPayload.height()
+        );
+        if (!shadowUpload.availableForDraw() || !rawUpload.availableForDraw()) {
+            Reference.reachabilityFence(shadowMaskBuffer);
+            Reference.reachabilityFence(rawSourceBuffer);
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang real renderer milestone 1 full composite skipped because one or more source uploads are unavailable; "
+                            + skippedBoundary
+                            + "; shadow upload: "
+                            + shadowUpload.summary()
+                            + "; raw upload: "
+                            + rawUpload.summary()
+                            + "; payload: "
+                            + payloadSummary
+                            + "; raw source: "
+                            + rawGiEvidence
+            );
+        }
+
+        ShaderDenoiseOutputRenderTarget.StatusSnapshot outputTargetStatus =
+                ensureShaderDenoiseOutputRenderTarget(target);
+        if (!outputTargetStatus.availableForRenderPass() || !outputTargetStatus.availableForSampling()) {
+            Reference.reachabilityFence(shadowMaskBuffer);
+            Reference.reachabilityFence(rawSourceBuffer);
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    PublicMojangFinalCompositeSubmissionResult.ShaderOutputImageCandidate.none(),
+                    ShaderGeneratedDenoiseOutputStatus.reported(
+                            true,
+                            outputTargetStatus.availableForRenderPass(),
+                            false,
+                            false,
+                            false,
+                            true,
+                            true,
+                            outputTargetStatus.reason()
+                    ),
+                    "public Mojang real renderer milestone 1 full composite skipped because the owned shader denoise output target is unavailable; "
+                            + skippedBoundary
+                            + "; output target: "
+                            + outputTargetStatus.summary()
+            );
+        }
+
+        PublicMojangPreviewDrawScaffold generationDrawScaffold;
+        try (RenderPass outputRenderPass = createFullTargetRenderPass(
+                commandEncoder,
+                () -> "lucerna real renderer milestone 1 shader-denoise owned-output pass",
+                outputTargetStatus.textureView(),
+                target
+        )) {
+            outputRenderPass.disableScissor();
+            generationDrawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenRound7ShaderDenoiseOutputGenerationDraw(
+                    outputRenderPass,
+                    rawUpload.textureView(),
+                    rawUpload.sampler()
+            );
+        }
+
+        GpuTextureView depthView = target.depthTarget() instanceof GpuTextureView view ? view : null;
+        boolean depthTextureSampleBindingReady = target.attachmentMetadata().depthTextureSampleBindingReady()
+                && depthView != null;
+        PublicMojangPreviewDrawScaffold shaderOutputDrawScaffold;
+        PublicMojangPreviewDrawScaffold shadowDrawScaffold;
+        try (RenderPass renderPass = createFullTargetRenderPass(
+                commandEncoder,
+                () -> "lucerna real renderer milestone 1 shadow plus shader-denoise final composite pass",
+                colorView,
+                target
+        )) {
+            renderPass.disableScissor();
+            shaderOutputDrawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenRound7ShaderDenoiseOutputDraw(
+                    renderPass,
+                    outputTargetStatus.textureView(),
+                    outputTargetStatus.sampler()
+            );
+            if (depthTextureSampleBindingReady) {
+                shadowDrawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenDepthAwareNativeShadowMapFinalCompositeDraw(
+                        renderPass,
+                        shadowUpload.textureView(),
+                        shadowUpload.sampler(),
+                        depthView,
+                        shadowUpload.sampler(),
+                        true
+                );
+            } else {
+                shadowDrawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenNativeShadowMapFinalCompositeDraw(
+                        renderPass,
+                        shadowUpload.textureView(),
+                        shadowUpload.sampler(),
+                        true
+                );
+            }
+        }
+        commandEncoder.submit();
+        Reference.reachabilityFence(shadowMaskBuffer);
+        Reference.reachabilityFence(rawSourceBuffer);
+
+        boolean generationDrawIssued = generationDrawScaffold.drawCallsIssued();
+        boolean shaderOutputConsumed = shaderOutputDrawScaffold.drawCallsIssued();
+        boolean shadowConsumed = shadowDrawScaffold.drawCallsIssued();
+        ShaderGeneratedDenoiseOutputStatus outputStatus = ShaderGeneratedDenoiseOutputStatus.reported(
+                true,
+                true,
+                generationDrawIssued,
+                generationDrawIssued && outputTargetStatus.availableForSampling(),
+                shaderOutputConsumed,
+                true,
+                true,
+                "public Mojang fragment pass generated lucerna.denoise.diffuse into an owned RGBA8 texture and the real-renderer final composite consumed that texture"
+        );
+        if (!generationDrawIssued || !shaderOutputConsumed || !shadowConsumed) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    PublicMojangFinalCompositeSubmissionResult.ShaderOutputImageCandidate.none(),
+                    outputStatus,
+                    "public Mojang real renderer milestone 1 full composite did not issue all required draws; "
+                            + skippedBoundary
+                            + ",generatedOutputDrawIssued="
+                            + generationDrawIssued
+                            + ",shaderOutputConsumed="
+                            + shaderOutputConsumed
+                            + ",shadowOutputConsumed="
+                            + shadowConsumed
+                            + "; generation draw scaffold: "
+                            + generationDrawScaffold.summary()
+                            + "; shader output draw scaffold: "
+                            + shaderOutputDrawScaffold.summary()
+                            + "; shadow draw scaffold: "
+                            + shadowDrawScaffold.summary()
+            );
+        }
+
+        return PublicMojangFinalCompositeSubmissionResult.submitted(
+                true,
+                target.attachmentMetadata().javaOpaque(),
+                PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
+                PublicMojangFinalCompositeSubmissionResult.ShaderOutputImageCandidate.none(),
+                outputStatus,
+                "public Mojang real renderer milestone 1 full composite render pass submitted; "
+                        + "mode=FINAL_LUCERNA_COMPOSITE,mode=real-renderer-milestone1-full-composite"
+                        + ",realRendererMilestone1FullComposite=true"
+                        + ",sourceKind=native-shadow-map-mask,shadowMapMask=native"
+                        + ",nativeShadowMapComposite=true,shadowMapOutputConsumed=true,shadow_map_output_consumed=true"
+                        + ",nativeShadowMapConsumedByFinalComposite=true,realShadowMapComposite=true"
+                        + ",shadowMapOutputConsumedByFinalComposite=true,shadow_map_output_consumed_by_final_composite=true"
+                        + ",screenSpaceShadowDecal=false,lowResolutionDirectTextureDraw=false,realShadowMapOutputReady=true"
+                        + ",depthAwareShadowMaskComposite=" + depthTextureSampleBindingReady
+                        + ",shaderPassDepthSamplingEvidence=" + depthTextureSampleBindingReady
+                        + ",depthSamplingPassOutputsReady=" + depthTextureSampleBindingReady
+                        + ",g_buffer_depth_sampling_evidence=" + depthTextureSampleBindingReady
+                        + ",g_buffer_depth_texture_sampled=" + depthTextureSampleBindingReady
+                        + ",g_buffer_depth_sample_count="
+                        + (depthTextureSampleBindingReady
+                        ? Math.max(1L, (long) target.attachmentMetadata().width()
+                        * (long) target.attachmentMetadata().height())
+                        : 0L)
+                        + ",g_buffer_depth_metadata_only=" + !depthTextureSampleBindingReady
+                        + ",sourceIdentity=native-diffuse-gi-rgba8/raw-gi+shader-denoised-diffuse-gi-rgba8/public-mojang-fragment-color-attachment+native-shadow-map-mask"
+                        + ",sourceIdentity=shader-denoised-diffuse-gi-rgba8/public-mojang-fragment-color-attachment"
+                        + ",sourceKind=shader-generated-denoised-gi"
+                        + ",shaderGeneratedDenoisedGI=public-mojang-fragment-pass"
+                        + ",shaderDenoiseVisualShaderIntent=true"
+                        + ",shaderDenoiseDispatchPrepared=true"
+                        + ",shaderDenoiseInputReady=true"
+                        + ",shaderDenoiseInputsCompleteForDispatch=true"
+                        + ",shaderDenoiseRequiresRawDiffuseGiInput=true"
+                        + ",shaderDenoiseStrictProofEligible=true"
+                        + ",shaderDenoiseInputMode=strict-raw-diffuse-gi"
+                        + ",shaderDenoiseInputKind=raw-diffuse-gi-rgba8"
+                        + ",shaderDenoiseRawDiffuseGiInput=true,round7.shaderDenoise.rawDiffuseGiInput=true"
+                        + ",directLightValidationInput=false,round7.shaderDenoise.directLightValidationInput=false"
+                        + ",diagnosticDirectLightValidationFallback=false"
+                        + ",shaderDenoiseOutputAttempted=true,round7.shaderDenoise.outputAttempted=true"
+                        + ",shaderDenoiseOutputTextureAllocated=true"
+                        + ",shaderDenoiseOwnedOutputImage=true"
+                        + ",shaderDenoiseOutputRenderPassSubmitted=true"
+                        + ",shaderDenoisePassExecuted=true"
+                        + ",shaderGeneratedDenoisePassExecuted=true"
+                        + ",shaderGeneratedOutputImageReady=true"
+                        + ",shaderOutputSourceConsumed=true"
+                        + ",shaderDenoiseOutputSourceConsumed=true"
+                        + ",shaderDenoiseOutputConsumedByFinalComposite=true"
+                        + ",shaderDenoisePassGeneratedVisualSource=true"
+                        + ",shaderDenoiseFinalCompositeConsumable=true"
+                        + ",finalCompositeConsumable=true"
+                        + ",cpuReadbackFallbackActive=false"
+                        + ",shaderDenoiseCpuReadbackFallbackActive=false"
+                        + ",shaderDenoiseCpuReadbackFallbackInactive=true"
+                        + ",cpuDenoiseReadbackFallback=false"
+                        + ",cpuDenoisedReadbackSource=false"
+                        + ",rawGiCpuReadbackInput=true"
+                        + ",shaderOwnedOutputImage=true"
+                        + ",shaderDenoiseOutputImageReady=true"
+                        + ",round7.shaderDenoise.outputImageReady=true"
+                        + ",round7.shaderDenoise.outputMaterialReady=true"
+                        + ",round7.shaderDenoise.shaderGeneratedOutput=true"
+                        + ",round7.shaderDenoise.realOutputReady=true"
+                        + ",realShaderDenoiseOutputReady=true"
+                        + ",shaderGeneratedDenoiseOutputEvidence=true"
+                        + ",shaderDenoiseNoOverclaim=true,shaderDenoiseOverclaimRejected=true,shaderDenoiseOverclaimPresent=false"
+                        + ",publicMojangShaderGeneratedVisualOutput=true"
+                        + ",coloredBounceGi=true,contactShadow=true"
+                        + ",metadataOnly=false,proofMarker=false,focusWindowOnly=false"
+                        + ",temporaryDirectLightSubstitution=false,rectangularWashout=false"
+                        + ",shadowMaskPayloadTexture=true,finalCompositeBeforeHud=true,target="
+                        + targetAttachmentSummary(target)
+                        + "; payload: "
+                        + payloadSummary
+                        + "; raw source: "
+                        + rawGiEvidence
+                        + "; raw upload: "
+                        + rawUpload.summary()
+                        + "; shadow upload: "
+                        + shadowUpload.summary()
+                        + "; shader output target: "
+                        + outputTargetStatus.summary()
+                        + "; generation draw scaffold: "
+                        + generationDrawScaffold.summary()
+                        + "; shader output draw scaffold: "
+                        + shaderOutputDrawScaffold.summary()
+                        + "; shadow draw scaffold: "
+                        + shadowDrawScaffold.summary()
+        );
+    }
+
     private static boolean hasNativeDirectLightCandidatePayload(DirectLightingCpuOutputPayload payload) {
         return payload != null
                 && payload.snapshot().hasExecutionTelemetry()
@@ -712,6 +1351,404 @@ public final class RenderThreadPreviewTargetFactory {
         );
     }
 
+    public static PublicMojangFinalCompositeSubmissionResult submitRound7ShaderDenoiseOutputPublicDraw(
+            LucernaFramePassTarget target,
+            Round6DiffuseGiCpuOutputPayload rawGiPayload
+    ) {
+        boolean rawSourceReady = rawGiPayload != null && rawGiPayload.readyForPreviewDraw();
+        boolean directValidationFallbackEnabled = round7ShaderDenoiseDirectLightValidationFallbackEnabled();
+        DirectLightingCpuOutputPayload validationDirectSourcePayload = rawSourceReady || !directValidationFallbackEnabled
+                ? null
+                : resolveNativeDirectLightCandidatePayload();
+        boolean validationDirectSourceReady = validationDirectSourcePayload != null
+                && validationDirectSourcePayload.readyForPreviewDraw();
+        boolean strictRawDiffuseGiInput = rawSourceReady && !validationDirectSourceReady;
+        boolean diagnosticDirectLightValidationFallback = !strictRawDiffuseGiInput && validationDirectSourceReady;
+        boolean shaderInputReady = strictRawDiffuseGiInput || diagnosticDirectLightValidationFallback;
+        String shaderInputMode = strictRawDiffuseGiInput
+                ? "strict-raw-diffuse-gi"
+                : (diagnosticDirectLightValidationFallback
+                ? "diagnostic-direct-light-validation-fallback"
+                : "missing");
+        String shaderInputKind = strictRawDiffuseGiInput
+                ? "raw-diffuse-gi-rgba8"
+                : (diagnosticDirectLightValidationFallback ? "native-direct-light-rgba8-validation-input" : "none");
+        String shaderInputSummary = strictRawDiffuseGiInput
+                ? rawGiPayload.debugSummary()
+                : (diagnosticDirectLightValidationFallback
+                ? validationDirectSourcePayload.debugSummary()
+                : rawGiPayload == null
+                ? "raw diffuse-GI payload is missing; direct-light validation fallback enabled="
+                + directValidationFallbackEnabled
+                + " via "
+                + ROUND7_SHADER_DENOISE_DIRECT_LIGHT_VALIDATION_FALLBACK_ENV
+                : "raw diffuse-GI payload is not ready; direct-light validation fallback enabled="
+                + directValidationFallbackEnabled
+                + " via "
+                + ROUND7_SHADER_DENOISE_DIRECT_LIGHT_VALIDATION_FALLBACK_ENV
+                + "; raw diffuse-GI: "
+                + rawGiPayload.debugSummary());
+        Round7DenoisedGiVisualSource shaderDenoisedSource = shaderInputReady
+                ? Round7DenoisedGiVisualSource.shaderGeneratedReady(
+                "Round 7 shader-denoise public Mojang fragment pass can consume shader input mode "
+                        + shaderInputMode
+                        + " kind "
+                        + shaderInputKind
+        )
+                : Round7DenoisedGiVisualSource.unavailable(
+                rawGiPayload == null
+                        ? "Round 7 shader-denoise output skipped because raw diffuse-GI payload is missing; "
+                        + "direct-light validation fallback enabled="
+                        + directValidationFallbackEnabled
+                        + " via "
+                        + ROUND7_SHADER_DENOISE_DIRECT_LIGHT_VALIDATION_FALLBACK_ENV
+                        : "Round 7 shader-denoise output skipped because no displayable shader input source is available; raw diffuse-GI: "
+                        + rawGiPayload.debugSummary()
+                        + "; validation direct-light source: "
+                        + (validationDirectSourcePayload == null ? "missing" : validationDirectSourcePayload.debugSummary())
+                        + "; direct-light validation fallback enabled="
+                        + directValidationFallbackEnabled
+                        + " via "
+                        + ROUND7_SHADER_DENOISE_DIRECT_LIGHT_VALIDATION_FALLBACK_ENV
+        );
+        String shaderInputBoundary = "shaderDenoiseInputMode="
+                + shaderInputMode
+                + ",shaderDenoiseInputKind="
+                + shaderInputKind
+                + ",shaderDenoiseRequiresRawDiffuseGiInput=true"
+                + ",shaderDenoiseStrictProofEligible="
+                + strictRawDiffuseGiInput
+                + ",shaderDenoiseRawDiffuseGiInput="
+                + strictRawDiffuseGiInput
+                + ",round7.shaderDenoise.rawDiffuseGiInput="
+                + strictRawDiffuseGiInput
+                + ",directLightValidationInput="
+                + diagnosticDirectLightValidationFallback
+                + ",round7.shaderDenoise.directLightValidationInput="
+                + diagnosticDirectLightValidationFallback
+                + ",diagnosticDirectLightValidationFallback="
+                + diagnosticDirectLightValidationFallback
+                + ",diagnosticDirectLightValidationFallbackEnabled="
+                + directValidationFallbackEnabled
+                + ",diagnosticDirectLightValidationFallbackEnv="
+                + ROUND7_SHADER_DENOISE_DIRECT_LIGHT_VALIDATION_FALLBACK_ENV;
+        String skippedBoundary = "shaderDenoisePassExecuted=false,shaderGeneratedDenoisePassExecuted=false,"
+                + "shaderOutputSourceConsumed=false,shaderDenoiseOutputSourceConsumed=false,"
+                + "shaderDenoisePassGeneratedVisualSource=false,shaderDenoiseFinalCompositeConsumable=false,"
+                + "finalCompositeConsumable=false,cpuReadbackFallbackActive=false,"
+                + "shaderDenoiseCpuReadbackFallbackActive=false,cpuDenoiseReadbackFallback=false,"
+                + "round7.shaderDenoise.outputImageReady=false,round7.shaderDenoise.outputMaterialReady=false,"
+                + "round7.shaderDenoise.shaderGeneratedOutput=false,round7.shaderDenoise.realOutputReady=false,"
+                + "realShaderDenoiseOutputReady=false,"
+                + shaderInputBoundary;
+        if (target == null || !target.available()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    false,
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.TARGET_MISSING,
+                    "public Mojang Round 7 shader-denoise output skipped because no frame target is available; "
+                            + skippedBoundary
+                            + "; denoised source: "
+                            + shaderDenoisedSource.summary()
+            );
+        }
+        if (!target.safeForAttachment()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang Round 7 shader-denoise output skipped because the target is not HUD-safe; "
+                            + skippedBoundary
+                            + "; denoised source: "
+                            + shaderDenoisedSource.summary()
+            );
+        }
+        if (!(target.commandEncoder() instanceof CommandEncoder commandEncoder)
+                || !(target.colorTarget() instanceof GpuTextureView colorView)) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    target.attachmentMetadata().javaOpaque()
+                            ? PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT
+                            : PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang Round 7 shader-denoise output skipped because command encoder or color view is unavailable; "
+                            + skippedBoundary
+                            + "; denoised source: "
+                            + shaderDenoisedSource.summary()
+            );
+        }
+        if (!shaderInputReady) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang Round 7 shader-denoise output skipped because no displayable shader input source is available; raw diffuse-GI: "
+                            + (rawGiPayload == null ? "missing" : rawGiPayload.debugSummary())
+                            + "; validation direct-light source: "
+                            + (validationDirectSourcePayload == null ? "missing" : validationDirectSourcePayload.debugSummary())
+                            + "; "
+                            + skippedBoundary
+                            + "; denoised source: "
+                            + shaderDenoisedSource.summary()
+            );
+        }
+
+        ByteBuffer sourceBuffer = strictRawDiffuseGiInput
+                ? rawGiPayload.copyToByteBuffer()
+                : validationDirectSourcePayload.copyToByteBuffer();
+        int sourceWidth = strictRawDiffuseGiInput ? rawGiPayload.width() : validationDirectSourcePayload.width();
+        int sourceHeight = strictRawDiffuseGiInput ? rawGiPayload.height() : validationDirectSourcePayload.height();
+        DirectLightPreviewTextureUploadResult upload = ROUND7_SHADER_DENOISE_INPUT_TEXTURE_UPLOADER.upload(
+                RenderSystem.getDevice(),
+                commandEncoder,
+                sourceBuffer,
+                sourceWidth,
+                sourceHeight
+        );
+        if (!upload.availableForDraw()) {
+            Reference.reachabilityFence(sourceBuffer);
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    "public Mojang Round 7 shader-denoise output skipped because the selected shader input texture upload was unavailable: "
+                            + upload.summary()
+                            + "; "
+                            + skippedBoundary
+                            + "; shader input mode="
+                            + shaderInputMode
+                            + "; shader input kind="
+                            + shaderInputKind
+                            + "; shader input payload: "
+                            + shaderInputSummary
+                            + "; denoised source: "
+                            + shaderDenoisedSource.summary()
+            );
+        }
+
+        ShaderDenoiseOutputRenderTarget.StatusSnapshot outputTargetStatus =
+                ensureShaderDenoiseOutputRenderTarget(target);
+        ShaderGeneratedDenoiseOutputStatus partialOutputStatus = ShaderGeneratedDenoiseOutputStatus.reported(
+                true,
+                outputTargetStatus.availableForRenderPass(),
+                false,
+                false,
+                false,
+                true,
+                true,
+                outputTargetStatus.reason()
+        );
+        if (!outputTargetStatus.availableForRenderPass() || !outputTargetStatus.availableForSampling()) {
+            Reference.reachabilityFence(sourceBuffer);
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    PublicMojangFinalCompositeSubmissionResult.ShaderOutputImageCandidate.none(),
+                    partialOutputStatus,
+                    "public Mojang Round 7 shader-denoise output skipped because the owned RGBA8 output target is unavailable: "
+                            + outputTargetStatus.summary()
+                            + "; "
+                            + skippedBoundary
+                            + "; shader input mode="
+                            + shaderInputMode
+                            + "; shader input kind="
+                            + shaderInputKind
+                            + "; shader input payload: "
+                            + shaderInputSummary
+                            + "; upload: "
+                            + upload.summary()
+            );
+        }
+
+        PublicMojangPreviewDrawScaffold generationDrawScaffold;
+        try (RenderPass outputRenderPass = createFullTargetRenderPass(
+                commandEncoder,
+                () -> "lucerna public Round 7 shader-generated denoise owned-output pass",
+                outputTargetStatus.textureView(),
+                target
+        )) {
+            outputRenderPass.disableScissor();
+            generationDrawScaffold = PublicMojangPreviewDrawScaffolds
+                    .issueFullscreenRound7ShaderDenoiseOutputGenerationDraw(
+                            outputRenderPass,
+                            upload.textureView(),
+                            upload.sampler()
+                    );
+        }
+
+        PublicMojangPreviewDrawScaffold finalCompositeDrawScaffold;
+        try (RenderPass renderPass = createFullTargetRenderPass(
+                commandEncoder,
+                () -> "lucerna public Round 7 shader-generated denoise output final-composite pass",
+                colorView,
+                target
+        )) {
+            renderPass.disableScissor();
+            finalCompositeDrawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenRound7ShaderDenoiseOutputDraw(
+                    renderPass,
+                    outputTargetStatus.textureView(),
+                    outputTargetStatus.sampler()
+            );
+        }
+        commandEncoder.submit();
+        Reference.reachabilityFence(sourceBuffer);
+        boolean generatedOutputDrawIssued = generationDrawScaffold.drawCallsIssued();
+        boolean finalCompositeConsumedOutput = finalCompositeDrawScaffold.drawCallsIssued();
+        ShaderGeneratedDenoiseOutputStatus outputStatus = ShaderGeneratedDenoiseOutputStatus.reported(
+                true,
+                true,
+                generatedOutputDrawIssued,
+                generatedOutputDrawIssued && outputTargetStatus.availableForSampling(),
+                finalCompositeConsumedOutput,
+                true,
+                true,
+                "public Mojang fragment pass generated lucerna.denoise.diffuse into an owned RGBA8 texture and "
+                        + "the final composite consumed that texture; this is still not compute/storage-image denoise"
+        );
+        if (!generatedOutputDrawIssued || !finalCompositeConsumedOutput) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
+                    PublicMojangFinalCompositeSubmissionResult.ShaderOutputImageCandidate.none(),
+                    outputStatus,
+                    "public Mojang Round 7 shader-denoise output did not become final-composite consumable because "
+                            + "generatedOutputDrawIssued="
+                            + generatedOutputDrawIssued
+                            + " finalCompositeConsumedOutput="
+                            + finalCompositeConsumedOutput
+                            + "; shader input mode="
+                            + shaderInputMode
+                            + "; shader input kind="
+                            + shaderInputKind
+                            + "; shader input payload: "
+                            + shaderInputSummary
+                            + "; upload: "
+                            + upload.summary()
+                            + "; output target: "
+                            + outputTargetStatus.summary()
+                            + "; generation draw scaffold: "
+                            + generationDrawScaffold.summary()
+                            + "; final composite draw scaffold: "
+                            + finalCompositeDrawScaffold.summary()
+            );
+        }
+        return PublicMojangFinalCompositeSubmissionResult.submitted(
+                true,
+                target.attachmentMetadata().javaOpaque(),
+                PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
+                PublicMojangFinalCompositeSubmissionResult.ShaderOutputImageCandidate.none(),
+                outputStatus,
+                "public Mojang Round 7 shader-denoise output render pass submitted; "
+                        + "mode=ROUND7_SHADER_DENOISE_OUTPUT,mode=round7-shader-denoise-output"
+                        + ",evidence=round7.shaderDenoise.publicMojangFragmentPass"
+                        + ",sourceKind=shader-generated-denoised-gi"
+                        + ",sourceIdentity=shader-denoised-diffuse-gi-rgba8/public-mojang-fragment-output-image"
+                        + ",shaderGeneratedDenoisedGI=public-mojang-fragment-pass"
+                        + ",shaderDenoiseVisualShaderIntent=true"
+                        + ",shaderDenoiseDispatchPrepared=true"
+                        + ",shaderDenoiseInputReady=true"
+                        + ",shaderDenoiseInputsCompleteForDispatch=true"
+                        + ",shaderDenoiseInputMode="
+                        + shaderInputMode
+                        + ",shaderDenoiseInputKind="
+                        + shaderInputKind
+                        + ",shaderDenoiseRequiresRawDiffuseGiInput=true"
+                        + ",shaderDenoiseStrictProofEligible="
+                        + strictRawDiffuseGiInput
+                        + ",shaderDenoiseRawDiffuseGiInput="
+                        + strictRawDiffuseGiInput
+                        + ",round7.shaderDenoise.rawDiffuseGiInput="
+                        + strictRawDiffuseGiInput
+                        + ",round7.shaderDenoise.directLightValidationInput="
+                        + diagnosticDirectLightValidationFallback
+                        + ",diagnosticDirectLightValidationFallback="
+                        + diagnosticDirectLightValidationFallback
+                        + ",diagnosticDirectLightValidationFallbackEnabled="
+                        + directValidationFallbackEnabled
+                        + ",diagnosticDirectLightValidationFallbackEnv="
+                        + ROUND7_SHADER_DENOISE_DIRECT_LIGHT_VALIDATION_FALLBACK_ENV
+                        + ",shaderDenoiseOutputAttempted=true"
+                        + ",round7.shaderDenoise.outputAttempted=true"
+                        + ",shaderDenoiseOutputAttemptGeneration="
+                        + outputTargetStatus.allocationGeneration()
+                        + ",round7.shaderDenoise.outputAttemptGeneration="
+                        + outputTargetStatus.allocationGeneration()
+                        + ",shaderDenoiseOutputPassAttempted=true"
+                        + ",shaderDenoiseOutputTextureAllocated=true"
+                        + ",shaderDenoiseOwnedOutputImage=true"
+                        + ",shaderDenoiseOutputRenderPassSubmitted=true"
+                        + ",shaderDenoisePassExecuted=true"
+                        + ",shaderGeneratedDenoisePassExecuted=true"
+                        + ",shaderGeneratedOutputImageReady=true"
+                        + ",shaderOutputSourceConsumed=true"
+                        + ",shaderDenoiseOutputSourceConsumed=true"
+                        + ",shaderDenoiseOutputConsumedByFinalComposite=true"
+                        + ",shaderDenoisePassGeneratedVisualSource=true"
+                        + ",shaderDenoiseFinalCompositeConsumable=true"
+                        + ",finalCompositeConsumable=true"
+                        + ",cpuReadbackFallbackActive=false"
+                        + ",cpuReadbackFallbackInactive=true"
+                        + ",shaderDenoiseCpuReadbackFallbackActive=false"
+                        + ",shaderDenoiseCpuReadbackFallbackInactive=true"
+                        + ",cpuDenoiseReadbackFallback=false"
+                        + ",cpuDenoisedReadbackSource=false"
+                        + ",rawGiCpuReadbackInput="
+                        + strictRawDiffuseGiInput
+                        + ",directLightValidationInput="
+                        + diagnosticDirectLightValidationFallback
+                        + ",shaderOwnedOutputImage=true"
+                        + ",shaderDenoiseOutputImageReady=true"
+                        + ",round7.shaderDenoise.outputImageReady=true"
+                        + ",round7.shaderDenoise.outputMaterialReady=true"
+                        + ",round7.shaderDenoise.shaderGeneratedOutput="
+                        + strictRawDiffuseGiInput
+                        + ",round7.shaderDenoise.realOutputReady="
+                        + strictRawDiffuseGiInput
+                        + ",realShaderDenoiseOutputReady="
+                        + strictRawDiffuseGiInput
+                        + ",shaderGeneratedDenoiseOutputEvidence="
+                        + strictRawDiffuseGiInput
+                        + ",shaderGeneratedDenoiseDiagnosticOutputEvidence="
+                        + diagnosticDirectLightValidationFallback
+                        + ",shaderDenoiseNoOverclaim="
+                        + strictRawDiffuseGiInput
+                        + ",shaderDenoiseOverclaimRejected="
+                        + strictRawDiffuseGiInput
+                        + ",shaderDenoiseOverclaimPresent="
+                        + !strictRawDiffuseGiInput
+                        + ",publicMojangShaderGeneratedVisualOutput=true"
+                        + ",physicalGiTracingQuality=open"
+                        + ",physicalGiEvidence=false"
+                        + ",realTracedLightingConsumed=false"
+                        + ",stillNotComputeBoundary=true"
+                        + ",metadataOnly=false,proofMarker=false,focusWindowOnly=false"
+                        + ",temporaryDirectLightSubstitution=false,rectangularWashout=false"
+                        + ",readiness=\"shader denoise fragment pass consumed "
+                        + shaderInputMode
+                        + "/"
+                        + shaderInputKind
+                        + ", generated an owned RGBA8 denoise output image, and final composite consumed that image\""
+                        + "; denoised source: "
+                        + shaderDenoisedSource.summary()
+                        + "; target: "
+                        + targetAttachmentSummary(target)
+                        + "; javaOpaquePublicFallback="
+                        + target.attachmentMetadata().javaOpaque()
+                        + "; shader input payload: "
+                        + shaderInputSummary
+                        + "; upload: "
+                        + upload.summary()
+                        + "; shader denoise output target: "
+                        + outputTargetStatus.summary()
+                        + "; generation draw scaffold: "
+                        + generationDrawScaffold.summary()
+                        + "; final composite draw scaffold: "
+                        + finalCompositeDrawScaffold.summary()
+        );
+    }
+
     public static PublicMojangFinalCompositeSubmissionResult submitRound7FinalCompositePublicDraw(
             LucernaFramePassTarget target,
             Round6DiffuseGiCpuOutputPayload diffuseGiPayload,
@@ -960,6 +1997,18 @@ public final class RenderThreadPreviewTargetFactory {
 
     private static boolean finalCompositeDiagnosticClearEnabled() {
         String value = System.getenv("LUCERNA_ROUND7_SURFACE_CLEAR_DIAGNOSTIC");
+        return value != null
+                && ("1".equals(value.trim())
+                || "true".equalsIgnoreCase(value.trim())
+                || "yes".equalsIgnoreCase(value.trim()));
+    }
+
+    private static boolean round7ShaderDenoiseDirectLightValidationFallbackEnabled() {
+        return flagEnabled(System.getenv(ROUND7_SHADER_DENOISE_DIRECT_LIGHT_VALIDATION_FALLBACK_ENV))
+                || flagEnabled(System.getProperty(ROUND7_SHADER_DENOISE_DIRECT_LIGHT_VALIDATION_FALLBACK_ENV));
+    }
+
+    private static boolean flagEnabled(String value) {
         return value != null
                 && ("1".equals(value.trim())
                 || "true".equalsIgnoreCase(value.trim())

@@ -5,6 +5,7 @@ import net.lucerna.render.gbuffer.GBufferTargetContract;
 import net.lucerna.render.pass.LucernaFramePassKind;
 import net.lucerna.render.pass.LucernaFramePassRequest;
 import net.lucerna.render.pass.LucernaFramePassTarget;
+import net.lucerna.render.pass.LucernaFrameAttachmentMetadata;
 import net.lucerna.render.preview.Round6DiffuseGiPreviewCompositeState;
 import net.lucerna.upload.NativeDirectLightingUploadPacket;
 import net.lucerna.upload.NativeGBufferStagingUploadPacket;
@@ -38,6 +39,7 @@ public final class LucernaNativeBridge {
     private boolean directLightingUploadUnavailableLogged;
     private boolean diffuseGiPreviewRgba8ExportUnavailable;
     private boolean denoisedDiffuseGiPreviewRgba8ExportUnavailable;
+    private boolean directionalShadowMapPreviewRgba8ExportUnavailable;
 
     public synchronized boolean hasLoadAttempted() {
         return this.loadAttempted;
@@ -111,6 +113,83 @@ public final class LucernaNativeBridge {
                 snapshot,
                 rgba8,
                 "native direct-light CPU output preview RGBA8 payload copied"
+        );
+    }
+
+    public synchronized DirectionalShadowMapOutputSnapshot directionalShadowMapOutputSnapshot() {
+        if (!this.loaded) {
+            return DirectionalShadowMapOutputSnapshot.unavailable("native library not loaded");
+        }
+        return DirectionalShadowMapOutputSnapshot.fromNativeStatus(this.queryNativeStatus());
+    }
+
+    public synchronized DirectionalShadowMapOutputPayload directionalShadowMapOutputPayload() {
+        if (!this.loaded) {
+            return DirectionalShadowMapOutputPayload.unavailable("native library not loaded");
+        }
+
+        DirectionalShadowMapOutputSnapshot snapshot = this.directionalShadowMapOutputSnapshot();
+        if (!snapshot.readyForPreviewPayload()) {
+            return new DirectionalShadowMapOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    snapshot.previewReadinessReason()
+            );
+        }
+
+        if (this.directionalShadowMapPreviewRgba8ExportUnavailable) {
+            return new DirectionalShadowMapOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native directional shadow-map RGBA8 JNI export is not available yet"
+            );
+        }
+
+        byte[] rgba8;
+        try {
+            rgba8 = nativeShadowMapCpuOutputPreviewRgba8();
+        } catch (UnsatisfiedLinkError error) {
+            this.directionalShadowMapPreviewRgba8ExportUnavailable = true;
+            return new DirectionalShadowMapOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native directional shadow-map RGBA8 JNI export is not available yet"
+            );
+        } catch (Throwable throwable) {
+            return new DirectionalShadowMapOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native directional shadow-map RGBA8 call failed: " + throwable.getMessage()
+            );
+        }
+
+        snapshot = this.directionalShadowMapOutputSnapshot();
+        if (!snapshot.readyForPreviewPayload()) {
+            return new DirectionalShadowMapOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    snapshot.previewReadinessReason()
+            );
+        }
+        if (rgba8 == null) {
+            return new DirectionalShadowMapOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native directional shadow-map RGBA8 payload returned null"
+            );
+        }
+        int expectedBytes = snapshot.expectedByteCount();
+        if (expectedBytes < 0 || rgba8.length != expectedBytes) {
+            return new DirectionalShadowMapOutputPayload(
+                    snapshot,
+                    new byte[0],
+                    "native directional shadow-map RGBA8 payload size did not match telemetry"
+            );
+        }
+        return new DirectionalShadowMapOutputPayload(
+                snapshot,
+                rgba8,
+                "native directional shadow-map RGBA8 payload copied"
         );
     }
 
@@ -468,6 +547,7 @@ public final class LucernaNativeBridge {
             this.available = true;
             this.initialized = false;
             this.diffuseGiPreviewRgba8ExportUnavailable = false;
+            this.directionalShadowMapPreviewRgba8ExportUnavailable = false;
             this.lastError = "";
         } catch (UnsatisfiedLinkError error) {
             this.loaded = false;
@@ -500,6 +580,7 @@ public final class LucernaNativeBridge {
         this.lastLoggedDenoiseExecutionKey = "";
         this.directLightingUploadUnavailableLogged = false;
         this.diffuseGiPreviewRgba8ExportUnavailable = false;
+        this.directionalShadowMapPreviewRgba8ExportUnavailable = false;
         this.initialized = true;
         return true;
     }
@@ -521,6 +602,7 @@ public final class LucernaNativeBridge {
         this.lastLoggedDirectLightingExecutionKey = "";
         this.lastLoggedDenoiseExecutionKey = "";
         this.directLightingUploadUnavailableLogged = false;
+        this.directionalShadowMapPreviewRgba8ExportUnavailable = false;
         this.initialized = false;
     }
 
@@ -664,6 +746,116 @@ public final class LucernaNativeBridge {
                 );
             }
         }
+    }
+
+    public synchronized void reportGBufferDepthSamplingEvidence(
+            LucernaFramePassTarget target,
+            boolean shaderSampled,
+            String marker,
+            String blocker
+    ) {
+        if (!this.isOperational() || target == null || target.attachmentMetadata() == null) {
+            return;
+        }
+
+        LucernaFrameAttachmentMetadata metadata = target.attachmentMetadata();
+        boolean samplingReady = shaderSampled
+                && metadata.depthTextureSampleBindingReady()
+                && metadata.width() > 0
+                && metadata.height() > 0;
+        long sampleCount = samplingReady ? Math.max(1L, (long) metadata.width() * metadata.height()) : 0L;
+        long checksum = samplingReady ? depthSamplingEvidenceChecksum(metadata, sampleCount) : 0L;
+        boolean accepted = this.invokeNative("reportGBufferDepthSamplingEvidence", () -> nativeReportGBufferDepthSamplingEvidence(
+                0L,
+                metadata.depthImageViewHandle(),
+                metadata.width(),
+                metadata.height(),
+                FORMAT_TAG_GBUFFER_DEPTH,
+                metadata.depthFormat(),
+                metadata.depthLayout(),
+                sampleCount,
+                0L,
+                0.0D,
+                0.0D,
+                checksum,
+                nativeStatusLabel(
+                        samplingReady ? marker : "g_buffer_depth_shader_sampling_not_reported",
+                        samplingReady ? "shader_sampled_public_mojang_depth_view" : "g_buffer_depth_shader_sampling_not_reported"
+                ),
+                nativeStatusLabel(
+                        samplingReady ? "none" : blocker,
+                        samplingReady ? "none" : "g_buffer_depth_texture_shader_sampling_not_proven"
+                ),
+                samplingReady,
+                !samplingReady
+        ), true);
+        if (accepted && samplingReady) {
+            Lucerna.LOGGER.debug(
+                    "Lucerna native G-buffer depth sampling evidence accepted: {}x{} samples={} marker={}.",
+                    metadata.width(),
+                    metadata.height(),
+                    sampleCount,
+                    nativeStatusLabel(marker, "shader_sampled_public_mojang_depth_view")
+            );
+        }
+    }
+
+    public synchronized void reportShaderGeneratedDenoiseOutputEvidence(
+            long generation,
+            int width,
+            int height,
+            long texelCount,
+            long sampleCount,
+            long checksum,
+            String identity,
+            String marker,
+            String blocker,
+            boolean outputImageReady,
+            boolean shaderGeneratedOutput,
+            boolean finalCompositeConsumed
+    ) {
+        if (!this.isOperational()) {
+            return;
+        }
+
+        long safeTexelCount = Math.max(0L, texelCount);
+        long safeSampleCount = Math.max(0L, sampleCount);
+        long safeChecksum = Math.max(0L, checksum);
+        boolean dimensionsReady = width > 0 && height > 0;
+        long expectedTexelCount = dimensionsReady ? (long) width * (long) height : 0L;
+        boolean reportReady = outputImageReady
+                && shaderGeneratedOutput
+                && finalCompositeConsumed
+                && dimensionsReady
+                && safeTexelCount == expectedTexelCount
+                && safeSampleCount > 0L
+                && safeChecksum > 0L
+                && identity != null
+                && !identity.isBlank();
+        String readyMarker = nativeStatusLabel(
+                marker,
+                reportReady
+                        ? "shader_generated_denoise_output_image_consumed_by_final_composite"
+                        : "shader_generated_denoise_output_report_not_ready"
+        );
+        String readyBlocker = nativeStatusLabel(
+                reportReady ? "none" : blocker,
+                reportReady ? "none" : "shader_generated_denoise_output_evidence_incomplete"
+        );
+        this.invokeNative("reportShaderGeneratedDenoiseOutputEvidence", () -> nativeReportShaderGeneratedDenoiseOutputEvidence(
+                Math.max(0L, generation),
+                Math.max(0, width),
+                Math.max(0, height),
+                safeTexelCount,
+                safeSampleCount,
+                safeChecksum,
+                nativeStatusLabel(identity, "shader_generated_denoise_output_identity_missing"),
+                readyMarker,
+                readyBlocker,
+                outputImageReady,
+                shaderGeneratedOutput,
+                finalCompositeConsumed
+        ), true);
     }
 
     public synchronized void uploadDirectLighting(NativeDirectLightingUploadPacket packet) {
@@ -923,6 +1115,26 @@ public final class LucernaNativeBridge {
         return values.length == 0 ? 0 : values[values.length - 1];
     }
 
+    private static String nativeStatusLabel(String value, String fallback) {
+        String normalizedFallback = fallback == null || fallback.isBlank() ? "unknown" : fallback.trim();
+        if (value == null || value.isBlank()) {
+            return normalizedFallback;
+        }
+        return value.trim()
+                .replace('\r', ' ')
+                .replace('\n', ' ');
+    }
+
+    private static long depthSamplingEvidenceChecksum(LucernaFrameAttachmentMetadata metadata, long sampleCount) {
+        long checksum = 0x5DEECE66DL;
+        checksum = checksum * 31L + metadata.width();
+        checksum = checksum * 31L + metadata.height();
+        checksum = checksum * 31L + metadata.depthImageViewHandle();
+        checksum = checksum * 31L + sampleCount;
+        checksum &= Long.MAX_VALUE;
+        return checksum == 0L ? 1L : checksum;
+    }
+
     private boolean invokeNative(String operation, NativeCall call, boolean preserveInitializedAfterFailure) {
         try {
             if (call.invoke()) {
@@ -1034,6 +1246,16 @@ public final class LucernaNativeBridge {
                 + "|" + denoise.accepted()
                 + "|" + denoise.outputMarker()
                 + "|" + denoise.rawInputMarker()
+                + "|" + denoise.shaderDenoiseInputKind()
+                + "|" + denoise.shaderDenoiseInputStatus()
+                + "|" + denoise.shaderDenoiseInputBlocker()
+                + "|" + denoise.shaderDenoiseRawDiffuseGiInputReady()
+                + "|" + denoise.shaderDenoiseDirectLightValidationInputReady()
+                + "|" + denoise.shaderDenoiseDirectLightValidationInputActive()
+                + "|" + denoise.shaderDenoisePhysicalGiInputEvidence()
+                + "|" + denoise.shaderDenoisePhysicalGiBlocker()
+                + "|" + denoise.shaderDenoiseRealTracedInputReady()
+                + "|" + denoise.shaderDenoiseTracingBlocker()
                 + "|" + denoise.denoisedOutputMarker()
                 + "|" + denoise.compositeMarker()
                 + "|" + denoise.denoisedCpuOutputGenerated()
@@ -1065,6 +1287,21 @@ public final class LucernaNativeBridge {
                 + "|" + denoise.shaderDenoiseCpuReadbackFallbackActive()
                 + "|" + denoise.shaderDenoiseOutputReadinessLabel()
                 + "|" + denoise.shaderDenoiseOutputBlockerReason()
+                + "|" + denoise.shaderGeneratedDenoiseOutputEvidence()
+                + "|" + denoise.shaderGeneratedDenoiseOutputMarker()
+                + "|" + denoise.shaderGeneratedDenoiseOutputEvidenceReady()
+                + "|" + denoise.shaderGeneratedDenoiseOutputReported()
+                + "|" + denoise.shaderGeneratedDenoiseOutputImageReady()
+                + "|" + denoise.shaderGeneratedDenoiseOutputGenerated()
+                + "|" + denoise.shaderGeneratedDenoiseOutputFinalCompositeConsumed()
+                + "|" + denoise.shaderGeneratedDenoiseOutputReportReady()
+                + "|" + denoise.shaderGeneratedDenoiseOutputWidth()
+                + "x" + denoise.shaderGeneratedDenoiseOutputHeight()
+                + "|" + denoise.shaderGeneratedDenoiseOutputTexelCount()
+                + "|" + denoise.shaderGeneratedDenoiseOutputSampleCount()
+                + "|" + denoise.shaderGeneratedDenoiseOutputChecksum()
+                + "|" + denoise.shaderGeneratedDenoiseOutputIdentity()
+                + "|" + denoise.shaderGeneratedDenoiseOutputBlocker()
                 + "|" + denoisedOutput.outputEvidenceMarker()
                 + "|" + denoisedOutput.readyForPreviewPayload();
         if (key.equals(this.lastLoggedDenoiseExecutionKey)) {
@@ -1073,7 +1310,7 @@ public final class LucernaNativeBridge {
 
         this.lastLoggedDenoiseExecutionKey = key;
         Lucerna.LOGGER.info(
-                "Lucerna native signal-separated denoise execution scaffold: dispatchGeneration={} size={}x{} inputs={} outputs={} samples={} enabled={} ready={} accepted={} diffuseGiSignal={} directShadowSignal={} edgeInputs={} temporalHistory={} historyAccepted={} historyRejected={} edgePreserved={} edgeRejected={} rawGi={} rawGiPixels={} rawGiSamples={} rawGiRays={} rawGiCacheReads={} rawDirect={} denoisedIntent={} denoisedCpuOutputGenerated={} denoisedOutputPixels={} denoisedOutputChangedPixels={} denoisedOutputMeanAbsDelta={} previousDenoisedOutputChecksum={} currentDenoisedOutputChecksum={} frameToFrameChangedPixels={} frameToFrameMeanAbsDelta={} temporalStablePixels={} temporalUnstablePixels={} temporalHistoryConfidence={} temporalFlickerScore={} temporalReady={} temporalGhostingRisk={} temporalReadinessMarker={} temporalGhostingRiskMarker={} denoisedOutputDiffersFromRaw={} realDenoiseShaderOutput={} rawGiInputReady={} cpuDenoisedReadbackReady={} shaderDenoiseDispatchPrepared={} shaderDenoiseInputReady={} shaderDenoiseOutputReady={} shaderDenoiseOutputImageReady={} shaderDenoiseOutputImageCandidateReady={} shaderDenoiseOutputImageCandidateCpuStaged={} shaderDenoiseOutputImageCandidateNonGpu={} shaderDenoiseOutputImageCandidateSize={}x{} shaderDenoiseOutputImageCandidatePixels={} shaderDenoiseOutputImageCandidateBytes={} shaderDenoiseOutputImageCandidateChecksum={} shaderDenoiseOutputImageCandidateMarker={} shaderDenoiseOutputImageBlocker={} shaderDenoiseOutputImageCandidateBoundary={} shaderDenoiseOutputMaterialReady={} shaderDenoiseShaderGeneratedOutput={} realShaderDenoiseOutputReady={} cpuReadbackDenoiseFallbackActive={} shaderDenoiseOutputReadinessLabel={} shaderDenoiseOutputBlockerReason={} round7.shaderDenoise.dispatchPrepared={} round7.shaderDenoise.outputImageReady={} round7.shaderDenoise.outputImageCandidateReady={} round7.shaderDenoise.outputImageCandidateCpuStaged={} round7.shaderDenoise.outputImageCandidateNonGpu={} round7.shaderDenoise.outputImageCandidateMarker={} round7.shaderDenoise.outputImageBlocker={} round7.shaderDenoise.outputMaterialReady={} round7.shaderDenoise.shaderGeneratedOutput={} round7.shaderDenoise.cpuReadbackFallbackActive={} round7.shaderDenoise.realOutputReady={} denoisedPayloadReady={} denoisedPayloadEvidence={} denoisedPayloadReason={} composite={} compositeSize={}x{} compositeOutputs={} specularPlaceholder={} aoPlaceholder={} marker={} rawInputMarker={} denoisedOutputMarker={} compositeMarker={} reason={}.",
+                "Lucerna native signal-separated denoise execution scaffold: dispatchGeneration={} size={}x{} inputs={} outputs={} samples={} enabled={} ready={} accepted={} diffuseGiSignal={} directShadowSignal={} edgeInputs={} temporalHistory={} historyAccepted={} historyRejected={} edgePreserved={} edgeRejected={} rawGi={} rawGiPixels={} rawGiSamples={} rawGiRays={} rawGiCacheReads={} rawDirect={} denoisedIntent={} denoisedCpuOutputGenerated={} denoisedOutputPixels={} denoisedOutputChangedPixels={} denoisedOutputMeanAbsDelta={} previousDenoisedOutputChecksum={} currentDenoisedOutputChecksum={} frameToFrameChangedPixels={} frameToFrameMeanAbsDelta={} temporalStablePixels={} temporalUnstablePixels={} temporalHistoryConfidence={} temporalFlickerScore={} temporalReady={} temporalGhostingRisk={} temporalReadinessMarker={} temporalGhostingRiskMarker={} denoisedOutputDiffersFromRaw={} realDenoiseShaderOutput={} rawGiInputReady={} cpuDenoisedReadbackReady={} shaderDenoiseDispatchPrepared={} shaderDenoiseInputReady={} shaderDenoiseOutputReady={} shaderDenoiseOutputImageReady={} shaderDenoiseOutputImageCandidateReady={} shaderDenoiseOutputImageCandidateCpuStaged={} shaderDenoiseOutputImageCandidateNonGpu={} shaderDenoiseOutputImageCandidateSize={}x{} shaderDenoiseOutputImageCandidatePixels={} shaderDenoiseOutputImageCandidateBytes={} shaderDenoiseOutputImageCandidateChecksum={} shaderDenoiseOutputImageCandidateMarker={} shaderDenoiseOutputImageBlocker={} shaderDenoiseOutputImageCandidateBoundary={} shaderDenoiseOutputMaterialReady={} shaderDenoiseShaderGeneratedOutput={} shaderGeneratedDenoiseOutputEvidence={} shaderGeneratedDenoiseOutputMarker={} shaderGeneratedDenoiseOutputEvidenceReady={} realShaderDenoiseOutputReady={} cpuReadbackDenoiseFallbackActive={} shaderDenoiseOutputReadinessLabel={} shaderDenoiseOutputBlockerReason={} round7.shaderDenoise.dispatchPrepared={} round7.shaderDenoise.outputImageReady={} round7.shaderDenoise.outputImageCandidateReady={} round7.shaderDenoise.outputImageCandidateCpuStaged={} round7.shaderDenoise.outputImageCandidateNonGpu={} round7.shaderDenoise.outputImageCandidateMarker={} round7.shaderDenoise.outputImageBlocker={} round7.shaderDenoise.outputMaterialReady={} round7.shaderDenoise.shaderGeneratedOutput={} round7.shaderDenoise.cpuReadbackFallbackActive={} round7.shaderDenoise.realOutputReady={} denoisedPayloadReady={} denoisedPayloadEvidence={} denoisedPayloadReason={} composite={} compositeSize={}x{} compositeOutputs={} specularPlaceholder={} aoPlaceholder={} marker={} rawInputMarker={} denoisedOutputMarker={} compositeMarker={} reason={}.",
                 denoise.dispatchGeneration(),
                 denoise.width(),
                 denoise.height(),
@@ -1135,6 +1372,9 @@ public final class LucernaNativeBridge {
                 denoise.shaderDenoiseOutputImageCandidateBoundary(),
                 denoise.shaderDenoiseOutputMaterialReady(),
                 denoise.shaderDenoiseShaderGeneratedOutput(),
+                denoise.shaderGeneratedDenoiseOutputEvidence(),
+                denoise.shaderGeneratedDenoiseOutputMarker(),
+                denoise.shaderGeneratedDenoiseOutputEvidenceReady(),
                 denoise.realShaderDenoiseOutputReady(),
                 denoise.shaderDenoiseCpuReadbackFallbackActive(),
                 denoise.shaderDenoiseOutputReadinessLabel(),
@@ -1166,13 +1406,30 @@ public final class LucernaNativeBridge {
                 denoise.readinessReason()
         );
         Lucerna.LOGGER.info(
-                "Lucerna native shader denoise output readiness: label={} realOutputReady={} outputReady={} imageReady={} materialReady={} shaderGenerated={} cpuFallback={} candidateReady={} candidateSize={}x{} candidatePixels={} candidateBytes={} candidateChecksum={} candidateCpuStaged={} candidateNonGpu={} marker={} blocker={}.",
+                "Lucerna native shader-denoise input source: kind={} status={} rawDiffuseGiReady={} directLightValidationReady={} directLightValidationActive={} physicalGiEvidence={} realTracedInputReady={} inputBlocker={} physicalGiBlocker={} tracingBlocker={} boundary={}.",
+                denoise.shaderDenoiseInputKind(),
+                denoise.shaderDenoiseInputStatus(),
+                denoise.shaderDenoiseRawDiffuseGiInputReady(),
+                denoise.shaderDenoiseDirectLightValidationInputReady(),
+                denoise.shaderDenoiseDirectLightValidationInputActive(),
+                denoise.shaderDenoisePhysicalGiInputEvidence(),
+                denoise.shaderDenoiseRealTracedInputReady(),
+                denoise.shaderDenoiseInputBlocker(),
+                denoise.shaderDenoisePhysicalGiBlocker(),
+                denoise.shaderDenoiseTracingBlocker(),
+                denoise.shaderDenoiseInputBoundary()
+        );
+        Lucerna.LOGGER.info(
+                "Lucerna native shader denoise output readiness: label={} realOutputReady={} outputReady={} imageReady={} materialReady={} shaderGenerated={} shaderGeneratedEvidence={} shaderGeneratedEvidenceReady={} shaderGeneratedMarker={} cpuFallback={} candidateReady={} candidateSize={}x{} candidatePixels={} candidateBytes={} candidateChecksum={} candidateCpuStaged={} candidateNonGpu={} marker={} blocker={}.",
                 denoise.shaderDenoiseOutputReadinessLabel(),
                 denoise.realShaderDenoiseOutputReady(),
                 denoise.shaderDenoiseOutputReady(),
                 denoise.shaderDenoiseOutputImageReady(),
                 denoise.shaderDenoiseOutputMaterialReady(),
                 denoise.shaderDenoiseShaderGeneratedOutput(),
+                denoise.shaderGeneratedDenoiseOutputEvidence(),
+                denoise.shaderGeneratedDenoiseOutputEvidenceReady(),
+                denoise.shaderGeneratedDenoiseOutputMarker(),
                 denoise.shaderDenoiseCpuReadbackFallbackActive(),
                 denoise.shaderDenoiseOutputImageCandidateReady(),
                 denoise.shaderDenoiseOutputImageCandidateWidth(),
@@ -1184,6 +1441,22 @@ public final class LucernaNativeBridge {
                 denoise.shaderDenoiseOutputImageCandidateNonGpu(),
                 denoise.shaderDenoiseOutputImageCandidateMarker(),
                 denoise.shaderDenoiseOutputBlockerReason()
+        );
+        Lucerna.LOGGER.info(
+                "Lucerna native shader-generated denoise output report: reported={} outputImageReady={} generated={} finalCompositeConsumed={} reportReady={} size={}x{} texels={} samples={} checksum={} identity={} marker={} blocker={}.",
+                denoise.shaderGeneratedDenoiseOutputReported(),
+                denoise.shaderGeneratedDenoiseOutputImageReady(),
+                denoise.shaderGeneratedDenoiseOutputGenerated(),
+                denoise.shaderGeneratedDenoiseOutputFinalCompositeConsumed(),
+                denoise.shaderGeneratedDenoiseOutputReportReady(),
+                denoise.shaderGeneratedDenoiseOutputWidth(),
+                denoise.shaderGeneratedDenoiseOutputHeight(),
+                denoise.shaderGeneratedDenoiseOutputTexelCount(),
+                denoise.shaderGeneratedDenoiseOutputSampleCount(),
+                denoise.shaderGeneratedDenoiseOutputChecksum(),
+                denoise.shaderGeneratedDenoiseOutputIdentity(),
+                denoise.shaderGeneratedDenoiseOutputMarker(),
+                denoise.shaderGeneratedDenoiseOutputBlocker()
         );
     }
 
@@ -1368,6 +1641,40 @@ public final class LucernaNativeBridge {
             int[] attachmentEnabled
     );
 
+    private static native boolean nativeReportGBufferDepthSamplingEvidence(
+            long gBufferGeneration,
+            long depthViewHandle,
+            int width,
+            int height,
+            int formatTag,
+            String formatLabel,
+            String layoutLabel,
+            long sampleCount,
+            long nonzeroSampleCount,
+            double minNormalizedDepth,
+            double maxNormalizedDepth,
+            long checksum,
+            String marker,
+            String blocker,
+            boolean shaderSampled,
+            boolean metadataOnly
+    );
+
+    private static native boolean nativeReportShaderGeneratedDenoiseOutputEvidence(
+            long generation,
+            int width,
+            int height,
+            long texelCount,
+            long sampleCount,
+            long checksum,
+            String identity,
+            String marker,
+            String blocker,
+            boolean outputImageReady,
+            boolean shaderGeneratedOutput,
+            boolean finalCompositeConsumed
+    );
+
     private static native boolean nativeUploadDirectLighting(
             long frameIndex,
             long generation,
@@ -1437,6 +1744,8 @@ public final class LucernaNativeBridge {
     private static native String nativeStatus();
 
     private static native byte[] nativeDirectLightingCpuOutputPreviewRgba8();
+
+    private static native byte[] nativeShadowMapCpuOutputPreviewRgba8();
 
     private static native byte[] nativeDiffuseGiCpuOutputPreviewRgba8();
 

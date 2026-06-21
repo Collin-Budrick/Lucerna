@@ -9,6 +9,7 @@ public final class ProofVisualMode {
     private static final String HIDE_PROOF_OVERLAYS_ENV = "LUCERNA_HIDE_PROOF_OVERLAYS";
     private static final String SHOW_PROOF_OVERLAYS_ENV = "LUCERNA_SHOW_PROOF_OVERLAYS";
     private static final String EXPERIMENTAL_VISUAL_STACK_ENV = "LUCERNA_EXPERIMENTAL_VISUAL_STACK";
+    private static final String JAVA_WORLDSPACE_VISUAL_FALLBACK_ENV = "LUCERNA_ALLOW_JAVA_WORLDSPACE_VISUAL_FALLBACK";
     private static final String CPU_DIRECT_TEXTURE_COMPOSITE_ENV = "LUCERNA_ENABLE_CPU_DIRECT_TEXTURE_COMPOSITE";
     private static final String CONTROLLER_VALIDATION_ENV = "LUCERNA_CONTROLLER_VALIDATION";
     private static final String VALIDATION_VISUALS_ENV = "LUCERNA_VALIDATION_VISUALS";
@@ -37,6 +38,10 @@ public final class ProofVisualMode {
         Map<String, String> env = System.getenv();
         return envTruthy(env.get(EXPERIMENTAL_VISUAL_STACK_ENV))
                 || envTruthy(env.get(VALIDATION_VISUALS_ENV));
+    }
+
+    public static boolean javaWorldSpaceVisualFallbackAllowed() {
+        return envTruthy(System.getenv(JAVA_WORLDSPACE_VISUAL_FALLBACK_ENV));
     }
 
     public static boolean cpuDirectTextureCompositeAllowed() {

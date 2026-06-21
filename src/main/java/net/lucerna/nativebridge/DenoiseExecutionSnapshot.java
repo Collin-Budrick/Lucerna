@@ -35,6 +35,11 @@ public record DenoiseExecutionSnapshot(
         int shaderDenoiseOutputImageCandidatePixels,
         long shaderDenoiseOutputImageCandidateBytes,
         long shaderDenoiseOutputImageCandidateChecksum,
+        int shaderGeneratedDenoiseOutputWidth,
+        int shaderGeneratedDenoiseOutputHeight,
+        long shaderGeneratedDenoiseOutputTexelCount,
+        long shaderGeneratedDenoiseOutputSampleCount,
+        long shaderGeneratedDenoiseOutputChecksum,
         int compositeWidth,
         int compositeHeight,
         int compositeOutputCount,
@@ -49,6 +54,11 @@ public record DenoiseExecutionSnapshot(
         boolean optionalAoPlaceholder,
         boolean rawGiInputAvailable,
         boolean rawDirectInputAvailable,
+        boolean shaderDenoiseRawDiffuseGiInputReady,
+        boolean shaderDenoiseDirectLightValidationInputReady,
+        boolean shaderDenoiseDirectLightValidationInputActive,
+        boolean shaderDenoisePhysicalGiInputEvidence,
+        boolean shaderDenoiseRealTracedInputReady,
         boolean denoisedOutputIntent,
         boolean denoisedCpuOutputGenerated,
         boolean denoisedOutputDiffersFromRaw,
@@ -71,6 +81,12 @@ public record DenoiseExecutionSnapshot(
         boolean shaderDenoiseOutputImageCandidateNonGpu,
         boolean shaderDenoiseOutputMaterialReady,
         boolean shaderDenoiseShaderGeneratedOutput,
+        boolean shaderGeneratedDenoiseOutputEvidence,
+        boolean shaderGeneratedDenoiseOutputReported,
+        boolean shaderGeneratedDenoiseOutputImageReady,
+        boolean shaderGeneratedDenoiseOutputGenerated,
+        boolean shaderGeneratedDenoiseOutputFinalCompositeConsumed,
+        boolean shaderGeneratedDenoiseOutputReportReady,
         boolean shaderDenoiseCpuReadbackFallbackReported,
         boolean temporalReady,
         boolean temporalGhostingRisk,
@@ -87,11 +103,19 @@ public record DenoiseExecutionSnapshot(
         boolean accepted,
         String outputMarker,
         String rawInputMarker,
+        String shaderDenoiseInputKind,
+        String shaderDenoiseInputStatus,
+        String shaderDenoiseInputBlocker,
+        String shaderDenoisePhysicalGiBlocker,
+        String shaderDenoiseTracingBlocker,
         String denoisedOutputMarker,
         String temporalReadinessMarker,
         String temporalGhostingRiskMarker,
         String shaderDenoiseOutputImageCandidateMarker,
         String shaderDenoiseOutputImageBlocker,
+        String shaderGeneratedDenoiseOutputMarker,
+        String shaderGeneratedDenoiseOutputIdentity,
+        String shaderGeneratedDenoiseOutputBlocker,
         String compositeMarker,
         String readinessReason
 ) {
@@ -128,11 +152,32 @@ public record DenoiseExecutionSnapshot(
         shaderDenoiseOutputImageCandidatePixels = Math.max(0, shaderDenoiseOutputImageCandidatePixels);
         shaderDenoiseOutputImageCandidateBytes = Math.max(0L, shaderDenoiseOutputImageCandidateBytes);
         shaderDenoiseOutputImageCandidateChecksum = Math.max(0L, shaderDenoiseOutputImageCandidateChecksum);
+        shaderGeneratedDenoiseOutputWidth = Math.max(0, shaderGeneratedDenoiseOutputWidth);
+        shaderGeneratedDenoiseOutputHeight = Math.max(0, shaderGeneratedDenoiseOutputHeight);
+        shaderGeneratedDenoiseOutputTexelCount = Math.max(0L, shaderGeneratedDenoiseOutputTexelCount);
+        shaderGeneratedDenoiseOutputSampleCount = Math.max(0L, shaderGeneratedDenoiseOutputSampleCount);
+        shaderGeneratedDenoiseOutputChecksum = Math.max(0L, shaderGeneratedDenoiseOutputChecksum);
         compositeWidth = Math.max(0, compositeWidth);
         compositeHeight = Math.max(0, compositeHeight);
         compositeOutputCount = Math.max(0, compositeOutputCount);
         outputMarker = outputMarker == null || outputMarker.isBlank() ? "unknown" : outputMarker;
         rawInputMarker = rawInputMarker == null || rawInputMarker.isBlank() ? "unknown" : rawInputMarker;
+        shaderDenoiseInputKind = shaderDenoiseInputKind == null || shaderDenoiseInputKind.isBlank()
+                ? "unknown"
+                : shaderDenoiseInputKind;
+        shaderDenoiseInputStatus = shaderDenoiseInputStatus == null || shaderDenoiseInputStatus.isBlank()
+                ? "unknown"
+                : shaderDenoiseInputStatus;
+        shaderDenoiseInputBlocker = shaderDenoiseInputBlocker == null || shaderDenoiseInputBlocker.isBlank()
+                ? "unknown"
+                : shaderDenoiseInputBlocker;
+        shaderDenoisePhysicalGiBlocker = shaderDenoisePhysicalGiBlocker == null
+                || shaderDenoisePhysicalGiBlocker.isBlank()
+                ? "unknown"
+                : shaderDenoisePhysicalGiBlocker;
+        shaderDenoiseTracingBlocker = shaderDenoiseTracingBlocker == null || shaderDenoiseTracingBlocker.isBlank()
+                ? "unknown"
+                : shaderDenoiseTracingBlocker;
         denoisedOutputMarker = denoisedOutputMarker == null || denoisedOutputMarker.isBlank() ? "unknown" : denoisedOutputMarker;
         temporalReadinessMarker = temporalReadinessMarker == null || temporalReadinessMarker.isBlank()
                 ? "unknown"
@@ -148,6 +193,18 @@ public record DenoiseExecutionSnapshot(
                 || shaderDenoiseOutputImageBlocker.isBlank()
                 ? "unknown"
                 : shaderDenoiseOutputImageBlocker;
+        shaderGeneratedDenoiseOutputMarker = shaderGeneratedDenoiseOutputMarker == null
+                || shaderGeneratedDenoiseOutputMarker.isBlank()
+                ? "unknown"
+                : shaderGeneratedDenoiseOutputMarker;
+        shaderGeneratedDenoiseOutputIdentity = shaderGeneratedDenoiseOutputIdentity == null
+                || shaderGeneratedDenoiseOutputIdentity.isBlank()
+                ? "unknown"
+                : shaderGeneratedDenoiseOutputIdentity;
+        shaderGeneratedDenoiseOutputBlocker = shaderGeneratedDenoiseOutputBlocker == null
+                || shaderGeneratedDenoiseOutputBlocker.isBlank()
+                ? "unknown"
+                : shaderGeneratedDenoiseOutputBlocker;
         compositeMarker = compositeMarker == null || compositeMarker.isBlank() ? "unknown" : compositeMarker;
         readinessReason = readinessReason == null || readinessReason.isBlank() ? "unknown" : readinessReason;
     }
@@ -196,6 +253,11 @@ public record DenoiseExecutionSnapshot(
                 0, // shaderDenoiseOutputImageCandidatePixels
                 0L, // shaderDenoiseOutputImageCandidateBytes
                 0L, // shaderDenoiseOutputImageCandidateChecksum
+                0, // shaderGeneratedDenoiseOutputWidth
+                0, // shaderGeneratedDenoiseOutputHeight
+                0L, // shaderGeneratedDenoiseOutputTexelCount
+                0L, // shaderGeneratedDenoiseOutputSampleCount
+                0L, // shaderGeneratedDenoiseOutputChecksum
                 0, // compositeWidth
                 0, // compositeHeight
                 0, // compositeOutputCount
@@ -210,6 +272,11 @@ public record DenoiseExecutionSnapshot(
                 false, // optionalAoPlaceholder
                 false, // rawGiInputAvailable
                 false, // rawDirectInputAvailable
+                false, // shaderDenoiseRawDiffuseGiInputReady
+                false, // shaderDenoiseDirectLightValidationInputReady
+                false, // shaderDenoiseDirectLightValidationInputActive
+                false, // shaderDenoisePhysicalGiInputEvidence
+                false, // shaderDenoiseRealTracedInputReady
                 false, // denoisedOutputIntent
                 false, // denoisedCpuOutputGenerated
                 false, // denoisedOutputDiffersFromRaw
@@ -232,6 +299,12 @@ public record DenoiseExecutionSnapshot(
                 true, // shaderDenoiseOutputImageCandidateNonGpu
                 false, // shaderDenoiseOutputMaterialReady
                 false, // shaderDenoiseShaderGeneratedOutput
+                false, // shaderGeneratedDenoiseOutputEvidence
+                false, // shaderGeneratedDenoiseOutputReported
+                false, // shaderGeneratedDenoiseOutputImageReady
+                false, // shaderGeneratedDenoiseOutputGenerated
+                false, // shaderGeneratedDenoiseOutputFinalCompositeConsumed
+                false, // shaderGeneratedDenoiseOutputReportReady
                 false, // shaderDenoiseCpuReadbackFallbackReported
                 false, // temporalReady
                 false, // temporalGhostingRisk
@@ -248,11 +321,19 @@ public record DenoiseExecutionSnapshot(
                 false, // accepted
                 "unknown", // outputMarker
                 "unknown", // rawInputMarker
+                "unknown", // shaderDenoiseInputKind
+                "unknown", // shaderDenoiseInputStatus
+                "unknown", // shaderDenoiseInputBlocker
+                "unknown", // shaderDenoisePhysicalGiBlocker
+                "unknown", // shaderDenoiseTracingBlocker
                 "unknown", // denoisedOutputMarker
                 "unknown", // temporalReadinessMarker
                 "unknown", // temporalGhostingRiskMarker
                 "unknown", // shaderDenoiseOutputImageCandidateMarker
                 "unknown", // shaderDenoiseOutputImageBlocker
+                "unknown", // shaderGeneratedDenoiseOutputMarker
+                "unknown", // shaderGeneratedDenoiseOutputIdentity
+                reason, // shaderGeneratedDenoiseOutputBlocker
                 "unknown", // compositeMarker
                 reason
         );
@@ -343,6 +424,30 @@ public record DenoiseExecutionSnapshot(
                 parseInt(extractField(denoiseExecution, "shader_denoise_output_image_candidate_pixels")),
                 parseLong(extractField(denoiseExecution, "shader_denoise_output_image_candidate_bytes")),
                 parseLong(extractField(denoiseExecution, "shader_denoise_output_image_candidate_checksum")),
+                dimensionOrFieldInt(
+                        denoiseExecution,
+                        "shader_generated_denoise_output_size",
+                        "shader_generated_denoise_output_width",
+                        0
+                ),
+                dimensionOrFieldInt(
+                        denoiseExecution,
+                        "shader_generated_denoise_output_size",
+                        "shader_generated_denoise_output_height",
+                        1
+                ),
+                parseLongField(
+                        denoiseExecution,
+                        "shader_generated_denoise_output_texel_count",
+                        "shader_generated_denoise_output_pixels",
+                        "shader_generated_denoise_output_texels"
+                ),
+                parseLongField(
+                        denoiseExecution,
+                        "shader_generated_denoise_output_sample_count",
+                        "shader_generated_denoise_output_samples"
+                ),
+                parseLong(extractField(denoiseExecution, "shader_generated_denoise_output_checksum")),
                 dimensionComponentInt(extractField(denoiseExecution, "composite_size"), 0),
                 dimensionComponentInt(extractField(denoiseExecution, "composite_size"), 1),
                 parseInt(extractField(denoiseExecution, "composite_outputs")),
@@ -357,6 +462,36 @@ public record DenoiseExecutionSnapshot(
                 parseBoolean(extractField(denoiseExecution, "optional_ao_placeholder")),
                 parseBoolean(extractField(denoiseExecution, "raw_gi_input_available")),
                 parseBoolean(extractField(denoiseExecution, "raw_direct_input_available")),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_denoise_raw_diffuse_gi_input_ready",
+                        "shader_denoise_raw_gi_input_ready",
+                        "raw_diffuse_gi_shader_denoise_input_ready"
+                ),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_denoise_direct_light_validation_input_ready",
+                        "direct_light_validation_shader_denoise_input_ready",
+                        "shader_denoise_validation_direct_input_ready"
+                ),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_denoise_direct_light_validation_input_active",
+                        "shader_denoise_uses_direct_light_validation_input",
+                        "direct_light_validation_shader_denoise_input_active"
+                ),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_denoise_physical_gi_input_evidence",
+                        "physical_gi_evidence",
+                        "shader_denoise_physical_gi_evidence"
+                ),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_denoise_real_traced_input_ready",
+                        "real_traced_lighting_input_ready",
+                        "real_traced_lighting_consumed"
+                ),
                 parseBoolean(extractField(denoiseExecution, "denoised_output_intent")),
                 parseBoolean(extractField(denoiseExecution, "denoised_cpu_output_generated")),
                 parseBoolean(extractField(denoiseExecution, "denoised_output_differs_from_raw")),
@@ -449,7 +584,48 @@ public record DenoiseExecutionSnapshot(
                         denoiseExecution,
                         "shader_denoise_output_shader_generated",
                         "shader_generated_output",
-                        "shader_denoise_generated_output"
+                        "shader_denoise_generated_output",
+                        "real_shader_generated_output",
+                        "real_shader_denoise_generated_output",
+                        "real_denoise_shader_generated_output",
+                        "gpu_denoise_generated_output"
+                ),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_generated_denoise_output_evidence",
+                        "shader_denoise_generated_output_evidence",
+                        "real_shader_denoise_output_evidence",
+                        "shader_denoise_output_evidence",
+                        "shader_generated_denoise_output_proven"
+                ),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_generated_denoise_output_reported",
+                        "shader_generated_denoise_output_report"
+                ),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_generated_denoise_output_image_ready",
+                        "shader_generated_output_image_ready",
+                        "real_shader_generated_output_image_ready"
+                ),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_generated_denoise_output_generated",
+                        "shader_generated_denoise_output_true",
+                        "real_shader_generated_output"
+                ),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_generated_denoise_output_final_composite_consumed",
+                        "shader_generated_output_final_composite_consumed",
+                        "real_shader_generated_output_consumed_by_final_composite"
+                ),
+                parseBooleanField(
+                        denoiseExecution,
+                        "shader_generated_denoise_output_report_ready",
+                        "shader_generated_denoise_output_evidence_ready",
+                        "shader_generated_denoise_output_evidence"
                 ),
                 parseBooleanField(
                         denoiseExecution,
@@ -484,6 +660,36 @@ public record DenoiseExecutionSnapshot(
                 parseBoolean(extractField(denoiseExecution, "accepted_this_dispatch")),
                 extractField(denoiseExecution, "output_marker"),
                 extractField(denoiseExecution, "raw_input_marker"),
+                extractFieldOrDefault(
+                        denoiseExecution,
+                        "shader_denoise_input_kind",
+                        "shaderDenoiseInputKind",
+                        "shader_denoise_source_input_kind"
+                ),
+                extractFieldOrDefault(
+                        denoiseExecution,
+                        "shader_denoise_input_status",
+                        "shaderDenoiseInputStatus",
+                        "shader_denoise_source_input_status"
+                ),
+                extractFieldOrDefault(
+                        denoiseExecution,
+                        "shader_denoise_input_blocker",
+                        "shaderDenoiseInputBlocker",
+                        "shader_denoise_source_input_blocker"
+                ),
+                extractFieldOrDefault(
+                        denoiseExecution,
+                        "shader_denoise_physical_gi_blocker",
+                        "physical_gi_blocker",
+                        "shaderDenoisePhysicalGiBlocker"
+                ),
+                extractFieldOrDefault(
+                        denoiseExecution,
+                        "shader_denoise_tracing_blocker",
+                        "real_traced_lighting_blocker",
+                        "shaderDenoiseTracingBlocker"
+                ),
                 extractField(denoiseExecution, "denoised_output_marker"),
                 extractFieldOrDefault(
                         denoiseExecution,
@@ -509,6 +715,25 @@ public record DenoiseExecutionSnapshot(
                         "shader_output_blocker_reason",
                         "shader_output_image_candidate_blocker",
                         "shader_denoise_output_blocker_reason"
+                ),
+                extractFieldOrDefault(
+                        denoiseExecution,
+                        "shader_generated_denoise_output_marker",
+                        "shader_denoise_generated_output_marker",
+                        "real_shader_denoise_output_marker",
+                        "shader_denoise_output_evidence_marker"
+                ),
+                extractFieldOrDefault(
+                        denoiseExecution,
+                        "shader_generated_denoise_output_identity",
+                        "shader_generated_output_identity",
+                        "real_shader_generated_output_identity"
+                ),
+                extractFieldOrDefault(
+                        denoiseExecution,
+                        "shader_generated_denoise_output_blocker",
+                        "shader_generated_output_blocker",
+                        "real_shader_generated_output_blocker"
                 ),
                 extractField(denoiseExecution, "composite_marker"),
                 extractField(denoiseExecution, "readiness_reason")
@@ -588,6 +813,32 @@ public record DenoiseExecutionSnapshot(
         return "public Mojang shader visual output attempted; submission/readiness not proven";
     }
 
+    public boolean shaderDenoiseUsesRawDiffuseGiInput() {
+        return this.shaderDenoiseRawDiffuseGiInputReady
+                && "raw-diffuse-gi-rgba8".equals(this.shaderDenoiseInputKind);
+    }
+
+    public boolean shaderDenoiseUsesDirectLightValidationInput() {
+        return this.shaderDenoiseDirectLightValidationInputActive
+                || "native-direct-light-rgba8-validation-input".equals(this.shaderDenoiseInputKind);
+    }
+
+    public String shaderDenoiseInputBoundary() {
+        if (!this.hasExecutionTelemetry()) {
+            return "no-denoise-execution-telemetry";
+        }
+        if (this.shaderDenoiseUsesRawDiffuseGiInput()) {
+            return "raw-diffuse-gi-rgba8 input ready; physical GI/tracing still requires separate proof";
+        }
+        if (this.shaderDenoiseUsesDirectLightValidationInput()) {
+            return "direct-light validation RGBA8 input active; raw diffuse GI, physical GI, and tracing remain unproven";
+        }
+        if (this.rawGiInputAvailable || this.diffuseGiSignalAvailable) {
+            return "diffuse GI metadata present but raw diffuse-GI RGBA8 input is not ready";
+        }
+        return this.shaderDenoiseInputBlocker;
+    }
+
     public boolean shaderDenoiseInputPrerequisitesReady() {
         return this.hasExecutionTelemetry()
                 && this.shaderDenoiseInputReady
@@ -643,11 +894,24 @@ public record DenoiseExecutionSnapshot(
         }
         return "realShaderDenoiseOutputBoundary"
                 + " inputPrerequisitesReady=" + this.shaderDenoiseInputPrerequisitesReady()
+                + " inputKind=" + this.shaderDenoiseInputKind
+                + " inputStatus=" + this.shaderDenoiseInputStatus
+                + " inputBoundary=\"" + this.shaderDenoiseInputBoundary() + "\""
+                + " rawDiffuseGiInputReady=" + this.shaderDenoiseRawDiffuseGiInputReady
+                + " directLightValidationInputActive=" + this.shaderDenoiseDirectLightValidationInputActive
+                + " physicalGiEvidence=" + this.shaderDenoisePhysicalGiInputEvidence
+                + " realTracedInputReady=" + this.shaderDenoiseRealTracedInputReady
                 + " outputImageReadinessReady=" + this.shaderDenoiseOutputImageReadinessReady()
                 + " temporalHistoryReady=" + this.shaderDenoiseTemporalHistoryReady()
                 + " realOutputPrerequisitesReady=" + this.shaderDenoiseRealOutputPrerequisitesReady()
                 + " cpuReadbackGuidedVisualActive=" + this.cpuReadbackGuidedVisualDenoiseActive()
                 + " realShaderDenoiseOutputReady=" + this.realShaderDenoiseOutputReady()
+                + " shaderGeneratedDenoiseOutputEvidence=" + this.shaderGeneratedDenoiseOutputEvidence
+                + " shaderGeneratedDenoiseOutputEvidenceReady=" + this.shaderGeneratedDenoiseOutputEvidenceReady()
+                + " shaderGeneratedDenoiseOutputReportReady=" + this.shaderGeneratedDenoiseOutputReportReady()
+                + " shaderGeneratedDenoiseOutputFinalCompositeConsumed="
+                + this.shaderGeneratedDenoiseOutputFinalCompositeConsumed
+                + " shaderGeneratedDenoiseOutputMarker=" + this.shaderGeneratedDenoiseOutputMarker
                 + " blocker=" + this.shaderDenoiseOutputBlockerReason();
     }
 
@@ -658,6 +922,15 @@ public record DenoiseExecutionSnapshot(
                 + " inputPrerequisitesReady=" + this.shaderDenoiseInputPrerequisitesReady()
                 + " rawGiInputReady=" + this.rawGiInputReady
                 + " rawGiInputAvailable=" + this.rawGiInputAvailable
+                + " inputKind=" + this.shaderDenoiseInputKind
+                + " rawDiffuseGiInputReady=" + this.shaderDenoiseRawDiffuseGiInputReady
+                + " directLightValidationInputReady=" + this.shaderDenoiseDirectLightValidationInputReady
+                + " directLightValidationInputActive=" + this.shaderDenoiseDirectLightValidationInputActive
+                + " physicalGiEvidence=" + this.shaderDenoisePhysicalGiInputEvidence
+                + " physicalGiBlocker=" + this.shaderDenoisePhysicalGiBlocker
+                + " realTracedInputReady=" + this.shaderDenoiseRealTracedInputReady
+                + " tracingBlocker=" + this.shaderDenoiseTracingBlocker
+                + " inputBoundary=\"" + this.shaderDenoiseInputBoundary() + "\""
                 + " edgeInputsAvailable=" + this.edgeInputsAvailable
                 + " diffuseGiSignalAvailable=" + this.diffuseGiSignalAvailable
                 + " publicMojangVisualAttempted=" + this.publicMojangShaderVisualOutputAttempted
@@ -678,6 +951,14 @@ public record DenoiseExecutionSnapshot(
                 + " temporalGhostingRisk=" + this.temporalGhostingRisk
                 + " temporalHistoryReady=" + this.shaderDenoiseTemporalHistoryReady()
                 + " shaderGenerated=" + this.shaderDenoiseShaderGeneratedOutput
+                + " shaderGeneratedDenoiseOutputEvidence=" + this.shaderGeneratedDenoiseOutputEvidence
+                + " shaderGeneratedDenoiseOutputEvidenceReady=" + this.shaderGeneratedDenoiseOutputEvidenceReady()
+                + " shaderGeneratedDenoiseOutputReportReady=" + this.shaderGeneratedDenoiseOutputReportReady()
+                + " shaderGeneratedDenoiseOutputImageReady=" + this.shaderGeneratedDenoiseOutputImageReady
+                + " shaderGeneratedDenoiseOutputGenerated=" + this.shaderGeneratedDenoiseOutputGenerated
+                + " shaderGeneratedDenoiseOutputFinalCompositeConsumed="
+                + this.shaderGeneratedDenoiseOutputFinalCompositeConsumed
+                + " shaderGeneratedDenoiseOutputMarker=" + this.shaderGeneratedDenoiseOutputMarker
                 + " realShaderFlag=" + this.realDenoiseShaderOutput
                 + " realOutputPrerequisitesReady=" + this.shaderDenoiseRealOutputPrerequisitesReady()
                 + " realOutputPathReady=" + this.shaderDenoiseRealOutputPathReady()
@@ -696,7 +977,34 @@ public record DenoiseExecutionSnapshot(
     public boolean realShaderDenoiseOutputReady() {
         return this.shaderDenoiseRealOutputPathReady()
                 && this.realDenoiseShaderOutput
-                && this.shaderDenoiseShaderGeneratedOutput;
+                && this.shaderDenoiseShaderGeneratedOutput
+                && this.shaderGeneratedDenoiseOutputReportReady();
+    }
+
+    public boolean shaderGeneratedDenoiseOutputEvidenceReady() {
+        return this.shaderGeneratedDenoiseOutputEvidence
+                && this.shaderGeneratedDenoiseOutputReportReady();
+    }
+
+    public boolean shaderGeneratedDenoiseOutputReportReady() {
+        if (!this.hasExecutionTelemetry()) {
+            return false;
+        }
+        long expectedTexels = (long) this.shaderGeneratedDenoiseOutputWidth
+                * (long) this.shaderGeneratedDenoiseOutputHeight;
+        return this.shaderGeneratedDenoiseOutputReported
+                && this.shaderGeneratedDenoiseOutputReportReady
+                && this.shaderGeneratedDenoiseOutputImageReady
+                && this.shaderGeneratedDenoiseOutputGenerated
+                && this.shaderGeneratedDenoiseOutputFinalCompositeConsumed
+                && this.shaderGeneratedDenoiseOutputWidth > 0
+                && this.shaderGeneratedDenoiseOutputHeight > 0
+                && this.shaderGeneratedDenoiseOutputTexelCount > 0L
+                && this.shaderGeneratedDenoiseOutputTexelCount == expectedTexels
+                && this.shaderGeneratedDenoiseOutputSampleCount > 0L
+                && this.shaderGeneratedDenoiseOutputChecksum > 0L
+                && !"unknown".equals(this.shaderGeneratedDenoiseOutputIdentity)
+                && !"shader_generated_denoise_output_identity_missing".equals(this.shaderGeneratedDenoiseOutputIdentity);
     }
 
     public boolean shaderDenoiseRealOutputPathReady() {
@@ -715,6 +1023,9 @@ public record DenoiseExecutionSnapshot(
         }
         if (!this.shaderDenoiseInputReady) {
             return "shader-denoise-input-not-ready";
+        }
+        if (!this.shaderDenoiseUsesRawDiffuseGiInput() && this.shaderDenoiseUsesDirectLightValidationInput()) {
+            return "shader-denoise-input-is-direct-light-validation-not-raw-diffuse-gi";
         }
         if (!this.rawGiInputReady || (!this.rawGiInputAvailable && !this.diffuseGiSignalAvailable)) {
             return "shader-denoise-raw-gi-input-not-ready";
@@ -776,12 +1087,18 @@ public record DenoiseExecutionSnapshot(
         if (!this.realDenoiseShaderOutput) {
             return "real-denoise-shader-output-flag-false";
         }
+        if (!this.shaderGeneratedDenoiseOutputReportReady()) {
+            return this.normalizedShaderGeneratedDenoiseOutputBlocker();
+        }
         return this.normalizedShaderDenoiseOutputImageBlocker();
     }
 
     public String shaderDenoiseOutputReadinessLabel() {
         if (this.realShaderDenoiseOutputReady()) {
             return "real-shader-output-ready";
+        }
+        if (this.shaderGeneratedDenoiseOutputReportReady()) {
+            return "shader-generated-output-report-ready";
         }
         if (this.shaderDenoiseRealOutputPrerequisitesReady()) {
             return "real-shader-output-prerequisites-ready";
@@ -819,6 +1136,15 @@ public record DenoiseExecutionSnapshot(
         return this.shaderDenoiseOutputImageBlocker;
     }
 
+    private String normalizedShaderGeneratedDenoiseOutputBlocker() {
+        if (this.shaderGeneratedDenoiseOutputBlocker == null
+                || this.shaderGeneratedDenoiseOutputBlocker.isBlank()
+                || "unknown".equals(this.shaderGeneratedDenoiseOutputBlocker)) {
+            return "shader-generated-denoise-output-report-not-ready";
+        }
+        return this.shaderGeneratedDenoiseOutputBlocker;
+    }
+
     public String shaderDenoiseOutputImageCandidateBoundary() {
         if (!this.hasExecutionTelemetry()) {
             return "no-denoise-execution-telemetry";
@@ -843,6 +1169,9 @@ public record DenoiseExecutionSnapshot(
             return this.denoiseQualityEvidenceReady()
                     ? "real-shader-denoise-output-with-quality-evidence"
                     : "real-shader-denoise-output-without-quality-evidence";
+        }
+        if (this.shaderGeneratedDenoiseOutputReportReady()) {
+            return "shader-generated-denoise-output-report-ready; broader-real-output-prerequisites-still-open";
         }
         if (this.shaderDenoiseRealOutputPrerequisitesReady()) {
             return "real-shader-output-prerequisites-ready; shader-generated-pixels-or-controller-proof-missing";
@@ -881,6 +1210,19 @@ public record DenoiseExecutionSnapshot(
                 + " rawGiSamples=" + this.rawGiSamples
                 + " rawGiRays=" + this.rawGiRays
                 + " rawGiCacheReads=" + this.rawGiCacheReads
+                + " shaderDenoiseInputKind=" + this.shaderDenoiseInputKind
+                + " shaderDenoiseInputStatus=" + this.shaderDenoiseInputStatus
+                + " shaderDenoiseInputBlocker=" + this.shaderDenoiseInputBlocker
+                + " shaderDenoiseRawDiffuseGiInputReady=" + this.shaderDenoiseRawDiffuseGiInputReady
+                + " shaderDenoiseDirectLightValidationInputReady="
+                + this.shaderDenoiseDirectLightValidationInputReady
+                + " shaderDenoiseDirectLightValidationInputActive="
+                + this.shaderDenoiseDirectLightValidationInputActive
+                + " physicalGiEvidence=" + this.shaderDenoisePhysicalGiInputEvidence
+                + " shaderDenoisePhysicalGiBlocker=" + this.shaderDenoisePhysicalGiBlocker
+                + " shaderDenoiseRealTracedInputReady=" + this.shaderDenoiseRealTracedInputReady
+                + " shaderDenoiseTracingBlocker=" + this.shaderDenoiseTracingBlocker
+                + " shaderDenoiseInputBoundary=\"" + this.shaderDenoiseInputBoundary() + "\""
                 + " denoisedIntent=" + this.denoisedOutputIntent
                 + " denoisedCpuOutputGenerated=" + this.denoisedCpuOutputGenerated
                 + " denoisedOutputPixels=" + this.denoisedOutputPixels
@@ -937,11 +1279,27 @@ public record DenoiseExecutionSnapshot(
                 + " shaderDenoiseOutputImageCandidatePixels=" + this.shaderDenoiseOutputImageCandidatePixels
                 + " shaderDenoiseOutputImageCandidateBytes=" + this.shaderDenoiseOutputImageCandidateBytes
                 + " shaderDenoiseOutputImageCandidateChecksum=" + this.shaderDenoiseOutputImageCandidateChecksum
+                + " shaderGeneratedDenoiseOutputReported=" + this.shaderGeneratedDenoiseOutputReported
+                + " shaderGeneratedDenoiseOutputImageReady=" + this.shaderGeneratedDenoiseOutputImageReady
+                + " shaderGeneratedDenoiseOutputGenerated=" + this.shaderGeneratedDenoiseOutputGenerated
+                + " shaderGeneratedDenoiseOutputFinalCompositeConsumed="
+                + this.shaderGeneratedDenoiseOutputFinalCompositeConsumed
+                + " shaderGeneratedDenoiseOutputReportReady=" + this.shaderGeneratedDenoiseOutputReportReady()
+                + " shaderGeneratedDenoiseOutputSize=" + this.shaderGeneratedDenoiseOutputWidth
+                + "x" + this.shaderGeneratedDenoiseOutputHeight
+                + " shaderGeneratedDenoiseOutputTexelCount=" + this.shaderGeneratedDenoiseOutputTexelCount
+                + " shaderGeneratedDenoiseOutputSampleCount=" + this.shaderGeneratedDenoiseOutputSampleCount
+                + " shaderGeneratedDenoiseOutputChecksum=" + this.shaderGeneratedDenoiseOutputChecksum
+                + " shaderGeneratedDenoiseOutputIdentity=" + this.shaderGeneratedDenoiseOutputIdentity
+                + " shaderGeneratedDenoiseOutputBlocker=" + this.shaderGeneratedDenoiseOutputBlocker
                 + " shaderDenoiseOutputImageCandidateMarker=" + this.shaderDenoiseOutputImageCandidateMarker
                 + " shaderDenoiseOutputImageBlocker=" + this.shaderDenoiseOutputImageBlocker
                 + " shaderDenoiseOutputImageCandidateBoundary=" + this.shaderDenoiseOutputImageCandidateBoundary()
                 + " shaderDenoiseOutputMaterialReady=" + this.shaderDenoiseOutputMaterialReady
                 + " shaderDenoiseShaderGeneratedOutput=" + this.shaderDenoiseShaderGeneratedOutput
+                + " shaderGeneratedDenoiseOutputEvidence=" + this.shaderGeneratedDenoiseOutputEvidence
+                + " shaderGeneratedDenoiseOutputEvidenceReady=" + this.shaderGeneratedDenoiseOutputEvidenceReady()
+                + " shaderGeneratedDenoiseOutputMarker=" + this.shaderGeneratedDenoiseOutputMarker
                 + " cpuFallbackQualityMetrics=" + this.cpuFallbackQualityMetrics
                 + " cpuReadbackReady=" + this.cpuDenoisedOutputReadbackReady()
                 + " denoiseQualityEvidenceReady=" + this.denoiseQualityEvidenceReady()

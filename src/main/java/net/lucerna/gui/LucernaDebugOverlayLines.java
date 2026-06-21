@@ -125,6 +125,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Round 7 denoise: " + compositeStatus.denoiseSourcePolicy()));
         lines.add(Component.literal("Round 7 stack boundary: " + compositeStatus.lightingStackBoundary()));
         lines.add(Component.literal("Round 7 final boundary: " + compositeStatus.finalCompositeBoundary()));
+        lines.add(Component.literal("Round 7 traced-GI boundary: " + compositeStatus.tracedGiConsumptionBoundary()));
         lines.add(Component.literal("Round 7 source guard: " + compositeStatus.compactAuthenticityPolicy()));
         lines.add(Component.literal("Round 7 proof gate: " + compositeStatus.firstLightingMilestoneGate()));
         lines.add(Component.literal("Round 7 evidence: " + compositeStatus.controllerEvidenceLine()));
@@ -229,11 +230,12 @@ public final class LucernaDebugOverlayLines {
                 "variance",
                 "ray_budget"
         );
-        lines.add(Component.literal("Overlay scope: shader denoise + temporal proof readiness; no quality claim."));
+        lines.add(Component.literal("Overlay scope: public-Mojang output-image plumbing + raw-GI/native-compute gates; no full denoise claim."));
         if (!lightingDispatch.hasLightingDispatchStatus()) {
             lines.add(Component.literal("Denoise telemetry: unavailable(" + shorten(lightingDispatch.message(), 64) + ")"));
             lines.add(Component.literal("Sources: raw=? cpu=? shaderIntent=? shaderOut=?"));
-            lines.add(Component.literal("Shader output attempt: attempted=? generation=? realReady=false noOverclaim=true"));
+            lines.add(Component.literal("Proof gates: publicMojangImage=? rawGiInputProof=? nativeVulkanCompute=false fullObjective=false"));
+            lines.add(Component.literal("Shader output attempt: attempted=? generation=? publicMojangReady=false nativeCompute=false noFullClaimOverclaim=true"));
             lines.add(Component.literal("Shader output prerequisites: dispatch=? image=? material=? generated=? realReady=?"));
             lines.add(Component.literal("Shader output candidate: present=? dims=missing checksum=missing"));
             lines.add(Component.literal("Candidate source: source=? marker=? boundary=telemetry-unavailable"));
@@ -252,14 +254,18 @@ public final class LucernaDebugOverlayLines {
                 + " cpu=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.cpuDenoiseReady())
                 + " shaderIntent=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderDenoiseIntended())
                 + " shaderOut=" + shaderOutputReadinessLabel(denoiseStage)));
-        lines.add(Component.literal("Shader state: dispatch=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderDispatchPrepared())
+        lines.add(Component.literal("Proof gates: publicMojangImage=" + realShaderDenoiseOutputReadyLabel(denoiseStage)
+                + " rawGiInputProof=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.rawSourceReady())
+                + " nativeVulkanCompute=false fullObjective=false"));
+        lines.add(Component.literal("Public Mojang output state: dispatch=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderDispatchPrepared())
                 + " image=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderOutputImageReady())
                 + " material=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderOutputMaterialReady())
                 + " generated=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.shaderGeneratedOutput())));
         lines.add(Component.literal("Shader output attempt: attempted=" + shaderDenoiseOutputAttemptedLabel(denoiseStage)
                 + " generation=" + valueOrUnknown(denoiseStage == null ? null : denoiseStage.generation())
-                + " realReady=" + realShaderDenoiseOutputReadyLabel(denoiseStage)
-                + " noOverclaim=" + shaderDenoiseNoOverclaimLabel(denoiseStage)));
+                + " publicMojangReady=" + realShaderDenoiseOutputReadyLabel(denoiseStage)
+                + " nativeCompute=false"
+                + " noFullClaimOverclaim=" + shaderDenoiseNoOverclaimLabel(denoiseStage)));
         lines.add(Component.literal("Shader output prerequisites: " + shaderOutputPrerequisitesLabel(denoiseStage)));
         lines.add(Component.literal("Shader output candidate: present=" + shaderOutputImageCandidateReadinessLabel(denoiseStage)
                 + " dims=" + shaderOutputImageCandidateDimensionsLabel(denoiseStage)
@@ -272,7 +278,7 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("Fallback/blockers: cpuFallback=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.cpuReadbackFallback())
                 + " blockers=" + shorten(denoiseStage == null ? "" : denoiseStage.shaderDenoiseBlockers(), 78)));
         lines.add(Component.literal("CPU fallback boundary: " + shaderDenoiseCpuFallbackBoundaryLabel(denoiseStage)));
-        lines.add(Component.literal("Shader no-overclaim boundary: " + shaderDenoiseOutputBoundaryLine(denoiseStage)));
+        lines.add(Component.literal("Output plumbing boundary: " + shaderDenoiseOutputBoundaryLine(denoiseStage)));
         lines.add(Component.literal("Denoise output: source=" + denoiseSourceIdentityLabel(denoiseStage)
                 + " generated=" + yesNoUnknown(denoiseStage == null ? null : denoiseStage.cpuOutputGenerated())
                 + " energy=" + stageOutputEnergyLabel(denoiseStage)
@@ -326,6 +332,8 @@ public final class LucernaDebugOverlayLines {
         lines.add(Component.literal("round7.denoiseSourcePolicy=" + compositeStatus.denoiseSourcePolicy()));
         lines.add(Component.literal("round7.lightingStackBoundary=" + compositeStatus.lightingStackBoundary()));
         lines.add(Component.literal("round7.finalCompositeBoundary=" + compositeStatus.finalCompositeBoundary()));
+        lines.add(Component.literal("round7.tracedGiConsumptionBoundary="
+                + compositeStatus.tracedGiConsumptionBoundary()));
         lines.add(Component.literal("round7.firstLightingMilestoneGate="
                 + compositeStatus.firstLightingMilestoneGate()));
         FirstLightingQualityProofStatus qualityStatus = FirstLightingQualityProofStatus.fromSnapshot(
@@ -1257,6 +1265,20 @@ public final class LucernaDebugOverlayLines {
                     + giAuthenticOutputLabel(diffuseGiStage)
                     + " shaderGI=" + realGiShaderLabel(diffuseGiStage)
                     + " physicalTracingQuality=open"));
+            lines.add(Component.literal("Traced-GI state: rawGiShaderOutputReady="
+                    + rawGiShaderOutputReadyLabel(denoiseStage, diffuseGiStage)
+                    + " realTracedLightingConsumed=" + giRealTracedLightingConsumedLabel(diffuseGiStage)
+                    + " realGpuTraversalExecuted=" + giRealGpuTraversalExecutedLabel(diffuseGiStage)
+                    + " fullPhysicalGiQuality=" + giFullPhysicalQualityLabel(diffuseGiStage)));
+            lines.add(Component.literal("Traced-GI counts: rays=" + valueOrUnknown(diffuseGiStage.rayCount())
+                    + " hits=" + giTraceHitCountLabel(diffuseGiStage)
+                    + " misses=" + giTraceMissCountLabel(diffuseGiStage)
+                    + " material=" + giMaterialHitCountLabel(diffuseGiStage)
+                    + " depthSamples=" + giDepthSampleCountLabel(diffuseGiStage)
+                    + " sourceBounceSamples=" + giSourceBounceSampleCountLabel(diffuseGiStage)
+                    + " sourceBounceHits=" + giSourceBounceHitCountLabel(diffuseGiStage)));
+            lines.add(Component.literal("Traced-GI blockers: "
+                    + giTracedLightingBlockerLabel(diffuseGiStage, denoiseStage)));
             lines.add(Component.literal("Low-res GI authenticity: cpuScaffold="
                     + giCpuScaffoldOutputLabel(diffuseGiStage)
                     + " realShaderGI=" + realGiShaderLabel(diffuseGiStage)
@@ -2314,6 +2336,262 @@ public final class LucernaDebugOverlayLines {
         );
     }
 
+    private static String rawGiShaderOutputReadyLabel(
+            LightingDispatchStageTelemetryStatus denoiseStage,
+            LightingDispatchStageTelemetryStatus diffuseGiStage
+    ) {
+        LightingDispatchStageTelemetryStatus stage = denoiseStage == null ? diffuseGiStage : denoiseStage;
+        if (stage == null) {
+            return "?";
+        }
+        if (Boolean.TRUE.equals(stage.realShaderDenoiseOutputReady())
+                || Boolean.TRUE.equals(stage.shaderGeneratedDenoiseOutputEvidence())
+                || Boolean.TRUE.equals(stage.shaderOutputImageReady())) {
+            return "yes";
+        }
+        if (Boolean.FALSE.equals(stage.realShaderDenoiseOutputReady())
+                || Boolean.FALSE.equals(stage.shaderGeneratedDenoiseOutputEvidence())
+                || Boolean.FALSE.equals(stage.shaderOutputImageReady())) {
+            return "no";
+        }
+        String explicit = firstDetailOrUnknown(
+                stage,
+                "raw_gi_shader_output_ready",
+                "rawGiShaderOutputReady",
+                "raw_gi_shader_output",
+                "rawGiShaderOutput",
+                "shader_generated_denoise_output_evidence",
+                "shaderGeneratedDenoiseOutputEvidence",
+                "real_shader_denoise_output_ready",
+                "realShaderDenoiseOutputReady",
+                "shader_denoise_output_image_ready",
+                "shaderDenoiseOutputImageReady"
+        );
+        if (isTruthy(explicit) || "yes".equalsIgnoreCase(explicit)) {
+            return "yes";
+        }
+        if (isFalsy(explicit)) {
+            return "no";
+        }
+        return "?".equals(explicit) ? "?" : explicit;
+    }
+
+    private static String giRealTracedLightingConsumedLabel(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null) {
+            return "?";
+        }
+        if (stage.realTracedLightingConsumed() != null) {
+            return yesNo(stage.realTracedLightingConsumed());
+        }
+        String explicit = firstDetailOrUnknown(
+                stage,
+                "real_traced_lighting_consumed",
+                "realTracedLightingConsumed",
+                "traced_lighting_consumed",
+                "tracedLightingConsumed",
+                "voxel_ray_traced_lighting_consumed"
+        );
+        if (isTruthy(explicit) || "yes".equalsIgnoreCase(explicit)) {
+            return "yes";
+        }
+        if (isFalsy(explicit)) {
+            return "no";
+        }
+        return explicit;
+    }
+
+    private static String giRealGpuTraversalExecutedLabel(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null) {
+            return "?";
+        }
+        if (stage.realGpuTraversalExecuted() != null) {
+            return yesNo(stage.realGpuTraversalExecuted());
+        }
+        String explicit = firstDetailOrUnknown(
+                stage,
+                "real_gpu_traversal_executed",
+                "realGpuTraversalExecuted",
+                "gpu_traversal_executed",
+                "voxel_gpu_traversal_executed"
+        );
+        if (isTruthy(explicit) || "yes".equalsIgnoreCase(explicit)) {
+            return "yes";
+        }
+        if (isFalsy(explicit)) {
+            return "no";
+        }
+        return explicit;
+    }
+
+    private static String giFullPhysicalQualityLabel(LightingDispatchStageTelemetryStatus stage) {
+        String explicit = firstDetailOrUnknown(
+                stage,
+                "full_physical_gi_quality",
+                "fullPhysicalGiQuality",
+                "physical_gi_quality",
+                "physicalGiQuality",
+                "physically_correct_gi",
+                "physicallyCorrectGi",
+                "production_gi_quality",
+                "productionGiQuality"
+        );
+        return isTruthy(explicit) || "yes".equalsIgnoreCase(explicit) ? "yes" : "no";
+    }
+
+    private static String giTraceHitCountLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "trace_hit_count",
+                "trace_hits",
+                "traced_lighting_hit_count",
+                "tracedLightingHitCount",
+                "ray_hit_count",
+                "ray_hits",
+                "hit_count",
+                "hits",
+                "known_scene_wall_hit_count",
+                "known_scene_wall_hits"
+        );
+    }
+
+    private static String giTraceMissCountLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "trace_miss_count",
+                "trace_misses",
+                "traced_lighting_miss_count",
+                "tracedLightingMissCount",
+                "ray_miss_count",
+                "ray_misses",
+                "miss_count",
+                "misses",
+                "open_sky_miss_count",
+                "open_sky_misses"
+        );
+    }
+
+    private static String giMaterialHitCountLabel(LightingDispatchStageTelemetryStatus stage) {
+        return "total=" + firstDetailOrUnknown(
+                stage,
+                "material_hit_count",
+                "material_hits",
+                "traced_material_hit_count",
+                "tracedMaterialHitCount"
+        ) + "/opaque=" + firstDetailOrUnknown(
+                stage,
+                "opaque_material_hit_count",
+                "opaque_material_hits",
+                "opaque_hits"
+        ) + "/glassWater=" + firstDetailOrUnknown(
+                stage,
+                "glass_water_material_hit_count",
+                "glass_water_material_hits",
+                "water_glass_material_hits",
+                "translucent_material_hits"
+        );
+    }
+
+    private static String giDepthSampleCountLabel(LightingDispatchStageTelemetryStatus stage) {
+        if (stage == null) {
+            return "?";
+        }
+        if (stage.gBufferDepthSampleCount() != null) {
+            return Long.toString(stage.gBufferDepthSampleCount());
+        }
+        return firstDetailOrUnknown(
+                stage,
+                "g_buffer_depth_sample_count",
+                "gBufferDepthSampleCount",
+                "depth_sample_count",
+                "depth_samples",
+                "shader_depth_sample_count",
+                "shaderDepthSampleCount"
+        );
+    }
+
+    private static String giSourceBounceSampleCountLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "source_bounce_sample_count",
+                "sourceBounceSampleCount",
+                "source_bounce_samples",
+                "bounce_sample_count",
+                "bounceSampleCount",
+                "colored_bounce_sample_count",
+                "coloredBounceSampleCount",
+                "colored_bounce_samples",
+                "coloredBounceSamples"
+        );
+    }
+
+    private static String giSourceBounceHitCountLabel(LightingDispatchStageTelemetryStatus stage) {
+        return firstDetailOrUnknown(
+                stage,
+                "source_bounce_hit_count",
+                "sourceBounceHitCount",
+                "source_bounce_hits",
+                "bounce_hit_count",
+                "bounceHitCount",
+                "colored_bounce_hit_count",
+                "coloredBounceHitCount",
+                "colored_bounce_hits",
+                "coloredBounceHits"
+        );
+    }
+
+    private static String giTracedLightingBlockerLabel(
+            LightingDispatchStageTelemetryStatus diffuseGiStage,
+            LightingDispatchStageTelemetryStatus denoiseStage
+    ) {
+        if (diffuseGiStage == null) {
+            return "diffuse-gi-stage-not-reported";
+        }
+        List<String> blockers = new ArrayList<>();
+        if (!"yes".equals(rawGiShaderOutputReadyLabel(denoiseStage, diffuseGiStage))) {
+            blockers.add("raw-gi-shader-output-unproven");
+        }
+        if (!Boolean.TRUE.equals(diffuseGiStage.realTracedLightingConsumed())) {
+            blockers.add("traced-lighting-not-consumed-by-gi");
+        }
+        if (!Boolean.TRUE.equals(diffuseGiStage.realGpuTraversalExecuted())) {
+            blockers.add("real-gpu-traversal-not-executed");
+        }
+        if (Boolean.TRUE.equals(diffuseGiStage.tracedLightingMetadataOnly())) {
+            blockers.add("traced-lighting-metadata-only");
+        }
+        if (Boolean.TRUE.equals(diffuseGiStage.previewFallbackContribution())) {
+            blockers.add("preview-fallback-active");
+        }
+        if (!"yes".equals(giFullPhysicalQualityLabel(diffuseGiStage))) {
+            blockers.add("full-physical-gi-quality-unproven");
+        }
+        String explicitBlocker = firstDetailOrUnknown(
+                diffuseGiStage,
+                "traced_gi_blockers",
+                "tracedGiBlockers",
+                "traced_lighting_blockers",
+                "tracedLightingBlockers",
+                "gi_tracing_blockers",
+                "giTracingBlockers"
+        );
+        if (!"?".equals(explicitBlocker)) {
+            blockers.add(shorten(explicitBlocker, 72));
+        }
+        if (denoiseStage != null) {
+            String shaderBlocker = firstDetailOrUnknown(
+                    denoiseStage,
+                    "shader_denoise_blockers",
+                    "shaderDenoiseBlockers",
+                    "shader_output_blocker_reason",
+                    "shaderOutputBlockerReason"
+            );
+            if (!"?".equals(shaderBlocker)) {
+                blockers.add("shader=" + shorten(shaderBlocker, 64));
+            }
+        }
+        return blockers.isEmpty() ? "none-reported" : String.join(",", blockers);
+    }
+
     private static String giSurfaceOnlyProofEligibleLabel(LightingDispatchStageTelemetryStatus stage) {
         return firstDetailOrUnknown(
                 stage,
@@ -2570,17 +2848,16 @@ public final class LucernaDebugOverlayLines {
     }
 
     private static String shaderDenoiseNoOverclaimLabel(LightingDispatchStageTelemetryStatus stage) {
-        if (stage == null || stage.realShaderDenoiseOutputReady() == null) {
-            return "true";
-        }
-        return yesNo(!Boolean.TRUE.equals(stage.realShaderDenoiseOutputReady()));
+        return "true";
     }
 
     private static String shaderDenoiseOutputBoundaryLine(LightingDispatchStageTelemetryStatus stage) {
         if (stage == null) {
-            return "realShaderDenoiseOutputReady=false noOverclaim=true cpuReadbackFallback=? blocker=stage-not-reported";
+            return "publicMojangImage=false rawGiInputProof=? nativeVulkanCompute=false fullObjective=false blocker=stage-not-reported";
         }
-        return shorten(stage.shaderDenoiseOutputBoundaryLine(), 160);
+        return shorten(stage.shaderDenoiseOutputBoundaryLine(), 112)
+                + " rawGiInputProof=" + yesNoUnknown(stage.rawSourceReady())
+                + " nativeVulkanCompute=false fullObjective=false";
     }
 
     private static String shaderOutputPrerequisitesLabel(LightingDispatchStageTelemetryStatus stage) {

@@ -9,6 +9,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
         boolean javaOpaqueRenderObjectsPresent,
         TargetStatus targetStatus,
         ShaderOutputImageCandidate shaderOutputImageCandidate,
+        ShaderGeneratedDenoiseOutputStatus shaderGeneratedDenoiseOutputStatus,
         String reason
 ) {
     public PublicMojangFinalCompositeSubmissionResult(
@@ -26,6 +27,28 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 javaOpaqueRenderObjectsPresent,
                 targetStatus,
                 ShaderOutputImageCandidate.none(),
+                ShaderGeneratedDenoiseOutputStatus.none(),
+                reason
+        );
+    }
+
+    public PublicMojangFinalCompositeSubmissionResult(
+            boolean attempted,
+            boolean submitted,
+            boolean drawCallsIssued,
+            boolean javaOpaqueRenderObjectsPresent,
+            TargetStatus targetStatus,
+            ShaderOutputImageCandidate shaderOutputImageCandidate,
+            String reason
+    ) {
+        this(
+                attempted,
+                submitted,
+                drawCallsIssued,
+                javaOpaqueRenderObjectsPresent,
+                targetStatus,
+                shaderOutputImageCandidate,
+                ShaderGeneratedDenoiseOutputStatus.none(),
                 reason
         );
     }
@@ -36,6 +59,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
         }
         if (shaderOutputImageCandidate == null) {
             shaderOutputImageCandidate = ShaderOutputImageCandidate.none();
+        }
+        if (shaderGeneratedDenoiseOutputStatus == null) {
+            shaderGeneratedDenoiseOutputStatus = ShaderGeneratedDenoiseOutputStatus.none();
         }
         if (reason == null || reason.isBlank()) {
             reason = submitted
@@ -54,6 +80,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 false,
                 TargetStatus.NOT_REQUESTED,
                 ShaderOutputImageCandidate.none(),
+                ShaderGeneratedDenoiseOutputStatus.none(),
                 reason
         );
     }
@@ -74,6 +101,24 @@ public record PublicMojangFinalCompositeSubmissionResult(
             ShaderOutputImageCandidate shaderOutputImageCandidate,
             String reason
     ) {
+        return notSubmitted(
+                attempted,
+                javaOpaqueRenderObjectsPresent,
+                targetStatus,
+                shaderOutputImageCandidate,
+                ShaderGeneratedDenoiseOutputStatus.none(),
+                reason
+        );
+    }
+
+    public static PublicMojangFinalCompositeSubmissionResult notSubmitted(
+            boolean attempted,
+            boolean javaOpaqueRenderObjectsPresent,
+            TargetStatus targetStatus,
+            ShaderOutputImageCandidate shaderOutputImageCandidate,
+            ShaderGeneratedDenoiseOutputStatus shaderGeneratedDenoiseOutputStatus,
+            String reason
+    ) {
         return new PublicMojangFinalCompositeSubmissionResult(
                 attempted,
                 false,
@@ -81,6 +126,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 javaOpaqueRenderObjectsPresent,
                 targetStatus,
                 shaderOutputImageCandidate,
+                shaderGeneratedDenoiseOutputStatus,
                 reason
         );
     }
@@ -98,6 +144,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 javaOpaqueRenderObjectsPresent,
                 targetStatus,
                 ShaderOutputImageCandidate.none(),
+                ShaderGeneratedDenoiseOutputStatus.none(),
                 reason
         );
     }
@@ -109,6 +156,24 @@ public record PublicMojangFinalCompositeSubmissionResult(
             ShaderOutputImageCandidate shaderOutputImageCandidate,
             String reason
     ) {
+        return submitted(
+                drawCallsIssued,
+                javaOpaqueRenderObjectsPresent,
+                targetStatus,
+                shaderOutputImageCandidate,
+                ShaderGeneratedDenoiseOutputStatus.none(),
+                reason
+        );
+    }
+
+    public static PublicMojangFinalCompositeSubmissionResult submitted(
+            boolean drawCallsIssued,
+            boolean javaOpaqueRenderObjectsPresent,
+            TargetStatus targetStatus,
+            ShaderOutputImageCandidate shaderOutputImageCandidate,
+            ShaderGeneratedDenoiseOutputStatus shaderGeneratedDenoiseOutputStatus,
+            String reason
+    ) {
         return new PublicMojangFinalCompositeSubmissionResult(
                 true,
                 true,
@@ -116,6 +181,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 javaOpaqueRenderObjectsPresent,
                 targetStatus,
                 shaderOutputImageCandidate,
+                shaderGeneratedDenoiseOutputStatus,
                 reason
         );
     }
@@ -174,9 +240,16 @@ public record PublicMojangFinalCompositeSubmissionResult(
         appendIdentity(identity, rawGi, "native-diffuse-gi-rgba8");
         appendIdentity(identity, rawGi, "coloredBounceGi");
         appendIdentity(identity, contactShadow, "contactShadow");
+        appendIdentity(identity, this.submittedNativeShadowMapMask(), "native-shadow-map-mask");
+        appendIdentity(identity, this.submittedShadowMapOutputConsumed(), "shadowMapOutputConsumed");
+        appendIdentity(identity, this.submittedRealShadowMapComposite(), "realShadowMapComposite");
         appendIdentity(identity, cpuDenoisedGi, "cpu-denoised-diffuse-gi-rgba8");
         appendIdentity(identity, cpuDenoisedGi, "cpuFallback");
         appendIdentity(identity, publicMojangShaderVisualOutput, "public-mojang-visual-shaping-output");
+        appendIdentity(identity, this.submittedShaderDenoisePassGeneratedVisualSource(),
+                "shader-denoise-pass-generated-final-color-source");
+        appendIdentity(identity, this.submittedShaderDenoiseOutputSourceConsumed(),
+                "shaderDenoiseOutputSourceConsumed");
         appendIdentity(identity, shaderDenoisedGi, "shaderDenoisedGi");
         appendIdentity(identity, shaderDenoisedGi, "shader-denoised-diffuse-gi-rgba8");
         if (identity.length() > 0) {
@@ -235,12 +308,105 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 || normalizedReason.contains("full_target_washout=true"));
     }
 
+    public boolean submittedNativeShadowMapMask() {
+        if (!this.submitted) {
+            return false;
+        }
+        String normalizedReason = this.normalizedReason();
+        return normalizedReason.contains("native-shadow-map-mask")
+                || normalizedReason.contains("native_shadow_map_mask")
+                || normalizedReason.contains("sourcekind=native-shadow-map-mask")
+                || normalizedReason.contains("sourcekind=native_shadow_map_mask")
+                || normalizedReason.contains("shadowmapsource=native-shadow-map-mask")
+                || normalizedReason.contains("shadow_map_source=native_shadow_map_mask")
+                || normalizedReason.contains("shadowmapmask=native")
+                || normalizedReason.contains("shadow_map_mask=native");
+    }
+
+    public boolean submittedShadowMapOutputConsumed() {
+        if (!this.submitted) {
+            return false;
+        }
+        String normalizedReason = this.normalizedReason();
+        return normalizedReason.contains("shadowmapoutputconsumed=true")
+                || normalizedReason.contains("shadow_map_output_consumed=true")
+                || normalizedReason.contains("shadowmapconsumed=true")
+                || normalizedReason.contains("shadow_map_consumed=true")
+                || normalizedReason.contains("native_shadow_map_consumed=true")
+                || normalizedReason.contains("native-shadow-map-output-consumed")
+                || normalizedReason.contains("native_shadow_map_output_consumed")
+                || normalizedReason.contains("realshadowmapcomposite=true")
+                || normalizedReason.contains("real_shadow_map_composite=true");
+    }
+
+    public boolean submittedDepthAwareShadowMaskComposite() {
+        if (!this.submitted) {
+            return false;
+        }
+        String normalizedReason = this.normalizedReason();
+        return normalizedReason.contains("depthawareshadowmaskcomposite=true")
+                || normalizedReason.contains("depth_aware_shadow_mask_composite=true")
+                || normalizedReason.contains("shaderpassdepthsamplingevidence=true")
+                || normalizedReason.contains("shader_pass_depth_sampling_evidence=true")
+                || normalizedReason.contains("g_buffer_depth_texture_sampled=true")
+                || normalizedReason.contains("gbuffer_depth_texture_sampled=true");
+    }
+
+    public boolean submittedScreenSpaceShadowDecalSource() {
+        String normalizedReason = this.normalizedReason();
+        return this.submitted
+                && (normalizedReason.contains("screen_space_shadow_decal=true")
+                || normalizedReason.contains("screenspaceshadowdecal=true")
+                || normalizedReason.contains("screen_space_shadow=true")
+                || normalizedReason.contains("shadow_decal_screen_space=true")
+                || normalizedReason.contains("sourcekind=screen-space-shadow-decal")
+                || normalizedReason.contains("sourcekind=screen_space_shadow_decal")
+                || normalizedReason.contains("screen-space-shadow-decal-source")
+                || normalizedReason.contains("screen_space_shadow_decal_source"));
+    }
+
+    public boolean submittedLowResDirectTextureShadowProof() {
+        String normalizedReason = this.normalizedReason();
+        return this.submitted
+                && (normalizedReason.contains("low_res_direct_texture_shadow_proof=true")
+                || normalizedReason.contains("lowresdirecttextureshadowproof=true")
+                || normalizedReason.contains("low_res_direct_texture=true")
+                || normalizedReason.contains("cpu_direct_texture_composite=true")
+                || normalizedReason.contains("direct_light_low_res_texture=true")
+                || normalizedReason.contains("sourcekind=low-res-direct-texture")
+                || normalizedReason.contains("sourcekind=low_res_direct_texture")
+                || normalizedReason.contains("low-res-direct-texture-shadow-source")
+                || normalizedReason.contains("low_res_direct_texture_shadow_source"));
+    }
+
+    public boolean submittedShadowMapCompositeNoOverclaimBoundary() {
+        return !this.submittedScreenSpaceShadowDecalSource()
+                && !this.submittedLowResDirectTextureShadowProof()
+                && !this.submittedMetadataOnlyPreview()
+                && !this.submittedProofMarkerSource()
+                && !this.submittedFocusWindowOnly()
+                && !this.submittedTemporaryDirectLightSubstitution()
+                && !this.submittedShaderDenoiseOverclaim();
+    }
+
+    public boolean submittedRealShadowMapComposite() {
+        return this.submitted
+                && this.drawCallsIssued
+                && this.targetStatus == TargetStatus.READY
+                && this.submittedNativeShadowMapMask()
+                && this.submittedShadowMapOutputConsumed()
+                && this.submittedShadowMapCompositeNoOverclaimBoundary();
+    }
+
     public boolean submittedPreviewOnlyEvidence() {
         return this.submittedFocusWindowOnly()
                 || this.submittedMetadataOnlyPreview()
                 || this.submittedProofMarkerSource()
                 || this.submittedTemporaryDirectLightSubstitution()
-                || this.submittedRectangularWashoutRisk();
+                || this.submittedRectangularWashoutRisk()
+                || this.submittedScreenSpaceShadowDecalSource()
+                || this.submittedLowResDirectTextureShadowProof()
+                || this.submittedShaderDenoiseDirectLightValidationInput();
     }
 
     public boolean submittedSourceGatedSurfaceProjection() {
@@ -342,26 +508,208 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 || normalizedReason.contains("shaderdenoiseinputscompletefordispatch=true"));
     }
 
-    public boolean submittedRealShaderDenoiseOutputReady() {
+    public boolean submittedShaderDenoiseOutputPassAttempted() {
         String normalizedReason = this.normalizedReason();
-        boolean outputImageReady = normalizedReason.contains("shaderdenoiseoutputimageready=true")
-                || normalizedReason.contains("shader_denoise_output_image_ready=true")
-                || normalizedReason.contains("round7.shaderdenoise.outputimageready=true");
-        boolean shaderGeneratedOutput = normalizedReason.contains("shaderdenoiseshadergeneratedoutput=true")
-                || normalizedReason.contains("shader_denoise_shader_generated_output=true")
-                || normalizedReason.contains("shadergenerateddenoisedgi=ready")
-                || normalizedReason.contains("round7.shaderdenoise.shadergeneratedoutput=true");
-        boolean realOutputReady = normalizedReason.contains("realshaderdenoiseoutputready=true")
-                || normalizedReason.contains("realshaderdenoiseoutputready=ready")
-                || normalizedReason.contains("real_denoise_shader_output=true")
-                || normalizedReason.contains("realdenoiseshaderoutput=true");
-        boolean publicMojangShaderVisualReady = this.submittedPublicMojangShaderGeneratedVisualOutput()
-                && normalizedReason.contains("shadergenerateddenoisedgi=public-mojang-visual-shader")
-                && normalizedReason.contains("realshaderdenoiseoutputready=true")
-                && normalizedReason.contains("round7.shaderdenoise.outputimageready=true")
-                && normalizedReason.contains("round7.shaderdenoise.shadergeneratedoutput=true");
         return this.submitted
-                && ((outputImageReady && shaderGeneratedOutput && realOutputReady) || publicMojangShaderVisualReady)
+                && (this.shaderGeneratedDenoiseOutputStatus.outputPassAttempted()
+                || this.submittedShaderDenoiseOutputRenderPassSubmitted()
+                || normalizedReason.contains("shaderdenoiseoutputpassattempted=true")
+                || normalizedReason.contains("shader_denoise_output_pass_attempted=true")
+                || normalizedReason.contains("shaderdenoisepassattempted=true")
+                || normalizedReason.contains("shader_denoise_pass_attempted=true")
+                || normalizedReason.contains("round7.shaderdenoise.outputpassattempted=true"));
+    }
+
+    public boolean submittedShaderDenoiseOutputTextureAllocated() {
+        String normalizedReason = this.normalizedReason();
+        return this.submitted
+                && (this.shaderGeneratedDenoiseOutputStatus.outputTextureAllocated()
+                || normalizedReason.contains("shaderdenoiseoutputtextureallocated=true")
+                || normalizedReason.contains("shader_denoise_output_texture_allocated=true")
+                || normalizedReason.contains("shaderdenoiseownedoutputimage=true")
+                || normalizedReason.contains("shader_denoise_owned_output_image=true")
+                || normalizedReason.contains("round7.shaderdenoise.outputtextureallocated=true"));
+    }
+
+    public boolean submittedShaderDenoiseOwnedOutputImage() {
+        return this.submittedShaderDenoiseOutputTextureAllocated()
+                && this.submittedShaderDenoiseOutputImageReady();
+    }
+
+    public boolean submittedShaderDenoiseOutputRenderPassSubmitted() {
+        String normalizedReason = this.normalizedReason();
+        return this.submitted
+                && (this.shaderGeneratedDenoiseOutputStatus.outputRenderPassSubmitted()
+                || normalizedReason.contains("shaderdenoiseoutputrenderpasssubmitted=true")
+                || normalizedReason.contains("shader_denoise_output_render_pass_submitted=true")
+                || normalizedReason.contains("shaderdenoisepasssubmitted=true")
+                || normalizedReason.contains("shader_denoise_pass_submitted=true")
+                || normalizedReason.contains("shaderdenoisepassexecuted=true")
+                || normalizedReason.contains("shader_generated_denoise_pass_executed=true")
+                || normalizedReason.contains("shadergenerateddenoisepassexecuted=true")
+                || normalizedReason.contains("round7.shaderdenoise.publicmojangfragmentpass")
+                || normalizedReason.contains("round7-shader-denoise-output"));
+    }
+
+    public boolean submittedShaderDenoiseGeneratedOutputPassSubmitted() {
+        return this.submittedShaderDenoiseOutputPassAttempted()
+                && this.submittedShaderDenoiseOutputRenderPassSubmitted();
+    }
+
+    public boolean submittedShaderDenoiseOutputImageReady() {
+        String normalizedReason = this.normalizedReason();
+        return this.submitted
+                && (this.shaderGeneratedDenoiseOutputStatus.shaderGeneratedOutputImageReady()
+                || normalizedReason.contains("shaderdenoiseoutputimageready=true")
+                || normalizedReason.contains("shader_denoise_output_image_ready=true")
+                || normalizedReason.contains("shadergeneratedoutputimageready=true")
+                || normalizedReason.contains("shader_generated_output_image_ready=true")
+                || normalizedReason.contains("round7.shaderdenoise.outputimageready=true"));
+    }
+
+    public boolean submittedShaderDenoisePassExecuted() {
+        return this.submittedShaderDenoiseOutputRenderPassSubmitted();
+    }
+
+    public boolean submittedShaderDenoiseOutputSourceConsumed() {
+        String normalizedReason = this.normalizedReason();
+        return this.submittedShaderDenoiseOutputConsumedByFinalComposite()
+                || (this.submittedShaderDenoisePassExecuted()
+                && (normalizedReason.contains("shaderoutputsourceconsumed=true")
+                || normalizedReason.contains("shader_output_source_consumed=true")
+                || normalizedReason.contains("shaderdenoiseoutputsourceconsumed=true")
+                || normalizedReason.contains("shader_denoise_output_source_consumed=true")));
+    }
+
+    public boolean submittedShaderDenoiseOutputConsumedByFinalComposite() {
+        String normalizedReason = this.normalizedReason();
+        return this.submitted
+                && (this.shaderGeneratedDenoiseOutputStatus.outputConsumedByFinalComposite()
+                || normalizedReason.contains("shaderdenoiseoutputconsumedbyfinalcomposite=true")
+                || normalizedReason.contains("shader_denoise_output_consumed_by_final_composite=true")
+                || normalizedReason.contains("shaderoutputconsumedbyfinalcomposite=true")
+                || normalizedReason.contains("shader_output_consumed_by_final_composite=true")
+                || normalizedReason.contains("outputconsumedbyfinalcomposite=true")
+                || normalizedReason.contains("output_consumed_by_final_composite=true")
+                || normalizedReason.contains("round7.shaderdenoise.outputconsumedbyfinalcomposite=true"));
+    }
+
+    public boolean submittedShaderDenoiseFinalCompositeConsumable() {
+        String normalizedReason = this.normalizedReason();
+        return this.submittedShaderDenoiseOutputConsumedByFinalComposite()
+                || (this.submittedShaderDenoisePassExecuted()
+                && (normalizedReason.contains("finalcompositeconsumable=true")
+                || normalizedReason.contains("final_composite_consumable=true")
+                || normalizedReason.contains("shaderdenoisefinalcompositeconsumable=true")
+                || normalizedReason.contains("shader_denoise_final_composite_consumable=true")));
+    }
+
+    public boolean submittedShaderDenoiseCpuReadbackFallbackActive() {
+        String normalizedReason = this.normalizedReason();
+        return this.submitted
+                && (normalizedReason.contains("cpureadbackfallbackactive=true")
+                || normalizedReason.contains("cpu_readback_fallback_active=true")
+                || normalizedReason.contains("shaderdenoisecpureadbackfallbackactive=true")
+                || normalizedReason.contains("shader_denoise_cpu_readback_fallback_active=true")
+                || normalizedReason.contains("cpudenoisereadbackfallback=true")
+                || normalizedReason.contains("cpu_denoise_readback_fallback=true"));
+    }
+
+    public boolean submittedShaderDenoiseCpuReadbackFallbackInactive() {
+        String normalizedReason = this.normalizedReason();
+        return this.submitted
+                && !this.submittedShaderDenoiseCpuReadbackFallbackActive()
+                && (this.shaderGeneratedDenoiseOutputStatus.cpuReadbackFallbackInactive()
+                || normalizedReason.contains("cpureadbackfallbackinactive=true")
+                || normalizedReason.contains("cpu_readback_fallback_inactive=true")
+                || normalizedReason.contains("shaderdenoisecpureadbackfallbackinactive=true")
+                || normalizedReason.contains("shader_denoise_cpu_readback_fallback_inactive=true")
+                || normalizedReason.contains("cpureadbackfallbackactive=false")
+                || normalizedReason.contains("cpu_readback_fallback_active=false")
+                || normalizedReason.contains("shaderdenoisecpureadbackfallbackactive=false")
+                || normalizedReason.contains("shader_denoise_cpu_readback_fallback_active=false"));
+    }
+
+    public boolean submittedShaderDenoiseStillNotComputeBoundary() {
+        String normalizedReason = this.normalizedReason();
+        if (normalizedReason.contains("stillnotcomputeboundary=false")
+                || normalizedReason.contains("still_not_compute_boundary=false")
+                || normalizedReason.contains("shaderdenoisestillnotcomputeboundary=false")
+                || normalizedReason.contains("shader_denoise_still_not_compute_boundary=false")) {
+            return false;
+        }
+        return this.shaderGeneratedDenoiseOutputStatus.stillNotComputeBoundary()
+                || normalizedReason.contains("stillnotcomputeboundary=true")
+                || normalizedReason.contains("still_not_compute_boundary=true")
+                || normalizedReason.contains("shaderdenoisestillnotcomputeboundary=true")
+                || normalizedReason.contains("shader_denoise_still_not_compute_boundary=true");
+    }
+
+    public boolean submittedShaderDenoiseRawDiffuseGiInput() {
+        if (!this.submitted) {
+            return false;
+        }
+        String normalizedReason = this.normalizedReason();
+        return normalizedReason.contains("shaderdenoiseinputkind=raw-diffuse-gi-rgba8")
+                || normalizedReason.contains("shader_denoise_input_kind=raw-diffuse-gi-rgba8")
+                || normalizedReason.contains("shaderdenoiseinputmode=strict-raw-diffuse-gi")
+                || normalizedReason.contains("shader_denoise_input_mode=strict-raw-diffuse-gi")
+                || normalizedReason.contains("shaderdenoiserawdiffusegiinput=true")
+                || normalizedReason.contains("shader_denoise_raw_diffuse_gi_input=true")
+                || normalizedReason.contains("round7.shaderdenoise.rawdiffusegiinput=true")
+                || normalizedReason.contains("rawgicpureadbackinput=true")
+                || normalizedReason.contains("raw_gi_cpu_readback_input=true");
+    }
+
+    public boolean submittedShaderDenoiseDirectLightValidationInput() {
+        if (!this.submitted) {
+            return false;
+        }
+        String normalizedReason = this.normalizedReason();
+        return normalizedReason.contains("shaderdenoiseinputkind=native-direct-light-rgba8-validation-input")
+                || normalizedReason.contains("shader_denoise_input_kind=native-direct-light-rgba8-validation-input")
+                || normalizedReason.contains("shaderdenoiseinputmode=diagnostic-direct-light-validation-fallback")
+                || normalizedReason.contains("shader_denoise_input_mode=diagnostic-direct-light-validation-fallback")
+                || normalizedReason.contains("directlightvalidationinput=true")
+                || normalizedReason.contains("direct_light_validation_input=true")
+                || normalizedReason.contains("round7.shaderdenoise.directlightvalidationinput=true")
+                || normalizedReason.contains("diagnosticdirectlightvalidationfallback=true")
+                || normalizedReason.contains("diagnostic_direct_light_validation_fallback=true");
+    }
+
+    public boolean submittedShaderDenoiseStrictRawDiffuseGiInput() {
+        if (!this.submittedShaderDenoiseRawDiffuseGiInput()
+                || this.submittedShaderDenoiseDirectLightValidationInput()) {
+            return false;
+        }
+        String normalizedReason = this.normalizedReason();
+        return normalizedReason.contains("shaderdenoisestrictproofeligible=true")
+                || normalizedReason.contains("shader_denoise_strict_proof_eligible=true")
+                || normalizedReason.contains("shaderdenoiserequiresrawdiffusegiinput=true")
+                || normalizedReason.contains("shader_denoise_requires_raw_diffuse_gi_input=true")
+                || normalizedReason.contains("shaderdenoiseinputmode=strict-raw-diffuse-gi")
+                || normalizedReason.contains("shader_denoise_input_mode=strict-raw-diffuse-gi");
+    }
+
+    public boolean submittedShaderDenoisePassGeneratedVisualSource() {
+        String normalizedReason = this.normalizedReason();
+        return this.submittedShaderDenoiseGeneratedOutputPassSubmitted()
+                && this.submittedShaderDenoiseOutputImageReady()
+                && (normalizedReason.contains("shaderdenoisepassgeneratedvisualsource=true")
+                || normalizedReason.contains("shader_denoise_pass_generated_visual_source=true")
+                || normalizedReason.contains("shadergenerateddenoisedgi=public-mojang-fragment-pass")
+                || normalizedReason.contains("sourcekind=shader-generated-denoised-gi")
+                || normalizedReason.contains("sourcekind=shader_generated_denoised_gi"))
+                && !this.submittedExplicitShaderDenoiseOutputFalse();
+    }
+
+    public boolean submittedRealShaderDenoiseOutputReady() {
+        return this.submitted
+                && this.submittedShaderDenoiseStrictRawDiffuseGiInput()
+                && this.submittedShaderDenoiseOwnedOutputImage()
+                && this.submittedShaderDenoiseGeneratedOutputPassSubmitted()
+                && this.submittedShaderDenoiseOutputConsumedByFinalComposite()
+                && this.submittedShaderDenoiseCpuReadbackFallbackInactive()
                 && !this.submittedShaderOutputImageCandidate()
                 && !this.submittedExplicitShaderDenoiseOutputFalse();
     }
@@ -387,15 +735,52 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",shaderDenoiseOutputClaimPresent=" + this.submittedShaderDenoiseOutputClaimPresent()
                 + ",shaderOutputImageCandidate=" + readyState(this.submittedShaderOutputImageCandidate())
                 + ",shaderOutputImageCandidateBoundary=" + this.shaderOutputImageCandidate.boundarySummary()
+                + ",shaderGeneratedDenoiseOutputStatus="
+                + this.shaderGeneratedDenoiseOutputStatus.boundarySummary()
                 + ",shaderOutputImageCandidateOnly="
                 + (this.submittedShaderOutputImageCandidate() && !this.submittedRealShaderDenoiseOutputReady())
                 + ",shaderDenoiseVisualShaderIntent=" + readyState(this.submittedShaderDenoiseVisualShaderIntent())
                 + ",publicMojangShaderGeneratedVisualOutput="
                 + readyState(this.submittedPublicMojangShaderGeneratedVisualOutput())
                 + ",realShaderDenoiseDispatchReady=" + readyState(this.submittedRealShaderDenoiseDispatchReady())
+                + ",shaderDenoiseRawDiffuseGiInput=" + this.submittedShaderDenoiseRawDiffuseGiInput()
+                + ",shaderDenoiseDirectLightValidationInput="
+                + this.submittedShaderDenoiseDirectLightValidationInput()
+                + ",shaderDenoiseStrictRawDiffuseGiInput="
+                + this.submittedShaderDenoiseStrictRawDiffuseGiInput()
+                + ",shaderDenoiseOutputPassAttempted=" + this.submittedShaderDenoiseOutputPassAttempted()
+                + ",shaderDenoiseOutputTextureAllocated=" + this.submittedShaderDenoiseOutputTextureAllocated()
+                + ",shaderDenoiseOwnedOutputImage=" + this.submittedShaderDenoiseOwnedOutputImage()
+                + ",shaderDenoiseOutputRenderPassSubmitted="
+                + this.submittedShaderDenoiseOutputRenderPassSubmitted()
+                + ",shaderDenoiseGeneratedOutputPassSubmitted="
+                + this.submittedShaderDenoiseGeneratedOutputPassSubmitted()
+                + ",shaderDenoisePassExecuted=" + this.submittedShaderDenoisePassExecuted()
+                + ",shaderGeneratedDenoisePassExecuted=" + this.submittedShaderDenoisePassExecuted()
+                + ",shaderOutputSourceConsumed=" + this.submittedShaderDenoiseOutputSourceConsumed()
+                + ",shaderDenoiseOutputSourceConsumed=" + this.submittedShaderDenoiseOutputSourceConsumed()
+                + ",shaderDenoiseOutputConsumedByFinalComposite="
+                + this.submittedShaderDenoiseOutputConsumedByFinalComposite()
+                + ",shaderDenoisePassGeneratedVisualSource="
+                + this.submittedShaderDenoisePassGeneratedVisualSource()
+                + ",shaderDenoiseFinalCompositeConsumable="
+                + this.submittedShaderDenoiseFinalCompositeConsumable()
+                + ",finalCompositeConsumable=" + this.submittedShaderDenoiseFinalCompositeConsumable()
+                + ",cpuReadbackFallbackActive=" + this.submittedShaderDenoiseCpuReadbackFallbackActive()
+                + ",shaderDenoiseCpuReadbackFallbackActive="
+                + this.submittedShaderDenoiseCpuReadbackFallbackActive()
+                + ",cpuReadbackFallbackInactive=" + this.submittedShaderDenoiseCpuReadbackFallbackInactive()
+                + ",shaderDenoiseCpuReadbackFallbackInactive="
+                + this.submittedShaderDenoiseCpuReadbackFallbackInactive()
+                + ",shaderDenoiseStillNotComputeBoundary="
+                + this.submittedShaderDenoiseStillNotComputeBoundary()
                 + ",realShaderDenoiseOutputReady=" + readyState(this.submittedRealShaderDenoiseOutputReady())
-                + ",round7.shaderDenoise.outputImageReady=" + this.submittedRealShaderDenoiseOutputReady()
-                + ",round7.shaderDenoise.outputMaterialReady=" + this.submittedRealShaderDenoiseOutputReady()
+                + ",round7.shaderDenoise.outputImageReady=" + this.submittedShaderDenoiseOutputImageReady()
+                + ",round7.shaderDenoise.passGeneratedFinalColorOutput="
+                + this.submittedShaderDenoisePassGeneratedVisualSource()
+                + ",round7.shaderDenoise.outputMaterialReady="
+                + (this.submittedShaderDenoiseOutputImageReady()
+                || this.submittedShaderDenoiseFinalCompositeConsumable())
                 + ",round7.shaderDenoise.shaderGeneratedOutput=" + this.submittedRealShaderDenoiseOutputReady()
                 + ",round7.shaderDenoise.realOutputReady=" + this.submittedRealShaderDenoiseOutputReady()
                 + ",shaderDenoiseOverclaimPresent=" + this.submittedShaderDenoiseOverclaim()
@@ -412,6 +797,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
         return "directSpill=" + readyState(identity.contains("directSpill"))
                 + ",coloredBounceGi=" + readyState(identity.contains("coloredBounceGi"))
                 + ",contactShadow=" + readyState(identity.contains("contactShadow"))
+                + ",nativeShadowMapMask=" + readyState(this.submittedNativeShadowMapMask())
+                + ",shadowMapOutputConsumed=" + readyState(this.submittedShadowMapOutputConsumed())
+                + ",realShadowMapComposite=" + readyState(this.submittedRealShadowMapComposite())
                 + ",shaderDenoisedGi=" + readyState(identity.contains("shaderDenoisedGi"))
                 + ",cpuFallback=" + readyState(identity.contains("cpuFallback"))
                 + ",geometryAwareFinalComposite=" + readyState(this.submittedGeometryAwareFinalComposite())
@@ -425,9 +813,28 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",visualShaderIntent=" + this.submittedShaderDenoiseVisualShaderIntent()
                 + ",publicMojangShaderGeneratedVisualOutput="
                 + this.submittedPublicMojangShaderGeneratedVisualOutput()
+                + ",shaderDenoisePassExecuted=" + this.submittedShaderDenoisePassExecuted()
+                + ",shaderOutputSourceConsumed=" + this.submittedShaderDenoiseOutputSourceConsumed()
+                + ",shaderOutputConsumedByFinalComposite="
+                + this.submittedShaderDenoiseOutputConsumedByFinalComposite()
+                + ",shaderDenoisePassGeneratedVisualSource="
+                + this.submittedShaderDenoisePassGeneratedVisualSource()
+                + ",shaderDenoiseFinalCompositeConsumable="
+                + this.submittedShaderDenoiseFinalCompositeConsumable()
+                + ",cpuReadbackFallbackActive=" + this.submittedShaderDenoiseCpuReadbackFallbackActive()
+                + ",cpuReadbackFallbackInactive=" + this.submittedShaderDenoiseCpuReadbackFallbackInactive()
+                + ",stillNotComputeBoundary=" + this.submittedShaderDenoiseStillNotComputeBoundary()
                 + ",shaderDenoiseSourceClassification=" + this.shaderDenoiseSourceClassification()
                 + ",shaderGeneratedDenoisedOutput=" + this.submittedShaderDenoisedGiSource()
                 + ",realShaderDenoiseOutputReady=" + this.submittedRealShaderDenoiseOutputReady()
+                + ",shaderOutputPassAttempted=" + this.submittedShaderDenoiseOutputPassAttempted()
+                + ",shaderOutputTextureAllocated=" + this.submittedShaderDenoiseOutputTextureAllocated()
+                + ",shaderOwnedOutputImage=" + this.submittedShaderDenoiseOwnedOutputImage()
+                + ",shaderOutputRenderPassSubmitted="
+                + this.submittedShaderDenoiseOutputRenderPassSubmitted()
+                + ",shaderGeneratedOutputPassSubmitted="
+                + this.submittedShaderDenoiseGeneratedOutputPassSubmitted()
+                + ",shaderOutputImageReady=" + this.submittedShaderDenoiseOutputImageReady()
                 + ",shaderOutputImageCandidate=" + this.submittedShaderOutputImageCandidate()
                 + ",shaderOutputBlocker=\"" + this.shaderOutputImageCandidate.blocker() + "\""
                 + ",shaderOutputBlockerSource=\"" + this.shaderDenoiseOutputBlockerSource() + "\""
@@ -444,6 +851,12 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",proofMarkerSource=" + this.submittedProofMarkerSource()
                 + ",temporaryDirectLightSubstitution=" + this.submittedTemporaryDirectLightSubstitution()
                 + ",rectangularWashoutRisk=" + this.submittedRectangularWashoutRisk()
+                + ",screenSpaceShadowDecal=" + this.submittedScreenSpaceShadowDecalSource()
+                + ",lowResDirectTextureShadowProof=" + this.submittedLowResDirectTextureShadowProof()
+                + ",shadowMapCompositeNoOverclaim="
+                + this.submittedShadowMapCompositeNoOverclaimBoundary()
+                + ",shaderDenoiseOverclaim=" + this.submittedShaderDenoiseOverclaim()
+                + ",shaderDenoiseNoOverclaim=" + !this.submittedShaderDenoiseOverclaim()
                 + ",previewEvidenceClean=" + !this.submittedPreviewOnlyEvidence();
     }
 
@@ -469,6 +882,25 @@ public record PublicMojangFinalCompositeSubmissionResult(
         }
         if (this.submittedRectangularWashoutRisk()) {
             return "rejected:rectangular-washout-risk";
+        }
+        if (this.submittedScreenSpaceShadowDecalSource()) {
+            return "rejected:screen-space-shadow-decal";
+        }
+        if (this.submittedLowResDirectTextureShadowProof()) {
+            return "rejected:low-res-direct-texture-shadow-proof";
+        }
+        if (this.submittedShaderDenoiseDirectLightValidationInput()) {
+            return "rejected:shader-denoise-direct-light-validation-input";
+        }
+        if (this.submittedRealShadowMapComposite()) {
+            return "accepted:native-shadow-map-mask/final-composite-consumed";
+        }
+        if (this.submittedRealShaderDenoiseOutputReady()) {
+            return "accepted:shader-generated-denoise-output/final-composite-consumed";
+        }
+        if (this.submittedShaderDenoisePassGeneratedVisualSource()) {
+            return "candidate:shader-denoise-fragment-pass-output;"
+                    + "requires-owned-image-final-consumption-strict-raw-diffuse-gi-input-and-fallback-inactive";
         }
         if (this.submittedDirectLightSource() && this.submittedRawGiSource() && this.submittedDenoisedGiSource()) {
             return "accepted:final-composite-direct-plus-raw-gi-plus-"
@@ -652,6 +1084,33 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",denoiseEvidenceBoundary=" + this.denoiseEvidenceBoundarySummary()
                 + ",finalCompositeDenoisedSourceIdentityBoundary="
                 + this.finalCompositeDenoisedSourceIdentityBoundary()
+                + ",shaderGeneratedDenoiseOutputStatus=\""
+                + this.shaderGeneratedDenoiseOutputStatus.boundarySummary() + "\""
+                + ",shaderDenoiseOutputPassAttempted=" + this.submittedShaderDenoiseOutputPassAttempted()
+                + ",shaderDenoiseOutputTextureAllocated=" + this.submittedShaderDenoiseOutputTextureAllocated()
+                + ",shaderDenoiseOwnedOutputImage=" + this.submittedShaderDenoiseOwnedOutputImage()
+                + ",shaderDenoiseOutputRenderPassSubmitted="
+                + this.submittedShaderDenoiseOutputRenderPassSubmitted()
+                + ",shaderDenoiseGeneratedOutputPassSubmitted="
+                + this.submittedShaderDenoiseGeneratedOutputPassSubmitted()
+                + ",shaderDenoisePassExecuted=" + this.submittedShaderDenoisePassExecuted()
+                + ",shaderGeneratedDenoisePassExecuted=" + this.submittedShaderDenoisePassExecuted()
+                + ",shaderOutputSourceConsumed=" + this.submittedShaderDenoiseOutputSourceConsumed()
+                + ",shaderDenoiseOutputSourceConsumed=" + this.submittedShaderDenoiseOutputSourceConsumed()
+                + ",shaderDenoiseOutputConsumedByFinalComposite="
+                + this.submittedShaderDenoiseOutputConsumedByFinalComposite()
+                + ",shaderDenoisePassGeneratedVisualSource="
+                + this.submittedShaderDenoisePassGeneratedVisualSource()
+                + ",shaderDenoiseFinalCompositeConsumable="
+                + this.submittedShaderDenoiseFinalCompositeConsumable()
+                + ",finalCompositeConsumable=" + this.submittedShaderDenoiseFinalCompositeConsumable()
+                + ",cpuReadbackFallbackActive=" + this.submittedShaderDenoiseCpuReadbackFallbackActive()
+                + ",shaderDenoiseCpuReadbackFallbackActive="
+                + this.submittedShaderDenoiseCpuReadbackFallbackActive()
+                + ",cpuReadbackFallbackInactive=" + this.submittedShaderDenoiseCpuReadbackFallbackInactive()
+                + ",shaderDenoiseCpuReadbackFallbackInactive="
+                + this.submittedShaderDenoiseCpuReadbackFallbackInactive()
+                + ",stillNotComputeBoundary=" + this.submittedShaderDenoiseStillNotComputeBoundary()
                 + ",sourceAuthenticity=" + this.sourceAuthenticityLabel()
                 + ",authenticityGuards=" + this.authenticityGuardsSummary()
                 + ",surfaceProjectionEvidence=" + this.surfaceProjectionEvidenceLabel()
@@ -662,6 +1121,13 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",proofMarkerSource=" + this.submittedProofMarkerSource()
                 + ",temporaryDirectLightSubstitution=" + this.submittedTemporaryDirectLightSubstitution()
                 + ",rectangularWashoutRisk=" + this.submittedRectangularWashoutRisk()
+                + ",nativeShadowMapMask=" + this.submittedNativeShadowMapMask()
+                + ",shadowMapOutputConsumed=" + this.submittedShadowMapOutputConsumed()
+                + ",realShadowMapComposite=" + this.submittedRealShadowMapComposite()
+                + ",screenSpaceShadowDecal=" + this.submittedScreenSpaceShadowDecalSource()
+                + ",lowResDirectTextureShadowProof=" + this.submittedLowResDirectTextureShadowProof()
+                + ",shadowMapCompositeNoOverclaim="
+                + this.submittedShadowMapCompositeNoOverclaimBoundary()
                 + ",sourceGatedSurfaceProjection=" + this.submittedSourceGatedSurfaceProjection()
                 + ",localized_emissive_spill=" + finalPhysicalCompositeReady
                 + ",emissive_spill_marker=\"localized_emissive_spill_source_surface_distance_normal_opacity_energy_recorded\""
@@ -699,6 +1165,33 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",publicMojangShaderGeneratedVisualOutput="
                 + readyState(this.submittedPublicMojangShaderGeneratedVisualOutput())
                 + ",realShaderDenoiseDispatchReady=" + readyState(this.submittedRealShaderDenoiseDispatchReady())
+                + ",shaderDenoiseRawDiffuseGiInput=" + readyState(this.submittedShaderDenoiseRawDiffuseGiInput())
+                + ",shaderDenoiseDirectLightValidationInput="
+                + readyState(this.submittedShaderDenoiseDirectLightValidationInput())
+                + ",shaderDenoiseStrictRawDiffuseGiInput="
+                + readyState(this.submittedShaderDenoiseStrictRawDiffuseGiInput())
+                + ",shaderDenoiseOutputPassAttempted="
+                + readyState(this.submittedShaderDenoiseOutputPassAttempted())
+                + ",shaderDenoiseOutputTextureAllocated="
+                + readyState(this.submittedShaderDenoiseOutputTextureAllocated())
+                + ",shaderDenoiseOwnedOutputImage=" + readyState(this.submittedShaderDenoiseOwnedOutputImage())
+                + ",shaderDenoiseOutputRenderPassSubmitted="
+                + readyState(this.submittedShaderDenoiseOutputRenderPassSubmitted())
+                + ",shaderDenoiseGeneratedOutputPassSubmitted="
+                + readyState(this.submittedShaderDenoiseGeneratedOutputPassSubmitted())
+                + ",shaderDenoisePassExecuted=" + readyState(this.submittedShaderDenoisePassExecuted())
+                + ",shaderOutputSourceConsumed=" + readyState(this.submittedShaderDenoiseOutputSourceConsumed())
+                + ",shaderOutputConsumedByFinalComposite="
+                + readyState(this.submittedShaderDenoiseOutputConsumedByFinalComposite())
+                + ",shaderDenoisePassGeneratedVisualSource="
+                + readyState(this.submittedShaderDenoisePassGeneratedVisualSource())
+                + ",shaderDenoiseFinalCompositeConsumable="
+                + readyState(this.submittedShaderDenoiseFinalCompositeConsumable())
+                + ",cpuReadbackFallbackActive="
+                + readyState(this.submittedShaderDenoiseCpuReadbackFallbackActive())
+                + ",cpuReadbackFallbackInactive="
+                + readyState(this.submittedShaderDenoiseCpuReadbackFallbackInactive())
+                + ",stillNotComputeBoundary=" + readyState(this.submittedShaderDenoiseStillNotComputeBoundary())
                 + ",realShaderDenoiseOutputReady=" + readyState(this.submittedRealShaderDenoiseOutputReady())
                 + ",shaderDenoiseOverclaimPresent=" + this.submittedShaderDenoiseOverclaim()
                 + ",previewEvidenceClean=" + readyState(!this.submittedPreviewOnlyEvidence())
@@ -753,12 +1246,27 @@ public record PublicMojangFinalCompositeSubmissionResult(
     }
 
     public boolean submittedShaderDenoiseOutputClaimPresent() {
-        return this.submittedRealShaderDenoiseOutputReady();
+        String normalizedReason = this.normalizedReason();
+        return this.submitted
+                && (this.submittedRealShaderDenoiseOutputReady()
+                || normalizedReason.contains("shaderdenoiseshadergeneratedoutput=true")
+                || normalizedReason.contains("shader_denoise_shader_generated_output=true")
+                || normalizedReason.contains("round7.shaderdenoise.shadergeneratedoutput=true")
+                || normalizedReason.contains("shadergenerateddenoisedgi=public-mojang-fragment-pass")
+                || normalizedReason.contains("shadergenerateddenoisedgi=ready")
+                || normalizedReason.contains("sourcekind=shader-generated-denoised-gi")
+                || normalizedReason.contains("sourcekind=shader_generated_denoised_gi"));
     }
 
     public String shaderDenoiseSourceClassification() {
         if (this.submittedRealShaderDenoiseOutputReady()) {
             return "true-shader-generated-output";
+        }
+        if (this.submittedShaderDenoiseDirectLightValidationInput()) {
+            return "diagnostic-direct-light-validation-fallback-not-strict-proof";
+        }
+        if (this.submittedShaderDenoisePassGeneratedVisualSource()) {
+            return "partial-shader-generated-pass-output-contract-incomplete";
         }
         if (this.submittedShaderOutputImageCandidate()) {
             return "shader-output-image-candidate-only";
@@ -786,8 +1294,28 @@ public record PublicMojangFinalCompositeSubmissionResult(
         if (this.submittedShaderOutputImageCandidate()) {
             return this.shaderOutputImageCandidate.blocker();
         }
+        if (this.submittedShaderDenoiseDirectLightValidationInput()) {
+            return "rejected:direct-light-validation-input;strict-proof-requires-raw-diffuse-gi";
+        }
         if (this.submittedExplicitShaderDenoiseOutputFalse()) {
             return "explicit-status:false-real-shader-denoise-output";
+        }
+        if (this.submittedShaderDenoiseOwnedOutputImage()
+                && this.submittedShaderDenoiseGeneratedOutputPassSubmitted()
+                && !this.submittedShaderDenoiseOutputConsumedByFinalComposite()) {
+            return "partial:owned-output-and-generated-pass-present;missing-final-composite-consumption";
+        }
+        if (this.submittedShaderDenoiseOutputConsumedByFinalComposite()
+                && !this.submittedShaderDenoiseCpuReadbackFallbackInactive()) {
+            return "partial:final-composite-consumption-present;cpu-readback-fallback-inactive-not-proven";
+        }
+        if (this.shaderGeneratedDenoiseOutputStatus.partialEvidencePresent()
+                || this.submittedShaderDenoiseOutputPassAttempted()
+                || this.submittedShaderDenoiseOutputTextureAllocated()
+                || this.submittedShaderDenoiseOutputRenderPassSubmitted()
+                || this.submittedShaderDenoiseOutputImageReady()
+                || this.submittedShaderDenoiseOutputConsumedByFinalComposite()) {
+            return "partial:shader-generated-denoise-output-contract-incomplete";
         }
         if (this.submittedPublicMojangShaderGeneratedVisualOutput()) {
             return "none:public-mojang-visual-shader-draw-submitted;real-denoise-output-still-requires-explicit-shader-output-markers";
@@ -829,7 +1357,7 @@ public record PublicMojangFinalCompositeSubmissionResult(
         return this.reason.toLowerCase(Locale.ROOT);
     }
 
-    private boolean submittedExplicitShaderDenoiseOutputFalse() {
+    public boolean submittedExplicitShaderDenoiseOutputFalse() {
         String normalizedReason = this.normalizedReason();
         return normalizedReason.contains("realdenoiseshaderoutput=false")
                 || normalizedReason.contains("real_denoise_shader_output=false")
@@ -844,7 +1372,13 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 || normalizedReason.contains("sourcekind=shader-output-image-candidate")
                 || normalizedReason.contains("sourcekind=shader_output_image_candidate")
                 || normalizedReason.contains("sourcekind=cpu-denoised-readback")
-                || normalizedReason.contains("sourcekind=cpu_denoised_readback");
+                || normalizedReason.contains("sourcekind=cpu_denoised_readback")
+                || normalizedReason.contains("shaderdenoiseinputkind=native-direct-light-rgba8-validation-input")
+                || normalizedReason.contains("shader_denoise_input_kind=native-direct-light-rgba8-validation-input")
+                || normalizedReason.contains("shaderdenoiseinputmode=diagnostic-direct-light-validation-fallback")
+                || normalizedReason.contains("shader_denoise_input_mode=diagnostic-direct-light-validation-fallback")
+                || normalizedReason.contains("directlightvalidationinput=true")
+                || normalizedReason.contains("direct_light_validation_input=true");
     }
 
     public enum TargetStatus {
@@ -917,6 +1451,10 @@ public record PublicMojangFinalCompositeSubmissionResult(
         }
 
         public String boundarySummary() {
+            if (!this.candidatePresent) {
+                return "present=false,dims=none,checksum=none,source=none,blocker=not-provided,"
+                        + "realShaderDenoiseOutputReady=not-applicable,sourceKind=none";
+            }
             return "present=" + this.candidatePresent
                     + ",dims=" + this.dimensionsLabel()
                     + ",checksum=" + this.checksumLabel()

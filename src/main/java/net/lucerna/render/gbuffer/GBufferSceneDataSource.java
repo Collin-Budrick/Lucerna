@@ -27,10 +27,42 @@ public record GBufferSceneDataSource(
         );
     }
 
+    public static GBufferSceneDataSource missing(String description) {
+        return new GBufferSceneDataSource(
+                GBufferSceneDataSourceKind.MISSING,
+                "missing",
+                description
+        );
+    }
+
+    public static GBufferSceneDataSource metadataOnly(String description) {
+        return new GBufferSceneDataSource(
+                GBufferSceneDataSourceKind.METADATA_ONLY,
+                "metadata",
+                description
+        );
+    }
+
     public static GBufferSceneDataSource contractOnly(String description) {
         return new GBufferSceneDataSource(
                 GBufferSceneDataSourceKind.CONTRACT_ONLY,
                 "contract",
+                description
+        );
+    }
+
+    public static GBufferSceneDataSource publicMojangOpaqueOnly(String description) {
+        return new GBufferSceneDataSource(
+                GBufferSceneDataSourceKind.PUBLIC_MOJANG_OPAQUE_ONLY,
+                "mojang-public-opaque",
+                description
+        );
+    }
+
+    public static GBufferSceneDataSource publicMojangDepthView(String description) {
+        return new GBufferSceneDataSource(
+                GBufferSceneDataSourceKind.PUBLIC_MOJANG_DEPTH_VIEW,
+                "mojang-public-depth-view",
                 description
         );
     }
@@ -79,6 +111,22 @@ public record GBufferSceneDataSource(
         return this.kind.contractOnly();
     }
 
+    public boolean publicMojangOpaqueOnly() {
+        return this.kind.publicMojangOpaqueOnly();
+    }
+
+    public boolean publicMojangDepthView() {
+        return this.kind.publicMojangDepthView();
+    }
+
+    public boolean metadataOnly() {
+        return this.kind.metadataOnly();
+    }
+
+    public boolean missing() {
+        return this.kind.missing();
+    }
+
     public String statusLabel() {
         return "kind=" + this.kind.label()
                 + ", producer=" + this.producer
@@ -87,6 +135,10 @@ public record GBufferSceneDataSource(
                 + ", sodiumSampled=" + sodiumSampled()
                 + ", synthetic=" + synthetic()
                 + ", contractOnly=" + contractOnly()
+                + ", publicMojangOpaqueOnly=" + publicMojangOpaqueOnly()
+                + ", publicMojangDepthView=" + publicMojangDepthView()
+                + ", metadataOnly=" + metadataOnly()
+                + ", missing=" + missing()
                 + ", description=" + this.description;
     }
 

@@ -16,17 +16,23 @@ out vec4 fragColor;
 // before this resource can be treated as a real denoise milestone.
 //
 // Boundary markers for telemetry/docs:
-// - This shader samples a CPU/readback or candidate visual payload and writes
-//   only the current public draw output.
+// - This shader samples a CPU/readback guided visual or candidate payload and
+//   writes only the current public draw output.
 // - It does not create lucerna.denoise.diffuse, lucerna.denoise.rejectionMask,
 //   a shader output image, or a history/variance quality target.
 // - Keep realShaderDenoiseOutputReady=false and
 //   shaderDenoiseOutputImageCandidateBoundaryOnly=true unless a separate
 //   shader dispatch writes the declared denoise attachment.
+// - This visual path also cannot satisfy the real-output prerequisite bundle:
+//   raw shader inputs, owned writable output image, storage/barrier/final
+//   composite handoff, temporal/history readiness, and controller proof.
 // - This public draw path must also keep shaderDenoiseOutputImageOwnedByShaderPass,
 //   shaderDenoiseOutputStorageWritable, shaderDenoiseOutputBarrierReady, and
 //   shaderDenoiseOutputFinalCompositeConsumable false for its own evidence; it
 //   does not own or publish the real lucerna.denoise.diffuse output target.
+// - The future real output-image contract is
+//   denoise/shader_generated_diffuse_output_contract.glsl, not this public
+//   Mojang visual-shaping resource.
 
 const vec3 LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
 const float CENTER_WEIGHT = 0.50;
@@ -274,33 +280,30 @@ float sourceSurfaceMask(vec2 uv, vec4 center, vec4 denoised) {
     return clamp(sourceSupport * flatWashoutReject * mix(0.70, 1.0, edgePreserve) * softEdgeGuard, 0.0, 1.0);
 }
 
-float radial(vec2 uv, vec2 center, vec2 radius) {
-    vec2 delta = (uv - center) / radius;
-    return exp(-dot(delta, delta) * 1.85);
-}
-
-vec3 smoothBounceField(vec2 uv) {
-    float shoreMask = smoothstep(0.34, 0.45, uv.y) * (1.0 - smoothstep(0.58, 0.74, uv.y));
-    float groundMask = smoothstep(0.05, 0.16, uv.y) * (1.0 - smoothstep(0.38, 0.56, uv.y));
-    float foliageMask = smoothstep(0.42, 0.55, uv.y) * (1.0 - smoothstep(0.77, 0.92, uv.y));
-    float waterMask = smoothstep(0.20, 0.31, uv.y) * (1.0 - smoothstep(0.52, 0.68, uv.y));
-    float skyGate = smoothstep(0.34, 0.64, uv.y) * (1.0 - smoothstep(0.78, 0.94, uv.y));
-
-    vec3 warmBank = vec3(1.00, 0.58, 0.26)
-            * radial(uv, vec2(0.33, 0.42), vec2(0.58, 0.16))
-            * shoreMask;
-    vec3 greenCanopy = vec3(0.28, 0.58, 0.22)
-            * (radial(uv, vec2(0.24, 0.61), vec2(0.32, 0.13))
-            + radial(uv, vec2(0.54, 0.60), vec2(0.28, 0.12)))
-            * foliageMask;
-    vec3 waterFill = vec3(0.18, 0.34, 0.70)
-            * radial(uv, vec2(0.35, 0.33), vec2(0.70, 0.22))
-            * waterMask;
-    vec3 foregroundWarmth = vec3(0.86, 0.48, 0.22)
-            * radial(uv, vec2(0.70, 0.17), vec2(0.52, 0.25))
-            * groundMask;
-    vec3 softSky = vec3(0.004, 0.006, 0.010) * skyGate;
-    return warmBank * 0.014 + greenCanopy * 0.010 + waterFill * 0.010 + foregroundWarmth * 0.008 + softSky;
+vec3 localSignalBounce(vec2 uv, vec4 center, vec4 denoised, float surfaceMask) {
+    vec2 texel = safeTexelSize();
+    vec3 axisAverage = (
+            sourceSample(uv + vec2(texel.x * 2.0, 0.0)).rgb
+            + sourceSample(uv + vec2(-texel.x * 2.0, 0.0)).rgb
+            + sourceSample(uv + vec2(0.0, texel.y * 2.0)).rgb
+            + sourceSample(uv + vec2(0.0, -texel.y * 2.0)).rgb) * 0.25;
+    vec3 wideAverage = (
+            sourceSample(uv + texel * vec2(3.0, 3.0)).rgb
+            + sourceSample(uv + texel * vec2(-3.0, 3.0)).rgb
+            + sourceSample(uv + texel * vec2(3.0, -3.0)).rgb
+            + sourceSample(uv + texel * vec2(-3.0, -3.0)).rgb) * 0.25;
+    vec3 localAverage = max(mix(axisAverage, wideAverage, 0.32), vec3(0.0));
+    float confidenceSupport = smoothstep(0.018, 0.24, max(signalConfidence(center), signalConfidence(denoised)));
+    float structureSupport = smoothstep(0.020, 0.18, localMaterialStructure(uv, center) + localSignalGradient(uv) * 0.50);
+    float chromaSupport = smoothstep(0.006, 0.12, chromaSpan(localAverage) + chromaSpan(center.rgb));
+    float centerGuard = 1.0 - smoothstep(0.16, 0.44, sampleDissimilarity(center, denoised));
+    vec3 tint = mix(vec3(luminance(localAverage)), localAverage, 0.50 + chromaSupport * 0.32);
+    return tint
+            * (0.032
+            * confidenceSupport
+            * mix(0.45, 1.0, structureSupport)
+            * mix(0.55, 1.0, centerGuard)
+            * surfaceMask);
 }
 
 vec3 postTonalResponse(vec3 color, float confidence, float surfaceMask) {
@@ -325,7 +328,7 @@ void main() {
     shaped *= SIGNAL_GAIN * smoothstep(0.08, 0.92, confidence) * surfaceMask * structureMask;
     shaped *= mix(0.58, 1.0, edgeAwareOutputGate(texCoord, center, denoised));
     shaped = suppressCandidateHalo(texCoord, center, denoised, shaped) * 0.82;
-    shaped += smoothBounceField(texCoord) * mix(0.20, 0.82, confidence * surfaceMask);
+    shaped += localSignalBounce(texCoord, center, denoised, surfaceMask) * mix(0.20, 0.82, confidence * surfaceMask);
     shaped = postTonalResponse(shaped, confidence, surfaceMask);
 
     fragColor = vec4(min(max(shaped, vec3(0.0)), MAX_ADDITIVE_PER_DRAW), 1.0);

@@ -52,6 +52,10 @@ public record Round6DiffuseGiCpuOutputPayload(
                 && this.peakChannel() > 0;
     }
 
+    public boolean rawGiInputReady() {
+        return readyForPreviewDraw();
+    }
+
     public String previewReadinessReason() {
         if (!available()) {
             return "Round 6 diffuse GI payload is unavailable or does not match native CPU output dimensions";
@@ -63,6 +67,13 @@ public record Round6DiffuseGiCpuOutputPayload(
             return "native Round 6 diffuse GI output contains no displayable nonzero RGBA pixels";
         }
         return "native Round 6 diffuse GI output is ready for sampled final-composite preview draw";
+    }
+
+    public String rawGiInputSourceLabel() {
+        return rawGiInputReady()
+                ? "native scene-tied raw diffuse-GI RGBA8 CPU/readback payload"
+                : "blocked native scene-tied raw diffuse-GI RGBA8 CPU/readback payload: "
+                + previewReadinessReason();
     }
 
     public int width() {
@@ -122,6 +133,8 @@ public record Round6DiffuseGiCpuOutputPayload(
     public String debugSummary() {
         return "available=" + this.available()
                 + " readyForPreviewDraw=" + this.readyForPreviewDraw()
+                + " rawGiInputReady=" + this.rawGiInputReady()
+                + " rawGiInputSource=\"" + this.rawGiInputSourceLabel() + "\""
                 + " size=" + this.width() + "x" + this.height()
                 + " bytes=" + this.byteCount()
                 + " expectedBytes=" + this.expectedByteCount()

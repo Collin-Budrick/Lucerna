@@ -51,10 +51,21 @@ public record DiffuseGiFrameInput(
                 ? LucernaFrameConstants.unavailable()
                 : frameConstants;
         DiffuseGiSettings resolvedSettings = settings == null ? DiffuseGiSettings.disabled() : settings;
+        DiffuseGiLowResolutionGrid lowResolutionGrid = DiffuseGiLowResolutionGrid.fromViewport(
+                resolvedConstants.viewport(),
+                resolvedSettings.internalScaleDivisor()
+        );
+        if (!lowResolutionGrid.available() && gBufferWriteIntent != null && gBufferWriteIntent.dimensionsAvailable()) {
+            lowResolutionGrid = DiffuseGiLowResolutionGrid.fromDimensions(
+                    gBufferWriteIntent.width(),
+                    gBufferWriteIntent.height(),
+                    resolvedSettings.internalScaleDivisor()
+            );
+        }
         return new DiffuseGiFrameInput(
                 resolvedConstants,
                 gBufferWriteIntent,
-                DiffuseGiLowResolutionGrid.fromViewport(resolvedConstants.viewport(), resolvedSettings.internalScaleDivisor()),
+                lowResolutionGrid,
                 resolvedSettings
         );
     }
@@ -107,6 +118,28 @@ public record DiffuseGiFrameInput(
 
     public boolean hasRequiredInputs() {
         return this.missingInputs().isEmpty();
+    }
+
+    public List<String> missingSchedulingInputs() {
+        List<String> missing = new ArrayList<>();
+        if (!this.settings.enabled()) {
+            missing.add("diffuseGiSettings");
+        }
+        if (this.frameConstants.hasRenderFlags() && !this.frameConstants.flags().diffuseGiEnabled()) {
+            missing.add("diffuseGiFrameFlag");
+        }
+        if (!this.lowResolutionGrid.available()) {
+            missing.add("lowResolutionGrid");
+        }
+        if (!this.gBufferWriteIntent.dimensionsAvailable()) {
+            missing.add("gBufferDimensions");
+        }
+        missing.addAll(this.missingRequiredGBufferAttachments());
+        return List.copyOf(missing);
+    }
+
+    public boolean hasSchedulingInputs() {
+        return this.missingSchedulingInputs().isEmpty();
     }
 
     public boolean dimensionsMatchViewport() {

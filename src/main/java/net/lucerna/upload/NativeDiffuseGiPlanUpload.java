@@ -12,6 +12,7 @@ import net.lucerna.render.lighting.gi.GiRayBudgetAllocation;
 import net.lucerna.render.lighting.gi.GiRayBudgetTier;
 import net.lucerna.render.lighting.gi.LowResDiffuseGiPlan;
 import net.lucerna.render.lighting.gi.TemporalAccumulationInput;
+import net.lucerna.render.tracing.TracedLightingConsumptionEvidence;
 
 import java.util.Objects;
 
@@ -98,6 +99,20 @@ public record NativeDiffuseGiPlanUpload(
         float sourceCouplingScore,
         boolean sourceHasDirectLightingWork,
         boolean sourceHasWorldMaterialInputs,
+        long traceEvidenceGeneration,
+        long traceRayCount,
+        long traceHitCount,
+        long traceMissCount,
+        long traceMaterialCoupledHitCount,
+        long traceDepthCoupledHitCount,
+        long traceSourceCoupledBounceCount,
+        long traceCacheReadCount,
+        long traceCacheWriteCount,
+        boolean traceFinalGiSourceConsumed,
+        boolean traceRealGpuTraversalConsumed,
+        String traceFinalGiSource,
+        String traceEvidenceSource,
+        String traceBoundary,
         int sceneSurfaceSampleCount,
         int sceneColoredSurfaceSampleCount,
         int sceneDistinctMaterialCount,
@@ -149,6 +164,10 @@ public record NativeDiffuseGiPlanUpload(
         float sceneRadianceDirectionConfidence,
         float sceneMaterialGeometryCoupling,
         float scenePhysicalGiInputScore,
+        int sceneColoredBounceEvidenceSampleCount,
+        int sceneEmissiveBounceEvidenceSampleCount,
+        int sceneReceiverMaterialCoupledSampleCount,
+        int sceneReceiverDepthCoupledSampleCount,
         boolean sceneHasSceneTiedInputs,
         boolean sceneHasPhysicalGiEvidence,
         boolean sceneEmissiveProximityAvailable,
@@ -269,6 +288,26 @@ public record NativeDiffuseGiPlanUpload(
     public static final int SOURCE_COUPLING_FLAG_STRIDE = 2;
     public static final int SOURCE_HAS_DIRECT_LIGHTING_WORK_OFFSET = 0;
     public static final int SOURCE_HAS_WORLD_MATERIAL_INPUTS_OFFSET = 1;
+    public static final int TRACE_CONSUMPTION_COUNT_STRIDE = 9;
+    public static final int TRACE_CONSUMPTION_GENERATION_OFFSET = 0;
+    public static final int TRACE_CONSUMPTION_RAY_COUNT_OFFSET = 1;
+    public static final int TRACE_CONSUMPTION_HIT_COUNT_OFFSET = 2;
+    public static final int TRACE_CONSUMPTION_MISS_COUNT_OFFSET = 3;
+    public static final int TRACE_CONSUMPTION_MATERIAL_COUPLED_HIT_COUNT_OFFSET = 4;
+    public static final int TRACE_CONSUMPTION_DEPTH_COUPLED_HIT_COUNT_OFFSET = 5;
+    public static final int TRACE_CONSUMPTION_SOURCE_COUPLED_BOUNCE_COUNT_OFFSET = 6;
+    public static final int TRACE_CONSUMPTION_CACHE_READ_COUNT_OFFSET = 7;
+    public static final int TRACE_CONSUMPTION_CACHE_WRITE_COUNT_OFFSET = 8;
+    public static final int TRACE_CONSUMPTION_FLAG_STRIDE = 5;
+    public static final int TRACE_CONSUMPTION_FINAL_GI_SOURCE_CONSUMED_OFFSET = 0;
+    public static final int TRACE_CONSUMPTION_MATERIAL_COUPLING_PRESENT_OFFSET = 1;
+    public static final int TRACE_CONSUMPTION_DEPTH_COUPLING_PRESENT_OFFSET = 2;
+    public static final int TRACE_CONSUMPTION_SOURCE_BOUNCE_PRESENT_OFFSET = 3;
+    public static final int TRACE_CONSUMPTION_REAL_GPU_TRAVERSAL_CONSUMED_OFFSET = 4;
+    public static final int TRACE_CONSUMPTION_LABEL_STRIDE = 3;
+    public static final int TRACE_CONSUMPTION_FINAL_GI_SOURCE_LABEL_OFFSET = 0;
+    public static final int TRACE_CONSUMPTION_EVIDENCE_SOURCE_LABEL_OFFSET = 1;
+    public static final int TRACE_CONSUMPTION_BOUNDARY_LABEL_OFFSET = 2;
     public static final int SCENE_INPUT_INTEGER_STRIDE = 8;
     public static final int SCENE_SURFACE_SAMPLE_COUNT_OFFSET = 0;
     public static final int SCENE_COLORED_SURFACE_SAMPLE_COUNT_OFFSET = 1;
@@ -307,6 +346,11 @@ public record NativeDiffuseGiPlanUpload(
     public static final int SCENE_PHYSICAL_COUPLING_FLAG_STRIDE = 2;
     public static final int SCENE_HAS_SCENE_TIED_INPUTS_OFFSET = 0;
     public static final int SCENE_HAS_PHYSICAL_GI_EVIDENCE_OFFSET = 1;
+    public static final int SCENE_PHYSICAL_COUPLING_COUNT_STRIDE = 4;
+    public static final int SCENE_COLORED_BOUNCE_EVIDENCE_SAMPLE_COUNT_OFFSET = 0;
+    public static final int SCENE_EMISSIVE_BOUNCE_EVIDENCE_SAMPLE_COUNT_OFFSET = 1;
+    public static final int SCENE_RECEIVER_MATERIAL_COUPLED_SAMPLE_COUNT_OFFSET = 2;
+    public static final int SCENE_RECEIVER_DEPTH_COUPLED_SAMPLE_COUNT_OFFSET = 3;
     public static final int SCENE_SURFACE_MATERIAL_INTEGER_STRIDE = 4;
     public static final int SCENE_DISTINCT_MATERIAL_COUNT_OFFSET = 0;
     public static final int SCENE_DOWNWARD_FACING_SURFACE_COUNT_OFFSET = 1;
@@ -456,6 +500,43 @@ public record NativeDiffuseGiPlanUpload(
         requireUnit(sourceCelestialSourceScore, "sourceCelestialSourceScore");
         requireUnit(sourceSceneMutationScore, "sourceSceneMutationScore");
         requireUnit(sourceCouplingScore, "sourceCouplingScore");
+        requireNonNegative(traceEvidenceGeneration, "traceEvidenceGeneration");
+        requireNonNegative(traceRayCount, "traceRayCount");
+        requireNonNegative(traceHitCount, "traceHitCount");
+        requireNonNegative(traceMissCount, "traceMissCount");
+        requireNonNegative(traceMaterialCoupledHitCount, "traceMaterialCoupledHitCount");
+        requireNonNegative(traceDepthCoupledHitCount, "traceDepthCoupledHitCount");
+        requireNonNegative(traceSourceCoupledBounceCount, "traceSourceCoupledBounceCount");
+        requireNonNegative(traceCacheReadCount, "traceCacheReadCount");
+        requireNonNegative(traceCacheWriteCount, "traceCacheWriteCount");
+        if (traceHitCount > traceRayCount || traceMissCount > traceRayCount - traceHitCount) {
+            throw new IllegalArgumentException("trace hit and miss counts cannot exceed trace ray count");
+        }
+        if (traceMaterialCoupledHitCount > traceHitCount) {
+            throw new IllegalArgumentException("traceMaterialCoupledHitCount cannot exceed traceHitCount");
+        }
+        if (traceDepthCoupledHitCount > traceHitCount) {
+            throw new IllegalArgumentException("traceDepthCoupledHitCount cannot exceed traceHitCount");
+        }
+        if (traceFinalGiSourceConsumed
+                && (traceRayCount == 0L
+                || traceHitCount == 0L
+                || traceMaterialCoupledHitCount == 0L
+                || traceDepthCoupledHitCount == 0L
+                || traceSourceCoupledBounceCount == 0L)) {
+            throw new IllegalArgumentException(
+                    "traceFinalGiSourceConsumed requires ray, hit, material, depth, and source-bounce evidence"
+            );
+        }
+        if (traceRealGpuTraversalConsumed && !traceFinalGiSourceConsumed) {
+            throw new IllegalArgumentException("traceRealGpuTraversalConsumed requires traceFinalGiSourceConsumed");
+        }
+        traceFinalGiSource = requireText(traceFinalGiSource, "traceFinalGiSource");
+        traceEvidenceSource = requireText(traceEvidenceSource, "traceEvidenceSource");
+        traceBoundary = requireText(traceBoundary, "traceBoundary");
+        if (traceRealGpuTraversalConsumed && metadataOrCpuTraceSource(traceEvidenceSource)) {
+            throw new IllegalArgumentException("traceRealGpuTraversalConsumed cannot use CPU, metadata, fallback, or missing trace sources");
+        }
         requireNonNegative(sceneSurfaceSampleCount, "sceneSurfaceSampleCount");
         requireNonNegative(sceneColoredSurfaceSampleCount, "sceneColoredSurfaceSampleCount");
         requireNonNegative(sceneDistinctMaterialCount, "sceneDistinctMaterialCount");
@@ -506,6 +587,20 @@ public record NativeDiffuseGiPlanUpload(
         requireUnit(sceneRadianceDirectionConfidence, "sceneRadianceDirectionConfidence");
         requireUnit(sceneMaterialGeometryCoupling, "sceneMaterialGeometryCoupling");
         requireUnit(scenePhysicalGiInputScore, "scenePhysicalGiInputScore");
+        requireNonNegative(sceneColoredBounceEvidenceSampleCount, "sceneColoredBounceEvidenceSampleCount");
+        requireNonNegative(sceneEmissiveBounceEvidenceSampleCount, "sceneEmissiveBounceEvidenceSampleCount");
+        requireNonNegative(sceneReceiverMaterialCoupledSampleCount, "sceneReceiverMaterialCoupledSampleCount");
+        requireNonNegative(sceneReceiverDepthCoupledSampleCount, "sceneReceiverDepthCoupledSampleCount");
+        if (sceneColoredBounceEvidenceSampleCount > sceneSurfaceSampleCount
+                || sceneEmissiveBounceEvidenceSampleCount > sceneSurfaceSampleCount
+                || sceneReceiverMaterialCoupledSampleCount > sceneSurfaceSampleCount
+                || sceneReceiverDepthCoupledSampleCount > sceneSurfaceSampleCount) {
+            throw new IllegalArgumentException("scene coupling sample counts cannot exceed sceneSurfaceSampleCount");
+        }
+        if (sceneHasPhysicalGiEvidence
+                && (sceneReceiverMaterialCoupledSampleCount == 0 || sceneReceiverDepthCoupledSampleCount == 0)) {
+            throw new IllegalArgumentException("physical GI evidence requires receiver material and depth coupling samples");
+        }
         if (!sceneAffectedSurfaceRegionAvailable) {
             requireZero(sceneAffectedSurfaceMinBlockX, "sceneAffectedSurfaceMinBlockX");
             requireZero(sceneAffectedSurfaceMinBlockY, "sceneAffectedSurfaceMinBlockY");
@@ -558,15 +653,19 @@ public record NativeDiffuseGiPlanUpload(
         GiCacheSnapshot cacheSnapshot = plan.cacheSnapshot();
         DiffuseGiSourceSummary sourceSummary = plan.sourceSummary();
         DiffuseGiSceneInputSummary sceneInputs = plan.sceneInputSummary();
+        TracedLightingConsumptionEvidence traceEvidence = plan.traceConsumptionEvidence();
         DiffuseGiValidationReport validationReport = plan.validationReport();
 
-        long generation = max(
-                cacheSnapshot.cacheGeneration(),
-                cacheSnapshot.latestDirtyGeneration(),
-                confidence.sourceGeneration(),
-                confidence.lastTouchedFrame(),
-                temporalInput.frameIndex(),
-                sourceSummary.generation()
+        long generation = Math.max(
+                max(
+                        cacheSnapshot.cacheGeneration(),
+                        cacheSnapshot.latestDirtyGeneration(),
+                        confidence.sourceGeneration(),
+                        confidence.lastTouchedFrame(),
+                        temporalInput.frameIndex(),
+                        sourceSummary.generation()
+                ),
+                traceEvidence.generation()
         );
 
         return new NativeDiffuseGiPlanUpload(
@@ -652,6 +751,20 @@ public record NativeDiffuseGiPlanUpload(
                 sourceSummary.sourceCouplingScore(),
                 sourceSummary.hasDirectLightingWork(),
                 sourceSummary.hasWorldMaterialInputs(),
+                traceEvidence.generation(),
+                traceEvidence.rayCount(),
+                traceEvidence.hitCount(),
+                traceEvidence.missCount(),
+                traceEvidence.materialCoupledHitCount(),
+                traceEvidence.depthCoupledHitCount(),
+                traceEvidence.sourceCoupledBounceCount(),
+                traceEvidence.cacheReadCount(),
+                traceEvidence.cacheWriteCount(),
+                traceEvidence.finalGiSourceConsumed(),
+                traceEvidence.realGpuTraversalConsumed(),
+                traceEvidence.finalGiSource(),
+                traceEvidence.evidenceSource(),
+                traceEvidence.boundary(),
                 sceneInputs.surfaceSampleCount(),
                 sceneInputs.coloredSurfaceSampleCount(),
                 sceneInputs.distinctMaterialCount(),
@@ -703,6 +816,10 @@ public record NativeDiffuseGiPlanUpload(
                 sceneInputs.radianceDirectionConfidence(),
                 sceneInputs.materialGeometryCoupling(),
                 sceneInputs.physicalGiInputScore(),
+                sceneInputs.coloredBounceEvidenceSampleCount(),
+                sceneInputs.emissiveBounceEvidenceSampleCount(),
+                sceneInputs.receiverMaterialCoupledSampleCount(),
+                sceneInputs.receiverDepthCoupledSampleCount(),
                 sceneInputs.hasSceneTiedInputs(),
                 sceneInputs.hasPhysicalGiEvidence(),
                 sceneInputs.emissiveProximityAvailable(),
@@ -887,6 +1004,57 @@ public record NativeDiffuseGiPlanUpload(
         };
     }
 
+    public long[] traceConsumptionCounts() {
+        return new long[]{
+                this.traceEvidenceGeneration,
+                this.traceRayCount,
+                this.traceHitCount,
+                this.traceMissCount,
+                this.traceMaterialCoupledHitCount,
+                this.traceDepthCoupledHitCount,
+                this.traceSourceCoupledBounceCount,
+                this.traceCacheReadCount,
+                this.traceCacheWriteCount
+        };
+    }
+
+    public int[] traceConsumptionFlags() {
+        return new int[]{
+                this.traceFinalGiSourceConsumed ? 1 : 0,
+                this.traceMaterialCoupledHitCount > 0L ? 1 : 0,
+                this.traceDepthCoupledHitCount > 0L ? 1 : 0,
+                this.traceSourceCoupledBounceCount > 0L ? 1 : 0,
+                this.traceRealGpuTraversalConsumed ? 1 : 0
+        };
+    }
+
+    public String[] traceConsumptionLabels() {
+        return new String[]{
+                this.traceFinalGiSource,
+                this.traceEvidenceSource,
+                this.traceBoundary
+        };
+    }
+
+    public boolean traceHasMaterialDepthSourceCoupling() {
+        return this.traceMaterialCoupledHitCount > 0L
+                && this.traceDepthCoupledHitCount > 0L
+                && this.traceSourceCoupledBounceCount > 0L;
+    }
+
+    public String traceBlocker() {
+        return this.traceBoundary;
+    }
+
+    private static boolean metadataOrCpuTraceSource(String value) {
+        String source = value.toLowerCase(java.util.Locale.ROOT);
+        return source.contains("cpu")
+                || source.contains("metadata")
+                || source.contains("fallback")
+                || source.contains("not_")
+                || source.contains("unavailable");
+    }
+
     public int[] sceneInputIntegers() {
         return new int[]{
                 this.sceneSurfaceSampleCount,
@@ -938,6 +1106,15 @@ public record NativeDiffuseGiPlanUpload(
         return new int[]{
                 this.sceneHasSceneTiedInputs ? 1 : 0,
                 this.sceneHasPhysicalGiEvidence ? 1 : 0
+        };
+    }
+
+    public int[] scenePhysicalCouplingCounts() {
+        return new int[]{
+                this.sceneColoredBounceEvidenceSampleCount,
+                this.sceneEmissiveBounceEvidenceSampleCount,
+                this.sceneReceiverMaterialCoupledSampleCount,
+                this.sceneReceiverDepthCoupledSampleCount
         };
     }
 

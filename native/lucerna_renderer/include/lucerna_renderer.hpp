@@ -137,6 +137,28 @@ struct GBufferStagingPacket {
     std::vector<GBufferStagingUpload> gbuffers;
 };
 
+struct GBufferDepthSamplingEvidence {
+    std::uint64_t frame_index = 0;
+    std::uint64_t gbuffer_generation = 0;
+    std::uint64_t depth_view_handle = 0;
+    std::int32_t width = 0;
+    std::int32_t height = 0;
+    std::int32_t format_tag = 0;
+    std::string format_label;
+    std::string layout_label;
+    std::uint64_t sample_count = 0;
+    std::uint64_t nonzero_sample_count = 0;
+    double min_normalized_depth = 0.0;
+    double max_normalized_depth = 0.0;
+    std::uint64_t checksum = 0;
+    bool reported = false;
+    bool shader_sampled = false;
+    bool sampling_evidence = false;
+    bool metadata_only = true;
+    std::string marker;
+    std::string blocker;
+};
+
 enum class NativeLightingDispatchStage : std::uint8_t {
     DirectLighting = 0,
     DiffuseGi = 1,
@@ -181,6 +203,46 @@ struct LightingDispatchPacket {
     std::uint64_t section_generation = 0;
     std::uint64_t gbuffer_generation = 0;
     std::vector<LightingDispatchStageUpload> dispatches;
+};
+
+struct TracedLightingConsumptionEvidence {
+    std::uint64_t frame_index = 0;
+    std::uint64_t generation = 0;
+    std::uint64_t ray_count = 0;
+    std::uint64_t hit_count = 0;
+    std::uint64_t miss_count = 0;
+    std::uint64_t material_coupled_hit_count = 0;
+    std::uint64_t depth_coupled_hit_count = 0;
+    std::uint64_t source_coupled_bounce_count = 0;
+    std::uint64_t cache_read_count = 0;
+    std::uint64_t cache_write_count = 0;
+    bool reported = false;
+    bool final_gi_source_consumed = false;
+    bool consumption_evidence = false;
+    bool metadata_only = true;
+    std::string final_gi_source;
+    std::string evidence_source;
+    std::string marker;
+    std::string blocker;
+};
+
+struct ShaderDenoiseOutputEvidence {
+    std::uint64_t frame_index = 0;
+    std::uint64_t generation = 0;
+    std::uint64_t width = 0;
+    std::uint64_t height = 0;
+    std::uint64_t texel_count = 0;
+    std::uint64_t sample_count = 0;
+    std::uint64_t checksum = 0;
+    bool reported = false;
+    bool output_image_ready = false;
+    bool shader_generated_output = false;
+    bool final_composite_consumed = false;
+    bool evidence_ready = false;
+    bool metadata_only = true;
+    std::string identity;
+    std::string marker;
+    std::string blocker;
 };
 
 struct DirectLightingPayloadPacket {
@@ -569,6 +631,29 @@ struct NativeDirectLightingExecutionTelemetry {
     std::uint64_t last_emissive_spill_source_count = 0;
     std::uint64_t last_emissive_spill_surface_hit_count = 0;
     std::uint64_t last_emissive_spill_checksum = 0;
+    std::uint64_t shadow_map_attempts = 0;
+    std::uint64_t last_shadow_map_texel_width = 0;
+    std::uint64_t last_shadow_map_texel_height = 0;
+    std::uint64_t last_shadow_map_caster_count = 0;
+    std::uint64_t last_shadow_map_receiver_count = 0;
+    std::uint64_t last_shadow_map_depth_samples_written = 0;
+    std::uint64_t last_shadow_map_receiver_candidate_count = 0;
+    std::uint64_t last_shadow_map_caster_candidate_count = 0;
+    std::uint64_t last_shadow_map_receiver_rejected_count = 0;
+    std::uint64_t last_shadow_map_caster_rejected_count = 0;
+    std::uint64_t last_shadow_map_depth_texel_count = 0;
+    std::uint64_t last_shadow_map_depth_covered_texel_count = 0;
+    std::uint64_t last_shadow_map_depth_uncovered_texel_count = 0;
+    std::uint64_t last_shadow_map_output_sample_count = 0;
+    std::uint64_t last_shadow_map_output_caster_count = 0;
+    std::uint64_t last_shadow_map_output_receiver_count = 0;
+    std::uint64_t last_shadow_map_checksum = 0;
+    std::uint64_t last_shadow_mask_output_width = 0;
+    std::uint64_t last_shadow_mask_output_height = 0;
+    std::uint64_t last_shadow_mask_output_pixel_count = 0;
+    std::uint64_t last_shadow_mask_output_checksum = 0;
+    std::uint64_t last_shadow_mask_nonzero_sample_count = 0;
+    std::uint64_t last_shadow_mask_occluded_sample_count = 0;
     std::uint64_t total_celestial_light_count = 0;
     std::uint64_t total_emissive_light_count = 0;
     std::uint64_t total_shadow_candidate_count = 0;
@@ -592,6 +677,8 @@ struct NativeDirectLightingExecutionTelemetry {
     float last_surface_payload_confidence = 0.0F;
     float last_emissive_spill_energy = 0.0F;
     float last_emissive_spill_max_radius = 0.0F;
+    float last_shadow_map_min_light_space_depth = 0.0F;
+    float last_shadow_map_max_light_space_depth = 0.0F;
     std::uint32_t last_payload_flags = 0;
     bool last_payload_accepted = false;
     bool last_payload_validated = false;
@@ -608,11 +695,30 @@ struct NativeDirectLightingExecutionTelemetry {
     bool last_physical_surface_contribution = false;
     bool last_preview_fallback_contribution = false;
     bool last_focus_window_contribution = false;
+    bool last_shadow_map_attempted = false;
+    bool last_shadow_map_generated = false;
+    bool last_shadow_map_depth_range_recorded = false;
+    bool last_shadow_map_cpu_conservative = false;
+    bool last_shadow_map_screen_space_decal_fallback = false;
+    bool last_shadow_map_world_space_decal_fallback = false;
+    bool last_shadow_mask_output_generated = false;
+    bool last_shadow_mask_output_ready = false;
+    bool last_shadow_mask_cpu_conservative = false;
+    bool last_shadow_mask_screen_space_decal_fallback = false;
+    bool last_shadow_mask_world_space_decal_fallback = false;
     std::string last_payload_dimension_id;
     std::string last_output_marker;
     std::string last_readiness_reason;
     std::string last_ray_budget_marker;
     std::string last_ray_budget_rejection_reason;
+    std::string last_shadow_map_marker;
+    std::string last_shadow_map_blocker;
+    std::string last_shadow_map_receiver_blocker;
+    std::string last_shadow_map_caster_blocker;
+    std::string last_shadow_map_depth_blocker;
+    std::string last_shadow_map_hardware_rt_blocker;
+    std::string last_shadow_mask_output_marker;
+    std::string last_shadow_mask_output_blocker;
 };
 
 struct NativeRound6DispatchExecutionTelemetry {
@@ -668,7 +774,11 @@ struct NativeRound6DispatchExecutionTelemetry {
     std::uint64_t last_material_color_modulated_sample_count = 0;
     std::uint64_t last_colored_bounce_sample_count = 0;
     std::uint64_t last_colored_bounce_hit_count = 0;
+    std::uint64_t last_emissive_bounce_sample_count = 0;
+    std::uint64_t last_emissive_bounce_hit_count = 0;
     std::uint64_t last_material_coupled_bounce_sample_count = 0;
+    std::uint64_t last_receiver_material_coupled_sample_count = 0;
+    std::uint64_t last_receiver_depth_coupled_sample_count = 0;
     std::uint64_t last_surface_normal_confident_sample_count = 0;
     std::uint64_t last_occlusion_dirty_modulated_sample_count = 0;
     std::uint64_t last_physical_gi_sample_count = 0;
@@ -719,6 +829,9 @@ struct NativeRound6DispatchExecutionTelemetry {
     float last_colored_bounce_mean_green = 0.0F;
     float last_colored_bounce_mean_blue = 0.0F;
     float last_colored_bounce_energy = 0.0F;
+    float last_emissive_bounce_energy = 0.0F;
+    float last_receiver_material_coupling = 0.0F;
+    float last_receiver_depth_coupling = 0.0F;
     float last_surface_normal_confidence = 0.0F;
     float last_surface_material_hit_coupling = 0.0F;
     float last_geometry_hit_coupling = 0.0F;
@@ -763,7 +876,10 @@ struct NativeRound6DispatchExecutionTelemetry {
     bool last_scene_linked_samples_recorded = false;
     bool last_material_color_influence_recorded = false;
     bool last_colored_bounce_recorded = false;
+    bool last_emissive_bounce_recorded = false;
     bool last_material_coupled_bounce_recorded = false;
+    bool last_receiver_material_coupling_recorded = false;
+    bool last_receiver_depth_coupling_recorded = false;
     bool last_surface_normal_confidence_recorded = false;
     bool last_physical_gi_samples_recorded = false;
     bool last_cpu_ray_traversal_recorded = false;
@@ -797,6 +913,7 @@ struct NativeRound6DispatchExecutionTelemetry {
     std::string last_physical_output_marker;
     std::string last_physical_sample_marker;
     std::string last_surface_material_hit_marker;
+    std::string last_emissive_receiver_coupling_marker;
     std::string last_contact_shadow_marker;
     std::string last_proof_boundary_marker;
     std::string last_readiness_reason;
@@ -843,6 +960,11 @@ struct NativeDenoiseExecutionTelemetry {
     std::uint64_t last_shader_denoise_output_image_candidate_pixels = 0;
     std::uint64_t last_shader_denoise_output_image_candidate_bytes = 0;
     std::uint64_t last_shader_denoise_output_image_candidate_checksum = 0;
+    std::uint64_t last_shader_generated_denoise_output_width = 0;
+    std::uint64_t last_shader_generated_denoise_output_height = 0;
+    std::uint64_t last_shader_generated_denoise_output_texel_count = 0;
+    std::uint64_t last_shader_generated_denoise_output_sample_count = 0;
+    std::uint64_t last_shader_generated_denoise_output_checksum = 0;
     std::uint64_t last_cpu_readback_candidate_payload_width = 0;
     std::uint64_t last_cpu_readback_candidate_payload_height = 0;
     std::uint64_t last_cpu_readback_candidate_payload_pixels = 0;
@@ -880,6 +1002,11 @@ struct NativeDenoiseExecutionTelemetry {
     bool last_raw_gi_input_available = false;
     bool last_raw_direct_input_available = false;
     bool last_raw_gi_input_ready = false;
+    bool last_shader_denoise_raw_diffuse_gi_input_ready = false;
+    bool last_shader_denoise_direct_light_validation_input_ready = false;
+    bool last_shader_denoise_direct_light_validation_input_active = false;
+    bool last_shader_denoise_physical_gi_input_evidence = false;
+    bool last_shader_denoise_real_traced_input_ready = false;
     bool last_denoised_output_intent = false;
     bool last_denoised_cpu_output_generated = false;
     bool last_cpu_denoised_readback_ready = false;
@@ -916,6 +1043,11 @@ struct NativeDenoiseExecutionTelemetry {
     bool last_real_denoise_shader_output = false;
     bool last_real_shader_denoise_output_ready = false;
     bool last_shader_denoise_output_shader_generated = false;
+    bool last_shader_generated_denoise_output_reported = false;
+    bool last_shader_generated_denoise_output_image_ready = false;
+    bool last_shader_generated_denoise_output_generated = false;
+    bool last_shader_generated_denoise_output_final_composite_consumed = false;
+    bool last_shader_generated_denoise_output_evidence_ready = false;
     bool last_shader_denoise_no_overclaim = true;
     bool last_cpu_fallback_quality_metrics = false;
     bool last_composite_stage_recorded = false;
@@ -936,6 +1068,11 @@ struct NativeDenoiseExecutionTelemetry {
     std::string last_output_marker;
     std::string last_source_identity_marker;
     std::string last_raw_input_marker;
+    std::string last_shader_denoise_input_kind;
+    std::string last_shader_denoise_input_status;
+    std::string last_shader_denoise_input_blocker;
+    std::string last_shader_denoise_physical_gi_blocker;
+    std::string last_shader_denoise_tracing_blocker;
     std::string last_denoised_output_marker;
     std::string last_shader_denoise_readiness_marker;
     std::string last_shader_denoise_handoff_marker;
@@ -945,6 +1082,8 @@ struct NativeDenoiseExecutionTelemetry {
     std::string last_cpu_readback_candidate_payload_marker;
     std::string last_public_mojang_shader_visual_output_marker;
     std::string last_real_shader_generated_visual_output_marker;
+    std::string last_shader_generated_denoise_output_identity;
+    std::string last_shader_generated_denoise_output_blocker;
     std::string last_shader_denoise_output_prerequisite_marker;
     std::string last_shader_denoise_output_missing_prerequisites;
     std::string last_shader_denoise_output_image_blocker;
@@ -1065,6 +1204,8 @@ struct NativeStagingTelemetry {
     NativeVirtualChunkGeometryTelemetry virtual_geometry;
     NativeGBufferStagingTelemetry gbuffer;
     NativeLightingDispatchTelemetry lighting;
+    GBufferDepthSamplingEvidence gbuffer_depth_sampling;
+    TracedLightingConsumptionEvidence traced_lighting_consumption;
 };
 
 class Renderer {
@@ -1082,8 +1223,11 @@ public:
     void upload_world_deltas(UploadPacket packet);
     void upload_section_snapshots(SectionUploadPacket packet);
     void upload_gbuffer_staging(GBufferStagingPacket packet);
+    void report_gbuffer_depth_sampling_evidence(GBufferDepthSamplingEvidence evidence);
     void upload_lighting_dispatch(LightingDispatchPacket packet);
     void upload_direct_lighting_payload(DirectLightingPayloadPacket packet);
+    void report_traced_lighting_consumption_evidence(TracedLightingConsumptionEvidence evidence);
+    void report_shader_denoise_output_evidence(ShaderDenoiseOutputEvidence evidence);
     void render_lighting();
     void end_frame();
     void adopt_borrowed_context(BorrowedVulkanContext context);
@@ -1093,6 +1237,7 @@ public:
     [[nodiscard]] std::string last_error() const;
     [[nodiscard]] std::string status() const;
     [[nodiscard]] std::vector<std::uint8_t> direct_lighting_cpu_output_preview_rgba8() const;
+    [[nodiscard]] std::vector<std::uint8_t> shadow_map_cpu_output_preview_rgba8() const;
     [[nodiscard]] std::vector<std::uint8_t> diffuse_gi_cpu_output_preview_rgba8();
     [[nodiscard]] std::vector<std::uint8_t> denoised_diffuse_gi_cpu_output_preview_rgba8();
 
@@ -1114,6 +1259,8 @@ private:
     void track_gbuffer_staging_upload(const GBufferStagingPacket& packet);
     void track_lighting_dispatch_upload(const LightingDispatchPacket& packet);
     void track_round11_restir_metadata();
+    void record_diffuse_gi_traced_lighting_consumption(
+            const NativeRound6DispatchExecutionTelemetry& execution);
     void track_gbuffer_placeholder_intent();
     [[nodiscard]] std::uint64_t track_noop_lighting_placeholder();
     [[nodiscard]] std::uint64_t track_flat_composite_placeholder();
@@ -1157,6 +1304,7 @@ private:
     LightingDispatchPacket last_lighting_dispatch_packet_;
     DirectLightingPayloadPacket last_direct_lighting_payload_packet_;
     std::vector<float> direct_lighting_cpu_output_;
+    std::vector<std::uint8_t> shadow_map_cpu_output_mask_rgba8_;
     std::vector<float> diffuse_gi_cpu_output_;
     std::vector<std::uint8_t> denoised_diffuse_gi_cpu_output_rgba8_;
     float last_tick_delta_ = 0.0F;

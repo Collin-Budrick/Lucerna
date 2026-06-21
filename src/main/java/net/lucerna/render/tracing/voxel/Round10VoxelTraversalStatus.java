@@ -1,5 +1,9 @@
 package net.lucerna.render.tracing.voxel;
 
+import net.lucerna.render.tracing.TracedLightingConsumptionEvidence;
+import net.lucerna.render.voxel.VoxelSectionSnapshotReference;
+
+import java.util.List;
 import java.util.Objects;
 
 public record Round10VoxelTraversalStatus(
@@ -41,9 +45,45 @@ public record Round10VoxelTraversalStatus(
                 false,
                 true,
                 false,
-                output.hasTraversalEvidence()
-                        ? "round10_voxel_traversal_cpu_metadata_status_recorded"
-                        : "round10_voxel_traversal_cpu_metadata_status_no_rays"
+                markerFor(output)
+        );
+    }
+
+    public static Round10VoxelTraversalStatus cpuBoundedSnapshotTraversal(
+            Round10VoxelTraversalInputSummary input,
+            List<VoxelSectionSnapshotReference> sections
+    ) {
+        Objects.requireNonNull(input, "input");
+        Round10VoxelTraversalOutputSummary output = Round10VoxelTraversalOutputSummary.boundedCpuFromSectionSnapshots(
+                input.sourceGeneration(),
+                sections
+        );
+        return new Round10VoxelTraversalStatus(
+                input,
+                output,
+                false,
+                true,
+                output.maskBitsReady() && !output.maskBitsSource().contains("metadata_only"),
+                markerFor(output)
+        );
+    }
+
+    public static Round10VoxelTraversalStatus metadataOnlySnapshotStatus(
+            Round10VoxelTraversalInputSummary input,
+            List<VoxelSectionSnapshotReference> sections
+    ) {
+        Objects.requireNonNull(input, "input");
+        Round10VoxelTraversalOutputSummary output = Round10VoxelTraversalOutputSummary.metadataOnlyFromSectionSnapshots(
+                input.sourceGeneration(),
+                sections
+        );
+        return new Round10VoxelTraversalStatus(
+                input,
+                output,
+                false,
+                true,
+                false,
+                markerFor(output)
         );
     }
 
@@ -79,8 +119,42 @@ public record Round10VoxelTraversalStatus(
         return this.output.realGpuTraversalExecuted();
     }
 
+    public long sourceCoupledBounceCount() {
+        return this.output.sourceCoupledBounceCount();
+    }
+
+    public String sourceCoupledBounceSource() {
+        return this.output.sourceCoupledBounceSource();
+    }
+
+    public long depthCoupledHitCount() {
+        return this.output.depthCoupledHitCount();
+    }
+
+    public boolean hasMaterialDepthSourceCoupling() {
+        return this.output.hasMaterialDepthSourceCoupling();
+    }
+
+    public String boundaryLabel() {
+        return this.output.boundary();
+    }
+
     public String correctnessLabel() {
         return this.output.correctnessLabel();
+    }
+
+    public TracedLightingConsumptionEvidence toTraceConsumptionEvidence(
+            long cacheReadCount,
+            long cacheWriteCount,
+            boolean finalGiSourceConsumed,
+            String finalGiSource
+    ) {
+        return this.output.toTraceConsumptionEvidence(
+                cacheReadCount,
+                cacheWriteCount,
+                finalGiSourceConsumed,
+                finalGiSource
+        );
     }
 
     private static String requireText(String value, String name) {
@@ -90,5 +164,24 @@ public record Round10VoxelTraversalStatus(
             throw new IllegalArgumentException(name + " must not be blank");
         }
         return value;
+    }
+
+    private static String markerFor(Round10VoxelTraversalOutputSummary output) {
+        Objects.requireNonNull(output, "output");
+        if (output.traversalBackend().contains("metadata_only")) {
+            return output.hasTraversalEvidence()
+                    ? "round10_voxel_traversal_metadata_only_status_recorded"
+                    : "round10_voxel_traversal_metadata_only_status_no_rays";
+        }
+        if (output.hasMaterialDepthSourceCoupling()) {
+            return "round10_voxel_traversal_cpu_bounded_scene_tied_gi_evidence_recorded";
+        }
+        if (output.hasMaterialHitEvidence() && output.hasDepthCoupledHitEvidence()) {
+            return "round10_voxel_traversal_cpu_bounded_material_depth_evidence_recorded";
+        }
+        if (output.hasTraversalEvidence()) {
+            return "round10_voxel_traversal_cpu_metadata_status_recorded";
+        }
+        return "round10_voxel_traversal_cpu_metadata_status_no_rays";
     }
 }

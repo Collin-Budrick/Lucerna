@@ -17,13 +17,19 @@ import java.util.Optional;
 
 public final class PublicMojangPreviewDrawScaffolds {
     private static final String DIRECT_LIGHT_SOURCE_BINDING = "InSampler";
+    private static final String SAMPLER0_BINDING = "Sampler0";
+    private static final String SAMPLER1_BINDING = "Sampler1";
     private static final String NO_TEXTURE_BINDING = "none";
     private static final String TEXTURED_FULLSCREEN_MODE = "source-gated-direct-light-surface-additive";
     private static final String FINAL_COMPOSITE_FULLSCREEN_MODE = "final-composite-native-direct-light-source-gated-additive";
+    private static final String NATIVE_SHADOW_MAP_COMPOSITE_FULLSCREEN_MODE =
+            "final-composite-native-shadow-map-mask-occlusion";
     private static final String ROUND7_RAW_GI_FULLSCREEN_MODE =
             "round7-raw-gi-native-diffuse-source-additive";
     private static final String ROUND7_DENOISED_GI_FULLSCREEN_MODE =
             "round7-denoised-gi-first-practical-cpu-output-additive";
+    private static final String ROUND7_SHADER_DENOISE_OUTPUT_FULLSCREEN_MODE =
+            "round7-shader-generated-denoise-output-fragment-color-attachment";
     private static final String ROUND7_FINAL_COMPOSITE_FULLSCREEN_MODE =
             "round7-final-composite-source-separated-scene-surface-additive";
     private static final String DAYTIME_WORLD_SHADOW_FULLSCREEN_MODE =
@@ -40,6 +46,60 @@ public final class PublicMojangPreviewDrawScaffolds {
             "sourceIdentity=native-diffuse-gi-rgba8/raw-gi";
     private static final String DENOISED_GI_SOURCE_IDENTITY =
             "sourceIdentity=cpu-denoised-diffuse-gi-rgba8+public-mojang-visual-filter/denoised-gi";
+    private static final String SHADER_DENOISE_OUTPUT_SOURCE_IDENTITY =
+            "sourceIdentity=shader-denoised-diffuse-gi-rgba8/public-mojang-fragment-color-attachment";
+    private static final String SHADER_DENOISE_OUTPUT_SUBMISSION_BOUNDARY =
+            "sourceKind=shader-generated-denoised-gi,"
+                    + "shaderGeneratedDenoisedGI=public-mojang-fragment-pass,"
+                    + "shaderGeneratedDenoiseOutputKind=fragment-color-attachment,"
+                    + "shaderDenoisePassIdentity=lucerna.denoise.diffuse.public-mojang-fragment,"
+                    + "shaderDenoiseVisualShaderIntent=true,"
+                    + "shaderDenoiseDispatchPrepared=false,"
+                    + "shaderDenoiseFragmentPassPrepared=true,"
+                    + "shaderDenoiseInputReady=true,"
+                    + "shaderDenoiseInputsCompleteForDispatch=false,"
+                    + "shaderDenoiseFragmentInputsCompleteForCurrentMojangPass=true,"
+                    + "shaderDenoiseDepthMaterialInputsBound=false,"
+                    + "shaderDenoiseMaterialDepthPreservation=raw-signal-edge-fallback,"
+                    + "shaderDenoiseFullGeometryGuidanceReady=false,"
+                    + "shaderDenoiseRequiredDepthMaterialInputsPending=true,"
+                    + "shaderDenoiseOutputPassAttempted=true,"
+                    + "shaderDenoiseOutputTextureAllocated=true,"
+                    + "shaderDenoiseOwnedOutputImage=true,"
+                    + "shaderDenoiseOutputRenderPassSubmitted=true,"
+                    + "shaderDenoiseColorAttachmentWrite=true,"
+                    + "shaderDenoiseStorageImageWrite=false,"
+                    + "shaderDenoiseComputeDispatch=false,"
+                    + "shaderDenoiseComputeBarrierReady=false,"
+                    + "shaderDenoiseColorAttachmentTransitionRequired=true,"
+                    + "shaderDenoisePassExecuted=true,"
+                    + "shaderGeneratedDenoisePassExecuted=true,"
+                    + "shaderOutputSourceConsumed=true,"
+                    + "shaderDenoiseOutputSourceConsumed=true,"
+                    + "shaderDenoiseOutputConsumedByFinalComposite=true,"
+                    + "shaderDenoisePassGeneratedVisualSource=true,"
+                    + "shaderDenoiseFinalCompositeConsumable=true,"
+                    + "finalCompositeConsumable=true,"
+                    + "cpuReadbackFallbackActive=false,"
+                    + "cpuReadbackFallbackInactive=true,"
+                    + "shaderDenoiseCpuReadbackFallbackActive=false,"
+                    + "shaderDenoiseCpuReadbackFallbackInactive=true,"
+                    + "cpuDenoiseReadbackFallback=false,"
+                    + "cpuDenoisedReadbackSource=false,"
+                    + "rawGiCpuReadbackInput=true,"
+                    + "shaderOwnedOutputImage=true,"
+                    + "shaderDenoiseOutputImageReady=true,"
+                    + "round7.shaderDenoise.outputImageReady=true,"
+                    + "round7.shaderDenoise.outputMaterialReady=true,"
+                    + "round7.shaderDenoise.shaderGeneratedOutput=true,"
+                    + "round7.shaderDenoise.realOutputReady=true,"
+                    + "realShaderDenoiseOutputReady=true,"
+                    + "shaderGeneratedDenoiseOutputEvidence=true,"
+                    + "publicMojangShaderGeneratedVisualOutput=true,"
+                    + "stillNotComputeBoundary=true,"
+                    + "notStorageImageBoundary=true,"
+                    + "metadataOnly=false,proofMarker=false,focusWindowOnly=false,"
+                    + "temporaryDirectLightSubstitution=false,rectangularWashout=false";
     private static final String FINAL_COMPOSITE_SOURCE_BOUNDARY =
             "sourceBoundary=full-target-source-gated-scene-surface-projection,"
                     + "metadataOnly=false,proofMarker=false,focusWindowOnly=false,"
@@ -56,12 +116,20 @@ public final class PublicMojangPreviewDrawScaffolds {
                     + "geometryMaterialAwareProjection=pending-shader/native-quality";
     private static final String DIRECT_LIGHT_FINAL_COMPOSITE_SHADER =
             "lucerna:core/direct_light_final_composite_focus";
+    private static final String NATIVE_SHADOW_MAP_FINAL_COMPOSITE_SHADER =
+            "lucerna:composite/native_shadow_mask_composite";
+    private static final String NATIVE_DEPTH_AWARE_SHADOW_MAP_FINAL_COMPOSITE_SHADER =
+            "lucerna:composite/depth_aware_shadow_mask_composite";
     private static final String ROUND6_DIFFUSE_GI_SURFACE_SHADER =
             "lucerna:core/round6_native_diffuse_gi_surface";
     private static final String ROUND7_DENOISED_GI_VISUAL_SHADER =
             "lucerna:core/round7_denoised_gi_visual";
+    private static final String ROUND7_SHADER_GENERATED_DENOISE_OUTPUT_SHADER =
+            "lucerna:denoise/shader_generated_diffuse_output";
     private static final String ADDITIVE_RGBA8_COLOR_TARGET_STATE =
             "blend=ADDITIVE,colorTargetFormat=RGBA8_UNORM,colorWriteMask=WRITE_COLOR";
+    private static final String REPLACE_RGBA8_COLOR_TARGET_STATE =
+            "blend=NONE,colorTargetFormat=RGBA8_UNORM,colorWriteMask=WRITE_COLOR";
     private static final String TRANSLUCENT_RGBA8_COLOR_TARGET_STATE =
             "blend=TRANSLUCENT,colorTargetFormat=RGBA8_UNORM,colorWriteMask=WRITE_COLOR";
     private static final String DIAGNOSTIC_FULLSCREEN_MODE = "diagnostic-fullscreen-warm-additive";
@@ -118,11 +186,51 @@ public final class PublicMojangPreviewDrawScaffolds {
                     .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
                     .withFragmentShader(Identifier.fromNamespaceAndPath(
                             "lucerna",
-                            "core/direct_light_final_composite_focus"
+                            "composite/native_shadow_mask_composite"
                     ))
                     .withBindGroupLayout(BindGroupLayouts.IN_SAMPLER)
                     .withColorTargetState(new ColorTargetState(
                             Optional.of(BlendFunction.ADDITIVE),
+                            GpuFormat.RGBA8_UNORM,
+                            ColorTargetState.WRITE_COLOR
+                    ))
+                    .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+                    .build()
+    );
+    private static final RenderPipeline NATIVE_SHADOW_MAP_FINAL_COMPOSITE_TRANSLUCENT_PIPELINE = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.POST_PROCESSING_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "pipeline/native_shadow_map_final_composite_translucent"
+                    ))
+                    .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
+                    .withFragmentShader(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "composite/native_shadow_mask_composite"
+                    ))
+                    .withBindGroupLayout(BindGroupLayouts.IN_SAMPLER)
+                    .withColorTargetState(new ColorTargetState(
+                            Optional.of(BlendFunction.TRANSLUCENT),
+                            GpuFormat.RGBA8_UNORM,
+                            ColorTargetState.WRITE_COLOR
+                    ))
+                    .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+                    .build()
+    );
+    private static final RenderPipeline NATIVE_DEPTH_AWARE_SHADOW_MAP_FINAL_COMPOSITE_TRANSLUCENT_PIPELINE = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.POST_PROCESSING_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "pipeline/native_depth_aware_shadow_map_final_composite_translucent"
+                    ))
+                    .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
+                    .withFragmentShader(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "composite/depth_aware_shadow_mask_composite"
+                    ))
+                    .withBindGroupLayout(BindGroupLayouts.SAMPLER0_SAMPLER1)
+                    .withColorTargetState(new ColorTargetState(
+                            Optional.of(BlendFunction.TRANSLUCENT),
                             GpuFormat.RGBA8_UNORM,
                             ColorTargetState.WRITE_COLOR
                     ))
@@ -254,6 +362,46 @@ public final class PublicMojangPreviewDrawScaffolds {
                     .withFragmentShader(Identifier.fromNamespaceAndPath(
                             "lucerna",
                             "core/round6_native_diffuse_gi_surface"
+                    ))
+                    .withBindGroupLayout(BindGroupLayouts.IN_SAMPLER)
+                    .withColorTargetState(new ColorTargetState(
+                            Optional.of(BlendFunction.ADDITIVE),
+                            GpuFormat.RGBA8_UNORM,
+                            ColorTargetState.WRITE_COLOR
+                    ))
+                    .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+                    .build()
+    );
+    private static final RenderPipeline ROUND7_SHADER_DENOISE_OUTPUT_GENERATE_PIPELINE = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.POST_PROCESSING_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "pipeline/round7_shader_denoise_output_generate"
+                    ))
+                    .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
+                    .withFragmentShader(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "denoise/shader_generated_diffuse_output"
+                    ))
+                    .withBindGroupLayout(BindGroupLayouts.IN_SAMPLER)
+                    .withColorTargetState(new ColorTargetState(
+                            Optional.empty(),
+                            GpuFormat.RGBA8_UNORM,
+                            ColorTargetState.WRITE_COLOR
+                    ))
+                    .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+                    .build()
+    );
+    private static final RenderPipeline ROUND7_SHADER_DENOISE_OUTPUT_ADDITIVE_PIPELINE = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.POST_PROCESSING_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "pipeline/round7_shader_denoise_output_final_composite"
+                    ))
+                    .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
+                    .withFragmentShader(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "core/round7_denoised_gi_visual"
                     ))
                     .withBindGroupLayout(BindGroupLayouts.IN_SAMPLER)
                     .withColorTargetState(new ColorTargetState(
@@ -425,6 +573,177 @@ public final class PublicMojangPreviewDrawScaffolds {
                         + "proofMarker=false,focusWindowOnly=false,metadataOnly=false,shader="
                         + DIRECT_LIGHT_FINAL_COMPOSITE_SHADER
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
+        );
+    }
+
+    public static PublicMojangPreviewDrawScaffold describeFullscreenNativeShadowMapFinalCompositeDraw(
+            RenderPass renderPass,
+            GpuTextureView shadowMapMaskView,
+            boolean realShadowMapOutputReady
+    ) {
+        if (renderPass == null) {
+            return PublicMojangPreviewDrawScaffold.unavailable(
+                    "public Mojang native shadow-map composite draw scaffold is unavailable because no render pass is open"
+            );
+        }
+        if (!realShadowMapOutputReady) {
+            return PublicMojangPreviewDrawScaffold.prepared(
+                    NATIVE_SHADOW_MAP_FINAL_COMPOSITE_TRANSLUCENT_PIPELINE,
+                    DIRECT_LIGHT_SOURCE_BINDING,
+                    NATIVE_SHADOW_MAP_COMPOSITE_FULLSCREEN_MODE,
+                    FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                    FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                    SINGLE_INSTANCE_COUNT,
+                    FIRST_INSTANCE,
+                    "public Mojang native shadow-map composite draw APIs are present, but the native shadow-map output is not ready; "
+                            + "nativeShadowMapComposite=false,shadowMapOutputConsumed=false,screenSpaceShadowDecal=false,"
+                            + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady=false"
+            );
+        }
+        if (shadowMapMaskView == null) {
+            return PublicMojangPreviewDrawScaffold.prepared(
+                    NATIVE_SHADOW_MAP_FINAL_COMPOSITE_TRANSLUCENT_PIPELINE,
+                    DIRECT_LIGHT_SOURCE_BINDING,
+                    NATIVE_SHADOW_MAP_COMPOSITE_FULLSCREEN_MODE,
+                    FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                    FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                    SINGLE_INSTANCE_COUNT,
+                    FIRST_INSTANCE,
+                    "public Mojang native shadow-map composite draw APIs are present, but no native shadow-map mask texture view is available; "
+                            + "nativeShadowMapComposite=false,shadowMapOutputConsumed=false,screenSpaceShadowDecal=false,"
+                            + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady=true"
+            );
+        }
+
+        return PublicMojangPreviewDrawScaffold.prepared(
+                NATIVE_SHADOW_MAP_FINAL_COMPOSITE_TRANSLUCENT_PIPELINE,
+                DIRECT_LIGHT_SOURCE_BINDING,
+                NATIVE_SHADOW_MAP_COMPOSITE_FULLSCREEN_MODE,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FIRST_INSTANCE,
+                "public Mojang native shadow-map composite can bind the native shadow-mask payload texture and issue one translucent full-target occlusion draw; "
+                        + "nativeShadowMapComposite=true,shadowMapOutputConsumed=false,screenSpaceShadowDecal=false,"
+                        + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady=true,shader="
+                        + NATIVE_SHADOW_MAP_FINAL_COMPOSITE_SHADER
+                        + "," + TRANSLUCENT_RGBA8_COLOR_TARGET_STATE
+        );
+    }
+
+    public static PublicMojangPreviewDrawScaffold issueFullscreenNativeShadowMapFinalCompositeDraw(
+            RenderPass renderPass,
+            GpuTextureView shadowMapMaskView,
+            GpuSampler shadowMapMaskSampler,
+            boolean realShadowMapOutputReady
+    ) {
+        PublicMojangPreviewDrawScaffold scaffold = describeFullscreenNativeShadowMapFinalCompositeDraw(
+                renderPass,
+                shadowMapMaskView,
+                realShadowMapOutputReady
+        );
+        if (!scaffold.drawPrepared()) {
+            return scaffold;
+        }
+        if (!realShadowMapOutputReady || shadowMapMaskView == null) {
+            return scaffold;
+        }
+        if (shadowMapMaskSampler == null) {
+            return PublicMojangPreviewDrawScaffold.unavailable(
+                    "public Mojang native shadow-map composite draw skipped because no shadow-map mask sampler is available"
+            );
+        }
+
+        renderPass.setPipeline(NATIVE_SHADOW_MAP_FINAL_COMPOSITE_TRANSLUCENT_PIPELINE);
+        RenderSystem.bindDefaultUniforms(renderPass);
+        renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, shadowMapMaskView, shadowMapMaskSampler);
+        renderPass.draw(
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FIRST_INSTANCE
+        );
+
+        return PublicMojangPreviewDrawScaffold.issued(
+                NATIVE_SHADOW_MAP_FINAL_COMPOSITE_TRANSLUCENT_PIPELINE,
+                DIRECT_LIGHT_SOURCE_BINDING,
+                NATIVE_SHADOW_MAP_COMPOSITE_FULLSCREEN_MODE,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FIRST_INSTANCE,
+                "public Mojang native shadow-map mask final-composite occlusion draw issued before HUD; "
+                        + "nativeShadowMapComposite=true,shadowMapOutputConsumed=true,screenSpaceShadowDecal=false,"
+                        + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady=true,"
+                        + "shadowMaskPayloadTexture=true,shadowMaskExpectedRgbZeroAlphaSignal=true,shader="
+                        + NATIVE_SHADOW_MAP_FINAL_COMPOSITE_SHADER
+                        + "," + TRANSLUCENT_RGBA8_COLOR_TARGET_STATE
+        );
+    }
+
+    public static PublicMojangPreviewDrawScaffold issueFullscreenDepthAwareNativeShadowMapFinalCompositeDraw(
+            RenderPass renderPass,
+            GpuTextureView shadowMapMaskView,
+            GpuSampler shadowMapMaskSampler,
+            GpuTextureView currentDepthView,
+            GpuSampler currentDepthSampler,
+            boolean realShadowMapOutputReady
+    ) {
+        if (renderPass == null) {
+            return PublicMojangPreviewDrawScaffold.unavailable(
+                    "public Mojang depth-aware native shadow-map composite draw scaffold is unavailable because no render pass is open"
+            );
+        }
+        if (!realShadowMapOutputReady || shadowMapMaskView == null || currentDepthView == null) {
+            return PublicMojangPreviewDrawScaffold.prepared(
+                    NATIVE_DEPTH_AWARE_SHADOW_MAP_FINAL_COMPOSITE_TRANSLUCENT_PIPELINE,
+                    SAMPLER0_BINDING + "+" + SAMPLER1_BINDING,
+                    NATIVE_SHADOW_MAP_COMPOSITE_FULLSCREEN_MODE,
+                    FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                    FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                    SINGLE_INSTANCE_COUNT,
+                    FIRST_INSTANCE,
+                    "public Mojang depth-aware native shadow-map composite draw APIs are present, but required source/depth bindings are not ready; "
+                            + "depthAwareShadowMaskComposite=false,shaderPassDepthSamplingEvidence=false,"
+                            + "depthSamplingPassOutputsReady=false,nativeShadowMapComposite=false,shadowMapOutputConsumed=false,"
+                            + "screenSpaceShadowDecal=false,lowResolutionDirectTextureDraw=false,realShadowMapOutputReady="
+                            + realShadowMapOutputReady
+            );
+        }
+        if (shadowMapMaskSampler == null || currentDepthSampler == null) {
+            return PublicMojangPreviewDrawScaffold.unavailable(
+                    "public Mojang depth-aware native shadow-map composite draw skipped because one or more samplers are unavailable"
+            );
+        }
+
+        renderPass.setPipeline(NATIVE_DEPTH_AWARE_SHADOW_MAP_FINAL_COMPOSITE_TRANSLUCENT_PIPELINE);
+        RenderSystem.bindDefaultUniforms(renderPass);
+        renderPass.bindTexture(SAMPLER0_BINDING, shadowMapMaskView, shadowMapMaskSampler);
+        renderPass.bindTexture(SAMPLER1_BINDING, currentDepthView, currentDepthSampler);
+        renderPass.draw(
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FIRST_INSTANCE
+        );
+
+        return PublicMojangPreviewDrawScaffold.issued(
+                NATIVE_DEPTH_AWARE_SHADOW_MAP_FINAL_COMPOSITE_TRANSLUCENT_PIPELINE,
+                SAMPLER0_BINDING + "+" + SAMPLER1_BINDING,
+                NATIVE_SHADOW_MAP_COMPOSITE_FULLSCREEN_MODE,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FIRST_INSTANCE,
+                "public Mojang depth-aware native shadow-map final-composite draw issued; "
+                        + "depthAwareShadowMaskComposite=true,shaderPassDepthSamplingEvidence=true,"
+                        + "depthSamplingPassOutputsReady=true,g_buffer_depth_sampling_evidence=true,"
+                        + "g_buffer_depth_texture_sampled=true,g_buffer_depth_metadata_only=false,"
+                        + "depthSamplingPassOutputsMarker=java_native_shader_depth_sampling_evidence_parsed,"
+                        + "nativeShadowMapComposite=true,shadowMapOutputConsumed=true,screenSpaceShadowDecal=false,"
+                        + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady=true,shader="
+                        + NATIVE_DEPTH_AWARE_SHADOW_MAP_FINAL_COMPOSITE_SHADER
+                        + "," + TRANSLUCENT_RGBA8_COLOR_TARGET_STATE
         );
     }
 
@@ -612,6 +931,136 @@ public final class PublicMojangPreviewDrawScaffolds {
                         + ",realShaderDenoiseOutputReady=false"
                         + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
                         + ",javaOpaqueFallbackDrawRepeats=" + ROUND7_DENOISED_GI_DRAW_REPEATS
+        );
+    }
+
+    public static PublicMojangPreviewDrawScaffold describeFullscreenRound7ShaderDenoiseOutputDraw(
+            RenderPass renderPass,
+            GpuTextureView sourceView
+    ) {
+        if (renderPass == null) {
+            return PublicMojangPreviewDrawScaffold.unavailable(
+                    "public Mojang Round 7 shader-denoise output draw scaffold is unavailable because no render pass is open"
+            );
+        }
+        if (sourceView == null) {
+            return PublicMojangPreviewDrawScaffold.prepared(
+                    ROUND7_SHADER_DENOISE_OUTPUT_ADDITIVE_PIPELINE,
+                    DIRECT_LIGHT_SOURCE_BINDING,
+                    ROUND7_SHADER_DENOISE_OUTPUT_FULLSCREEN_MODE,
+                    FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                    FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                    SINGLE_INSTANCE_COUNT,
+                    FIRST_INSTANCE,
+                    "public Mojang Round 7 shader-denoise fragment-output APIs are present, but no raw diffuse-GI source texture view is available; "
+                            + "shaderDenoisePassExecuted=false,shaderOutputSourceConsumed=false,"
+                            + "shaderDenoiseFragmentPassPrepared=false,shaderDenoiseColorAttachmentWrite=false,"
+                            + "shaderDenoiseComputeDispatch=false,shaderDenoiseStorageImageWrite=false,"
+                            + "shaderDenoiseFinalCompositeConsumable=false,finalCompositeConsumable=false,"
+                            + "cpuReadbackFallbackActive=false,shaderDenoiseCpuReadbackFallbackActive=false"
+            );
+        }
+
+        return PublicMojangPreviewDrawScaffold.prepared(
+                ROUND7_SHADER_DENOISE_OUTPUT_ADDITIVE_PIPELINE,
+                DIRECT_LIGHT_SOURCE_BINDING,
+                ROUND7_SHADER_DENOISE_OUTPUT_FULLSCREEN_MODE,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FIRST_INSTANCE,
+                "public Mojang Round 7 shader-denoise output mode can bind the shader-owned denoise output texture for final-color sampling; shader="
+                        + ROUND7_DENOISED_GI_VISUAL_SHADER
+                        + "," + SHADER_DENOISE_OUTPUT_SOURCE_IDENTITY
+                        + "," + SHADER_DENOISE_OUTPUT_SUBMISSION_BOUNDARY
+                        + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
+        );
+    }
+
+    public static PublicMojangPreviewDrawScaffold issueFullscreenRound7ShaderDenoiseOutputGenerationDraw(
+            RenderPass renderPass,
+            GpuTextureView rawSourceView,
+            GpuSampler rawSourceSampler
+    ) {
+        if (renderPass == null) {
+            return PublicMojangPreviewDrawScaffold.unavailable(
+                    "public Mojang Round 7 shader-generated denoise output draw skipped because no output render pass is open"
+            );
+        }
+        if (rawSourceView == null || rawSourceSampler == null) {
+            return PublicMojangPreviewDrawScaffold.unavailable(
+                    "public Mojang Round 7 shader-generated denoise output draw skipped because no raw diffuse-GI source sampler is available"
+            );
+        }
+
+        renderPass.setPipeline(ROUND7_SHADER_DENOISE_OUTPUT_GENERATE_PIPELINE);
+        RenderSystem.bindDefaultUniforms(renderPass);
+        renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, rawSourceView, rawSourceSampler);
+        renderPass.draw(
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FIRST_INSTANCE
+        );
+        return PublicMojangPreviewDrawScaffold.issued(
+                ROUND7_SHADER_DENOISE_OUTPUT_GENERATE_PIPELINE,
+                DIRECT_LIGHT_SOURCE_BINDING,
+                ROUND7_SHADER_DENOISE_OUTPUT_FULLSCREEN_MODE,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FIRST_INSTANCE,
+                "public Mojang Round 7 shader-generated denoise output fragment color-attachment pass issued into lucerna_shader_denoise_output_rgba; shader="
+                        + ROUND7_SHADER_GENERATED_DENOISE_OUTPUT_SHADER
+                        + "," + SHADER_DENOISE_OUTPUT_SOURCE_IDENTITY
+                        + "," + SHADER_DENOISE_OUTPUT_SUBMISSION_BOUNDARY
+                        + "," + REPLACE_RGBA8_COLOR_TARGET_STATE
+        );
+    }
+
+    public static PublicMojangPreviewDrawScaffold issueFullscreenRound7ShaderDenoiseOutputDraw(
+            RenderPass renderPass,
+            GpuTextureView sourceView,
+            GpuSampler sourceSampler
+    ) {
+        PublicMojangPreviewDrawScaffold scaffold = describeFullscreenRound7ShaderDenoiseOutputDraw(
+                renderPass,
+                sourceView
+        );
+        if (!scaffold.drawPrepared()) {
+            return scaffold;
+        }
+        if (sourceView == null) {
+            return scaffold;
+        }
+        if (sourceSampler == null) {
+            return PublicMojangPreviewDrawScaffold.unavailable(
+                    "public Mojang Round 7 shader-denoise output draw skipped because no raw diffuse-GI source sampler is available"
+            );
+        }
+
+        renderPass.setPipeline(ROUND7_SHADER_DENOISE_OUTPUT_ADDITIVE_PIPELINE);
+        RenderSystem.bindDefaultUniforms(renderPass);
+        renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, sourceView, sourceSampler);
+        renderPass.draw(
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FIRST_INSTANCE
+        );
+        return PublicMojangPreviewDrawScaffold.issued(
+                ROUND7_SHADER_DENOISE_OUTPUT_ADDITIVE_PIPELINE,
+                DIRECT_LIGHT_SOURCE_BINDING,
+                ROUND7_SHADER_DENOISE_OUTPUT_FULLSCREEN_MODE,
+                FULLSCREEN_TRIANGLE_FIRST_VERTEX,
+                FULLSCREEN_TRIANGLE_VERTEX_COUNT,
+                SINGLE_INSTANCE_COUNT,
+                FIRST_INSTANCE,
+                "public Mojang Round 7 shader-denoise fragment-output texture consumed by final composite before HUD; shader="
+                        + ROUND7_DENOISED_GI_VISUAL_SHADER
+                        + "," + SHADER_DENOISE_OUTPUT_SOURCE_IDENTITY
+                        + "," + SHADER_DENOISE_OUTPUT_SUBMISSION_BOUNDARY
+                        + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
         );
     }
 

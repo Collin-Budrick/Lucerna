@@ -244,6 +244,22 @@ public record LucernaFrameAttachmentMetadata(
         return this.colorImageHandle != 0L && this.colorImageViewHandle != 0L;
     }
 
+    public boolean hasDepthTextureHandle() {
+        return this.depthImageHandle != 0L;
+    }
+
+    public boolean hasDepthViewHandle() {
+        return this.depthImageViewHandle != 0L;
+    }
+
+    public boolean depthViewPresent() {
+        return hasExtent() && hasDepthTextureHandle() && hasDepthViewHandle();
+    }
+
+    public boolean depthTextureSampleBindingReady() {
+        return depthViewPresent() && javaOpaque();
+    }
+
     public boolean hasCommandHandle() {
         return this.commandBufferHandle != 0L;
     }
@@ -265,6 +281,10 @@ public record LucernaFrameAttachmentMetadata(
                 + ", hasExtent=" + hasExtent()
                 + ", hasCommandHandle=" + hasCommandHandle()
                 + ", hasColorHandles=" + hasColorHandles()
+                + ", hasDepthTextureHandle=" + hasDepthTextureHandle()
+                + ", hasDepthViewHandle=" + hasDepthViewHandle()
+                + ", depthViewPresent=" + depthViewPresent()
+                + ", depthTextureSampleBindingReady=" + depthTextureSampleBindingReady()
                 + ", hasPartialNativeHandles=" + hasPartialNativeHandles()
                 + ", safeForLightingComposite=" + this.phase.safeForLightingComposite();
     }

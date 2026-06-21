@@ -18,11 +18,11 @@ import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.LocalCapture;
 
 @Mixin(LevelRenderer.class)
 public abstract class LevelRendererMixin {
     private static boolean lucerna$loggedCloudSuppression;
+    private static boolean lucerna$loggedWorldSpaceHook;
 
     @Inject(
             method = "addCloudsPass(Lcom/mojang/blaze3d/framegraph/FrameGraphBuilder;Lnet/minecraft/client/CloudStatus;Lnet/minecraft/world/phys/Vec3;JFIFI)V",
@@ -59,22 +59,25 @@ public abstract class LevelRendererMixin {
 
     @Inject(
             method = "submitFeatures(Lnet/minecraft/client/renderer/state/level/LevelRenderState;Lnet/minecraft/client/renderer/SubmitNodeCollector;Z)V",
-            at = @At(
-                    value = "INVOKE",
-                    target = "Lnet/minecraft/client/renderer/gizmos/DrawableGizmoPrimitives;submit(Lnet/minecraft/client/renderer/SubmitNodeCollector;Lnet/minecraft/client/renderer/state/level/CameraRenderState;Z)V",
-                    ordinal = 0,
-                    shift = At.Shift.BEFORE
-            ),
-            require = 0,
-            locals = LocalCapture.CAPTURE_FAILSOFT
+            at = @At("TAIL"),
+            require = 0
     )
     private void lucerna$submitWorldSpaceShadowDecals(
             LevelRenderState levelRenderState,
             SubmitNodeCollector submitNodeCollector,
             boolean renderBlockOutline,
-            CallbackInfo callbackInfo,
-            PoseStack poseStack
+            CallbackInfo callbackInfo
     ) {
+        if (!lucerna$loggedWorldSpaceHook) {
+            lucerna$loggedWorldSpaceHook = true;
+            Lucerna.LOGGER.info(
+                    "Lucerna LevelRenderer submitFeatures hook reached: worldSpaceVisualPreviewActive={} javaWorldSpaceFallback={} experimentalVisualStack={}",
+                    LucernaController.getInstance().isWorldSpaceVisualPreviewActive(),
+                    ProofVisualMode.javaWorldSpaceVisualFallbackAllowed(),
+                    ProofVisualMode.experimentalVisualStackAllowed()
+            );
+        }
+        PoseStack poseStack = new PoseStack();
         WorldSpaceEmissiveSpillSubmitter.submit(poseStack, submitNodeCollector, levelRenderState);
         WorldSpaceShadowDecalSubmitter.submit(poseStack, submitNodeCollector, levelRenderState);
     }

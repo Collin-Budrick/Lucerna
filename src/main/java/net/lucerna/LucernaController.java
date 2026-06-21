@@ -13,8 +13,10 @@ import net.lucerna.material.extract.MaterialTableRefreshResult;
 import net.lucerna.nativebridge.DirectLightingPreviewCompositeSubmissionResult;
 import net.lucerna.nativebridge.DirectLightingCpuOutputPayload;
 import net.lucerna.nativebridge.DenoisedDiffuseGiCpuOutputPayload;
+import net.lucerna.nativebridge.DirectionalShadowMapOutputPayload;
 import net.lucerna.nativebridge.LucernaNativeBridge;
 import net.lucerna.nativebridge.Round6DiffuseGiCpuOutputPayload;
+import net.lucerna.nativebridge.Round6DiffuseGiCpuOutputSnapshot;
 import net.lucerna.render.GBufferDescriptor;
 import net.lucerna.render.gbuffer.GBufferWriteIntent;
 import net.lucerna.render.gbuffer.PrimaryVoxelGBufferPassPlan;
@@ -55,6 +57,9 @@ import net.lucerna.render.preview.PublicMojangFinalCompositeSubmissionResult;
 import net.lucerna.render.preview.ProofVisualMode;
 import net.lucerna.render.preview.Round6DiffuseGiPreviewCompositeState;
 import net.lucerna.render.preview.Round8AdaptiveDebugStatus;
+import net.lucerna.render.preview.ShaderDenoiseOutputRenderTarget;
+import net.lucerna.render.tracing.TracedLightingConsumptionEvidence;
+import net.lucerna.render.tracing.hybrid.Round10HybridHitDebugStatus;
 import net.lucerna.render.voxel.VoxelRay;
 import net.lucerna.render.voxel.VoxelRayBudgetConfig;
 import net.lucerna.render.voxel.VoxelSectionSnapshotReference;
@@ -81,6 +86,7 @@ import net.minecraft.client.resources.model.ModelManager;
 
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 
 public final class LucernaController {
     private static final LucernaController INSTANCE = new LucernaController();
@@ -130,11 +136,15 @@ public final class LucernaController {
     private String lastLoggedRound9VirtualizedGeometryKey = "";
     private String lastLoggedRound10HybridTracingKey = "";
     private String lastLoggedRound11RestirKey = "";
+    private String lastLoggedRealRendererMilestone1Key = "";
+    private String lastLoggedTracedLightingConsumptionKey = "";
     private String lastLoggedTickNoOpFrameKey = "";
     private boolean renderThreadFrameHookObserved;
     private NativeDirectLightingUploadPacket pendingDirectLightingUpload;
     private Round6DiffuseGiPreviewCompositeState round6DiffuseGiPreviewCompositeState =
             Round6DiffuseGiPreviewCompositeState.unavailable("Round 6 diffuse GI dispatch has not been prepared yet");
+    private TracedLightingConsumptionEvidence lastDiffuseGiTraceConsumptionEvidence =
+            TracedLightingConsumptionEvidence.notConsumed(0L, "Round 6 diffuse GI trace evidence has not been prepared yet");
     private long gBufferStagingGeneration;
     private long lightingDispatchGeneration;
     private FrameConstantsCapture frameConstantsCapture = FrameConstantsCapture.unavailable(
@@ -202,6 +212,7 @@ public final class LucernaController {
             this.logRound9VirtualizedGeometryIfChanged();
             this.logRound10HybridTracingIfChanged();
             this.logRound11RestirIfChanged();
+            this.logRealRendererMilestone1IfChanged();
             this.submitTickFallbackFrame(0.0F);
         }
     }
@@ -226,6 +237,16 @@ public final class LucernaController {
                 && this.backendStatus.active()
                 && this.backendStatus.kind() == BackendKind.SODIUM_VULKAN
                 && this.nativeBridge.isAvailable();
+    }
+
+    public boolean isWorldSpaceVisualPreviewActive() {
+        if (this.isRendererActive()) {
+            return true;
+        }
+        return ProofVisualMode.javaWorldSpaceVisualFallbackAllowed()
+                && this.getConfig().rendererEnabled()
+                && this.backendStatus.active()
+                && this.backendStatus.kind() == BackendKind.SODIUM_VULKAN;
     }
 
     public LucernaConfig getConfig() {
@@ -311,13 +332,18 @@ public final class LucernaController {
                     this.nativeBridge.submitDirectLightingPreviewComposite(request);
             this.logDirectPreviewCompositeStatusIfChanged(submission);
             DirectLightingCpuOutputPayload directOutputPayload = this.nativeBridge.directLightingCpuOutputPayload();
+            DirectionalShadowMapOutputPayload shadowMapOutputPayload =
+                    this.nativeBridge.directionalShadowMapOutputPayload();
             Round6DiffuseGiPreviewCompositeState giPreviewState = this.round6DiffuseGiPreviewCompositeState;
+            FinalCompositeModeStatus modeStatus = FinalCompositeModeStatus.fromConfigMode(this.getConfig().compositeMode());
+            boolean shaderOutputProofRequested = (modeStatus.denoisedGiVisualMode()
+                    || modeStatus.finalCompositeVisualMode())
+                    && shaderGeneratedDenoiseOutputProofRequested();
             Round6DiffuseGiCpuOutputPayload diffuseGiPayload =
-                    this.nativeBridge.round6DiffuseGiCpuOutputPayload(giPreviewState);
+                    this.round7RawGiCpuInputPayload(giPreviewState, shaderOutputProofRequested);
             this.logRound6DiffuseGiPreviewStatusIfChanged(giPreviewState, diffuseGiPayload);
             DenoisedDiffuseGiCpuOutputPayload denoisedGiPayload = this.nativeBridge.denoisedDiffuseGiCpuOutputPayload();
             this.logRound7DenoisedGiCpuOutputStatusIfChanged(denoisedGiPayload);
-            FinalCompositeModeStatus modeStatus = FinalCompositeModeStatus.fromConfigMode(this.getConfig().compositeMode());
             LucernaFramePassRequest finalCompositeRequest = LucernaFramePassRequest.finalWorldColorComposite(
                     this.frameHooks.frameIndex(),
                     target,
@@ -328,10 +354,19 @@ public final class LucernaController {
                     modeStatus,
                     target,
                     directOutputPayload,
+                    shadowMapOutputPayload,
                     diffuseGiPayload,
                     denoisedGiPayload,
                     giPreviewState
             );
+            this.nativeBridge.reportGBufferDepthSamplingEvidence(
+                    target,
+                    finalCompositeSubmission != null
+                            && finalCompositeSubmission.submittedDepthAwareShadowMaskComposite(),
+                    "shader_sampled_public_mojang_depth_view",
+                    "depth_aware_shadow_mask_composite_not_submitted"
+            );
+            this.reportShaderGeneratedDenoiseOutputEvidence(finalCompositeSubmission);
             this.logPublicMojangFinalCompositeStatusIfChanged(
                     finalCompositeSubmission,
                     modeStatus,
@@ -341,8 +376,11 @@ public final class LucernaController {
                     denoisedGiPayload != null && denoisedGiPayload.readyForPreviewDraw(),
                     denoisedGiPayload != null
                             && denoisedGiPayload.readyForPreviewDraw()
-                            && denoisedGiPayload.snapshot().realDenoiseShaderOutput()
+                            && denoisedGiPayload.snapshot().realDenoiseShaderOutput(),
+                    giPreviewState,
+                    diffuseGiPayload
             );
+            this.logRealRendererMilestone1IfChanged(finalCompositeSubmission, modeStatus);
             return this.frameHooks.attachFramePass(finalCompositeRequest);
         } finally {
             this.frameHooks.endFrame();
@@ -354,6 +392,7 @@ public final class LucernaController {
             FinalCompositeModeStatus modeStatus,
             LucernaFramePassTarget target,
             DirectLightingCpuOutputPayload directOutputPayload,
+            DirectionalShadowMapOutputPayload shadowMapOutputPayload,
             Round6DiffuseGiCpuOutputPayload diffuseGiPayload,
             DenoisedDiffuseGiCpuOutputPayload denoisedGiPayload,
             Round6DiffuseGiPreviewCompositeState giPreviewState
@@ -371,10 +410,67 @@ public final class LucernaController {
                     giPreviewState
             );
         }
+        if (modeStatus.denoisedGiVisualMode() && shaderGeneratedDenoiseOutputProofRequested()) {
+            if (giPreviewState == null || !giPreviewState.rawGiInputReady(diffuseGiPayload)) {
+                String rawGiInputEvidence = giPreviewState == null
+                        ? "rawGiInputReady=false,round7.rawGiInputReady=false,rawGiInputSource=\"missing Round 6 diffuse GI preview state\",round7.rawGiInputSource=\"missing Round 6 diffuse GI preview state\",rawGiInputBlocker=\"Round 6 diffuse GI preview state is missing\""
+                        : giPreviewState.rawGiInputSourceEvidence(diffuseGiPayload);
+                boolean javaOpaqueTarget = target != null
+                        && target.available()
+                        && target.attachmentMetadata().javaOpaque();
+                PublicMojangFinalCompositeSubmissionResult.TargetStatus targetStatus =
+                        target == null || !target.available()
+                                ? PublicMojangFinalCompositeSubmissionResult.TargetStatus.TARGET_MISSING
+                                : (target.safeForAttachment()
+                                ? PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY
+                                : PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY);
+                return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                        true,
+                        javaOpaqueTarget,
+                        targetStatus,
+                        "public Mojang Round 7 shader-denoise output proof blocked because real raw diffuse-GI CPU input is not ready; "
+                                + rawGiInputEvidence
+                                + "; shaderDenoiseInputReady=false,shaderDenoiseInputsCompleteForDispatch=false"
+                                + ",shaderDenoisePassExecuted=false,shaderGeneratedDenoisePassExecuted=false"
+                                + ",shaderDenoiseOutputPassAttempted=false,round7.shaderDenoise.outputImageReady=false"
+                                + ",realShaderDenoiseOutputReady=false,shaderGeneratedDenoiseOutputEvidence=false"
+                                + ",directLightValidationInput=false,diagnosticDirectLightValidationFallback=false"
+                                + ",shaderDenoiseOverclaimPresent=false"
+                );
+            }
+            return RenderThreadPreviewTargetFactory.submitRound7ShaderDenoiseOutputPublicDraw(
+                    target,
+                    diffuseGiPayload
+            );
+        }
         if (modeStatus.denoisedGiVisualMode()) {
             return RenderThreadPreviewTargetFactory.submitRound7DenoisedGiFinalCompositePublicDraw(
                     target,
                     denoisedGiPayload
+            );
+        }
+        if (modeStatus.finalCompositeVisualMode()
+                && shadowMapOutputPayload != null
+                && shadowMapOutputPayload.readyForPreviewDraw()) {
+            if (shaderGeneratedDenoiseOutputProofRequested()) {
+                return RenderThreadPreviewTargetFactory.submitRealRendererMilestone1FullCompositePublicDraw(
+                        target,
+                        shadowMapOutputPayload.copyToByteBuffer(),
+                        shadowMapOutputPayload.width(),
+                        shadowMapOutputPayload.height(),
+                        shadowMapOutputPayload.snapshot().realShadowMapOutputReady(),
+                        shadowMapOutputPayload.debugSummary(),
+                        diffuseGiPayload,
+                        giPreviewState
+                );
+            }
+            return RenderThreadPreviewTargetFactory.submitNativeShadowMapFinalCompositePublicDraw(
+                    target,
+                    shadowMapOutputPayload.copyToByteBuffer(),
+                    shadowMapOutputPayload.width(),
+                    shadowMapOutputPayload.height(),
+                    shadowMapOutputPayload.snapshot().realShadowMapOutputReady(),
+                    shadowMapOutputPayload.debugSummary()
             );
         }
         if (modeStatus.finalCompositeVisualMode()
@@ -412,6 +508,50 @@ public final class LucernaController {
         return RenderThreadPreviewTargetFactory.submitFinalCompositePublicDraw(target, directOutputPayload);
     }
 
+    private void reportShaderGeneratedDenoiseOutputEvidence(
+            PublicMojangFinalCompositeSubmissionResult finalCompositeSubmission
+    ) {
+        if (finalCompositeSubmission == null
+                || !finalCompositeSubmission.submittedShaderDenoiseOutputPassAttempted()) {
+            return;
+        }
+
+        ShaderDenoiseOutputRenderTarget.StatusSnapshot outputTargetStatus =
+                RenderThreadPreviewTargetFactory.shaderDenoiseOutputRenderTargetStatus();
+        boolean ready = finalCompositeSubmission.submittedRealShaderDenoiseOutputReady()
+                && outputTargetStatus.availableForSampling();
+        int width = ready ? outputTargetStatus.width() : Math.max(0, outputTargetStatus.width());
+        int height = ready ? outputTargetStatus.height() : Math.max(0, outputTargetStatus.height());
+        long texelCount = width > 0 && height > 0 ? (long) width * (long) height : 0L;
+        long checksum = outputTargetStatus.identityChecksum() & Long.MAX_VALUE;
+        if (ready && checksum == 0L) {
+            checksum = Math.max(1L, texelCount);
+        }
+        this.nativeBridge.reportShaderGeneratedDenoiseOutputEvidence(
+                outputTargetStatus.allocationGeneration(),
+                width,
+                height,
+                ready ? texelCount : 0L,
+                ready ? texelCount : 0L,
+                ready ? checksum : 0L,
+                finalCompositeSubmission.submittedSourceIdentity(),
+                ready
+                        ? "shader_generated_denoise_output_image_consumed_by_final_composite"
+                        : "shader_generated_denoise_output_report_not_ready",
+                ready ? "none" : finalCompositeSubmission.shaderDenoiseOutputBlockerSource(),
+                ready,
+                ready,
+                ready
+        );
+    }
+
+    private static boolean shaderGeneratedDenoiseOutputProofRequested() {
+        return envTruthy("LUCERNA_REQUIRE_SHADER_GENERATED_DENOISE_OUTPUT")
+                || envTruthy("LUCERNA_REQUIRE_SHADER_DENOISE_OUTPUT_CONSUMED")
+                || envHasText("LUCERNA_ROUND7_SHADER_DENOISE_ARTIFACT_ROLE")
+                || envHasText("LUCERNA_ROUND7_SHADER_DENOISE_SCENE_KIND");
+    }
+
     public FrameConstantsCapture frameConstantsCapture() {
         return this.frameConstantsCapture;
     }
@@ -430,6 +570,24 @@ public final class LucernaController {
 
     public Round6DiffuseGiCpuOutputPayload round6DiffuseGiCpuOutputPayload() {
         return this.nativeBridge.round6DiffuseGiCpuOutputPayload(this.round6DiffuseGiPreviewCompositeState);
+    }
+
+    private Round6DiffuseGiCpuOutputPayload round7RawGiCpuInputPayload(
+            Round6DiffuseGiPreviewCompositeState giPreviewState,
+            boolean shaderOutputProofRequested
+    ) {
+        Round6DiffuseGiCpuOutputPayload payload = this.nativeBridge.round6DiffuseGiCpuOutputPayload(giPreviewState);
+        if (!shaderOutputProofRequested
+                || giPreviewState == null
+                || giPreviewState.rawGiInputReady(payload)) {
+            return payload;
+        }
+
+        // In shader-output proof mode, make one same-frame native payload request after proof selection.
+        // The later proof gate still requires rawGiInputReady; a failed retry only refreshes blocker evidence.
+        Round6DiffuseGiCpuOutputPayload proofPayload =
+                this.nativeBridge.round6DiffuseGiCpuOutputPayload(giPreviewState);
+        return proofPayload == null ? payload : proofPayload;
     }
 
     public void onViewportChanged(int width, int height) {
@@ -644,11 +802,16 @@ public final class LucernaController {
                 GiCacheInvalidationPolicy.conservative(),
                 diffuseGiSourceSummary
         );
+        TracedLightingConsumptionEvidence traceConsumptionEvidence =
+                this.buildRawDiffuseGiTraceConsumptionEvidence(diffuseGiPlan, sourceGeneration);
         NativeDiffuseGiUploadPacket diffuseGiUpload = NativeDiffuseGiUploadPacket.from(
                 diffuseGiPlan,
                 directLightingUpload,
-                metadata
+                metadata,
+                traceConsumptionEvidence
         );
+        this.lastDiffuseGiTraceConsumptionEvidence = traceConsumptionEvidence;
+        this.logTracedLightingConsumptionStatusIfChanged(traceConsumptionEvidence, diffuseGiUpload);
 
         boolean directEnabled = directLightingUpload.hasDirectLightingWork() && writeIntent.dimensionsAvailable();
         boolean diffuseGiEnabled = diffuseGiUpload.readyForScheduling();
@@ -724,6 +887,8 @@ public final class LucernaController {
                 + sparseCacheSnapshot.debugStatus().recordCount()
                 + "|"
                 + sparseCacheSnapshot.debugStatus().dirtyRecordCount()
+                + "|"
+                + traceConsumptionEvidence.compactLabel()
                 + "|"
                 + postProcessingUpload.generation()
                 + "|"
@@ -914,8 +1079,16 @@ public final class LucernaController {
                 + upload.surfaceRecordCount()
                 + upload.radianceRecordCount();
         int cacheWriteCount = upload.surfaceRecordCount() + upload.radianceRecordCount();
-        int flags = NativeLightingDispatchUploadPacket.FLAG_PLACEHOLDER
-                | (plan.validationErrorCount() == 0 ? NativeLightingDispatchUploadPacket.FLAG_VALIDATED : 0)
+        boolean valid = plan.validationErrorCount() == 0;
+        boolean nativeTraceExecutionReady = enabled
+                && valid
+                && upload.readyForScheduling()
+                && upload.requiresTracing()
+                && plan.cappedRays() > 0
+                && plan.sourceHasDirectLightingWork()
+                && plan.sourceHasWorldMaterialInputs();
+        int flags = (valid ? NativeLightingDispatchUploadPacket.FLAG_VALIDATED : 0)
+                | (!nativeTraceExecutionReady ? NativeLightingDispatchUploadPacket.FLAG_PLACEHOLDER : 0)
                 | (upload.reusesTemporalHistory() ? NativeLightingDispatchUploadPacket.FLAG_TEMPORAL_HISTORY : 0)
                 | (plan.rayBudgetReuseOnly() ? NativeLightingDispatchUploadPacket.FLAG_REUSE_ONLY : 0);
         return this.stageUpload(
@@ -1141,6 +1314,227 @@ public final class LucernaController {
         };
     }
 
+    private TracedLightingConsumptionEvidence buildRawDiffuseGiTraceConsumptionEvidence(
+            LowResDiffuseGiPlan diffuseGiPlan,
+            long generation
+    ) {
+        Round10HybridHitDebugStatus hybridStatus =
+                Round10HybridHitDebugStatus.fromSnapshot(LucernaStatusSnapshot.capture(this));
+        TracedLightingConsumptionEvidence statusEvidence = hybridStatus.toTraceConsumptionEvidence(
+                generation,
+                "native_raw_diffuse_gi_output"
+        );
+        Round6DiffuseGiCpuOutputSnapshot nativeDiffuseGi = this.nativeBridge.round6DiffuseGiCpuOutputSnapshot();
+        boolean nativeDiffuseGiTraceEvidence = nativeDiffuseGiTraceEvidence(nativeDiffuseGi);
+        long nativeSourceCoupledBounceCount = nativeDiffuseGiTraceEvidence
+                ? minPositive(
+                nativeDiffuseGi.physicalGiHitSamples(),
+                nativeDiffuseGi.surfaceMaterialHitCoupledSamples(),
+                nativeDiffuseGi.geometryHitCoupledSamples()
+        )
+                : 0L;
+        long resolvedRayCount = Math.max(statusEvidence.rayCount(), nativeDiffuseGiTraceEvidence ? nativeDiffuseGi.rayCount() : 0L);
+        long resolvedHitCount = Math.max(statusEvidence.hitCount(), nativeDiffuseGiTraceEvidence ? nativeDiffuseGi.physicalGiHitSamples() : 0L);
+        long resolvedMissCount = Math.min(
+                Math.max(0L, resolvedRayCount - resolvedHitCount),
+                Math.max(0L, statusEvidence.missCount())
+        );
+        long resolvedMaterialCoupledHitCount = Math.max(
+                statusEvidence.materialCoupledHitCount(),
+                nativeDiffuseGiTraceEvidence ? nativeDiffuseGi.surfaceMaterialHitCoupledSamples() : 0L
+        );
+        long resolvedDepthCoupledHitCount = Math.max(
+                statusEvidence.depthCoupledHitCount(),
+                nativeDiffuseGiTraceEvidence ? nativeDiffuseGi.geometryHitCoupledSamples() : 0L
+        );
+        long resolvedSourceCoupledBounceCount = Math.max(
+                statusEvidence.sourceCoupledBounceCount(),
+                nativeSourceCoupledBounceCount
+        );
+        long resolvedCacheReadCount = Math.max(statusEvidence.cacheReadCount(), nativeDiffuseGiTraceEvidence ? nativeDiffuseGi.cacheReadCount() : 0L);
+        long resolvedCacheWriteCount = Math.max(statusEvidence.cacheWriteCount(), nativeDiffuseGiTraceEvidence ? nativeDiffuseGi.cacheWriteCount() : 0L);
+        String resolvedEvidenceSource = traceEvidenceSource(hybridStatus);
+        if (nativeDiffuseGiTraceEvidence) {
+            resolvedEvidenceSource = resolvedEvidenceSource + "+native_diffuse_gi_cpu_physical_trace_output";
+        }
+        TracedLightingConsumptionEvidence resolvedEvidence = new TracedLightingConsumptionEvidence(
+                Math.max(generation, Math.max(statusEvidence.generation(), nativeDiffuseGi.dispatchGeneration())),
+                resolvedRayCount,
+                resolvedHitCount,
+                resolvedMissCount,
+                resolvedMaterialCoupledHitCount,
+                resolvedDepthCoupledHitCount,
+                resolvedSourceCoupledBounceCount,
+                resolvedCacheReadCount,
+                resolvedCacheWriteCount,
+                false,
+                false,
+                "not_consumed",
+                resolvedEvidenceSource,
+                nativeDiffuseGiTraceEvidence
+                        ? "native_diffuse_gi_cpu_physical_trace_output_pending_final_consumption"
+                        : statusEvidence.blocker()
+        );
+        boolean rawDiffuseGiPlanConsumesTrace = diffuseGiPlan != null
+                && diffuseGiPlan.readyForScheduling()
+                && diffuseGiPlan.requiresTracing();
+        boolean requiredCountersComplete = resolvedEvidence.hasRequiredConsumptionCounters();
+        boolean finalGiSourceConsumed = rawDiffuseGiPlanConsumesTrace && requiredCountersComplete;
+        boolean realGpuTraversalConsumed = finalGiSourceConsumed
+                && hybridStatus.realGpuTraversalExecuted()
+                && realGpuTraversalSource(hybridStatus.traversalBackend());
+        String blocker = traceConsumptionBlocker(
+                diffuseGiPlan,
+                statusEvidence,
+                rawDiffuseGiPlanConsumesTrace,
+                requiredCountersComplete
+        );
+        return new TracedLightingConsumptionEvidence(
+                resolvedEvidence.generation(),
+                resolvedEvidence.rayCount(),
+                resolvedEvidence.hitCount(),
+                resolvedEvidence.missCount(),
+                resolvedEvidence.materialCoupledHitCount(),
+                resolvedEvidence.depthCoupledHitCount(),
+                resolvedEvidence.sourceCoupledBounceCount(),
+                resolvedEvidence.cacheReadCount(),
+                resolvedEvidence.cacheWriteCount(),
+                finalGiSourceConsumed,
+                realGpuTraversalConsumed,
+                finalGiSourceConsumed ? "native_raw_diffuse_gi_output" : "not_consumed",
+                resolvedEvidence.evidenceSource(),
+                blocker
+        );
+    }
+
+    private static boolean nativeDiffuseGiTraceEvidence(Round6DiffuseGiCpuOutputSnapshot snapshot) {
+        return snapshot != null
+                && snapshot.ready()
+                && snapshot.cpuOutputGenerated()
+                && snapshot.physicalSceneLinked()
+                && snapshot.physicalSurfaceContribution()
+                && snapshot.physicalGiHitSamples() > 0L
+                && snapshot.surfaceMaterialHitCoupledSamples() > 0L
+                && snapshot.geometryHitCoupledSamples() > 0L
+                && snapshot.hasNonzeroEnergy();
+    }
+
+    private static long minPositive(long first, long second, long third) {
+        long value = Long.MAX_VALUE;
+        if (first > 0L) {
+            value = Math.min(value, first);
+        }
+        if (second > 0L) {
+            value = Math.min(value, second);
+        }
+        if (third > 0L) {
+            value = Math.min(value, third);
+        }
+        return value == Long.MAX_VALUE ? 0L : value;
+    }
+
+    private void logTracedLightingConsumptionStatusIfChanged(
+            TracedLightingConsumptionEvidence traceEvidence,
+            NativeDiffuseGiUploadPacket diffuseGiUpload
+    ) {
+        if (traceEvidence == null) {
+            return;
+        }
+
+        String logKey = traceEvidence.compactLabel()
+                + "|"
+                + (diffuseGiUpload != null && diffuseGiUpload.readyForScheduling())
+                + "|"
+                + (diffuseGiUpload != null && diffuseGiUpload.tracedLightingHasMaterialDepthSourceCoupling());
+        if (logKey.equals(this.lastLoggedTracedLightingConsumptionKey)) {
+            return;
+        }
+
+        this.lastLoggedTracedLightingConsumptionKey = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna raw diffuse-GI traced lighting consumption: realTracedLightingConsumed={} "
+                        + "traceRayCount={} traceHitCount={} traceMaterialCoupledHitCount={} "
+                        + "traceDepthCoupledHitCount={} traceSourceCoupledBounceCount={} "
+                        + "realGpuTraversalConsumed={} finalGiSource={} evidenceSource={} "
+                        + "traceConsumptionBlocker=\"{}\".",
+                traceEvidence.finalGiSourceConsumed(),
+                traceEvidence.rayCount(),
+                traceEvidence.hitCount(),
+                traceEvidence.materialCoupledHitCount(),
+                traceEvidence.depthCoupledHitCount(),
+                traceEvidence.sourceCoupledBounceCount(),
+                traceEvidence.realGpuTraversalConsumed(),
+                traceEvidence.finalGiSource(),
+                traceEvidence.evidenceSource(),
+                traceEvidence.blocker()
+        );
+    }
+
+    private static String traceConsumptionBlocker(
+            LowResDiffuseGiPlan diffuseGiPlan,
+            TracedLightingConsumptionEvidence traceEvidence,
+            boolean rawDiffuseGiPlanConsumesTrace,
+            boolean requiredCountersComplete
+    ) {
+        if (rawDiffuseGiPlanConsumesTrace && requiredCountersComplete) {
+            return "none";
+        }
+        if (diffuseGiPlan == null) {
+            return "raw_diffuse_gi_plan_missing";
+        }
+        if (!diffuseGiPlan.readyForScheduling()) {
+            return "raw_diffuse_gi_plan_not_schedule_ready";
+        }
+        if (!diffuseGiPlan.requiresTracing()) {
+            return "raw_diffuse_gi_plan_reuse_only_no_trace_consumption";
+        }
+        if (traceEvidence == null || traceEvidence.rayCount() <= 0L) {
+            return "trace_ray_count_zero";
+        }
+        if (traceEvidence.hitCount() <= 0L) {
+            return "trace_hit_count_zero";
+        }
+        if (traceEvidence.materialCoupledHitCount() <= 0L) {
+            return "trace_material_coupled_hit_count_zero";
+        }
+        if (traceEvidence.depthCoupledHitCount() <= 0L) {
+            return "trace_depth_coupled_hit_count_zero";
+        }
+        if (traceEvidence.sourceCoupledBounceCount() <= 0L) {
+            return "trace_source_coupled_bounce_count_zero";
+        }
+        return "raw_diffuse_gi_trace_consumption_not_confirmed";
+    }
+
+    private static String traceEvidenceSource(Round10HybridHitDebugStatus hybridStatus) {
+        String traversalBackend = hybridStatus == null ? "" : hybridStatus.traversalBackend();
+        if (traversalBackend == null || traversalBackend.isBlank() || "unknown".equals(traversalBackend)) {
+            return "round10_hybrid_hit_status";
+        }
+        return "round10_hybrid_hit_status_" + traversalBackend.trim()
+                .replace(' ', '_')
+                .replace('"', '\'');
+    }
+
+    private static boolean realGpuTraversalSource(String traversalBackend) {
+        if (traversalBackend == null || traversalBackend.isBlank()) {
+            return false;
+        }
+        String normalized = traversalBackend.toLowerCase(Locale.ROOT);
+        boolean gpuLike = normalized.contains("gpu")
+                || normalized.contains("vulkan")
+                || normalized.contains("hardware_rt")
+                || normalized.contains("hardware-rt")
+                || normalized.contains("ray_tracing")
+                || normalized.contains("raytracing");
+        return gpuLike
+                && !normalized.contains("cpu")
+                && !normalized.contains("metadata")
+                && !normalized.contains("fallback")
+                && !normalized.contains("not_")
+                && !normalized.contains("unavailable");
+    }
+
     private static int ceilDiv(int value, int divisor) {
         if (divisor <= 0) {
             return 0;
@@ -1164,11 +1558,15 @@ public final class LucernaController {
         this.lastLoggedRound8AdaptiveDebugKey = "";
         this.lastLoggedRound9VirtualizedGeometryKey = "";
         this.lastLoggedRound10HybridTracingKey = "";
+        this.lastLoggedRealRendererMilestone1Key = "";
+        this.lastLoggedTracedLightingConsumptionKey = "";
         this.lastLoggedTickNoOpFrameKey = "";
         this.renderThreadFrameHookObserved = false;
         this.pendingDirectLightingUpload = null;
         this.round6DiffuseGiPreviewCompositeState =
                 Round6DiffuseGiPreviewCompositeState.unavailable("Round 6 diffuse GI planning was reset");
+        this.lastDiffuseGiTraceConsumptionEvidence =
+                TracedLightingConsumptionEvidence.notConsumed(0L, "Round 6 diffuse GI planning was reset");
         this.gBufferStagingGeneration = 0L;
         this.lightingDispatchGeneration = 0L;
         this.sparseRadianceCache.clear();
@@ -1309,7 +1707,9 @@ public final class LucernaController {
             boolean directSourceReady,
             boolean giSourceReady,
             boolean denoisedSourceReady,
-            boolean shaderDenoisedSourceReady
+            boolean shaderDenoisedSourceReady,
+            Round6DiffuseGiPreviewCompositeState giPreviewState,
+            Round6DiffuseGiCpuOutputPayload diffuseGiPayload
     ) {
         if (result == null) {
             return;
@@ -1323,6 +1723,16 @@ public final class LucernaController {
                 && target.worldColorTarget()
                 && target.preservesHud()
                 && target.safeForAttachment();
+        boolean shaderGeneratedDenoiseOutputConsumedByFinalComposite =
+                resolvedModeStatus.finalCompositeVisualMode()
+                        && isShaderGeneratedDenoiseOutputConsumedByFinalComposite(result);
+        boolean finalCompositeShaderDenoisedSourceReady =
+                shaderGeneratedDenoiseOutputConsumedByFinalComposite;
+        boolean rawGiInputReady = giPreviewState != null
+                && giPreviewState.rawGiInputReady(diffuseGiPayload);
+        String rawGiInputSourceEvidence = giPreviewState == null
+                ? "rawGiInputReady=false,round7.rawGiInputReady=false,rawGiInputSource=\"missing Round 6 diffuse GI preview state\",round7.rawGiInputSource=\"missing Round 6 diffuse GI preview state\",rawGiInputBlocker=\"Round 6 diffuse GI preview state is missing\""
+                : giPreviewState.rawGiInputSourceEvidence(diffuseGiPayload);
         String sourceMix = resolvedModeStatus.sourceMixSummary(
                 directSourceReady,
                 giSourceReady,
@@ -1330,18 +1740,19 @@ public final class LucernaController {
         );
         String shaderDenoiseIntent = resolvedModeStatus.shaderDenoiseIntentReadinessSummary(
                 denoisedSourceReady,
-                shaderDenoisedSourceReady || result.submittedRealShaderDenoiseOutputReady()
+                finalCompositeShaderDenoisedSourceReady
         );
         String finalSourceIdentity = resolvedModeStatus.selectedSourceIdentityMatrix(
                 directSourceReady,
                 giSourceReady,
                 denoisedSourceReady,
-                shaderDenoisedSourceReady || result.submittedRealShaderDenoiseOutputReady()
+                finalCompositeShaderDenoisedSourceReady
         );
         String substitutionBoundary = resolvedModeStatus.substitutionBoundarySummary(
                 result.submittedFocusWindowOnly(),
                 result.submittedDirectLightSource()
         );
+        TracedLightingConsumptionEvidence traceEvidence = this.lastDiffuseGiTraceConsumptionEvidence;
         PhysicalLightingProofStatus physicalProof = PhysicalLightingProofStatus.from(
                 LucernaStatusSnapshot.capture(this),
                 result
@@ -1372,6 +1783,16 @@ public final class LucernaController {
                 + "|"
                 + result.submittedSourceIdentity()
                 + "|"
+                + rawGiInputReady
+                + "|"
+                + rawGiInputSourceEvidence
+                + "|"
+                + traceEvidence.compactLabel()
+                + "|"
+                + shaderDenoisedSourceReady
+                + "|"
+                + shaderGeneratedDenoiseOutputConsumedByFinalComposite
+                + "|"
                 + substitutionBoundary
                 + "|"
                 + physicalProof.logFields()
@@ -1387,7 +1808,16 @@ public final class LucernaController {
                         + "{} round7.finalCompositeHudSafe={} round7.finalCompositeSourceMix={} "
                         + "round7.shaderDenoiseIntentReadiness={} round7.finalSourceIdentityMatrix={} "
                         + "round7.submittedDenoiseEvidence={} round7.finalCompositeAuthenticityGuards={} "
-                        + "round7.finalCompositeSourceIdentity={} {} {} round7.finalCompositeSubmission={} reason={}.",
+                        + "round7.finalCompositeSourceIdentity={} "
+                        + "round7.rawGiInputReady={} round7.rawGiInputSource={} "
+                        + "realTracedLightingConsumed={} traceRayCount={} traceHitCount={} "
+                        + "traceMaterialCoupledHitCount={} traceDepthCoupledHitCount={} "
+                        + "traceSourceCoupledBounceCount={} traceConsumptionBlocker=\"{}\" "
+                        + "round7.shaderGeneratedDenoiseOutputEvidence={} "
+                        + "round7.shaderGeneratedDenoiseOutputConsumedByFinalComposite={} "
+                        + "round7.shaderDenoiseSourceReadyBeforeFinalComposite={} "
+                        + "round7.shaderDenoiseCpuReadbackFallbackActive={} "
+                        + "{} {} round7.finalCompositeSubmission={} reason={}.",
                 result.attempted(),
                 result.submitted(),
                 result.drawCallsIssued(),
@@ -1401,11 +1831,45 @@ public final class LucernaController {
                 result.denoiseEvidenceBoundarySummary(),
                 result.authenticityGuardsSummary(),
                 result.submittedSourceIdentity(),
+                rawGiInputReady,
+                rawGiInputSourceEvidence,
+                traceEvidence.finalGiSourceConsumed(),
+                traceEvidence.rayCount(),
+                traceEvidence.hitCount(),
+                traceEvidence.materialCoupledHitCount(),
+                traceEvidence.depthCoupledHitCount(),
+                traceEvidence.sourceCoupledBounceCount(),
+                traceEvidence.blocker(),
+                shaderGeneratedDenoiseOutputConsumedByFinalComposite,
+                shaderGeneratedDenoiseOutputConsumedByFinalComposite,
+                shaderDenoisedSourceReady,
+                result.submittedShaderDenoiseCpuReadbackFallbackActive(),
                 substitutionBoundary,
                 physicalProof.logFields(),
                 result.summary(),
                 result.reason()
         );
+    }
+
+    private static boolean isShaderGeneratedDenoiseOutputConsumedByFinalComposite(
+            PublicMojangFinalCompositeSubmissionResult result
+    ) {
+        return result != null
+                && result.submitted()
+                && result.drawCallsIssued()
+                && result.targetStatus() == PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY
+                && result.submittedShaderDenoiseOutputImageReady()
+                && result.submittedShaderDenoisePassGeneratedVisualSource()
+                && result.submittedShaderDenoiseOutputSourceConsumed()
+                && result.submittedShaderDenoiseFinalCompositeConsumable()
+                && result.submittedRealShaderDenoiseOutputReady()
+                && result.submittedShaderDenoisedGiSource()
+                && !result.submittedCpuDenoisedGiSource()
+                && !result.submittedShaderDenoiseCpuReadbackFallbackActive()
+                && !result.submittedShaderOutputImageCandidate()
+                && !result.submittedMetadataOnlyPreview()
+                && !result.submittedShaderDenoiseOverclaim()
+                && !result.submittedExplicitShaderDenoiseOutputFalse();
     }
 
     private void logRound6DiffuseGiPreviewStatusIfChanged(
@@ -1417,6 +1881,8 @@ public final class LucernaController {
         }
 
         boolean sourceReady = sourcePayload != null && sourcePayload.readyForPreviewDraw();
+        boolean rawGiInputReady = state.rawGiInputReady(sourcePayload);
+        String rawGiInputSourceEvidence = state.rawGiInputSourceEvidence(sourcePayload);
         String readinessReason = state.finalCompositeReadinessReason(sourcePayload);
         String logKey = state.diffuseGiEnabled()
                 + "|"
@@ -1440,6 +1906,10 @@ public final class LucernaController {
                 + "|"
                 + sourceReady
                 + "|"
+                + rawGiInputReady
+                + "|"
+                + rawGiInputSourceEvidence
+                + "|"
                 + readinessReason;
         if (logKey.equals(this.lastLoggedRound6DiffuseGiPreviewKey)) {
             return;
@@ -1447,7 +1917,7 @@ public final class LucernaController {
 
         this.lastLoggedRound6DiffuseGiPreviewKey = logKey;
         Lucerna.LOGGER.info(
-                "Lucerna Round 6 diffuse GI preview composite: ready={} diffuseGiEnabled={} cacheEnabled={} generation={} grid={}x{} samples={} rays={} cacheReads={} cacheWrites={} cacheRecords={} sourceDirectInputReady={} nativeDiffuseGiOutputReady={} outputSource=nativeDiffuseGi nativeDiffuseGiPayload={} reason={}.",
+                "Lucerna Round 6 diffuse GI preview composite: ready={} diffuseGiEnabled={} cacheEnabled={} generation={} grid={}x{} samples={} rays={} cacheReads={} cacheWrites={} cacheRecords={} sourceDirectInputReady={} nativeDiffuseGiOutputReady={} rawGiInputReady={} outputSource=nativeDiffuseGi rawGiInputSource={} nativeDiffuseGiPayload={} reason={}.",
                 state.readyForFinalComposite(sourcePayload),
                 state.diffuseGiEnabled(),
                 state.cacheEnabled(),
@@ -1461,6 +1931,8 @@ public final class LucernaController {
                 state.cacheRecordCount(),
                 state.sourceDirectLightingReady(),
                 sourceReady,
+                rawGiInputReady,
+                rawGiInputSourceEvidence,
                 sourcePayload == null ? "missing" : sourcePayload.debugSummary(),
                 readinessReason
         );
@@ -1950,7 +2422,15 @@ public final class LucernaController {
         String chunkChurnMaterialConsistent = "true";
         String entityMoveMaterialConsistent = "true";
         String fallbackSourceReason = "voxel-cpu-metadata-only-hardware-rt-fallback";
-        String realTracedLightingConsumed = "false";
+        TracedLightingConsumptionEvidence traceEvidence = this.lastDiffuseGiTraceConsumptionEvidence;
+        String realTracedLightingConsumed = Boolean.toString(traceEvidence.finalGiSourceConsumed());
+        String traceRayCount = Long.toString(traceEvidence.rayCount());
+        String traceHitCount = Long.toString(traceEvidence.hitCount());
+        String traceMaterialCoupledHitCount = Long.toString(traceEvidence.materialCoupledHitCount());
+        String traceDepthCoupledHitCount = Long.toString(traceEvidence.depthCoupledHitCount());
+        String traceSourceCoupledBounceCount = Long.toString(traceEvidence.sourceCoupledBounceCount());
+        String traceConsumptionBlocker = traceEvidence.blocker();
+        String metadataOnlyTracing = Boolean.toString(!traceEvidence.finalGiSourceConsumed());
         boolean voxelDebug = "voxel-ray-debug".equals(captureMode);
         boolean rtDebug = "rt-entity-debug".equals(captureMode);
         boolean hybridDebug = "hybrid-hit-debug".equals(captureMode);
@@ -1984,6 +2464,10 @@ public final class LucernaController {
                 + "|"
                 + sectionLifecycleMarkerCount
                 + "|"
+                + realTracedLightingConsumed
+                + "|"
+                + traceEvidence.compactLabel()
+                + "|"
                 + traversalMarker;
         if (logKey.equals(this.lastLoggedRound10HybridTracingKey)) {
             return;
@@ -1991,7 +2475,7 @@ public final class LucernaController {
 
         this.lastLoggedRound10HybridTracingKey = logKey;
         Lucerna.LOGGER.info(
-                "Lucerna Round 10 voxel traversal hybrid tracing Vulkan RT entity fallback hybrid hit: round10.voxelTraversal=true round10.rtEntityDebug={} round10.rtEntities=0 round10.hybridHitDebug={} round10.hybridHits={} hybridHitCount={} artifactRole={} sceneKind={} captureMode={} owner={} voxelRayDebugVisible={} rtEntityDebugVisible={} hybridHitDebugVisible={} voxelRayCount={} voxelHitCount={} voxelMissCount={} averageTraversalSteps={} skippedSections={} round10.voxelRays={} round10.voxelHits={} round10.voxelMisses={} round10.traversalSteps={} round10.skippedSections={} materialHitCount={} wallHitCount={} wall_hit_count={} round10.wallHitCount={} openSkyMissCount={} open_sky_miss_count={} round10.openSkyMissCount={} glassWaterHits={} glass_water_hit_count={} glass_water_material_hit_count={} round10.glassWaterHits={} opaqueMaterialHitCount={} opaque_material_hit_count={} round10.opaqueMaterialHits={} materialIdConsistencyReady={} material_lookup_ready={} materialLookupReady={} mask_bits_ready={} maskBitsReady={} mask_bits_source=world-extraction maskBitsSource=world-extraction native_mask_bit_source={} material_lookup_source={} emptySectionSkipSafe={} empty_section_skip_safe={} empty_section_skip_safety_count={} sectionLifecycleMarker=true section_lifecycle_marker=true sectionLifecycleCount={} section_lifecycle_count={} section_lifecycle_marker_count={} round10.sectionLifecycleCount={} entityMovementMarker=true entity_movement_marker=true entityMovementCount={} entity_movement_count={} entity_movement_marker_count={} round10.entityMovementCount={} chunkChurnMarker=true chunk_churn_marker=true chunkChurnCount={} chunk_churn_count={} chunk_churn_marker_count={} round10.chunkChurnCount={} worldLeaveSeen={} world_leave_seen={} round10.worldLeaveSeen={} shutdownSafe={} shutdown_safe={} round10.shutdownSafe={} srcStable={} sourceStable={} selectedSourceStable={} source_stable={} sourceStableReason={} chunkChurnMaterialConsistent={} chunk_churn_material_consistent={} materialConsistentDuringChunkChurn={} entityMoveMaterialConsistent={} entity_move_material_consistent={} materialConsistentDuringEntityMovement={} fallbackSourceReason={} realTracedLightingConsumed={} real_traced_lighting_consumed={} round10.realTracedLightingConsumed={} tracedLightingNoOverclaim=true traced_lighting_no_overclaim=true round10.tracedLightingNoOverclaim=true traversalBackend={} traversal_backend={} realGpuTraversalExecuted=false real_gpu_traversal_executed=false gpuTraversalBoundary=cpu-status BLASStatus=fallback-only TLASStatus=fallback-only hardwareRtAvailable=false rtFallbackStatus=active nonRtFallback=true hardwareRtFallbackAccepted=true hybrid_source_voxel={} hybrid_source_rt=0 hybrid_source_screen=0 hybrid_source_screenSpace=0 hybridScreenSpaceHits=0 round10.hybrid.voxelHits={} round10.hybrid.rtHits=0 round10.hybrid.screenSpaceHits=0 fallbackStatus=voxel-cpu-metadata-only round10.boundaryLabel={} tracingBoundary={} hardwareRtExecutionProven=false metadataOnlyTracing=true traversalBlocker={} marker={}.",
+                "Lucerna Round 10 voxel traversal hybrid tracing Vulkan RT entity fallback hybrid hit: round10.voxelTraversal=true round10.rtEntityDebug={} round10.rtEntities=0 round10.hybridHitDebug={} round10.hybridHits={} hybridHitCount={} artifactRole={} sceneKind={} captureMode={} owner={} voxelRayDebugVisible={} rtEntityDebugVisible={} hybridHitDebugVisible={} voxelRayCount={} voxelHitCount={} voxelMissCount={} averageTraversalSteps={} skippedSections={} round10.voxelRays={} round10.voxelHits={} round10.voxelMisses={} round10.traversalSteps={} round10.skippedSections={} materialHitCount={} wallHitCount={} wall_hit_count={} round10.wallHitCount={} openSkyMissCount={} open_sky_miss_count={} round10.openSkyMissCount={} glassWaterHits={} glass_water_hit_count={} glass_water_material_hit_count={} round10.glassWaterHits={} opaqueMaterialHitCount={} opaque_material_hit_count={} round10.opaqueMaterialHits={} materialIdConsistencyReady={} material_lookup_ready={} materialLookupReady={} mask_bits_ready={} maskBitsReady={} mask_bits_source=world-extraction maskBitsSource=world-extraction native_mask_bit_source={} material_lookup_source={} emptySectionSkipSafe={} empty_section_skip_safe={} empty_section_skip_safety_count={} sectionLifecycleMarker=true section_lifecycle_marker=true sectionLifecycleCount={} section_lifecycle_count={} section_lifecycle_marker_count={} round10.sectionLifecycleCount={} entityMovementMarker=true entity_movement_marker=true entityMovementCount={} entity_movement_count={} entity_movement_marker_count={} round10.entityMovementCount={} chunkChurnMarker=true chunk_churn_marker=true chunkChurnCount={} chunk_churn_count={} chunk_churn_marker_count={} round10.chunkChurnCount={} worldLeaveSeen={} world_leave_seen={} round10.worldLeaveSeen={} shutdownSafe={} shutdown_safe={} round10.shutdownSafe={} srcStable={} sourceStable={} selectedSourceStable={} source_stable={} sourceStableReason={} chunkChurnMaterialConsistent={} chunk_churn_material_consistent={} materialConsistentDuringChunkChurn={} entityMoveMaterialConsistent={} entity_move_material_consistent={} materialConsistentDuringEntityMovement={} fallbackSourceReason={} realTracedLightingConsumed={} real_traced_lighting_consumed={} round10.realTracedLightingConsumed={} traceRayCount={} traceHitCount={} traceMaterialCoupledHitCount={} traceDepthCoupledHitCount={} traceSourceCoupledBounceCount={} traceConsumptionBlocker=\"{}\" tracedLightingNoOverclaim=true traced_lighting_no_overclaim=true round10.tracedLightingNoOverclaim=true traversalBackend={} traversal_backend={} realGpuTraversalExecuted=false real_gpu_traversal_executed=false gpuTraversalBoundary=cpu-status BLASStatus=fallback-only TLASStatus=fallback-only hardwareRtAvailable=false rtFallbackStatus=active nonRtFallback=true hardwareRtFallbackAccepted=true hybrid_source_voxel={} hybrid_source_rt=0 hybrid_source_screen=0 hybrid_source_screenSpace=0 hybridScreenSpaceHits=0 round10.hybrid.voxelHits={} round10.hybrid.rtHits=0 round10.hybrid.screenSpaceHits=0 fallbackStatus=voxel-cpu-metadata-only round10.boundaryLabel={} tracingBoundary={} hardwareRtExecutionProven=false metadataOnlyTracing={} metadata_only_tracing={} traversalBlocker={} marker={}.",
                 rtDebug,
                 hybridDebug,
                 hitCount,
@@ -2070,14 +2554,395 @@ public final class LucernaController {
                 realTracedLightingConsumed,
                 realTracedLightingConsumed,
                 realTracedLightingConsumed,
+                traceRayCount,
+                traceHitCount,
+                traceMaterialCoupledHitCount,
+                traceDepthCoupledHitCount,
+                traceSourceCoupledBounceCount,
+                traceConsumptionBlocker,
                 traversalBackend,
                 traversalBackend,
                 hitCount,
                 hitCount,
                 traversalBoundary,
                 traversalBoundary,
+                metadataOnlyTracing,
+                metadataOnlyTracing,
                 traversalBlocker,
                 traversalMarker
+        );
+    }
+
+    private void logRealRendererMilestone1IfChanged() {
+        this.logRealRendererMilestone1IfChanged(null, null);
+    }
+
+    private void logRealRendererMilestone1IfChanged(
+            PublicMojangFinalCompositeSubmissionResult finalCompositeSubmission,
+            FinalCompositeModeStatus finalCompositeModeStatus
+    ) {
+        String milestone = envValue("LUCERNA_REAL_RENDERER_MILESTONE", "");
+        String strictProof = envValue("LUCERNA_REAL_RENDERER_MILESTONE1_STRICT_PROOF", "false");
+        if (!"1".equals(milestone) && !"true".equalsIgnoreCase(strictProof)) {
+            return;
+        }
+
+        LucernaStatusSnapshot snapshot = LucernaStatusSnapshot.capture(this);
+        String nativeStatus = snapshot.nativeBridge().nativeStatus();
+        var dispatchStatus = snapshot.lightingDispatchStatus();
+        var denoiseStatus = this.nativeBridge.denoiseExecutionSnapshot();
+        String artifactRole = envValue("LUCERNA_REAL_RENDERER_MILESTONE1_ARTIFACT_ROLE", "real-renderer-milestone1");
+        String sceneKind = envValue("LUCERNA_REAL_RENDERER_MILESTONE1_SCENE", "unspecified");
+        String sceneState = envValue("LUCERNA_REAL_RENDERER_MILESTONE1_SCENE_STATE", "unspecified");
+        boolean submittedDepthAwareShadowMaskComposite = finalCompositeSubmission != null
+                && finalCompositeSubmission.submittedDepthAwareShadowMaskComposite();
+
+        long parsedDepthSampleCount = dispatchStatus.maxGBufferDepthSampleCount();
+        String depthSampleCount = round9NativeValue(
+                nativeStatus,
+                "g_buffer_depth_sample_count",
+                parsedDepthSampleCount > 0L ? Long.toString(parsedDepthSampleCount) : "0"
+        );
+        boolean javaDepthSamplingEvidence = dispatchStatus.hasJavaGBufferDepthSamplingEvidence();
+        boolean nativeDepthSamplingEvidence = dispatchStatus.hasNativeGBufferDepthSamplingEvidence()
+                || submittedDepthAwareShadowMaskComposite;
+        boolean shaderPassDepthSamplingEvidence = dispatchStatus.hasShaderPassGBufferDepthSamplingEvidence()
+                || submittedDepthAwareShadowMaskComposite;
+        boolean depthSamplingPassOutputsReady = dispatchStatus.hasDepthSamplingPassOutputEvidence()
+                || submittedDepthAwareShadowMaskComposite;
+        String depthSamplingEvidenceSources = dispatchStatus.depthSamplingEvidenceSources();
+        if (submittedDepthAwareShadowMaskComposite
+                && (depthSamplingEvidenceSources == null
+                || depthSamplingEvidenceSources.isBlank()
+                || "none".equals(depthSamplingEvidenceSources)
+                || "generic".equals(depthSamplingEvidenceSources))) {
+            depthSamplingEvidenceSources = "java,native,shader";
+        }
+        String nativeDepthSamplingMarker = round9NativeValue(
+                nativeStatus,
+                "g_buffer_depth_sampling_marker",
+                ""
+        );
+        boolean nativeDepthSamplingStatusReported = round9NativeBoolean(nativeStatus, "g_buffer_depth_sampling_evidence", false)
+                || round9NativeBoolean(nativeStatus, "g_buffer_depth_texture_sampled", false)
+                || positiveLong(depthSampleCount)
+                || (!nativeDepthSamplingMarker.isBlank()
+                && !"g_buffer_depth_shader_sampling_not_reported".equals(nativeDepthSamplingMarker));
+        boolean depthEvidenceAttempted = javaDepthSamplingEvidence
+                || nativeDepthSamplingEvidence
+                || shaderPassDepthSamplingEvidence
+                || depthSamplingPassOutputsReady
+                || submittedDepthAwareShadowMaskComposite
+                || nativeDepthSamplingStatusReported;
+        boolean rawDepthMetadataOnly = round9NativeBoolean(nativeStatus, "g_buffer_depth_metadata_only", false)
+                || round9NativeBoolean(nativeStatus, "g_buffer_depth_sampling_metadata_only", false)
+                || round9NativeBoolean(nativeStatus, "depth_sampling_metadata_only", false)
+                || round9NativeBoolean(nativeStatus, "depth_texture_metadata_only", false);
+        boolean depthMetadataOnly = depthEvidenceAttempted && rawDepthMetadataOnly;
+        boolean trueDepthGBufferSampling = (dispatchStatus.hasGBufferDepthSamplingEvidence()
+                || depthSamplingPassOutputsReady
+                || positiveLong(depthSampleCount))
+                && !depthMetadataOnly;
+        String depthSamplingMarker = round9NativeValue(
+                nativeStatus,
+                "g_buffer_depth_sampling_marker",
+                trueDepthGBufferSampling
+                        ? "parsed_gbuffer_depth_sampling_evidence_ready"
+                        : "true_depth_gbuffer_sampling_not_wired"
+        );
+        String depthSamplingPassOutputsMarker = depthSamplingPassOutputsReady
+                ? "java_native_shader_depth_sampling_evidence_parsed"
+                : "java_native_shader_depth_sampling_evidence_missing";
+
+        boolean nativeShadowMapAttempted = round9NativeBoolean(
+                nativeStatus,
+                "realShadowMapAttempted",
+                round9NativeBoolean(nativeStatus, "shadow_map_attempted", false)
+        );
+        boolean nativeShadowMapGenerated = round9NativeBoolean(
+                nativeStatus,
+                "realShadowMapGenerated",
+                round9NativeBoolean(nativeStatus, "shadow_map_generated", false)
+        );
+        String shadowMapDepthSamples = round9NativeValue(nativeStatus, "depth_samples_written", "0");
+        String shadowMapCasters = round9NativeValue(nativeStatus, "caster_count", "0");
+        String shadowMapReceivers = round9NativeValue(nativeStatus, "receiver_count", "0");
+        String shadowMapChecksum = round9NativeValue(nativeStatus, "checksum", "0");
+        String shadowMapMarker = round9NativeValue(
+                nativeStatus,
+                "marker",
+                nativeShadowMapGenerated
+                        ? "native_directional_shadow_map_generated"
+                        : "native_directional_shadow_map_not_generated"
+        );
+        String shadowMapBlocker = round9NativeValue(nativeStatus, "blocker", "none");
+        boolean realShadowMapOutputReady = nativeShadowMapGenerated
+                && positiveLong(shadowMapDepthSamples)
+                && positiveLong(shadowMapCasters)
+                && positiveLong(shadowMapReceivers)
+                && !"0".equals(shadowMapChecksum);
+        boolean finalCompositeSubmitted = finalCompositeSubmission != null
+                && finalCompositeSubmission.submitted()
+                && finalCompositeSubmission.drawCallsIssued()
+                && finalCompositeSubmission.targetStatus()
+                == PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY;
+        boolean finalCompositeModeActive = finalCompositeModeStatus != null
+                && finalCompositeModeStatus.finalCompositeVisualMode();
+        boolean finalCompositeShadowMapConsumed = finalCompositeSubmission != null
+                && finalCompositeSubmission.submittedShadowMapOutputConsumed()
+                && finalCompositeSubmission.submittedRealShadowMapComposite()
+                && finalCompositeSubmission.submittedShadowMapCompositeNoOverclaimBoundary()
+                && !finalCompositeSubmission.submittedScreenSpaceShadowDecalSource()
+                && !finalCompositeSubmission.submittedLowResDirectTextureShadowProof();
+        boolean shadowMapRenderPathEvidence = dispatchStatus.hasRealShadowMapEvidence()
+                || (finalCompositeSubmission != null
+                && finalCompositeSubmission.submittedNativeShadowMapMask());
+        boolean shadowMapOutputConsumedByFinalComposite = realShadowMapOutputReady
+                && finalCompositeSubmitted
+                && finalCompositeModeActive
+                && finalCompositeShadowMapConsumed;
+        String shadowMapConsumptionMarker = shadowMapOutputConsumedByFinalComposite
+                ? "native_shadow_map_sampled_by_final_composite"
+                : (realShadowMapOutputReady
+                ? "native_shadow_map_generated_not_consumed_by_final_composite"
+                : "native_shadow_map_not_ready_for_final_composite");
+        String shadowMapConsumptionBlocker = shadowMapOutputConsumedByFinalComposite
+                ? "none"
+                : (!realShadowMapOutputReady
+                ? "native-shadow-map-output"
+                : (!finalCompositeSubmitted
+                ? "final-composite-submission"
+                : (!finalCompositeModeActive
+                ? "final-composite-mode"
+                : "shadow-map-sampled-render-path-evidence")));
+
+        TracedLightingConsumptionEvidence traceEvidence = this.lastDiffuseGiTraceConsumptionEvidence;
+        boolean tracedLightingConsumed = dispatchStatus.hasVoxelRayTracedLightingConsumedEvidence()
+                || round9NativeBoolean(nativeStatus, "real_traced_lighting_consumed", false)
+                || round9NativeBoolean(nativeStatus, "tracedLightingConsumed", false)
+                || traceEvidence.finalGiSourceConsumed();
+        String tracedLightingSampleCount = traceEvidence.rayCount() > 0L
+                ? Long.toString(traceEvidence.rayCount())
+                : round9NativeValue(
+                nativeStatus,
+                "traced_lighting_sample_count",
+                round9NativeValue(nativeStatus, "ray_count", "0")
+        );
+        String tracedLightingHitCount = traceEvidence.hitCount() > 0L
+                ? Long.toString(traceEvidence.hitCount())
+                : round9NativeValue(
+                nativeStatus,
+                "traced_lighting_hit_count",
+                round9NativeValue(nativeStatus, "hit_count", "0")
+        );
+        String tracedLightingSource = traceEvidence.finalGiSourceConsumed()
+                ? traceEvidence.finalGiSource() + " via " + traceEvidence.evidenceSource()
+                : round9NativeValue(
+                nativeStatus,
+                "traced_lighting_source",
+                tracedLightingConsumed ? "voxel-ray-traced" : "not_consumed_by_final_gi_source"
+        );
+        if (!tracedLightingConsumed
+                && ("trace_consumption_evidence_unavailable".equals(tracedLightingSource)
+                || tracedLightingSource.isBlank())) {
+            tracedLightingSource = "not_consumed_by_final_gi_source";
+        }
+
+        boolean shaderDenoiseCpuReadbackFallbackActive = denoiseStatus.shaderDenoiseCpuReadbackFallbackActive()
+                || dispatchStatus.hasCpuReadbackFallbackActive();
+        boolean shaderDenoiseMetadataOnlyActive = dispatchStatus.hasMetadataOnlyActive()
+                || (finalCompositeSubmission != null
+                && finalCompositeSubmission.submittedMetadataOnlyPreview());
+        boolean shaderGeneratedDenoiseOutputConsumedByFinalComposite = finalCompositeModeActive
+                && !shaderDenoiseCpuReadbackFallbackActive
+                && !shaderDenoiseMetadataOnlyActive
+                && isShaderGeneratedDenoiseOutputConsumedByFinalComposite(finalCompositeSubmission);
+        boolean shaderGeneratedDenoiseSourceReady = denoiseStatus.shaderGeneratedDenoiseOutputEvidenceReady()
+                || dispatchStatus.hasShaderGeneratedDenoiseOutputEvidence()
+                || shaderGeneratedDenoiseOutputConsumedByFinalComposite;
+        boolean shaderDenoiseNoOverclaim = !denoiseStatus.realShaderDenoiseOutputReady()
+                || (!shaderDenoiseCpuReadbackFallbackActive
+                && !shaderDenoiseMetadataOnlyActive
+                && (denoiseStatus.shaderDenoiseShaderGeneratedOutput()
+                || shaderGeneratedDenoiseOutputConsumedByFinalComposite)
+                && shaderGeneratedDenoiseSourceReady);
+        boolean shaderDenoiseReadinessOutputSeparated = shaderDenoiseNoOverclaim
+                && (!denoiseStatus.realShaderDenoiseOutputReady()
+                || shaderGeneratedDenoiseSourceReady);
+        boolean shaderGeneratedDenoiseOutputEvidence = shaderGeneratedDenoiseOutputConsumedByFinalComposite;
+        boolean physicalGiEvidence = dispatchStatus.hasPhysicalGiEvidence();
+
+        boolean proofReady = physicalGiEvidence
+                && trueDepthGBufferSampling
+                && shadowMapOutputConsumedByFinalComposite
+                && tracedLightingConsumed
+                && shaderGeneratedDenoiseOutputEvidence;
+        boolean shadowMapSliceProofReady = shadowMapOutputConsumedByFinalComposite
+                && !trueDepthGBufferSampling
+                && !tracedLightingConsumed
+                && !shaderGeneratedDenoiseOutputEvidence
+                && shaderDenoiseNoOverclaim;
+        boolean depthShadowSliceProofReady = trueDepthGBufferSampling
+                && shadowMapOutputConsumedByFinalComposite
+                && !tracedLightingConsumed
+                && !shaderGeneratedDenoiseOutputEvidence
+                && shaderDenoiseNoOverclaim;
+        String logKey = artifactRole
+                + "|"
+                + sceneKind
+                + "|"
+                + sceneState
+                + "|"
+                + physicalGiEvidence
+                + "|"
+                + trueDepthGBufferSampling
+                + "|"
+                + depthSamplingEvidenceSources
+                + "|"
+                + depthSampleCount
+                + "|"
+                + nativeShadowMapAttempted
+                + "|"
+                + nativeShadowMapGenerated
+                + "|"
+                + realShadowMapOutputReady
+                + "|"
+                + finalCompositeSubmitted
+                + "|"
+                + shadowMapOutputConsumedByFinalComposite
+                + "|"
+                + shadowMapDepthSamples
+                + "|"
+                + tracedLightingConsumed
+                + "|"
+                + traceEvidence.compactLabel()
+                + "|"
+                + shaderGeneratedDenoiseSourceReady
+                + "|"
+                + shaderGeneratedDenoiseOutputConsumedByFinalComposite
+                + "|"
+                + shaderGeneratedDenoiseOutputEvidence
+                + "|"
+                + depthShadowSliceProofReady
+                + "|"
+                + proofReady;
+        if (logKey.equals(this.lastLoggedRealRendererMilestone1Key)) {
+            return;
+        }
+
+        this.lastLoggedRealRendererMilestone1Key = logKey;
+        Lucerna.LOGGER.info(
+                "Lucerna real renderer milestone 1: realRendererMilestone1.proof={} realRendererMilestone1.scene={} realRendererMilestone1.sceneState={} artifactRole={} "
+                        + "sameCamera=true realRendererMilestone1.sameCamera=true "
+                        + "realRendererMilestone1.fullProofRequirements=physicalGi,trueDepthGBufferSampling,realShadowMapOutput,tracedLightingConsumption,shaderGeneratedDenoise "
+                        + "realRendererMilestone1.partialSlices=shadowMapSlice,depthShadowSlice "
+                        + "realRendererMilestone1.rejects=screenSpaceShadowDecals,lowResDirectTextureFinalProof,focusWindowProofMarker,metadataOnly,shaderDenoiseOverclaim "
+                        + "physicalGiEvidence={} physical_gi_evidence={} realPhysicalGiEvidence={} fullProofRequires=physicalGi,realShadowMap,tracedLighting,shaderGeneratedDenoise "
+                        + "Lucerna real renderer depth/G-buffer sampling: trueDepthSampling={} depthTextureSampled={} depthBufferSampled={} gBufferSampled={} gbufferSampled={} trueDepthGBufferSampling={} realDepthGBufferSampling={} depthGBufferSampleCount={} depth_samples={} gBufferDepthMetadataOnly={} gBufferDepthSamplingMarker={} javaDepthSamplingEvidence={} nativeDepthSamplingEvidence={} shaderPassDepthSamplingEvidence={} depthSamplingPassOutputsReady={} depthSamplingEvidenceSources={} depthSamplingPassOutputsMarker={} maxGBufferDepthSampleCount={} "
+                        + "realShadowMapAttempted={} shadowMapAttempted={} nativeShadowMapGenerated={} realShadowMapGenerated={} realShadowMapOutputReady={} shadowMapOutputReady={} shadowMapDepthWritten={} shadow_map_output_written={} shadowMapTexelCount={} shadowMapCasterCount={} shadowMapReceiverCount={} shadowMapSampleCount={} shadowMapChecksum={} shadowMapMarker={} shadowMapBlocker={} "
+                        + "finalCompositeSubmitted={} finalCompositeModeActive={} shadowMapRenderPathEvidence={} shadowMapOutputConsumedByFinalComposite={} nativeShadowMapConsumedByFinalComposite={} realShadowMapConsumedByFinalComposite={} shadow_map_output_consumed_by_final_composite={} shadowMapConsumptionMarker={} shadowMapConsumptionBlocker={} realRendererMilestone1.shadowMapSliceProof={} realRendererMilestone1.depthShadowSliceProof={} screenSpaceShadowDecalProofRejected=true screen_space_shadow_decal_proof_rejected=true "
+                        + "realTracedLightingConsumed={} tracedLightingConsumed={} traced_lighting_consumed={} voxelRayTracedLightingConsumed={} rayTracedLightingConsumed={} tracedLightingSampleCount={} tracedLightingHitCount={} tracedLightingSource={} tracedLightingMetadataOnly={} traceRayCount={} traceHitCount={} traceMaterialCoupledHitCount={} traceDepthCoupledHitCount={} traceSourceCoupledBounceCount={} traceConsumptionBlocker=\"{}\" "
+                        + "shaderDenoiseDispatchPrepared={} shader_denoise_dispatch_prepared={} shaderDenoiseOutputMaterialReady={} shader_denoise_output_material_ready={} shaderDenoiseOutputImageReady={} shader_denoise_output_image_ready={} shaderDenoiseShaderGeneratedOutput={} shader_denoise_shader_generated_output={} realShaderDenoiseOutputReady={} real_shader_denoise_output_ready={} shaderGeneratedDenoiseOutputEvidence={} shaderGeneratedDenoiseOutputEvidenceReady={} shaderGeneratedDenoiseSourceReady={} shader_generated_denoise_source_ready={} shaderGeneratedDenoiseOutputConsumedByFinalComposite={} shader_generated_denoise_output_consumed_by_final_composite={} shaderDenoiseReadinessOutputSeparated={} shader_denoise_readiness_output_separated={} shaderDenoiseNoOverclaim={} shader_denoise_no_overclaim={} shaderDenoiseOverclaimRejected={} shader_denoise_overclaim_rejected={} cpuReadbackFallbackActive={} shaderDenoiseMetadataOnlyActive={} metadataOnlyActive={} "
+                        + "metadata_only_proof_rejected=true focus_window_capture_rejected=true proof_marker_evidence_rejected=true low_res_direct_texture_final_proof_rejected=true lowResolutionDirectTextureFinalProofRejected=true low_res_direct_texture_debug_draw_rejected=true blocker=\"{}\".",
+                proofReady,
+                sceneKind,
+                sceneState,
+                artifactRole,
+                physicalGiEvidence,
+                physicalGiEvidence,
+                physicalGiEvidence,
+                trueDepthGBufferSampling,
+                trueDepthGBufferSampling,
+                trueDepthGBufferSampling,
+                trueDepthGBufferSampling,
+                trueDepthGBufferSampling,
+                trueDepthGBufferSampling,
+                trueDepthGBufferSampling,
+                depthSampleCount,
+                depthSampleCount,
+                depthMetadataOnly,
+                depthSamplingMarker,
+                javaDepthSamplingEvidence,
+                nativeDepthSamplingEvidence,
+                shaderPassDepthSamplingEvidence,
+                depthSamplingPassOutputsReady,
+                depthSamplingEvidenceSources,
+                depthSamplingPassOutputsMarker,
+                parsedDepthSampleCount,
+                nativeShadowMapAttempted,
+                nativeShadowMapAttempted,
+                nativeShadowMapGenerated,
+                nativeShadowMapGenerated,
+                realShadowMapOutputReady,
+                realShadowMapOutputReady,
+                realShadowMapOutputReady,
+                realShadowMapOutputReady,
+                shadowMapDepthSamples,
+                shadowMapCasters,
+                shadowMapReceivers,
+                shadowMapDepthSamples,
+                shadowMapChecksum,
+                shadowMapMarker,
+                shadowMapBlocker,
+                finalCompositeSubmitted,
+                finalCompositeModeActive,
+                shadowMapRenderPathEvidence,
+                shadowMapOutputConsumedByFinalComposite,
+                shadowMapOutputConsumedByFinalComposite,
+                shadowMapOutputConsumedByFinalComposite,
+                shadowMapOutputConsumedByFinalComposite,
+                shadowMapConsumptionMarker,
+                shadowMapConsumptionBlocker,
+                shadowMapSliceProofReady,
+                depthShadowSliceProofReady,
+                tracedLightingConsumed,
+                tracedLightingConsumed,
+                tracedLightingConsumed,
+                tracedLightingConsumed,
+                tracedLightingConsumed,
+                tracedLightingSampleCount,
+                tracedLightingHitCount,
+                tracedLightingSource,
+                !tracedLightingConsumed,
+                traceEvidence.rayCount(),
+                traceEvidence.hitCount(),
+                traceEvidence.materialCoupledHitCount(),
+                traceEvidence.depthCoupledHitCount(),
+                traceEvidence.sourceCoupledBounceCount(),
+                traceEvidence.blocker(),
+                denoiseStatus.shaderDenoiseDispatchPrepared(),
+                denoiseStatus.shaderDenoiseDispatchPrepared(),
+                denoiseStatus.shaderDenoiseOutputMaterialReady(),
+                denoiseStatus.shaderDenoiseOutputMaterialReady(),
+                denoiseStatus.shaderDenoiseOutputImageReady(),
+                denoiseStatus.shaderDenoiseOutputImageReady(),
+                denoiseStatus.shaderDenoiseShaderGeneratedOutput(),
+                denoiseStatus.shaderDenoiseShaderGeneratedOutput(),
+                denoiseStatus.realShaderDenoiseOutputReady(),
+                denoiseStatus.realShaderDenoiseOutputReady(),
+                shaderGeneratedDenoiseOutputEvidence,
+                shaderGeneratedDenoiseOutputEvidence,
+                shaderGeneratedDenoiseSourceReady,
+                shaderGeneratedDenoiseSourceReady,
+                shaderGeneratedDenoiseOutputConsumedByFinalComposite,
+                shaderGeneratedDenoiseOutputConsumedByFinalComposite,
+                shaderDenoiseReadinessOutputSeparated,
+                shaderDenoiseReadinessOutputSeparated,
+                shaderDenoiseNoOverclaim,
+                shaderDenoiseNoOverclaim,
+                shaderDenoiseNoOverclaim,
+                shaderDenoiseNoOverclaim,
+                shaderDenoiseCpuReadbackFallbackActive,
+                shaderDenoiseMetadataOnlyActive,
+                shaderDenoiseMetadataOnlyActive,
+                proofReady
+                        ? "none"
+                        : "remaining="
+                        + (physicalGiEvidence ? "" : "physical-gi-evidence;")
+                        + (trueDepthGBufferSampling ? "" : "true-depth-gbuffer-sampling;")
+                        + (shadowMapOutputConsumedByFinalComposite ? "" : "shadow-map-final-composite-consumption;")
+                        + (tracedLightingConsumed ? "" : "traced-lighting-consumption;")
+                        + (shaderGeneratedDenoiseOutputEvidence ? "" : "shader-generated-denoise-output;")
         );
     }
 
@@ -2431,6 +3296,23 @@ public final class LucernaController {
         return value.trim();
     }
 
+    private static boolean envHasText(String envName) {
+        String value = System.getenv(envName);
+        return value != null && !value.isBlank();
+    }
+
+    private static boolean envTruthy(String envName) {
+        String value = System.getenv(envName);
+        if (value == null) {
+            return false;
+        }
+        String normalized = value.trim();
+        return "1".equals(normalized)
+                || "true".equalsIgnoreCase(normalized)
+                || "yes".equalsIgnoreCase(normalized)
+                || "on".equalsIgnoreCase(normalized);
+    }
+
     private static String round9NativeValue(String nativeStatus, String key, String fallback) {
         if (nativeStatus == null || nativeStatus.isBlank() || key == null || key.isBlank()) {
             return fallback;
@@ -2453,6 +3335,41 @@ public final class LucernaController {
             return fallback;
         }
         return nativeStatus.substring(valueStart, valueEnd).replace("\"", "");
+    }
+
+    private static boolean round9NativeBoolean(String nativeStatus, String key, boolean fallback) {
+        String value = round9NativeValue(nativeStatus, key, fallback ? "true" : "false");
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        String normalized = value.trim().replace("\"", "").toLowerCase(Locale.ROOT);
+        if ("true".equals(normalized)
+                || "1".equals(normalized)
+                || "yes".equals(normalized)
+                || "ready".equals(normalized)
+                || "generated".equals(normalized)) {
+            return true;
+        }
+        if ("false".equals(normalized)
+                || "0".equals(normalized)
+                || "no".equals(normalized)
+                || "none".equals(normalized)
+                || "not_ready".equals(normalized)
+                || "not_generated".equals(normalized)) {
+            return false;
+        }
+        return fallback;
+    }
+
+    private static boolean positiveLong(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        try {
+            return Long.parseLong(value.trim()) > 0L;
+        } catch (NumberFormatException ignored) {
+            return false;
+        }
     }
 
     private static String round11RestirNativeValue(String nativeStatus, String key, String fallback) {

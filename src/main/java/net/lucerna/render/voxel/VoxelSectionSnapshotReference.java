@@ -173,6 +173,10 @@ public record VoxelSectionSnapshotReference(
         if (occupancyMaskBitsReady && (occupancyMaskWordCount == 0 || occupancyMaskBitCount == 0)) {
             throw new IllegalArgumentException("occupancyMaskBitsReady requires non-empty mask storage metadata");
         }
+        if (occupancyMaskBitsReady
+                && (occupancyMaskSource == VoxelOccupancyMaskSource.NONE || occupancyMaskSource.metadataOnly())) {
+            throw new IllegalArgumentException("ready occupancy mask bits require a concrete mask source");
+        }
         if (!occupancyMaskBitsReady
                 && occupancyMaskSource != VoxelOccupancyMaskSource.NONE
                 && occupancyMaskSource != VoxelOccupancyMaskSource.METADATA_ONLY) {
@@ -189,6 +193,9 @@ public record VoxelSectionSnapshotReference(
         }
         if (materialLookupReady && materialPaletteSize == 0) {
             throw new IllegalArgumentException("materialLookupReady requires a material palette");
+        }
+        if ((opaqueMaterialFlagsReady || glassMaterialFlagsReady || waterMaterialFlagsReady) && !materialLookupReady) {
+            throw new IllegalArgumentException("material flag masks require materialLookupReady");
         }
     }
 
@@ -261,23 +268,18 @@ public record VoxelSectionSnapshotReference(
                 upload.materialPaletteGeneration(),
                 upload.emissiveEntryCount() > 0,
                 List.of(),
-                0,
-                0,
-                0,
-                0,
-                upload.opaqueVoxelCount(),
-                upload.occupancyMaskWordCount() > 0 && upload.occupancyMaskBitCount() > 0,
-                upload.occupancyMaskWordCount() > 0 && upload.occupancyMaskBitCount() > 0
-                        ? VoxelOccupancyMaskSource.NATIVE_UPLOAD
-                        : VoxelOccupancyMaskSource.NONE,
-                upload.occupiedVoxelCount() == 0
-                        && upload.occupancyMaskWordCount() == 0
-                        && upload.materialPaletteSize() == 0
-                        && upload.emissiveEntryCount() == 0,
-                upload.materialPaletteSize() > 0,
-                false,
-                false,
-                false
+                upload.solidWallHitEvidenceCount(),
+                upload.openSkyMissEvidenceCount(),
+                upload.glassVoxelCount(),
+                upload.waterVoxelCount(),
+                upload.opaqueMaterialFlagCount(),
+                upload.occupancyMaskBitsReady(),
+                occupancyMaskSource(upload),
+                upload.emptySectionSkipSafe(),
+                upload.materialLookupReady(),
+                upload.opaqueMaterialFlagsReady(),
+                upload.glassMaterialFlagsReady(),
+                upload.waterMaterialFlagsReady()
         );
     }
 
@@ -319,6 +321,14 @@ public record VoxelSectionSnapshotReference(
         return this.occupancyMaskBitsReady;
     }
 
+    public boolean hasConcreteOccupancyMaskPayload() {
+        return this.hasOccupancyMaskReadyForTraversal()
+                && this.hasOccupancyMask()
+                && this.occupancyMaskBitCount > 0
+                && this.occupancyMaskSource != VoxelOccupancyMaskSource.NONE
+                && !this.occupancyMaskSource.metadataOnly();
+    }
+
     public boolean occupancyMaskMetadataOnly() {
         return this.occupancyMaskSource.metadataOnly();
     }
@@ -329,6 +339,19 @@ public record VoxelSectionSnapshotReference(
 
     public boolean hasMaterialLookupReady() {
         return this.materialLookupReady;
+    }
+
+    public boolean hasMaterialMaskPayload() {
+        return this.hasMaterialLookupReady()
+                && this.hasMaterialPalette()
+                && (this.opaqueMaterialFlagsReady || this.glassMaterialFlagsReady || this.waterMaterialFlagsReady);
+    }
+
+    public boolean hasSceneTraversalMaskContracts() {
+        if (!this.hasOccupiedVoxels()) {
+            return this.emptySectionSkipSafe;
+        }
+        return this.hasConcreteOccupancyMaskPayload() && this.hasMaterialMaskPayload();
     }
 
     public boolean hasSolidWallHitEvidence() {
@@ -349,6 +372,68 @@ public record VoxelSectionSnapshotReference(
 
     public boolean hasWaterMaterialFlags() {
         return this.waterMaterialFlagsReady && this.waterVoxelCount > 0;
+    }
+
+    public int depthWallHitEvidenceCount() {
+        return this.solidWallHitEvidenceCount;
+    }
+
+    public int skippedEmptySectionEvidenceCount() {
+        return this.emptySectionSkipSafe ? 1 : 0;
+    }
+
+    public int glassWaterMaterialHitEvidenceCount() {
+        int count = 0;
+        if (this.glassMaterialFlagsReady) {
+            count += this.glassVoxelCount;
+        }
+        if (this.waterMaterialFlagsReady) {
+            count += this.waterVoxelCount;
+        }
+        return count;
+    }
+
+    public int opaqueMaterialHitEvidenceCount() {
+        return this.opaqueMaterialFlagsReady ? this.opaqueMaterialFlagCount : 0;
+    }
+
+    public int materialHitEvidenceCount() {
+        int materialFlagHits = this.glassWaterMaterialHitEvidenceCount() + this.opaqueMaterialHitEvidenceCount();
+        if (materialFlagHits > 0) {
+            return materialFlagHits;
+        }
+        if (this.materialLookupReady && !this.surfaceSamples.isEmpty()) {
+            return this.surfaceSamples.size();
+        }
+        return 0;
+    }
+
+    public int sourceCoupledBounceCandidateCount() {
+        int sourceCount = Math.max(this.emissiveVoxelCount, this.hasEmissivePayload ? 1 : 0);
+        if (!this.hasSceneTraversalMaskContracts()
+                || sourceCount == 0
+                || this.materialHitEvidenceCount() == 0
+                || this.solidWallHitEvidenceCount == 0) {
+            return 0;
+        }
+        return Math.min(sourceCount, Math.min(this.materialHitEvidenceCount(), this.solidWallHitEvidenceCount));
+    }
+
+    public String materialEvidenceSource() {
+        if (this.hasOpaqueMaterialFlags() || this.hasGlassMaterialFlags() || this.hasWaterMaterialFlags()) {
+            return "section_snapshot_material_flags";
+        }
+        if (this.materialLookupReady && !this.surfaceSamples.isEmpty()) {
+            return "section_snapshot_surface_material_samples";
+        }
+        if (this.materialLookupReady) {
+            return "section_snapshot_material_palette_no_hit_flags";
+        }
+        return "no_material_lookup";
+    }
+
+    public String occupancyMaskSourceLabel() {
+        return this.occupancyMaskSource.name().toLowerCase(java.util.Locale.ROOT);
     }
 
     public boolean hasSurfaceSamples() {
@@ -429,6 +514,14 @@ public record VoxelSectionSnapshotReference(
             throw new IllegalArgumentException("upload occupancyBitOrderId does not match occupancyBitOrderName");
         }
         return occupancyBitOrder;
+    }
+
+    private static VoxelOccupancyMaskSource occupancyMaskSource(NativeSectionSnapshotUpload upload) {
+        try {
+            return VoxelOccupancyMaskSource.valueOf(upload.occupancyMaskSourceName());
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("upload occupancyMaskSourceName is not supported by voxel traversal", exception);
+        }
     }
 
     private static boolean hasOccupiedSectionPayload(

@@ -184,7 +184,14 @@ public record Round6DiffuseGiPreviewCompositeState(
     }
 
     public boolean readyForRound7RawGiSource() {
-        return readyForRound6PreviewSource();
+        return readyForRound6PreviewSource()
+                && this.giOutputAuthenticNativeCpu;
+    }
+
+    public boolean rawGiInputReady(Round6DiffuseGiCpuOutputPayload sourcePayload) {
+        return readyForRound7RawGiSource()
+                && sourcePayload != null
+                && sourcePayload.rawGiInputReady();
     }
 
     public boolean readyForFinalComposite(Round6DiffuseGiCpuOutputPayload sourcePayload) {
@@ -206,17 +213,48 @@ public record Round6DiffuseGiPreviewCompositeState(
     }
 
     public String round7RawGiReadinessReason(Round6DiffuseGiCpuOutputPayload sourcePayload) {
-        if (!readyForRound7RawGiSource()) {
-            return "Round 7 RAW_GI visual source is not ready: " + this.reason;
+        if (!readyForRound6PreviewSource()) {
+            return "Round 7 RAW_GI visual source metadata is not ready: " + this.reason;
+        }
+        if (!this.giOutputAuthenticNativeCpu) {
+            return "Round 7 RAW_GI visual source is blocked because the current Round 6 source is not marked "
+                    + "as an authentic native diffuse-GI CPU output; "
+                    + this.sourceBoundarySummary();
         }
         if (sourcePayload == null) {
             return "Round 7 RAW_GI visual source metadata is ready, but no native scene-tied diffuse-GI RGBA8 CPU/readback payload is available";
         }
-        if (!sourcePayload.readyForPreviewDraw()) {
+        if (!sourcePayload.rawGiInputReady()) {
             return "Round 7 RAW_GI visual source metadata is ready, but the native scene-tied diffuse-GI RGBA8 CPU/readback payload is not displayable: "
                     + sourcePayload.previewReadinessReason();
         }
         return "Round 7 RAW_GI visual source can draw the native scene-tied diffuse-GI RGBA8 CPU/readback payload as a raw source view";
+    }
+
+    public String rawGiInputSourceEvidence(Round6DiffuseGiCpuOutputPayload sourcePayload) {
+        if (sourcePayload == null) {
+            return "rawGiInputReady=false,round7.rawGiInputReady=false"
+                    + ",rawGiInputSource=\"missing native scene-tied raw diffuse-GI RGBA8 CPU/readback payload\""
+                    + ",round7.rawGiInputSource=\"missing native scene-tied raw diffuse-GI RGBA8 CPU/readback payload\""
+                    + ",rawGiInputBlocker=\""
+                    + round7RawGiReadinessReason(null)
+                    + "\"";
+        }
+        boolean ready = rawGiInputReady(sourcePayload);
+        String sourceLabel = sourcePayload.rawGiInputSourceLabel();
+        return "rawGiInputReady="
+                + ready
+                + ",round7.rawGiInputReady="
+                + ready
+                + ",rawGiInputSource=\""
+                + sourceLabel
+                + "\",round7.rawGiInputSource=\""
+                + sourceLabel
+                + "\",rawGiInputBlocker=\""
+                + round7RawGiReadinessReason(sourcePayload)
+                + "\",rawGiInputPayload=\""
+                + evidenceValue(sourcePayload.debugSummary())
+                + "\"";
     }
 
     public String finalCompositeReadinessReason(Round6DiffuseGiCpuOutputPayload sourcePayload) {
@@ -251,6 +289,7 @@ public record Round6DiffuseGiPreviewCompositeState(
                 + ",handHudExcludedProofHint=" + this.handHudExcludedProofHint
                 + ",surfaceOnlyProofEligible=" + this.surfaceOnlyProofEligible
                 + ",realSurfaceOnlyProofReady=" + this.readyForRealSurfaceOnlyProof()
+                + ",round7RawGiMetadataReady=" + this.readyForRound7RawGiSource()
                 + ",giOutputAuthenticNativeCpu=" + this.giOutputAuthenticNativeCpu
                 + ",realShaderGiOutput=" + this.realShaderGiOutput
                 + ",cpuDenoiseScaffoldOutput=" + this.cpuDenoiseScaffoldOutput
@@ -333,5 +372,9 @@ public record Round6DiffuseGiPreviewCompositeState(
             result[index] = flags[index] != 0;
         }
         return result;
+    }
+
+    private static String evidenceValue(String value) {
+        return value == null ? "" : value.replace('"', '\'');
     }
 }

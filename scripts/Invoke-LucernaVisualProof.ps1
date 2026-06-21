@@ -1,8 +1,8 @@
 param(
-    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ShaderDenoisedGi", "ShaderDenoiseFinalComposite", "ShaderDenoiseDebug", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalBaseline", "TemporalStable", "TemporalMoved", "UserVisibleBaseline", "UserVisibleFinalComposite", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay", "ForestComplexCullingOverlay", "VoxelRayDebug", "RtEntityDebug", "HybridHitDebug", "DirectReservoirDebug", "GiReservoirDebug", "ReservoirReuseDebug", "DirectBruteBaseline", "RestirDirectEnabled", "RestirTemporalStable", "RestirTemporalMoved", "RestirExecutionDebug", "PhysicalBaseline", "PhysicalEnabled", "PhysicalDebug", "EmissiveSpill", "ColoredBounce", "ContactShadows", "ShaderDenoiseOutput", "FinalPhysicalComposite")]
+    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ShaderDenoisedGi", "ShaderDenoiseFinalComposite", "ShaderDenoiseDebug", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalBaseline", "TemporalStable", "TemporalMoved", "UserVisibleBaseline", "UserVisibleFinalComposite", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay", "ForestComplexCullingOverlay", "VoxelRayDebug", "RtEntityDebug", "HybridHitDebug", "DirectReservoirDebug", "GiReservoirDebug", "ReservoirReuseDebug", "DirectBruteBaseline", "RestirDirectEnabled", "RestirTemporalStable", "RestirTemporalMoved", "RestirExecutionDebug", "PhysicalBaseline", "PhysicalEnabled", "PhysicalDebug", "ShadowMapSlice", "DepthShadowSlice", "FullProof", "EmissiveSpill", "ColoredBounce", "ContactShadows", "ShaderDenoiseOutput", "TracedGiConsumption", "FinalPhysicalComposite")]
     [string] $Mode,
 
-    [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round56PhysicalLighting", "Round7DenoiseComposite", "Round7CompositeStability", "Round7EmissiveGiSurface", "Round7FinalPhysicalComposite", "VisualLightingMilestone1", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry", "Round10HybridTracing", "Round11Restir")]
+    [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round56PhysicalLighting", "Round7DenoiseComposite", "Round7CompositeStability", "Round7EmissiveGiSurface", "Round7FinalPhysicalComposite", "Round7ShaderDenoiseOutput", "VisualLightingMilestone1", "RealRendererMilestone1", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry", "Round10HybridTracing", "Round11Restir")]
     [string] $ValidationProfile = "Round5Direct",
 
     [string] $WorldName = "New World",
@@ -158,6 +158,34 @@ function Write-LucernaConfig {
         showIrisNotice = $true
     }
     $config | ConvertTo-Json | Set-Content -LiteralPath $configPath -Encoding UTF8
+}
+
+function Set-LucernaPreferredGraphicsBackend {
+    param(
+        [string] $Root,
+        [string] $Backend = "vulkan"
+    )
+
+    $optionsPath = Join-Path $Root "run\options.txt"
+    $optionsDir = Split-Path -Parent $optionsPath
+    New-Item -ItemType Directory -Force -Path $optionsDir | Out-Null
+    $backendLine = "preferredGraphicsBackend:`"$Backend`""
+    if (Test-Path -LiteralPath $optionsPath) {
+        $lines = [System.Collections.Generic.List[string]]::new()
+        foreach ($line in [System.IO.File]::ReadAllLines((Resolve-Path $optionsPath))) {
+            if ($line -match '^preferredGraphicsBackend:') {
+                $lines.Add($backendLine)
+            } else {
+                $lines.Add($line)
+            }
+        }
+        if (-not ($lines | Where-Object { $_ -match '^preferredGraphicsBackend:' })) {
+            $lines.Add($backendLine)
+        }
+        [System.IO.File]::WriteAllLines($optionsPath, $lines)
+    } else {
+        [System.IO.File]::WriteAllLines($optionsPath, [string[]]@($backendLine))
+    }
 }
 
 function Get-Round7CaptureIntent {
@@ -551,14 +579,96 @@ function Get-Round7FinalPhysicalCompositeCaptureIntent {
     }
 }
 
+function Get-Round7ShaderDenoiseOutputCaptureIntent {
+    param([string] $CaptureMode)
+
+    $shaderOutputImageCoreProofPatterns = @(
+        "(?:Reference map 'iris(?:-fabric)?\.refmap\.json'|mods \[iris\]|Iris is installed|iris\.installed=true)",
+        "Using graphics backend Vulkan",
+        "Lucerna backend status: SODIUM_VULKAN",
+        "(?:shaderDenoiseIntent|shader_denoise_intent|denoiseShaderIntent|denoise_shader_intent|shaderDenoiseVisualShaderIntent)=true",
+        "(?:shaderDenoiseInputReady|shader_denoise_input_ready|shaderDenoiseRawInputReady|shader_denoise_raw_input_ready|rawGiInputReady|raw_gi_input_ready)=true|(?:rawGI|cpuDenoisedGI)=enabled-ready|(?:rawGI|cpuDenoisedGI)=ready",
+        "(?:round7\.shaderDenoise\.rawGiCpuReadbackInput|rawGiCpuReadbackInput|raw_gi_cpu_readback_input)=true",
+        "(?:round7\.shaderDenoise\.inputKind|shaderDenoiseInputKind|shader_denoise_input_kind|shaderInputKind|shader_input_kind)=raw-diffuse-gi-rgba8|shader input kind=raw-diffuse-gi-rgba8",
+        "(?:round7\.shaderDenoise\.dispatchPrepared|shaderDenoiseDispatchPrepared|shader_denoise_dispatch_prepared)=true",
+        "(?:round7\.shaderDenoise\.outputAttempted|shaderDenoiseOutputAttempted|shader_denoise_output_attempted)=true",
+        "(?:round7\.shaderDenoise\.outputAttemptGeneration|shaderDenoiseOutputAttemptGeneration|shader_denoise_output_attempt_generation)=[0-9]+",
+        "(?:round7\.shaderDenoise\.outputImageReady|shaderDenoiseOutputImageReady|shader_denoise_output_image_ready)=true",
+        "(?:round7\.shaderDenoise\.outputMaterialReady|shaderDenoiseOutputMaterialReady|shader_denoise_output_material_ready)=true",
+        "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=true",
+        "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=true",
+        "(?:shaderGeneratedDenoiseOutputEvidence|shaderGeneratedDenoiseOutputEvidenceReady|shader_generated_denoise_output_evidence|shader_generated_denoise_output_evidence_ready)=true",
+        "(?:shaderOutputSourceConsumed|shaderDenoiseOutputSourceConsumed|shader_denoise_output_source_consumed)=true",
+        "(?:shaderDenoiseFinalCompositeConsumable|shader_denoise_final_composite_consumable|finalCompositeConsumable)=true",
+        "(?:round7\.shaderDenoise\.cpuReadbackFallbackActive|shaderDenoiseCpuReadbackFallbackActive|cpuReadbackDenoiseFallbackActive|cpu_readback_denoise_fallback_active|cpuReadbackFallbackActive)=false",
+        "(?:round7\.shaderDenoise\.noOverclaim|shaderDenoiseNoOverclaim|shader_denoise_no_overclaim)=true",
+        "(?:shaderDenoiseOverclaimRejected|shader_denoise_overclaim_rejected)=true|shaderDenoiseOverclaimPresent=false",
+        "public Mojang Round 7 shader-denoise output render pass submitted; .*mode=ROUND7_SHADER_DENOISE_OUTPUT",
+        "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true(?=[^`r`n]*(?:shaderOutputSourceConsumed|shaderDenoiseOutputSourceConsumed)=true)(?=[^`r`n]*(?:realShaderDenoiseOutputReady=true|round7\.shaderDenoise\.realOutputReady=true))"
+    )
+    $shaderOutputImageOpenBoundaryPatterns = @(
+        "(?:physicalGiTracingQuality=open|round7\.shaderDenoiseOutput\.physicalGiMayRemainFalse=true|physicalGiEvidence=false|physical_gi_evidence=false)",
+        "(?:(?:realTracedLightingConsumed|tracedLightingConsumed|traced_lighting_consumed|voxelRayTracedLightingConsumed|rayTracedLightingConsumed)=false|round7\.shaderDenoiseOutput\.tracedLightingMayRemainFalse=true)"
+    )
+    $shaderOutputImageProofPatterns = @($shaderOutputImageCoreProofPatterns) + @($shaderOutputImageOpenBoundaryPatterns)
+    $tracedRawGiConsumptionProofPatterns = @($shaderOutputImageCoreProofPatterns) + @(
+        "(?:realTracedLightingConsumed|tracedLightingConsumed|traced_lighting_consumed|voxelRayTracedLightingConsumed|rayTracedLightingConsumed)=true",
+        "(?:(?:tracedLightingConsumedByFinalComposite|traced_lighting_consumed_by_final_composite|traceFinalGiSourceConsumed|trace_final_gi_source_consumed|finalGiSourceConsumed|final_gi_source_consumed)=true|(?:Lucerna public Mojang final composite: |Lucerna real renderer milestone 1: |finalCompositeSubmitted=true|final_composite_submitted=true)[^`r`n]*(?:realTracedLightingConsumed|tracedLightingConsumed|traced_lighting_consumed|voxelRayTracedLightingConsumed|rayTracedLightingConsumed)=true)",
+        "(?:tracedLighting(?:Ray|Sample)Count|traced_lighting_(?:ray|sample)_count|traceRayCount|trace_ray_count|ray_count|rays)=([1-9][0-9]*)",
+        "(?:tracedLightingHitCount|traced_lighting_hit_count|traceHitCount|trace_hit_count|hit_count|hits)=([1-9][0-9]*)",
+        "(?:tracedLightingMaterialCoupledHitCount|traced_lighting_material_coupled_hit_count|traceMaterialCoupledHitCount|trace_material_coupled_hit_count|materialCoupledHitCount|material_coupled_hit_count|materialHits)=([1-9][0-9]*)",
+        "(?:tracedLightingDepthCoupledHitCount|traced_lighting_depth_coupled_hit_count|traceDepthCoupledHitCount|trace_depth_coupled_hit_count|depthCoupledHitCount|depth_coupled_hit_count|depthHits)=([1-9][0-9]*)",
+        "(?:tracedLightingSourceCoupledBounceCount|traced_lighting_source_coupled_bounce_count|traceSourceCoupledBounceCount|trace_source_coupled_bounce_count|sourceCoupledBounceCount|source_coupled_bounce_count|sourceBounce(?:s)?|source_bounce_count)=([1-9][0-9]*)",
+        "(?:tracedLightingSource|consumedLightingSource|lightingConsumptionSource|lighting_source|traceEvidenceSource|trace_evidence_source|finalGiSource|final_gi_source)=[^`r`n]*(?:voxel|ray|rt|trace|traced|hybrid|final_gi|diffuse)",
+        "(?:tracedLightingMetadataOnly|traced_lighting_metadata_only|metadataOnlyTracing|metadata_only_tracing)=false",
+        "(?:tracedLightingNoOverclaim|traced_lighting_no_overclaim|tracedLightingOverclaimRejected|traced_lighting_overclaim_rejected)=true|(?:realGpuTraversalExecuted|real_gpu_traversal_executed)=false"
+    )
+
+    switch ($CaptureMode) {
+        "Enabled" { return Get-Round7ShaderDenoiseOutputCaptureIntent "ShaderDenoiseOutput" }
+        "Debug" { return Get-Round7ShaderDenoiseOutputCaptureIntent "ShaderDenoiseOutput" }
+        "ShaderDenoiseOutput" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "SHADER_DENOISE_OUTPUT_PROOF"
+                compositeMode = "DENOISED_GI"
+                artifactRole = "round7-shader-generated-denoise-output"
+                sceneKind = "round7-shader-generated-denoise-output"
+                sceneState = "same-camera-shader-generated-denoise-output"
+                sceneAction = "shader-denoise-output"
+                hideHudForScreenshot = $true
+                requiredPatterns = @($shaderOutputImageProofPatterns)
+            }
+        }
+        "TracedGiConsumption" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "DENOISED_GI"
+                artifactRole = "round7-traced-gi-consumption"
+                sceneKind = "round7-traced-raw-diffuse-gi-consumption"
+                sceneState = "same-camera-traced-raw-diffuse-gi-consumption"
+                sceneAction = "traced-gi-consumption"
+                hideHudForScreenshot = $true
+                requiresTracedLightingConsumption = $true
+                allowTracedLightingOpen = $false
+                requiredPatterns = @($tracedRawGiConsumptionProofPatterns)
+            }
+        }
+        default {
+            throw "Unsupported Round 7 shader-denoise output capture mode: $CaptureMode"
+        }
+    }
+}
+
 function Get-VisualLightingMilestone1CaptureIntent {
     param([string] $CaptureMode)
 
     $scenePatterns = @(
         "visualLightingMilestone1\.scene=dry-daytime-colored-emissive-bounce.*dryScene=true.*dayTime=true.*timeOfDay=6000.*sameCamera=true",
-        "visualLightingMilestone1\.coloredEmissiveSources=.*minecraft:glowstone.*minecraft:sea_lantern.*minecraft:redstone_lamp",
-        "visualLightingMilestone1\.coloredBouncePanels=.*minecraft:red_concrete.*minecraft:blue_concrete.*minecraft:lime_concrete.*minecraft:yellow_concrete",
-        "visualLightingMilestone1\.rejectFixedBlobs=true.*rejectFullscreenWash=true.*rejectLowResDebugMarkers=true"
+        "coloredEmissiveSources=.*minecraft:glowstone.*minecraft:sea_lantern.*minecraft:redstone_lamp",
+        "coloredBouncePanels=.*minecraft:red_concrete.*minecraft:blue_concrete.*minecraft:lime_concrete.*minecraft:yellow_concrete",
+        "rejectFixedBlobs=true.*rejectFullscreenWash=true.*rejectLowResDebugMarkers=true"
     )
     $milestoneOnePatterns = @($scenePatterns) + @(
         "Lucerna world-space emissive spill submitted: (?=.*minecraft:glowstone)(?=.*minecraft:sea_lantern)(?=.*minecraft:redstone_lamp).*worldSpaceEmissiveSpill=true.*cleanGameplayComposite=true.*screenSpaceBlobComposite=false.*receiverQuadCount=[1-9][0-9]*.*sourceColorMaterialData=true.*sourceReceiverDistanceFalloff=true.*worldSpaceBlockFaceQuads=true",
@@ -571,7 +681,7 @@ function Get-VisualLightingMilestone1CaptureIntent {
         "(?:fixedDarkBlobRemoved|fixed_blob_removed|fixedBlobRejected|fixed_blob_rejected)=true",
         "(?:fullScreenWashRejected|fullscreen_wash_rejected|rectangular_washout_rejected|anti_rectangular_washout_passed|washout_rejected)=true",
         "(?:lowResolutionDirectTextureDraw|low_resolution_direct_texture_draw)=false",
-        "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true.*(?:final_physical_composite_ready|finalPhysicalCompositeReady|physical_final_composite_ready)=true"
+        "(?:worldSpaceShadowReceiverDecals|world_space_shadow_receiver_decals|geometryTiedWorldSpaceShadowReceivers)=true"
     )
 
     switch ($CaptureMode) {
@@ -616,6 +726,203 @@ function Get-VisualLightingMilestone1CaptureIntent {
         }
         default {
             throw "Unsupported Visual Lighting Milestone 1 capture mode: $CaptureMode"
+        }
+    }
+}
+
+function Get-RealRendererMilestone1CaptureIntent {
+    param([string] $CaptureMode)
+
+    $baselinePatterns = @(
+        "Using graphics backend Vulkan",
+        "Lucerna backend status: SODIUM_VULKAN"
+    )
+    $scenePatterns = @(
+        "realRendererMilestone1\.scene=depth-gbuffer-shadowmap-traced-denoise.*sameCamera=true",
+        "realRendererMilestone1\.fullProofRequirements=.*physicalGi.*trueDepthGBufferSampling.*realShadowMapOutput.*tracedLightingConsumption.*shaderGeneratedDenoise",
+        "realRendererMilestone1\.partialSlices=.*shadowMapSlice.*depthShadowSlice",
+        "realRendererMilestone1\.rejects=.*screenSpaceShadowDecals.*lowResDirectTextureFinalProof.*focusWindowProofMarker.*metadataOnly.*shaderDenoiseOverclaim.*proofOverlays.*menuChatScreenshots.*wrongWindow.*blankScreenshot"
+    )
+    $fullRendererProfilePatterns = @(
+        "realRendererMilestone1\.fullRendererProofProfile=true.*sameInWorldRunRequired=true.*physicalGiRequired=true.*realShadowMapOutputRequired=true.*shadowMapConsumptionRequired=true.*trueDepthGBufferSamplingRequired=true.*tracedLightingConsumptionRequired=true.*shaderGeneratedDenoiseOutputRequired=true",
+        "realRendererMilestone1\.cleanCaptureContract=.*inWorldOnly.*menuClosedRequired=true.*chatClosedRequired=true.*proofOverlaysForbidden=true.*wrongWindowScreenshotForbidden=true.*blankScreenshotForbidden=true"
+    )
+    $depthGBufferFullProofPatterns = @(
+        "(?:Lucerna real renderer depth/G-buffer sampling|realRenderer\.depthGBuffer|realRendererMilestone1\.depthGBuffer).*?(?:trueDepthSampling|depthTextureSampled|depthBufferSampled|gBufferSampled|gbufferSampled)=true",
+        "(?:realDepthGBufferSampling|trueDepthGBufferSampling|true_depth_gbuffer_sampling|depthGBufferSamplingReal|gBufferSamplingReal)=true",
+        "(?:depthGBufferSampleCount|depth_gbuffer_sample_count|gBufferSampleCount|gbuffer_sample_count|depthSampleCount|depth_samples)=([1-9][0-9]*)",
+        "(?:gBufferDepthMetadataOnly|g_buffer_depth_metadata_only|depth_sampling_metadata_only)=false"
+    )
+    $depthGBufferSourceProofPatterns = @(
+        "(?:javaDepthSamplingEvidence|java_depth_sampling_evidence|java_gbuffer_depth_sampling_evidence|nativeDepthSamplingEvidence|native_depth_sampling_evidence|native_gbuffer_depth_sampling_evidence|shaderPassDepthSamplingEvidence|shader_pass_depth_sampling_evidence|shader_depth_sampling_evidence)=true",
+        "(?:depthSamplingPassOutputsReady|depth_sampling_pass_outputs_ready)=true",
+        "(?:depthSamplingEvidenceSources|depth_sampling_evidence_sources)=[^`r`n]*(?:java)[^`r`n]*(?:native)[^`r`n]*(?:shader)",
+        "(?:depthSamplingPassOutputsMarker|depth_sampling_pass_outputs_marker)=java_native_shader_depth_sampling_evidence_parsed"
+    )
+    $depthGBufferOpenBoundaryPatterns = @(
+        "(?:trueDepthSampling|depthTextureSampled|depthBufferSampled|gBufferSampled|gbufferSampled|trueDepthGBufferSampling|realDepthGBufferSampling)=false",
+        "(?:depthGBufferSampleCount|depth_gbuffer_sample_count|gBufferSampleCount|gbuffer_sample_count|depthSampleCount|depth_samples)=0",
+        "(?:gBufferDepthSamplingMarker|depth_gbuffer_sampling_marker)=true_depth_gbuffer_sampling_not_wired"
+    )
+    $shadowMapOutputPatterns = @(
+        "(?:realShadowMapAttempted|shadowMapAttempted|shadow_map_attempted|shadowMapPassSubmitted|shadow_map_pass_submitted|realShadowMapPassSubmitted)=true",
+        "(?:nativeShadowMapGenerated|realShadowMapGenerated|native_shadow_map_generated)=true",
+        "(?:realShadowMapOutputReady|shadowMapOutputReady|shadow_map_output_ready|shadowMapDepthWritten|shadow_map_depth_written|shadowMapOutputWritten|shadow_map_output_written)=true",
+        "(?:shadowMap(?:Texel|Sample|Receiver|Caster|Output)(?:Count|s)?|shadow_map_(?:texel|sample|receiver|caster|output)_count)=([1-9][0-9]*)"
+    )
+    $shadowMapFinalCompositeConsumptionBasePatterns = @(
+        "Lucerna public Mojang final composite: attempted=true submitted=true drawCalls=true",
+        "(?:finalCompositeSubmitted|final_composite_submitted)=true",
+        "(?:finalCompositeModeActive|final_composite_mode_active)=true",
+        "(?:shadowMapRenderPathEvidence|shadow_map_render_path_evidence)=true",
+        "(?:shadowMapOutputConsumedByFinalComposite|nativeShadowMapConsumedByFinalComposite|realShadowMapConsumedByFinalComposite|shadow_map_output_consumed_by_final_composite)=true",
+        "(?:shadowMapConsumptionMarker|shadow_map_consumption_marker)=native_shadow_map_sampled_by_final_composite"
+    )
+    $shadowMapFinalCompositeConsumptionPatterns = @($shadowMapFinalCompositeConsumptionBasePatterns) + @(
+        "(?:realRendererMilestone1\.shadowMapSliceProof|real_renderer_milestone1_shadow_map_slice_proof)=true"
+    )
+    $depthShadowSliceProofPatterns = @(
+        "(?:realRendererMilestone1\.depthShadowSliceProof|real_renderer_milestone1_depth_shadow_slice_proof)=true",
+        "(?:realRendererMilestone1\.proof|realRendererMilestone1Proof|real_renderer_milestone1_proof)=false"
+    )
+    $physicalGiFullProofPatterns = @(
+        "(?:physicalGiEvidence|physical_gi_evidence|realPhysicalGiEvidence)=true",
+        "fullProofRequires=physicalGi,realShadowMap,tracedLighting,shaderGeneratedDenoise"
+    )
+    $tracedLightingFullProofPatterns = @(
+        "(?:realTracedLightingConsumed|tracedLightingConsumed|traced_lighting_consumed|voxelRayTracedLightingConsumed|rayTracedLightingConsumed)=true",
+        "(?:tracedLighting(?:Sample|Hit|Contribution|Consumed)(?:Count|s)?|traced_lighting_(?:sample|hit|contribution|consumed)_count|voxelLightingConsumedCount|rayTracedLightingSampleCount)=([1-9][0-9]*)",
+        "(?:tracedLightingSource|consumedLightingSource|lightingConsumptionSource|lighting_source)=[^`r`n]*(?:voxel|ray|rt|traced|hybrid)"
+    )
+    $tracedLightingOpenBoundaryPatterns = @(
+        "(?:realTracedLightingConsumed|tracedLightingConsumed|traced_lighting_consumed|voxelRayTracedLightingConsumed|rayTracedLightingConsumed)=false",
+        "(?:tracedLightingSource|consumedLightingSource|lightingConsumptionSource|lighting_source)=not_consumed_by_final_gi_source"
+    )
+    $shaderDenoiseSeparationPatterns = @(
+        "(?:round7\.shaderDenoise\.dispatchPrepared|shaderDenoiseDispatchPrepared|shader_denoise_dispatch_prepared)=true",
+        "(?:round7\.shaderDenoise\.outputMaterialReady|shaderDenoiseOutputMaterialReady|shader_denoise_output_material_ready)=true",
+        "(?:round7\.shaderDenoise\.outputImageReady|shaderDenoiseOutputImageReady|shader_denoise_output_image_ready)=(?:true|false)",
+        "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=(?:true|false)",
+        "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=(?:true|false)",
+        "(?:shaderDenoiseReadinessOutputSeparated|shader_denoise_readiness_output_separated|shaderDenoiseOutputSeparation|shader_denoise_output_separation|shaderDenoiseReadinessVsOutputSeparated)=true",
+        "(?:round7\.shaderDenoise\.noOverclaim|shaderDenoiseNoOverclaim|shader_denoise_no_overclaim)=true"
+    )
+    $shaderGeneratedDenoiseFullProofPatterns = @(
+        "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=true",
+        "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=true",
+        "(?:shaderGeneratedDenoiseOutputEvidence|shaderGeneratedDenoiseOutputEvidenceReady|shader_generated_denoise_output_evidence)=true",
+        "(?:round7\.shaderDenoise\.cpuReadbackFallbackActive|shaderDenoiseCpuReadbackFallbackActive|cpuReadbackDenoiseFallbackActive|cpu_readback_denoise_fallback_active|cpuReadbackFallbackActive)=false"
+    )
+    $shaderDenoiseOpenBoundaryPatterns = @(
+        "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=false",
+        "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=false",
+        "(?:shaderGeneratedDenoiseOutputEvidence|shaderGeneratedDenoiseOutputEvidenceReady|shader_generated_denoise_output_evidence)=false",
+        "(?:shaderDenoiseReadinessOutputSeparated|shader_denoise_readiness_output_separated|shaderDenoiseOutputSeparation|shader_denoise_output_separation|shaderDenoiseReadinessVsOutputSeparated)=true",
+        "(?:round7\.shaderDenoise\.noOverclaim|shaderDenoiseNoOverclaim|shader_denoise_no_overclaim)=true"
+    )
+    $realRendererFullProofPatterns = @($scenePatterns) + @($fullRendererProfilePatterns) + @($physicalGiFullProofPatterns) + @($depthGBufferFullProofPatterns) + @($depthGBufferSourceProofPatterns) + @($shadowMapOutputPatterns) + @($shadowMapFinalCompositeConsumptionBasePatterns) + @($tracedLightingFullProofPatterns) + @($shaderDenoiseSeparationPatterns) + @($shaderGeneratedDenoiseFullProofPatterns) + @(
+        "(?:realRendererMilestone1\.proof|realRendererMilestone1Proof|real_renderer_milestone1_proof)=true",
+        "(?:metadata_only_proof_rejected|metadata_preview_rejected|metadata_only_rejected)=true",
+        "(?:focus_window_capture_rejected|focus_window_rejected|focus_window_only_rejected)=true",
+        "(?:proof_marker_evidence_rejected|proof_marker_rejected|proof_marker_source_rejected)=true",
+        "(?:low_res_direct_texture_final_proof_rejected|lowResolutionDirectTextureFinalProofRejected|low_res_direct_texture_debug_draw_rejected)=true",
+        "(?:screen_space_shadow_decal_proof_rejected|screenSpaceShadowDecalProofRejected|screen_space_only_shadow_rejected)=true",
+        "(?:shader_denoise_overclaim_rejected|shaderDenoiseOverclaimRejected)=true"
+    )
+    $realRendererShadowMapConsumedPatterns = @($scenePatterns) + @($shadowMapOutputPatterns) + @($shadowMapFinalCompositeConsumptionPatterns) + @($depthGBufferOpenBoundaryPatterns) + @($tracedLightingOpenBoundaryPatterns) + @($shaderDenoiseOpenBoundaryPatterns) + @(
+        "(?:realRendererMilestone1\.proof|realRendererMilestone1Proof|real_renderer_milestone1_proof)=false",
+        "(?:metadata_only_proof_rejected|metadata_preview_rejected|metadata_only_rejected)=true",
+        "(?:focus_window_capture_rejected|focus_window_rejected|focus_window_only_rejected)=true",
+        "(?:proof_marker_evidence_rejected|proof_marker_rejected|proof_marker_source_rejected)=true",
+        "(?:low_res_direct_texture_final_proof_rejected|lowResolutionDirectTextureFinalProofRejected|low_res_direct_texture_debug_draw_rejected)=true",
+        "(?:screen_space_shadow_decal_proof_rejected|screenSpaceShadowDecalProofRejected|screen_space_only_shadow_rejected)=true",
+        "(?:shader_denoise_overclaim_rejected|shaderDenoiseOverclaimRejected)=true"
+    )
+    $realRendererDepthShadowSlicePatterns = @($scenePatterns) + @($depthGBufferFullProofPatterns) + @($depthGBufferSourceProofPatterns) + @($shadowMapOutputPatterns) + @($shadowMapFinalCompositeConsumptionBasePatterns) + @($depthShadowSliceProofPatterns) + @($tracedLightingOpenBoundaryPatterns) + @($shaderDenoiseOpenBoundaryPatterns) + @(
+        "(?:metadata_only_proof_rejected|metadata_preview_rejected|metadata_only_rejected)=true",
+        "(?:focus_window_capture_rejected|focus_window_rejected|focus_window_only_rejected)=true",
+        "(?:proof_marker_evidence_rejected|proof_marker_rejected|proof_marker_source_rejected)=true",
+        "(?:low_res_direct_texture_final_proof_rejected|lowResolutionDirectTextureFinalProofRejected|low_res_direct_texture_debug_draw_rejected)=true",
+        "(?:screen_space_shadow_decal_proof_rejected|screenSpaceShadowDecalProofRejected|screen_space_only_shadow_rejected)=true",
+        "(?:shader_denoise_overclaim_rejected|shaderDenoiseOverclaimRejected)=true"
+    )
+
+    switch ($CaptureMode) {
+        "Baseline" { return Get-RealRendererMilestone1CaptureIntent "PhysicalBaseline" }
+        "PhysicalBaseline" {
+            return [ordered]@{
+                rendererEnabled = $false
+                debugOverlay = "OFF"
+                compositeMode = "BASE_VANILLA_ONLY"
+                artifactRole = "real-renderer-milestone1-baseline"
+                sceneKind = "depth-gbuffer-shadowmap-traced-denoise"
+                sceneState = "same-camera-baseline-off"
+                sceneAction = "real-renderer-milestone1"
+                hideHudForScreenshot = $true
+                requiredPatterns = @($baselinePatterns) + @($scenePatterns)
+            }
+        }
+        "Enabled" { return Get-RealRendererMilestone1CaptureIntent "PhysicalEnabled" }
+        "ShadowMapSlice" { return Get-RealRendererMilestone1CaptureIntent "PhysicalEnabled" }
+        "PhysicalEnabled" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "real-renderer-milestone1-enabled"
+                sceneKind = "depth-gbuffer-shadowmap-traced-denoise"
+                sceneState = "same-camera-real-renderer-enabled"
+                sceneAction = "real-renderer-milestone1"
+                hideHudForScreenshot = $true
+                requiredPatterns = @($realRendererShadowMapConsumedPatterns)
+            }
+        }
+        "DepthShadowSlice" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "real-renderer-milestone1-depth-shadow-slice"
+                sceneKind = "depth-gbuffer-shadowmap-traced-denoise"
+                sceneState = "same-camera-real-renderer-depth-shadow-slice"
+                sceneAction = "real-renderer-milestone1"
+                hideHudForScreenshot = $true
+                requiredPatterns = @($realRendererDepthShadowSlicePatterns)
+            }
+        }
+        "FullProof" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "real-renderer-milestone1-full-proof"
+                sceneKind = "depth-gbuffer-shadowmap-traced-denoise"
+                sceneState = "same-camera-real-renderer-full-proof"
+                sceneAction = "real-renderer-milestone1"
+                hideHudForScreenshot = $true
+                requiredPatterns = @($realRendererFullProofPatterns)
+            }
+        }
+        "FinalPhysicalComposite" { return Get-RealRendererMilestone1CaptureIntent "PhysicalEnabled" }
+        "Debug" { return Get-RealRendererMilestone1CaptureIntent "PhysicalDebug" }
+        "PhysicalDebug" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "SHADER_DENOISE_OUTPUT_PROOF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "real-renderer-milestone1-debug"
+                sceneKind = "depth-gbuffer-shadowmap-traced-denoise"
+                sceneState = "same-camera-real-renderer-debug"
+                sceneAction = "real-renderer-milestone1"
+                hideHudForScreenshot = $false
+                requiredPatterns = @($realRendererShadowMapConsumedPatterns) + @(
+                    "(?:realRendererMilestone1Debug|real_renderer_milestone1_debug|debug\.overlay=SHADER_DENOISE_OUTPUT_PROOF|Overlay state: SHADER_DENOISE_OUTPUT_PROOF)=true|(?:debug\.overlay=SHADER_DENOISE_OUTPUT_PROOF|Overlay state: SHADER_DENOISE_OUTPUT_PROOF)"
+                )
+            }
+        }
+        "ShaderDenoiseOutput" { return Get-RealRendererMilestone1CaptureIntent "PhysicalDebug" }
+        default {
+            throw "Unsupported Real Renderer Milestone 1 capture mode: $CaptureMode"
         }
     }
 }
@@ -1265,6 +1572,12 @@ function Wait-LatestLogPattern {
                 continue
             }
             foreach ($pattern in $earlyFailurePatterns) {
+                if ($script:AllowNativeLoadFailureForCurrentVisualProof -and (
+                    $pattern -eq "Lucerna native library is not available yet" -or
+                    $pattern -eq "Application Control policy has blocked this file"
+                )) {
+                    continue
+                }
                 if ($candidateLog -match $pattern) {
                     throw "Lucerna visual proof is blocked before required markers were observed. Matched native-load failure marker '$pattern' in $path. For Round6NativeDiffuseGi, this means Windows Application Control/native DLL loading must be resolved before the controller can validate native diffuse-GI output-source replacement; do not count the temporary direct-light RGBA preview path as this proof."
                 }
@@ -1428,6 +1741,16 @@ public static class LucernaValidationKeyboard {
     Start-Sleep -Milliseconds 80
     [LucernaValidationKeyboard]::keybd_event(0x72, 0, $keyUp, [UIntPtr]::Zero)
     Start-Sleep -Milliseconds 120
+    Send-MinecraftKeys "{ESC}"
+    Start-Sleep -Milliseconds 500
+}
+
+function Ensure-MinecraftGameplayFocus {
+    Focus-MinecraftWindow | Out-Null
+    # Normalize capture state without toggling the pause menu:
+    # - In gameplay, T opens chat and Escape closes it.
+    # - In the pause menu, T is ignored and Escape returns to gameplay.
+    Send-MinecraftKeys "t"
     Send-MinecraftKeys "{ESC}"
     Start-Sleep -Milliseconds 500
 }
@@ -1691,35 +2014,33 @@ function Invoke-VisualLightingMilestone1SceneAction {
     Send-MinecraftChatCommand "/time set 6000"
     Send-MinecraftChatCommand "/effect clear @s"
 
-    if ($SetupScene) {
-        Send-MinecraftChatCommand "/difficulty peaceful"
-        Send-MinecraftChatCommand "/gamerule doMobSpawning false"
-        Send-MinecraftChatCommand "/kill @e[type=!player,distance=..96]"
-        Send-MinecraftChatCommand "/fill -14 180 -30 14 190 -3 minecraft:air"
-        Send-MinecraftChatCommand "/fill -14 179 -30 14 179 -3 minecraft:smooth_stone"
-        Send-MinecraftChatCommand "/fill -14 180 -3 14 187 -3 minecraft:smooth_stone"
-        Send-MinecraftChatCommand "/fill -12 180 -4 -7 184 -4 minecraft:red_concrete"
-        Send-MinecraftChatCommand "/fill -6 180 -4 -1 184 -4 minecraft:blue_concrete"
-        Send-MinecraftChatCommand "/fill 1 180 -4 6 184 -4 minecraft:lime_concrete"
-        Send-MinecraftChatCommand "/fill 7 180 -4 12 184 -4 minecraft:yellow_concrete"
-        Send-MinecraftChatCommand "/fill -12 179 -22 -7 179 -15 minecraft:red_concrete"
-        Send-MinecraftChatCommand "/fill -6 179 -24 -1 179 -17 minecraft:blue_concrete"
-        Send-MinecraftChatCommand "/fill 1 179 -24 6 179 -17 minecraft:lime_concrete"
-        Send-MinecraftChatCommand "/fill 7 179 -22 12 179 -15 minecraft:yellow_concrete"
-        Send-MinecraftChatCommand "/setblock -9 182 -5 minecraft:glowstone"
-        Send-MinecraftChatCommand "/setblock 0 182 -5 minecraft:sea_lantern"
-        Send-MinecraftChatCommand "/setblock 9 182 -5 minecraft:redstone_lamp[lit=true]"
-        Send-MinecraftChatCommand "/setblock -4 180 -12 minecraft:glowstone"
-        Send-MinecraftChatCommand "/setblock 4 180 -12 minecraft:sea_lantern"
-        Send-MinecraftChatCommand "/fill -4 180 -17 -4 184 -17 minecraft:oak_log"
-        Send-MinecraftChatCommand "/fill 4 180 -16 4 184 -16 minecraft:spruce_log"
-        Send-MinecraftChatCommand "/fill -8 184 -21 0 186 -13 minecraft:oak_leaves"
-        Send-MinecraftChatCommand "/fill 1 184 -21 9 186 -13 minecraft:spruce_leaves"
-        Send-MinecraftChatCommand "/fill -13 180 -13 -13 183 -13 minecraft:smooth_stone"
-        Send-MinecraftChatCommand "/fill 13 180 -13 13 183 -13 minecraft:smooth_stone"
-        Send-MinecraftChatCommand "/setblock -7 180 -10 minecraft:cobblestone_wall"
-        Send-MinecraftChatCommand "/setblock 7 180 -10 minecraft:cobblestone_wall"
-    }
+    Send-MinecraftChatCommand "/difficulty peaceful"
+    Send-MinecraftChatCommand "/gamerule doMobSpawning false"
+    Send-MinecraftChatCommand "/kill @e[type=!player,distance=..96]"
+    Send-MinecraftChatCommand "/fill -14 180 -30 14 190 -3 minecraft:air"
+    Send-MinecraftChatCommand "/fill -14 179 -30 14 179 -3 minecraft:smooth_stone"
+    Send-MinecraftChatCommand "/fill -14 180 -3 14 187 -3 minecraft:smooth_stone"
+    Send-MinecraftChatCommand "/fill -12 180 -4 -7 184 -4 minecraft:red_concrete"
+    Send-MinecraftChatCommand "/fill -6 180 -4 -1 184 -4 minecraft:blue_concrete"
+    Send-MinecraftChatCommand "/fill 1 180 -4 6 184 -4 minecraft:lime_concrete"
+    Send-MinecraftChatCommand "/fill 7 180 -4 12 184 -4 minecraft:yellow_concrete"
+    Send-MinecraftChatCommand "/fill -12 179 -22 -7 179 -15 minecraft:red_concrete"
+    Send-MinecraftChatCommand "/fill -6 179 -24 -1 179 -17 minecraft:blue_concrete"
+    Send-MinecraftChatCommand "/fill 1 179 -24 6 179 -17 minecraft:lime_concrete"
+    Send-MinecraftChatCommand "/fill 7 179 -22 12 179 -15 minecraft:yellow_concrete"
+    Send-MinecraftChatCommand "/setblock -9 182 -5 minecraft:glowstone"
+    Send-MinecraftChatCommand "/setblock 0 182 -5 minecraft:sea_lantern"
+    Send-MinecraftChatCommand "/setblock 9 182 -5 minecraft:redstone_lamp[lit=true]"
+    Send-MinecraftChatCommand "/setblock -4 180 -12 minecraft:glowstone"
+    Send-MinecraftChatCommand "/setblock 4 180 -12 minecraft:sea_lantern"
+    Send-MinecraftChatCommand "/fill -4 180 -17 -4 184 -17 minecraft:oak_log"
+    Send-MinecraftChatCommand "/fill 4 180 -16 4 184 -16 minecraft:spruce_log"
+    Send-MinecraftChatCommand "/fill -8 184 -21 0 186 -13 minecraft:oak_leaves"
+    Send-MinecraftChatCommand "/fill 1 184 -21 9 186 -13 minecraft:spruce_leaves"
+    Send-MinecraftChatCommand "/fill -13 180 -13 -13 183 -13 minecraft:smooth_stone"
+    Send-MinecraftChatCommand "/fill 13 180 -13 13 183 -13 minecraft:smooth_stone"
+    Send-MinecraftChatCommand "/setblock -7 180 -10 minecraft:cobblestone_wall"
+    Send-MinecraftChatCommand "/setblock 7 180 -10 minecraft:cobblestone_wall"
 
     Send-MinecraftChatCommand "/kill @e[type=!player,distance=..96]"
     Send-MinecraftChatCommand "/weather clear"
@@ -1727,6 +2048,53 @@ function Invoke-VisualLightingMilestone1SceneAction {
     Send-MinecraftChatCommand "/tp @s 0 181.55 -27 0 7"
     Start-Sleep -Seconds 3
     Add-LucernaControllerMarker $MarkerPath "visualLightingMilestone1.scene=dry-daytime-colored-emissive-bounce dryScene=true dayTime=true timeOfDay=6000 weather=clear sameCamera=true yaw=0 pitch=7 camera=0,181.55,-27 coloredEmissiveSources=minecraft:glowstone,minecraft:sea_lantern,minecraft:redstone_lamp coloredBouncePanels=minecraft:red_concrete,minecraft:blue_concrete,minecraft:lime_concrete,minecraft:yellow_concrete worldSpaceShadowCasters=oak_log,spruce_log,oak_leaves,spruce_leaves realWorldSpaceShadowRequired=true rejectFixedBlobs=true rejectFullscreenWash=true rejectLowResDebugMarkers=true noWaterCamera=true dryCamera=true"
+}
+
+function Invoke-RealRendererMilestone1SceneAction {
+    param(
+        [string] $SceneAction,
+        [string] $MarkerPath
+    )
+
+    if ($SceneAction -ne "real-renderer-milestone1") {
+        throw "Unsupported Real Renderer Milestone 1 scene action: $SceneAction"
+    }
+
+    Send-MinecraftChatCommand "/gamerule sendCommandFeedback false"
+    Send-MinecraftChatCommand "/gamerule doDaylightCycle false"
+    Send-MinecraftChatCommand "/gamerule doWeatherCycle false"
+    Send-MinecraftChatCommand "/gamemode creative"
+    Send-MinecraftChatCommand "/difficulty peaceful"
+    Send-MinecraftChatCommand "/gamerule doMobSpawning false"
+    Send-MinecraftChatCommand "/weather clear"
+    Send-MinecraftChatCommand "/time set 6000"
+    Send-MinecraftChatCommand "/effect clear @s"
+
+    Send-MinecraftChatCommand "/kill @e[type=!player,distance=..96]"
+    Send-MinecraftChatCommand "/fill -16 180 -34 16 191 -2 minecraft:air"
+    Send-MinecraftChatCommand "/fill -16 179 -34 16 179 -2 minecraft:smooth_stone"
+    Send-MinecraftChatCommand "/fill -16 180 -2 16 188 -2 minecraft:smooth_stone"
+    Send-MinecraftChatCommand "/fill -14 180 -3 -8 185 -3 minecraft:red_concrete"
+    Send-MinecraftChatCommand "/fill -7 180 -3 -1 185 -3 minecraft:blue_concrete"
+    Send-MinecraftChatCommand "/fill 1 180 -3 7 185 -3 minecraft:lime_concrete"
+    Send-MinecraftChatCommand "/fill 8 180 -3 14 185 -3 minecraft:yellow_concrete"
+    Send-MinecraftChatCommand "/setblock -11 183 -5 minecraft:glowstone"
+    Send-MinecraftChatCommand "/setblock 0 183 -5 minecraft:sea_lantern"
+    Send-MinecraftChatCommand "/setblock 11 183 -5 minecraft:redstone_lamp[lit=true]"
+    Send-MinecraftChatCommand "/fill -5 180 -14 -5 186 -14 minecraft:oak_log"
+    Send-MinecraftChatCommand "/fill 5 180 -14 5 186 -14 minecraft:spruce_log"
+    Send-MinecraftChatCommand "/fill -9 185 -20 -1 188 -12 minecraft:oak_leaves"
+    Send-MinecraftChatCommand "/fill 1 185 -20 9 188 -12 minecraft:spruce_leaves"
+    Send-MinecraftChatCommand "/fill -13 180 -25 -7 183 -25 minecraft:glass"
+    Send-MinecraftChatCommand "/fill 7 180 -25 13 181 -25 minecraft:water"
+    Send-MinecraftChatCommand "/fill -2 180 -18 2 183 -18 minecraft:copper_block"
+    Send-MinecraftChatCommand "/setblock -7 180 -11 minecraft:cobblestone_wall"
+    Send-MinecraftChatCommand "/setblock 7 180 -11 minecraft:cobblestone_wall"
+    Send-MinecraftChatCommand "/weather clear"
+    Send-MinecraftChatCommand "/time set 6000"
+    Send-MinecraftChatCommand "/tp @s 0 181.55 -30 0 6"
+    Start-Sleep -Seconds 3
+    Add-LucernaControllerMarker $MarkerPath "realRendererMilestone1.scene=depth-gbuffer-shadowmap-traced-denoise dryScene=true dayTime=true timeOfDay=6000 weather=clear sameCamera=true yaw=0 pitch=6 camera=0,181.55,-30 depthGBufferSurfaces=smooth_stone,concrete,glass,water,copper emissiveSources=minecraft:glowstone,minecraft:sea_lantern,minecraft:redstone_lamp shadowCasters=oak_log,spruce_log,oak_leaves,spruce_leaves realRendererMilestone1.fullProofRequirements=physicalGi,trueDepthGBufferSampling,realShadowMapOutput,tracedLightingConsumption,shaderGeneratedDenoise realRendererMilestone1.partialSlices=shadowMapSlice,depthShadowSlice realRendererMilestone1.depthShadowSliceRequirements=trueDepthGBufferSampling,realShadowMapOutput,shadowMapConsumption,tracedLightingOpenAllowed,shaderDenoiseOpenAllowed realRendererMilestone1.rejects=screenSpaceShadowDecals,lowResDirectTextureFinalProof,focusWindowProofMarker,metadataOnly,shaderDenoiseOverclaim,proofOverlays,menuChatScreenshots,wrongWindow,blankScreenshot"
 }
 
 function Invoke-Round9SceneAction {
@@ -1848,6 +2216,73 @@ function Invoke-Round10SceneAction {
     }
 }
 
+function Invoke-Round7ShaderDenoiseOutputSceneAction {
+    param(
+        [string] $SceneAction,
+        [string] $MarkerPath
+    )
+
+    Send-MinecraftChatCommand "/gamerule sendCommandFeedback false"
+    Send-MinecraftChatCommand "/gamerule doDaylightCycle false"
+    Send-MinecraftChatCommand "/gamerule doWeatherCycle false"
+    Send-MinecraftChatCommand "/gamemode creative"
+    Send-MinecraftChatCommand "/weather clear"
+    Send-MinecraftChatCommand "/time set 1000"
+    Send-MinecraftChatCommand "/effect clear @s"
+
+    function Build-Round7DryShaderScene {
+        Send-MinecraftChatCommand "/tp @s 0 181.55 -28 0 6"
+        Start-Sleep -Milliseconds 350
+        Send-MinecraftChatCommand "/fill -20 176 -32 20 190 8 minecraft:air"
+        Send-MinecraftChatCommand "/fill -18 179 -28 18 179 6 minecraft:smooth_stone"
+        Send-MinecraftChatCommand "/fill -17 180 -9 17 186 -9 minecraft:smooth_stone"
+        Send-MinecraftChatCommand "/fill -15 180 -8 -8 185 -8 minecraft:blue_concrete"
+        Send-MinecraftChatCommand "/fill -7 180 -8 -1 185 -8 minecraft:lime_concrete"
+        Send-MinecraftChatCommand "/fill 1 180 -8 7 185 -8 minecraft:red_concrete"
+        Send-MinecraftChatCommand "/fill 8 180 -8 15 185 -8 minecraft:yellow_concrete"
+        Send-MinecraftChatCommand "/fill -18 180 -18 -18 185 -10 minecraft:blue_concrete"
+        Send-MinecraftChatCommand "/fill 18 180 -18 18 185 -10 minecraft:red_concrete"
+        Send-MinecraftChatCommand "/fill -14 179 -16 -9 179 -11 minecraft:blue_concrete"
+        Send-MinecraftChatCommand "/fill -4 179 -16 4 179 -11 minecraft:lime_concrete"
+        Send-MinecraftChatCommand "/fill 9 179 -16 14 179 -11 minecraft:red_concrete"
+        Send-MinecraftChatCommand "/setblock -11 183 -12 minecraft:glowstone"
+        Send-MinecraftChatCommand "/setblock 0 183 -12 minecraft:sea_lantern"
+        Send-MinecraftChatCommand "/setblock 11 183 -12 minecraft:shroomlight"
+        Send-MinecraftChatCommand "/setblock -5 180 -18 minecraft:glowstone"
+        Send-MinecraftChatCommand "/setblock 5 180 -18 minecraft:sea_lantern"
+        Send-MinecraftChatCommand "/fill -13 180 -19 -13 182 -19 minecraft:cobblestone_wall"
+        Send-MinecraftChatCommand "/fill 13 180 -19 13 182 -19 minecraft:cobblestone_wall"
+        Send-MinecraftChatCommand "/time set 1000"
+        Send-MinecraftChatCommand "/weather clear"
+        Send-MinecraftChatCommand "/tp @s 0 181.55 -28 0 6"
+    }
+
+    switch ($SceneAction) {
+        "shader-denoise-output" {
+            if ($SetupScene) {
+                Send-MinecraftChatCommand "/kill @e[type=!player,distance=..96]"
+                Build-Round7DryShaderScene
+            }
+            Send-MinecraftChatCommand "/tp @s 0 181.55 -28 0 6"
+            Add-LucernaControllerMarker $MarkerPath "round7.shaderDenoiseOutput.scene=elevated-dry-colored-panel-emissive sameCamera=true dryDaytime=true timeOfDay=1000 camera=0,181.55,-28 yaw=0 pitch=6 shaderDenoiseOutputScene=true setupScene=$SetupScene coloredPanels=blue,lime,red,yellow emissiveSources=minecraft:glowstone,minecraft:sea_lantern,minecraft:shroomlight"
+        }
+        "traced-gi-consumption" {
+            if ($SetupScene) {
+                Send-MinecraftChatCommand "/kill @e[type=!player,distance=..96]"
+                Build-Round7DryShaderScene
+                Send-MinecraftChatCommand "/setblock 0 181 -15 minecraft:glowstone"
+                Send-MinecraftChatCommand "/setblock -7 181 -15 minecraft:sea_lantern"
+                Send-MinecraftChatCommand "/setblock 7 181 -15 minecraft:shroomlight"
+            }
+            Send-MinecraftChatCommand "/tp @s 0 181.55 -28 0 6"
+            Add-LucernaControllerMarker $MarkerPath "round7.tracedGiConsumption.scene=elevated-dry-colored-panel-emissive-source-receiver sameCamera=true dryDaytime=true timeOfDay=1000 camera=0,181.55,-28 yaw=0 pitch=6 emissiveReceivers=true materialDepthReceivers=true sourceBounceExpected=true setupScene=$SetupScene coloredPanels=blue,lime,red,yellow emissiveSources=minecraft:glowstone,minecraft:sea_lantern,minecraft:shroomlight"
+        }
+        default {
+            throw "Unsupported Round 7 shader-denoise output scene action: $SceneAction"
+        }
+    }
+}
+
 function Invoke-Round11SceneAction {
     param(
         [string] $SceneAction,
@@ -1911,6 +2346,54 @@ function Wait-NewScreenshot {
         [switch] $RequireNewAfter
     )
 
+    function Wait-ScreenshotFileReady {
+        param(
+            [System.IO.FileInfo] $Candidate,
+            [datetime] $ReadyDeadline
+        )
+
+        $lastLength = -1L
+        $stableSamples = 0
+        while ((Get-Date) -lt $ReadyDeadline) {
+            $current = Get-Item -LiteralPath $Candidate.FullName -ErrorAction SilentlyContinue
+            if ($null -ne $current -and $current.Length -gt 1024) {
+                $stream = $null
+                try {
+                    $stream = [System.IO.File]::Open($current.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                    $header = New-Object byte[] 8
+                    $read = $stream.Read($header, 0, $header.Length)
+                    $isPng = $read -eq 8 -and
+                            $header[0] -eq 0x89 -and $header[1] -eq 0x50 -and
+                            $header[2] -eq 0x4E -and $header[3] -eq 0x47 -and
+                            $header[4] -eq 0x0D -and $header[5] -eq 0x0A -and
+                            $header[6] -eq 0x1A -and $header[7] -eq 0x0A
+                    if ($isPng) {
+                        if ($current.Length -eq $lastLength) {
+                            $stableSamples++
+                        } else {
+                            $stableSamples = 0
+                            $lastLength = $current.Length
+                        }
+                        if ($stableSamples -ge 1) {
+                            return $current
+                        }
+                    }
+                } catch {
+                    $stableSamples = 0
+                } finally {
+                    if ($null -ne $stream) {
+                        $stream.Dispose()
+                    }
+                }
+            }
+            Start-Sleep -Milliseconds 200
+        }
+
+        $latest = Get-Item -LiteralPath $Candidate.FullName -ErrorAction SilentlyContinue
+        $length = if ($null -ne $latest) { $latest.Length } else { -1 }
+        throw "Screenshot file did not become a stable valid PNG before timeout: $($Candidate.FullName) length=$length"
+    }
+
     while ((Get-Date) -lt $Deadline) {
         $afterWithTolerance = $After.AddSeconds(-1)
         $candidate = Get-ChildItem -LiteralPath $ScreenshotDir -Filter "*.png" -ErrorAction SilentlyContinue |
@@ -1918,14 +2401,14 @@ function Wait-NewScreenshot {
                 Sort-Object LastWriteTime -Descending |
                 Select-Object -First 1
         if ($null -ne $candidate) {
-            return $candidate
+            return (Wait-ScreenshotFileReady $candidate $Deadline)
         }
         $timestampCandidate = Get-ChildItem -LiteralPath $ScreenshotDir -Filter "*.png" -ErrorAction SilentlyContinue |
                 Where-Object { $_.LastWriteTime -gt $afterWithTolerance } |
                 Sort-Object LastWriteTime -Descending |
                 Select-Object -First 1
         if ($null -ne $timestampCandidate) {
-            return $timestampCandidate
+            return (Wait-ScreenshotFileReady $timestampCandidate $Deadline)
         }
         Start-Sleep -Milliseconds 500
     }
@@ -1942,7 +2425,7 @@ function Wait-NewScreenshot {
         if ($RequireNewAfter) {
             throw "Timed out waiting for a screenshot created after the controller capture request. Refusing stale launch-window screenshot: $($launchCandidate.FullName)"
         }
-        return $launchCandidate
+        return (Wait-ScreenshotFileReady $launchCandidate (Get-Date).AddSeconds(10))
     }
     throw "Timed out waiting for a new Minecraft screenshot."
 }
@@ -2049,6 +2532,8 @@ $scenario = if ([string]::IsNullOrWhiteSpace($ScenarioName)) {
         "round56-physical-lighting-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round7FinalPhysicalComposite") {
         "round7-final-physical-composite-$($Mode.ToLowerInvariant())"
+    } elseif ($ValidationProfile -eq "Round7ShaderDenoiseOutput") {
+        "round7-shader-denoise-output-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round7DenoiseComposite") {
         "round7-denoise-composite-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round7CompositeStability") {
@@ -2057,6 +2542,8 @@ $scenario = if ([string]::IsNullOrWhiteSpace($ScenarioName)) {
         "round7-emissive-gi-surface-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "VisualLightingMilestone1") {
         "visual-lighting-milestone1-$($Mode.ToLowerInvariant())"
+    } elseif ($ValidationProfile -eq "RealRendererMilestone1") {
+        "real-renderer-milestone1-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round8AdaptiveHeatmaps") {
         "round8-adaptive-heatmap-$($Mode.ToLowerInvariant())"
     } elseif ($ValidationProfile -eq "Round9VirtualizedGeometry") {
@@ -2098,6 +2585,9 @@ $aliasPath = $null
 $createdAlias = $false
 $process = $null
 try {
+    Set-LucernaPreferredGraphicsBackend $root "vulkan"
+    $optionsTemporarilyChanged = $true
+
     $round7CaptureIntent = $null
     $round7StabilityCaptureIntent = $null
     $round7SurfaceCaptureIntent = $null
@@ -2107,7 +2597,9 @@ try {
     $round11CaptureIntent = $null
     $round56PhysicalLightingCaptureIntent = $null
     $round7FinalPhysicalCompositeCaptureIntent = $null
+    $round7ShaderDenoiseOutputCaptureIntent = $null
     $visualLightingMilestone1CaptureIntent = $null
+    $realRendererMilestone1CaptureIntent = $null
     if ($ValidationProfile -eq "Round56PhysicalLighting") {
         if ($ScreenshotSource -ne "InClient") {
             throw "Round56PhysicalLighting requires -ScreenshotSource InClient so capture provenance comes from the Minecraft client screenshot hook."
@@ -2130,6 +2622,17 @@ try {
             ([bool]$round7FinalPhysicalCompositeCaptureIntent.rendererEnabled) `
             ([string]$round7FinalPhysicalCompositeCaptureIntent.debugOverlay) `
             ([string]$round7FinalPhysicalCompositeCaptureIntent.compositeMode)
+    } elseif ($ValidationProfile -eq "Round7ShaderDenoiseOutput") {
+        if ($ScreenshotSource -ne "InClient") {
+            throw "Round7ShaderDenoiseOutput requires -ScreenshotSource InClient so capture provenance comes from the Minecraft client screenshot hook."
+        }
+        $RejectWindowScreenshotSource = $true
+        $round7ShaderDenoiseOutputCaptureIntent = Get-Round7ShaderDenoiseOutputCaptureIntent $Mode
+        Write-LucernaConfig `
+            $root `
+            ([bool]$round7ShaderDenoiseOutputCaptureIntent.rendererEnabled) `
+            ([string]$round7ShaderDenoiseOutputCaptureIntent.debugOverlay) `
+            ([string]$round7ShaderDenoiseOutputCaptureIntent.compositeMode)
     } elseif ($ValidationProfile -eq "VisualLightingMilestone1") {
         if ($ScreenshotSource -ne "InClient") {
             throw "VisualLightingMilestone1 requires -ScreenshotSource InClient so capture provenance comes from the Minecraft client screenshot hook."
@@ -2141,6 +2644,17 @@ try {
             ([bool]$visualLightingMilestone1CaptureIntent.rendererEnabled) `
             ([string]$visualLightingMilestone1CaptureIntent.debugOverlay) `
             ([string]$visualLightingMilestone1CaptureIntent.compositeMode)
+    } elseif ($ValidationProfile -eq "RealRendererMilestone1") {
+        if ($ScreenshotSource -ne "InClient") {
+            throw "RealRendererMilestone1 requires -ScreenshotSource InClient so capture provenance comes from the Minecraft client screenshot hook."
+        }
+        $RejectWindowScreenshotSource = $true
+        $realRendererMilestone1CaptureIntent = Get-RealRendererMilestone1CaptureIntent $Mode
+        Write-LucernaConfig `
+            $root `
+            ([bool]$realRendererMilestone1CaptureIntent.rendererEnabled) `
+            ([string]$realRendererMilestone1CaptureIntent.debugOverlay) `
+            ([string]$realRendererMilestone1CaptureIntent.compositeMode)
     } elseif ($ValidationProfile -eq "Round7DenoiseComposite") {
         $round7CaptureIntent = Get-Round7CaptureIntent $Mode
         Write-LucernaConfig `
@@ -2240,7 +2754,7 @@ try {
     $psi.UseShellExecute = $false
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
-    if ($ValidationProfile -eq "Round5DirectSurface" -or $ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round56PhysicalLighting" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round7FinalPhysicalComposite" -or $ValidationProfile -eq "VisualLightingMilestone1" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing" -or $ValidationProfile -eq "Round11Restir") {
+    if ($ValidationProfile -eq "Round5DirectSurface" -or $ValidationProfile -eq "Round6NativeDiffuseGiNoMarker" -or $ValidationProfile -eq "Round56PhysicalLighting" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round7FinalPhysicalComposite" -or $ValidationProfile -eq "Round7ShaderDenoiseOutput" -or $ValidationProfile -eq "VisualLightingMilestone1" -or $ValidationProfile -eq "RealRendererMilestone1" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing" -or $ValidationProfile -eq "Round11Restir") {
         $psi.Environment["LUCERNA_HIDE_PROOF_OVERLAYS"] = "true"
     }
     if ($ValidationProfile -eq "Round5DirectSurface") {
@@ -2261,6 +2775,24 @@ try {
         $psi.Environment["LUCERNA_FINAL_PHYSICAL_COMPOSITE_STRICT_PROOF"] = "true"
         $psi.Environment["LUCERNA_REQUIRE_SAME_CAMERA_PHYSICAL_COMPOSITE"] = "true"
     }
+    if ($ValidationProfile -eq "Round7ShaderDenoiseOutput") {
+        $round7ShaderDenoiseOutputRequiresTracedConsumption = $round7ShaderDenoiseOutputCaptureIntent.Contains("requiresTracedLightingConsumption") -and [bool]$round7ShaderDenoiseOutputCaptureIntent.requiresTracedLightingConsumption
+        $psi.Environment["LUCERNA_ROUND7_CAPTURE_MODE"] = [string]$round7ShaderDenoiseOutputCaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_ROUND7_SHADER_DENOISE_PROOF"] = "true"
+        $psi.Environment["LUCERNA_ROUND7_SHADER_DENOISE_ARTIFACT_ROLE"] = [string]$round7ShaderDenoiseOutputCaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_ROUND7_SHADER_DENOISE_INTENT"] = "true"
+        $psi.Environment["LUCERNA_ROUND7_SHADER_DENOISE_REQUIRE_OUTPUT_IMAGE"] = "true"
+        $psi.Environment["LUCERNA_REQUIRE_SHADER_GENERATED_DENOISE_OUTPUT"] = "true"
+        $psi.Environment["LUCERNA_REQUIRE_SHADER_DENOISE_OUTPUT_CONSUMED"] = "true"
+        $psi.Environment["LUCERNA_REQUIRE_SHADER_DENOISE_CPU_FALLBACK_INACTIVE"] = "true"
+        $psi.Environment["LUCERNA_REJECT_SHADER_DENOISE_OVERCLAIM"] = "true"
+        $psi.Environment["LUCERNA_ALLOW_PHYSICAL_GI_OPEN_FOR_SHADER_DENOISE_OUTPUT"] = "true"
+        $psi.Environment["LUCERNA_ALLOW_TRACED_LIGHTING_OPEN_FOR_SHADER_DENOISE_OUTPUT"] = if ($round7ShaderDenoiseOutputRequiresTracedConsumption) { "false" } else { "true" }
+        $psi.Environment["LUCERNA_REQUIRE_TRACED_LIGHTING_CONSUMPTION"] = if ($round7ShaderDenoiseOutputRequiresTracedConsumption) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REJECT_METADATA_ONLY_TRACING"] = if ($round7ShaderDenoiseOutputRequiresTracedConsumption) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REJECT_TRACED_LIGHTING_OVERCLAIM"] = if ($round7ShaderDenoiseOutputRequiresTracedConsumption) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REJECT_REAL_GPU_TRAVERSAL_OVERCLAIM"] = if ($round7ShaderDenoiseOutputRequiresTracedConsumption) { "true" } else { "false" }
+    }
     if ($ValidationProfile -eq "VisualLightingMilestone1") {
         $psi.Environment["LUCERNA_VISUAL_LIGHTING_MILESTONE"] = "1"
         $psi.Environment["LUCERNA_VISUAL_LIGHTING_MILESTONE1_CAPTURE_MODE"] = [string]$visualLightingMilestone1CaptureIntent.artifactRole
@@ -2278,6 +2810,36 @@ try {
         $psi.Environment["LUCERNA_FINAL_PHYSICAL_COMPOSITE_SCENE"] = [string]$visualLightingMilestone1CaptureIntent.sceneKind
         $psi.Environment["LUCERNA_FINAL_PHYSICAL_COMPOSITE_SCENE_STATE"] = [string]$visualLightingMilestone1CaptureIntent.sceneState
         $psi.Environment["LUCERNA_FINAL_PHYSICAL_COMPOSITE_STRICT_PROOF"] = "true"
+        if ([bool]$visualLightingMilestone1CaptureIntent.rendererEnabled) {
+            $psi.Environment["LUCERNA_ALLOW_JAVA_WORLDSPACE_VISUAL_FALLBACK"] = "true"
+        }
+    }
+    if ($ValidationProfile -eq "RealRendererMilestone1") {
+        $realRendererMilestone1FullProofIntent = [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-full-proof"
+        $realRendererMilestone1DepthShadowIntent = [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-depth-shadow-slice"
+        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE"] = "1"
+        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_CAPTURE_MODE"] = [string]$realRendererMilestone1CaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_ARTIFACT_ROLE"] = [string]$realRendererMilestone1CaptureIntent.artifactRole
+        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_SCENE"] = [string]$realRendererMilestone1CaptureIntent.sceneKind
+        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_SCENE_STATE"] = [string]$realRendererMilestone1CaptureIntent.sceneState
+        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_STRICT_PROOF"] = "true"
+        $psi.Environment["LUCERNA_REQUIRE_TRUE_DEPTH_GBUFFER_SAMPLING"] = if ($realRendererMilestone1FullProofIntent -or $realRendererMilestone1DepthShadowIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REQUIRE_REAL_SHADOW_MAP_OUTPUT"] = "true"
+        $psi.Environment["LUCERNA_REQUIRE_TRACED_LIGHTING_CONSUMPTION"] = if ($realRendererMilestone1FullProofIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REQUIRE_SHADER_DENOISE_OUTPUT_SEPARATION"] = "true"
+        $psi.Environment["LUCERNA_REQUIRE_PHYSICAL_GI_FULL_PROOF"] = if ($realRendererMilestone1FullProofIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REQUIRE_SHADER_GENERATED_DENOISE_OUTPUT"] = if ($realRendererMilestone1FullProofIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_ALLOW_TRACED_LIGHTING_OPEN_FOR_DEPTH_SHADOW_SLICE"] = if ($realRendererMilestone1DepthShadowIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_ALLOW_SHADER_DENOISE_OPEN_FOR_DEPTH_SHADOW_SLICE"] = if ($realRendererMilestone1DepthShadowIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REJECT_SCREEN_SPACE_SHADOW_DECAL_PROOF"] = "true"
+        $psi.Environment["LUCERNA_REJECT_LOW_RES_DIRECT_TEXTURE_FINAL_PROOF"] = "true"
+        $psi.Environment["LUCERNA_REJECT_METADATA_ONLY_RENDERER_PROOF"] = "true"
+        $psi.Environment["LUCERNA_REJECT_FOCUS_WINDOW_PROOF_MARKER_PATHS"] = "true"
+        $psi.Environment["LUCERNA_REJECT_SHADER_DENOISE_OVERCLAIM"] = "true"
+        $psi.Environment["LUCERNA_REJECT_PROOF_OVERLAYS"] = "true"
+        $psi.Environment["LUCERNA_REJECT_MENU_CHAT_SCREENSHOT_PROOF"] = "true"
+        $psi.Environment["LUCERNA_REQUIRE_CLEAN_IN_WORLD_SCREENSHOT"] = if ($realRendererMilestone1FullProofIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REQUIRE_SAME_RUN_FULL_RENDERER_PROOF"] = if ($realRendererMilestone1FullProofIntent) { "true" } else { "false" }
     }
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
         $psi.Environment["LUCERNA_ROUND7_CAPTURE_MODE"] = [string]$round7CaptureIntent.artifactRole
@@ -2347,9 +2909,9 @@ try {
             $psi.Environment["LUCERNA_ROUND11_TEMPORAL_CAPTURE_LABEL"] = $TemporalCaptureLabel
         }
     }
-    if ($ScreenshotSource -eq "InClient") {
+    if ($ScreenshotSource -eq "InClient" -and $ValidationProfile -ne "VisualLightingMilestone1") {
         $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_REQUEST"] = "true"
-        $screenshotDelayTicks = if ($ValidationProfile -eq "Round7CompositeStability" -or ($ValidationProfile -eq "Round11Restir" -and $round11CaptureIntent -and [string]$round11CaptureIntent.sceneKind -eq "round11-restir-temporal")) { "1400" } else { "180" }
+        $screenshotDelayTicks = if ($ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7ShaderDenoiseOutput" -or ($ValidationProfile -eq "Round11Restir" -and $round11CaptureIntent -and [string]$round11CaptureIntent.sceneKind -eq "round11-restir-temporal")) { "1400" } else { "180" }
         $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_DELAY_TICKS"] = $screenshotDelayTicks
     }
     $script:LucernaMinecraftLaunchStart = Get-Date
@@ -2381,11 +2943,19 @@ try {
         } else {
             @($round7FinalPhysicalCompositeCaptureIntent.requiredPatterns)
         }
+    } elseif ($ValidationProfile -eq "Round7ShaderDenoiseOutput") {
+        @($round7ShaderDenoiseOutputCaptureIntent.requiredPatterns)
     } elseif ($ValidationProfile -eq "VisualLightingMilestone1") {
         if ($PhysicalLightingRequiredLogPattern.Count -gt 0) {
             @($PhysicalLightingRequiredLogPattern)
         } else {
             @($visualLightingMilestone1CaptureIntent.requiredPatterns)
+        }
+    } elseif ($ValidationProfile -eq "RealRendererMilestone1") {
+        if ($PhysicalLightingRequiredLogPattern.Count -gt 0) {
+            @($PhysicalLightingRequiredLogPattern)
+        } else {
+            @($realRendererMilestone1CaptureIntent.requiredPatterns)
         }
     } elseif ($ValidationProfile -eq "Round7DenoiseComposite") {
         @($round7CaptureIntent.requiredPatterns)
@@ -2518,6 +3088,63 @@ try {
             "native error",
             "Vulkan error"
         ) + @($PhysicalLightingForbiddenLogPattern)
+    } elseif ($ValidationProfile -eq "Round7ShaderDenoiseOutput") {
+        $round7ShaderDenoiseOutputForbiddenPatterns = @(
+            "temporarySourceReady=true",
+            "temporaryDirectLightSubstitution=true",
+            "using the current direct-light RGBA payload as the temporary visible source",
+            "(?:round7\.shaderDenoise\.directLightValidationInput|directLightValidationInput|direct_light_validation_input)=true",
+            "native-direct-light-rgba8-validation-input",
+            "Lucerna public Mojang final composite: .*metadataOnlyPreview=true",
+            "Lucerna public Mojang final composite: .*metadata scaffold",
+            "Lucerna public Mojang final composite: .*no_render_output",
+            "Lucerna Round 6 diffuse GI preview composite: .*metadata-only",
+            "metadataOnlyEvidence=true",
+            "metadata_only_evidence=true",
+            "metadataOnlyActive=true",
+            "metadata_only_active=true",
+            "focusWindowOnly(?:Submitted)?=true",
+            "focus_window_only=true",
+            "round5-direct-proof",
+            "R5 visual proof",
+            "round6-gi-proof",
+            "R6 GI proof",
+            "proofMarkerSource=true",
+            "cpuOutputProofMarker=true",
+            "physicalGiTracingQuality=(?!open)",
+            "physical GI .*production-quality",
+            "physicallyCorrectGi=true",
+            "realPhysicalGiTracing=true",
+            "realGpuGiTracing=true",
+            "shaderDenoiseOverclaimPresent=true",
+            "shader_denoise_overclaim_present=true",
+            "shader_denoise_overclaim_rejected=false",
+            "shaderDenoiseOverclaimRejected=false",
+            "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=false[^`r`n]*(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=true",
+            "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=true[^`r`n]*(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=false",
+            "(?:round7\.shaderDenoise\.outputImageReady|shaderDenoiseOutputImageReady|shader_denoise_output_image_ready)=false[^`r`n]*(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=true",
+            "(?:round7\.shaderDenoise\.cpuReadbackFallbackActive|shaderDenoiseCpuReadbackFallbackActive|cpuReadbackDenoiseFallbackActive|cpu_readback_denoise_fallback_active|cpuReadbackFallbackActive)=true[^`r`n]*(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=true",
+            "invalid descriptor",
+            "VK_ERROR",
+            "VK_[A-Z_]*ERROR",
+            "Lucerna native error",
+            "native error",
+            "Vulkan error"
+        )
+        if ($round7ShaderDenoiseOutputCaptureIntent -and $round7ShaderDenoiseOutputCaptureIntent.Contains("requiresTracedLightingConsumption") -and [bool]$round7ShaderDenoiseOutputCaptureIntent.requiresTracedLightingConsumption) {
+            $round7ShaderDenoiseOutputForbiddenPatterns += @(
+                "(?:realTracedLightingConsumed|tracedLightingConsumed|traced_lighting_consumed|voxelRayTracedLightingConsumed|rayTracedLightingConsumed)=true[^`r`n]*(?:metadataOnlyTracing|metadata_only_tracing|tracedLightingMetadataOnly|traced_lighting_metadata_only)=true",
+                "(?:metadataOnlyTracing|metadata_only_tracing|tracedLightingMetadataOnly|traced_lighting_metadata_only)=true[^`r`n]*(?:realTracedLightingConsumed|tracedLightingConsumed|traced_lighting_consumed|voxelRayTracedLightingConsumed|rayTracedLightingConsumed)=true",
+                "(?:realGpuTraversalExecuted|real_gpu_traversal_executed|round10\.realGpuTraversalExecuted)=true(?![^`r`n]*(?:realGpuTraversalEvidence|real_gpu_traversal_evidence|gpuTraversalEvidence|gpu_traversal_evidence|gpuTraversalOutputReady|gpu_traversal_output_ready|hardwareRtExecutionProven|hardware_rt_execution_proven|traversalBackend=(?:gpu|vulkan-gpu|hardware-rt|hardware_rt|rt-hardware|compute)|traversal_backend=(?:gpu|vulkan-gpu|hardware-rt|hardware_rt|rt-hardware|compute)))",
+                "(?:realGpuTracedLightingConsumed|real_gpu_traced_lighting_consumed|traceRealGpuTraversalConsumed|trace_real_gpu_traversal_consumed)=true(?![^`r`n]*(?:realGpuTraversalEvidence|real_gpu_traversal_evidence|gpuTraversalEvidence|gpu_traversal_evidence|gpuTraversalOutputReady|gpu_traversal_output_ready|hardwareRtExecutionProven|hardware_rt_execution_proven|traversalBackend=(?:gpu|vulkan-gpu|hardware-rt|hardware_rt|rt-hardware|compute)|traversal_backend=(?:gpu|vulkan-gpu|hardware-rt|hardware_rt|rt-hardware|compute)))",
+                "round7\.shaderDenoiseOutput\.tracedLightingMayRemainFalse=true",
+                "tracedLightingNoOverclaim=false",
+                "traced_lighting_no_overclaim=false",
+                "tracedLightingOverclaimRejected=false",
+                "traced_lighting_overclaim_rejected=false"
+            )
+        }
+        $round7ShaderDenoiseOutputForbiddenPatterns + @($PhysicalLightingForbiddenLogPattern)
     } elseif ($ValidationProfile -eq "VisualLightingMilestone1") {
         @(
             "temporarySourceReady=true",
@@ -2545,7 +3172,7 @@ try {
             "fixed_blob_rejected=false",
             "rectangularWashoutRisk=true",
             "rectangular_washout_rejected=false",
-            "fullScreenWash=true",
+            "(?:^|[\s,{])fullScreenWash=true",
             "fullscreen_wash=true",
             "fullscreen-wash",
             "diagnostic-fullscreen",
@@ -2570,6 +3197,129 @@ try {
             "native error",
             "Vulkan error"
         ) + @($PhysicalLightingForbiddenLogPattern)
+    } elseif ($ValidationProfile -eq "RealRendererMilestone1") {
+        $realRendererForbiddenPatterns = @(
+            "temporarySourceReady=true",
+            "temporaryDirectLightSubstitution=true",
+            "using the current direct-light RGBA payload as the temporary visible source",
+            "Lucerna public Mojang final composite: .*metadataOnlyPreview=true",
+            "Lucerna public Mojang final composite: .*metadata scaffold",
+            "Lucerna public Mojang final composite: .*no_render_output",
+            "Lucerna Round 6 diffuse GI preview composite: .*metadata-only",
+            "metadataOnlyEvidence=true",
+            "metadata_only_evidence=true",
+            "metadataOnlyActive=true",
+            "metadata_only_active=true",
+            "metadataOnlyTracing=true",
+            "metadata_only_tracing=true",
+            "tracedLightingMetadataOnly=true",
+            "traced_lighting_metadata_only=true",
+            "gBufferDepthMetadataOnly=true",
+            "g_buffer_depth_metadata_only=true",
+            "depth_sampling_metadata_only=true",
+            "metadata_only_proof_rejected=false",
+            "metadata_preview_rejected=false",
+            "metadata_only_rejected=false",
+            "pauseMenuOpen=true",
+            "pause_menu_open=true",
+            "menuOpen=true",
+            "menu_open=true",
+            "screenOpen=true",
+            "screen_open=true",
+            "chatOpen=true",
+            "chat_open=true",
+            "chatScreenOpen=true",
+            "chat_screen_open=true",
+            "screenshotContainsMenu=true",
+            "screenshot_contains_menu=true",
+            "screenshotContainsChat=true",
+            "screenshot_contains_chat=true",
+            "menuScreenshot=true",
+            "menu_screenshot=true",
+            "chatScreenshot=true",
+            "chat_screenshot=true",
+            "round6-diffuse-gi-focus-window-additive",
+            "final-composite-direct-light-focus-window-additive",
+            "sourceIdentity=native-direct-light-rgba8",
+            "source_identity=native-direct-light-rgba8",
+            "focusWindowOnly(?:Submitted)?=true",
+            "focus_window_only=true",
+            "focus_window_capture_rejected=false",
+            "focus_window_rejected=false",
+            "focus_window_only_rejected=false",
+            "round5-direct-proof",
+            "R5 visual proof",
+            "round6-gi-proof",
+            "R6 GI proof",
+            "R7 proof",
+            "proofMarkerSource=true",
+            "cpuOutputProofMarker=true",
+            "proof_marker_evidence_rejected=false",
+            "proof_marker_rejected=false",
+            "proof_marker_source_rejected=false",
+            "screenSpaceShadowDecal=true",
+            "screen_space_shadow_decal=true",
+            "screenSpaceOnlyShadow(?:Decal|Proof)=true",
+            "screen_space_only_shadow(?:_decal|_proof)=true",
+            "screenSpacePenumbraShadow=true",
+            "terrainStepContactShadow=true",
+            "canopyOccluderShadow=true",
+            "waterCanopyReflectionShadow=true",
+            "screen-space-geometry-shaped-daytime-shadow-overlay",
+            "shadowBoundary=screen-space",
+            "decalBoundary=.*not-shadow-map",
+            "worldSpaceShadowDecal=true[^`r`n]*(?:realShadowMap|real_shadow_map)=false",
+            "screen_space_shadow_decal_proof_rejected=false",
+            "screenSpaceShadowDecalProofRejected=false",
+            "screen_space_only_shadow_rejected=false",
+            "lowResolutionDirectTextureDraw=true",
+            "low_resolution_direct_texture_draw=true",
+            "cpuDirectTextureComposite=true",
+            "cpu_direct_texture_composite=true",
+            "lowResDebugMarker=true",
+            "low_res_debug_marker=true",
+            "lowResolutionDebugMarker=true",
+            "low_resolution_debug_marker=true",
+            "debugMarkerOnly=true",
+            "debug_marker_only=true",
+            "diagnostic-fullscreen",
+            "fullscreen-warm-additive",
+            "low_res_direct_texture_final_proof_rejected=false",
+            "lowResolutionDirectTextureFinalProofRejected=false",
+            "low_res_direct_texture_debug_draw_rejected=false",
+            "shaderDenoiseOverclaimPresent=true",
+            "shader_denoise_overclaim_present=true",
+            "shaderDenoiseNoOverclaim=false",
+            "shader_denoise_no_overclaim=false",
+            "shader_denoise_overclaim_rejected=false",
+            "shaderDenoiseOverclaimRejected=false",
+            "proofOverlayVisible=true",
+            "proof_overlay_visible=true",
+            "proofOverlayForbidden=false",
+            "proof_overlay_forbidden=false",
+            "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=false[^`r`n]*(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=true",
+            "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=true[^`r`n]*(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=false",
+            "(?:round7\.shaderDenoise\.outputImageReady|shaderDenoiseOutputImageReady|shader_denoise_output_image_ready)=false[^`r`n]*(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=true",
+            "(?:round7\.shaderDenoise\.cpuReadbackFallbackActive|shaderDenoiseCpuReadbackFallbackActive|cpuReadbackDenoiseFallbackActive|cpu_readback_denoise_fallback_active)=true[^`r`n]*(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=true",
+            "invalid descriptor",
+            "VK_ERROR",
+            "VK_[A-Z_]*ERROR",
+            "Lucerna native error",
+            "native error",
+            "Vulkan error"
+        )
+        if ($realRendererMilestone1CaptureIntent -and [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-full-proof") {
+            $realRendererForbiddenPatterns += @(
+                "debugOverlay=SHADER_DENOISE_OUTPUT_PROOF",
+                "debug\.overlay=SHADER_DENOISE_OUTPUT_PROOF",
+                "Overlay state: SHADER_DENOISE_OUTPUT_PROOF",
+                "hideGuiBeforeScreenshot=false",
+                "fullRendererProofOverclaimPresent=true",
+                "full_renderer_proof_overclaim_present=true",
+                "realRendererMilestone1OverclaimPresent=true"
+            )
+        }
+        $realRendererForbiddenPatterns + @($PhysicalLightingForbiddenLogPattern)
     } elseif ($ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface") {
         @(
             "temporarySourceReady=true",
@@ -2714,11 +3464,33 @@ try {
         @()
     }
     $markerLog = $gradleOut
+    if ($ValidationProfile -eq "Round7ShaderDenoiseOutput") {
+        $round7ShaderDenoiseOutputRequiresTracedConsumption = $round7ShaderDenoiseOutputCaptureIntent.Contains("requiresTracedLightingConsumption") -and [bool]$round7ShaderDenoiseOutputCaptureIntent.requiresTracedLightingConsumption
+        if ($round7ShaderDenoiseOutputRequiresTracedConsumption) {
+            Add-LucernaControllerMarker $markerLog "round7.shaderDenoiseOutput.profile=true round7.tracedGiConsumption.profile=true inClientScreenshotRequired=true sodiumIrisVulkanRequired=true shaderGeneratedOutputImageRequired=true shaderGeneratedDenoiseOutputConsumedRequired=true rawGiCpuReadbackInputRequired=true rawDiffuseGiInputRequired=true directLightValidationInputForbidden=true nativeDirectLightValidationInputForbidden=true cpuFallbackRequired=false noOverclaimRequired=true tracedLightingConsumptionRequired=true tracedLightingMayRemainFalse=false metadataOnlyTracingForbidden=true proofOverlayForbidden=true focusWindowOnlyForbidden=true realGpuTraversalExecutedForbiddenWithoutEvidence=true"
+            Add-LucernaControllerMarker $markerLog "round7.tracedGiConsumption.strictRawDiffuseGiInput=true round7.tracedGiConsumption.requires=realTracedLightingConsumed,traceRays,traceHits,materialCoupledHits,depthCoupledHits,sourceBounces,shaderOutputImageReady,finalCompositeConsumption"
+        } else {
+            Add-LucernaControllerMarker $markerLog "round7.shaderDenoiseOutput.profile=true inClientScreenshotRequired=true sodiumIrisVulkanRequired=true shaderGeneratedOutputImageRequired=true shaderGeneratedDenoiseOutputConsumedRequired=true rawGiCpuReadbackInputRequired=true rawDiffuseGiInputRequired=true directLightValidationInputForbidden=true nativeDirectLightValidationInputForbidden=true cpuFallbackRequired=false noOverclaimRequired=true physicalGiMayRemainFalse=true tracedLightingMayRemainFalse=true"
+            Add-LucernaControllerMarker $markerLog "round7.shaderDenoiseOutput.physicalGiMayRemainFalse=true round7.shaderDenoiseOutput.tracedLightingMayRemainFalse=true physicalGiTracingQuality=open"
+        }
+    }
+    if ($ValidationProfile -eq "RealRendererMilestone1" -and $realRendererMilestone1CaptureIntent -and [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-full-proof") {
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.fullRendererProofProfile=true inClientScreenshotRequired=true sodiumIrisVulkanRequired=true sameInWorldRunRequired=true physicalGiRequired=true realShadowMapOutputRequired=true shadowMapConsumptionRequired=true trueDepthGBufferSamplingRequired=true tracedLightingConsumptionRequired=true shaderGeneratedDenoiseOutputRequired=true proofOverlayForbidden=true focusWindowOnlyForbidden=true lowResDebugSubstitutionForbidden=true metadataOnlyEvidenceForbidden=true overclaimForbidden=true menuScreenshotForbidden=true chatScreenshotForbidden=true"
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.cleanCaptureContract=inWorldOnly menuClosedRequired=true chatClosedRequired=true pauseMenuAvoidance=true proofOverlaysForbidden=true wrongWindowScreenshotForbidden=true blankScreenshotForbidden=true noWindowFallback=true"
+    }
     $earlyFailureLogPaths = @($gradleOut, $gradleErr)
+    $script:AllowNativeLoadFailureForCurrentVisualProof = (
+        $ValidationProfile -eq "VisualLightingMilestone1" -and
+        $visualLightingMilestone1CaptureIntent -and
+        [bool]$visualLightingMilestone1CaptureIntent.rendererEnabled
+    )
     Wait-LatestLogPattern $markerLog $commonPatterns $deadline $earlyFailureLogPaths $forbiddenPatterns
 
-    Invoke-OptionalSceneSetup
-    if ($SetupScene) {
+    $runGenericSceneSetup = $ValidationProfile -ne "Round7ShaderDenoiseOutput"
+    if ($runGenericSceneSetup) {
+        Invoke-OptionalSceneSetup
+    }
+    if ($SetupScene -and $runGenericSceneSetup) {
         Start-Sleep -Seconds 8
     }
 
@@ -2755,15 +3527,27 @@ try {
         Invoke-VisualLightingMilestone1SceneAction ([string]$visualLightingMilestone1CaptureIntent.sceneAction) $markerLog
         Start-Sleep -Seconds 3
     }
+    if ($ValidationProfile -eq "RealRendererMilestone1") {
+        Invoke-RealRendererMilestone1SceneAction ([string]$realRendererMilestone1CaptureIntent.sceneAction) $markerLog
+        Start-Sleep -Seconds 3
+    }
     if ($ValidationProfile -eq "Round7EmissiveGiSurface") {
         Invoke-Round7EmissiveGiSurfaceSceneAction $markerLog
         Start-Sleep -Seconds 5
+    }
+    if ($ValidationProfile -eq "Round7ShaderDenoiseOutput" -and $round7ShaderDenoiseOutputCaptureIntent.Contains("sceneAction")) {
+        Invoke-Round7ShaderDenoiseOutputSceneAction ([string]$round7ShaderDenoiseOutputCaptureIntent.sceneAction) $markerLog
+        if ($SetupScene) {
+            Start-Sleep -Seconds 5
+        } else {
+            Start-Sleep -Seconds 2
+        }
     }
 
     if ($enabledPatterns.Count -gt 0) {
         Wait-LatestLogPattern $markerLog $enabledPatterns $deadline $earlyFailureLogPaths $forbiddenPatterns
     }
-    if (($ValidationProfile -eq "Round56PhysicalLighting" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round7FinalPhysicalComposite" -or $ValidationProfile -eq "VisualLightingMilestone1" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing" -or $ValidationProfile -eq "Round11Restir") -and -not $SetupScene) {
+    if (($ValidationProfile -eq "Round5DirectSurface" -or $ValidationProfile -eq "Round56PhysicalLighting" -or $ValidationProfile -eq "Round7DenoiseComposite" -or $ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7EmissiveGiSurface" -or $ValidationProfile -eq "Round7FinalPhysicalComposite" -or $ValidationProfile -eq "Round7ShaderDenoiseOutput" -or $ValidationProfile -eq "VisualLightingMilestone1" -or $ValidationProfile -eq "RealRendererMilestone1" -or $ValidationProfile -eq "Round8AdaptiveHeatmaps" -or $ValidationProfile -eq "Round9VirtualizedGeometry" -or $ValidationProfile -eq "Round10HybridTracing" -or $ValidationProfile -eq "Round11Restir") -and -not $SetupScene) {
         Start-Sleep -Seconds 8
     }
 
@@ -2797,16 +3581,49 @@ try {
         Start-Sleep -Seconds 2
         Clear-MinecraftChat
     }
+    if ($ValidationProfile -eq "RealRendererMilestone1") {
+        Send-MinecraftChatCommand "/time set 6000"
+        Send-MinecraftChatCommand "/weather clear"
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.forceDaytimeBeforeScreenshot=true timeOfDay=6000 weather=clear"
+        Start-Sleep -Seconds 2
+        Send-MinecraftChatCommand "/tp @s 0 181.55 -30 0 6"
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.cameraLockedBeforeScreenshot=true dryCamera=true sameCamera=true yaw=0 pitch=6 camera=0,181.55,-30"
+        Start-Sleep -Seconds 2
+        Clear-MinecraftChat
+    }
+    if ($ValidationProfile -eq "Round7ShaderDenoiseOutput") {
+        Send-MinecraftChatCommand "/time set 1000"
+        Send-MinecraftChatCommand "/weather clear"
+        Send-MinecraftChatCommand "/tp @s 0 181.55 -28 0 6"
+        Add-LucernaControllerMarker $markerLog "round7.shaderDenoiseOutput.cameraLockedBeforeScreenshot=true dryCamera=true sameCamera=true yaw=0 pitch=6 camera=0,181.55,-28 timeOfDay=1000 weather=clear"
+        Start-Sleep -Seconds 2
+        Clear-MinecraftChat
+        Ensure-MinecraftGameplayFocus
+        Add-LucernaControllerMarker $markerLog "round7.shaderDenoiseOutput.preScreenshotGameplayCommand=false commandFeedbackLateMutationSkipped=true chatCleared=true pauseMenuAvoidance=true"
+        Start-Sleep -Seconds 1
+    } else {
+        Ensure-MinecraftGameplayFocus
+    }
     $hudHiddenForScreenshot = $false
     $hideHudForRound7FinalPhysical = (
         $ValidationProfile -eq "Round7FinalPhysicalComposite" -and
         $round7FinalPhysicalCompositeCaptureIntent -and
         [bool]$round7FinalPhysicalCompositeCaptureIntent.hideHudForScreenshot
     )
+    $hideHudForRound7ShaderDenoiseOutput = (
+        $ValidationProfile -eq "Round7ShaderDenoiseOutput" -and
+        $round7ShaderDenoiseOutputCaptureIntent -and
+        [bool]$round7ShaderDenoiseOutputCaptureIntent.hideHudForScreenshot
+    )
     $hideHudForVisualLightingMilestone1 = (
         $ValidationProfile -eq "VisualLightingMilestone1" -and
         $visualLightingMilestone1CaptureIntent -and
         [bool]$visualLightingMilestone1CaptureIntent.hideHudForScreenshot
+    )
+    $hideHudForRealRendererMilestone1 = (
+        $ValidationProfile -eq "RealRendererMilestone1" -and
+        $realRendererMilestone1CaptureIntent -and
+        [bool]$realRendererMilestone1CaptureIntent.hideHudForScreenshot
     )
     if ($ValidationProfile -eq "Round7EmissiveGiSurface" -and [bool]$round7SurfaceCaptureIntent.hideHudForScreenshot) {
         Add-LucernaControllerMarker $markerLog "round7.emissiveGiSurface.captureRole=$($round7SurfaceCaptureIntent.artifactRole) hideGuiBeforeScreenshot=true fixedWorldSurfaceRegion=true commandFeedback=false chatCleared=true"
@@ -2818,8 +3635,19 @@ try {
         Send-MinecraftKeys "{F1}"
         $hudHiddenForScreenshot = $true
         Start-Sleep -Seconds 3
+    } elseif ($hideHudForRound7ShaderDenoiseOutput) {
+        Add-LucernaControllerMarker $markerLog "round7.shaderDenoiseOutput.captureRole=$($round7ShaderDenoiseOutputCaptureIntent.artifactRole) hideGuiBeforeScreenshot=true inClientScreenshot=true commandFeedback=false chatCleared=true"
+        Send-MinecraftKeys "{F1}"
+        Add-LucernaControllerMarker $markerLog "round7.shaderDenoiseOutput.postHudToggleGameplayFocus=skipped pauseMenuAvoidance=true noEscapeAfterHudToggle=true"
+        $hudHiddenForScreenshot = $true
+        Start-Sleep -Seconds 3
     } elseif ($hideHudForVisualLightingMilestone1) {
         Add-LucernaControllerMarker $markerLog "visualLightingMilestone1.captureRole=$($visualLightingMilestone1CaptureIntent.artifactRole) hideGuiBeforeScreenshot=true dryDaytimeMilestoneScreenshot=true commandFeedback=false chatCleared=true"
+        Send-MinecraftKeys "{F1}"
+        $hudHiddenForScreenshot = $true
+        Start-Sleep -Seconds 3
+    } elseif ($hideHudForRealRendererMilestone1) {
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.captureRole=$($realRendererMilestone1CaptureIntent.artifactRole) hideGuiBeforeScreenshot=true realRendererMilestoneScreenshot=true commandFeedback=false chatCleared=true"
         Send-MinecraftKeys "{F1}"
         $hudHiddenForScreenshot = $true
         Start-Sleep -Seconds 3
@@ -2827,8 +3655,12 @@ try {
         Add-LucernaControllerMarker $markerLog "round7.emissiveGiSurface.captureRole=$($round7SurfaceCaptureIntent.artifactRole) hideGuiBeforeScreenshot=false fixedWorldSurfaceRegion=true commandFeedback=false chatCleared=true"
     } elseif ($ValidationProfile -eq "Round7FinalPhysicalComposite") {
         Add-LucernaControllerMarker $markerLog "round7.finalPhysicalComposite.captureRole=$($round7FinalPhysicalCompositeCaptureIntent.artifactRole) hideGuiBeforeScreenshot=false cinematicWorldScreenshot=true commandFeedback=false chatCleared=true"
+    } elseif ($ValidationProfile -eq "Round7ShaderDenoiseOutput") {
+        Add-LucernaControllerMarker $markerLog "round7.shaderDenoiseOutput.captureRole=$($round7ShaderDenoiseOutputCaptureIntent.artifactRole) hideGuiBeforeScreenshot=false inClientScreenshot=true commandFeedback=false chatCleared=true"
     } elseif ($ValidationProfile -eq "VisualLightingMilestone1") {
         Add-LucernaControllerMarker $markerLog "visualLightingMilestone1.captureRole=$($visualLightingMilestone1CaptureIntent.artifactRole) hideGuiBeforeScreenshot=false dryDaytimeMilestoneScreenshot=true commandFeedback=false chatCleared=true"
+    } elseif ($ValidationProfile -eq "RealRendererMilestone1") {
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.captureRole=$($realRendererMilestone1CaptureIntent.artifactRole) hideGuiBeforeScreenshot=false realRendererMilestoneScreenshot=true commandFeedback=false chatCleared=true"
     }
     $temporalRepeatEnabled = (
         (
@@ -2878,8 +3710,8 @@ try {
                 Add-LucernaControllerMarker $markerLog "$repeatMarkerPrefix.repeatCapture index=$($captureIndex + 1) count=$effectiveCaptureCount label=$captureLabelSafe intervalSeconds=$TemporalCaptureIntervalSeconds sceneState=$repeatSceneState"
             }
             Focus-MinecraftWindow | Out-Null
-            Send-MinecraftKeys "{ESC}"
-            Send-MinecraftKeys "{ESC}"
+            # Clear-MinecraftChat already returns the client to gameplay before this loop.
+            # Extra Escape toggles here can open the pause menu and contaminate F2 captures.
             Start-Sleep -Milliseconds 500
             $captureStartedAt = Get-Date
             $elapsedFromPreviousStartMs = if ($previousCaptureStartedAt) {
@@ -2954,8 +3786,8 @@ try {
             effectiveCount = $effectiveCaptureCount
             intervalSeconds = $TemporalCaptureIntervalSeconds
             label = $captureLabelSafe
-            sceneState = if ($ValidationProfile -eq "Round11Restir" -and $round11CaptureIntent) { [string]$round11CaptureIntent.sceneState } elseif ($ValidationProfile -eq "Round7CompositeStability" -and $round7StabilityCaptureIntent) { [string]$round7StabilityCaptureIntent.sceneState } else { "" }
-            artifactRole = if ($ValidationProfile -eq "Round11Restir" -and $round11CaptureIntent) { [string]$round11CaptureIntent.artifactRole } elseif ($ValidationProfile -eq "Round7CompositeStability" -and $round7StabilityCaptureIntent) { [string]$round7StabilityCaptureIntent.artifactRole } else { "" }
+            sceneState = if ($ValidationProfile -eq "Round11Restir" -and $round11CaptureIntent) { [string]$round11CaptureIntent.sceneState } elseif ($ValidationProfile -eq "Round7CompositeStability" -and $round7StabilityCaptureIntent) { [string]$round7StabilityCaptureIntent.sceneState } elseif ($ValidationProfile -eq "Round7ShaderDenoiseOutput" -and $round7ShaderDenoiseOutputCaptureIntent) { [string]$round7ShaderDenoiseOutputCaptureIntent.sceneState } else { "" }
+            artifactRole = if ($ValidationProfile -eq "Round11Restir" -and $round11CaptureIntent) { [string]$round11CaptureIntent.artifactRole } elseif ($ValidationProfile -eq "Round7CompositeStability" -and $round7StabilityCaptureIntent) { [string]$round7StabilityCaptureIntent.artifactRole } elseif ($ValidationProfile -eq "Round7ShaderDenoiseOutput" -and $round7ShaderDenoiseOutputCaptureIntent) { [string]$round7ShaderDenoiseOutputCaptureIntent.artifactRole } else { "" }
         }
         screenshots = @(for ($index = 0; $index -lt $capturedScreenshotPaths.Count; $index++) {
             [ordered]@{
@@ -3025,6 +3857,33 @@ try {
         Write-Host "finalPhysicalCompositeRequiredPatternCount=$($enabledPatterns.Count)"
         Write-Host "finalPhysicalCompositeForbiddenPatternCount=$($forbiddenPatterns.Count)"
     }
+    if ($round7ShaderDenoiseOutputCaptureIntent) {
+        $round7ShaderDenoiseOutputRequiresTracedConsumption = $round7ShaderDenoiseOutputCaptureIntent.Contains("requiresTracedLightingConsumption") -and [bool]$round7ShaderDenoiseOutputCaptureIntent.requiresTracedLightingConsumption
+        Write-Host "round7ShaderDenoiseOutputArtifactRole=$($round7ShaderDenoiseOutputCaptureIntent.artifactRole)"
+        Write-Host "round7ShaderDenoiseOutputScene=$($round7ShaderDenoiseOutputCaptureIntent.sceneKind)"
+        Write-Host "round7ShaderDenoiseOutputSceneState=$($round7ShaderDenoiseOutputCaptureIntent.sceneState)"
+        Write-Host "round7ShaderDenoiseOutputMode=$($round7ShaderDenoiseOutputCaptureIntent.compositeMode)"
+        Write-Host "round7ShaderDenoiseOutputDebugOverlay=$($round7ShaderDenoiseOutputCaptureIntent.debugOverlay)"
+        Write-Host "round7ShaderDenoiseOutputInClientScreenshotRequired=true"
+        Write-Host "round7ShaderDenoiseOutputSodiumIrisVulkanRequired=true"
+        Write-Host "round7ShaderDenoiseOutputImageGeneratedRequired=true"
+        Write-Host "round7ShaderDenoiseOutputImageReadyRequired=true"
+        Write-Host "round7ShaderDenoiseOutputConsumedRequired=true"
+        Write-Host "round7ShaderDenoiseOutputRawGiCpuReadbackInputRequired=true"
+        Write-Host "round7ShaderDenoiseOutputRawDiffuseGiInputRequired=true"
+        Write-Host "round7ShaderDenoiseOutputDirectLightValidationInputForbidden=true"
+        Write-Host "round7ShaderDenoiseOutputCpuFallbackInactiveRequired=true"
+        Write-Host "round7ShaderDenoiseOutputNoOverclaimRequired=true"
+        Write-Host "round7ShaderDenoiseOutputPhysicalGiMayRemainFalse=true"
+        Write-Host "round7ShaderDenoiseOutputTracedLightingMayRemainFalse=$(-not $round7ShaderDenoiseOutputRequiresTracedConsumption)"
+        Write-Host "round7ShaderDenoiseOutputTracedLightingConsumptionRequired=$round7ShaderDenoiseOutputRequiresTracedConsumption"
+        Write-Host "round7ShaderDenoiseOutputTraceCountersRequired=$round7ShaderDenoiseOutputRequiresTracedConsumption"
+        Write-Host "round7ShaderDenoiseOutputRejectMetadataOnlyTracing=$round7ShaderDenoiseOutputRequiresTracedConsumption"
+        Write-Host "round7ShaderDenoiseOutputRejectRealGpuTraversalOverclaim=$round7ShaderDenoiseOutputRequiresTracedConsumption"
+        Write-Host "round7ShaderDenoiseOutputHudHiddenForScreenshot=$hudHiddenForScreenshot"
+        Write-Host "round7ShaderDenoiseOutputRequiredPatternCount=$($enabledPatterns.Count)"
+        Write-Host "round7ShaderDenoiseOutputForbiddenPatternCount=$($forbiddenPatterns.Count)"
+    }
     if ($visualLightingMilestone1CaptureIntent) {
         Write-Host "visualLightingMilestone1ArtifactRole=$($visualLightingMilestone1CaptureIntent.artifactRole)"
         Write-Host "visualLightingMilestone1Scene=$($visualLightingMilestone1CaptureIntent.sceneKind)"
@@ -3037,9 +3896,43 @@ try {
         Write-Host "visualLightingMilestone1RejectFixedBlobs=true"
         Write-Host "visualLightingMilestone1RejectFullscreenWash=true"
         Write-Host "visualLightingMilestone1RejectLowResDebugMarkers=true"
+        Write-Host "visualLightingMilestone1JavaWorldSpaceFallbackAllowed=$script:AllowNativeLoadFailureForCurrentVisualProof"
         Write-Host "visualLightingMilestone1HudHiddenForScreenshot=$hudHiddenForScreenshot"
         Write-Host "visualLightingMilestone1RequiredPatternCount=$($enabledPatterns.Count)"
         Write-Host "visualLightingMilestone1ForbiddenPatternCount=$($forbiddenPatterns.Count)"
+    }
+    if ($realRendererMilestone1CaptureIntent) {
+        $realRendererMilestone1FullProof = $realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-full-proof"
+        $realRendererMilestone1DepthShadowSlice = $realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-depth-shadow-slice"
+        $realRendererMilestone1ProofScope = if ($realRendererMilestone1FullProof) { "full-renderer-proof" } elseif ($realRendererMilestone1DepthShadowSlice) { "depth-shadow-slice" } else { "shadow-map-consumption-slice" }
+        Write-Host "realRendererMilestone1ArtifactRole=$($realRendererMilestone1CaptureIntent.artifactRole)"
+        Write-Host "realRendererMilestone1Scene=$($realRendererMilestone1CaptureIntent.sceneKind)"
+        Write-Host "realRendererMilestone1SceneState=$($realRendererMilestone1CaptureIntent.sceneState)"
+        Write-Host "realRendererMilestone1Mode=$($realRendererMilestone1CaptureIntent.compositeMode)"
+        Write-Host "realRendererMilestone1DebugOverlay=$($realRendererMilestone1CaptureIntent.debugOverlay)"
+        Write-Host "realRendererMilestone1SameCameraRequired=true"
+        Write-Host "realRendererMilestone1ProofScope=$realRendererMilestone1ProofScope"
+        Write-Host "realRendererMilestone1TrueDepthGBufferRequired=$($realRendererMilestone1FullProof -or $realRendererMilestone1DepthShadowSlice)"
+        Write-Host "realRendererMilestone1DepthShadowSliceRequired=$realRendererMilestone1DepthShadowSlice"
+        Write-Host "realRendererMilestone1PhysicalGiRequired=$realRendererMilestone1FullProof"
+        Write-Host "realRendererMilestone1SameRunFullRendererProofRequired=$realRendererMilestone1FullProof"
+        Write-Host "realRendererMilestone1CleanInWorldScreenshotRequired=$realRendererMilestone1FullProof"
+        Write-Host "realRendererMilestone1NativeShadowMapGeneratedRequired=true"
+        Write-Host "realRendererMilestone1ShadowMapConsumptionRequired=true"
+        Write-Host "realRendererMilestone1TracedLightingConsumptionRequired=$realRendererMilestone1FullProof"
+        Write-Host "realRendererMilestone1ShaderDenoiseSeparationRequired=true"
+        Write-Host "realRendererMilestone1ShaderGeneratedDenoiseRequired=$realRendererMilestone1FullProof"
+        Write-Host "realRendererMilestone1RejectScreenSpaceShadowDecals=true"
+        Write-Host "realRendererMilestone1RejectLowResDirectTextureFinalProof=true"
+        Write-Host "realRendererMilestone1RejectFocusWindowProofMarkerPaths=true"
+        Write-Host "realRendererMilestone1RejectMetadataOnlyEvidence=true"
+        Write-Host "realRendererMilestone1RejectShaderDenoiseOverclaim=true"
+        Write-Host "realRendererMilestone1RejectProofOverlays=true"
+        Write-Host "realRendererMilestone1RejectMenuChatScreenshots=$realRendererMilestone1FullProof"
+        Write-Host "realRendererMilestone1RejectWrongWindowBlankScreenshots=true"
+        Write-Host "realRendererMilestone1HudHiddenForScreenshot=$hudHiddenForScreenshot"
+        Write-Host "realRendererMilestone1RequiredPatternCount=$($enabledPatterns.Count)"
+        Write-Host "realRendererMilestone1ForbiddenPatternCount=$($forbiddenPatterns.Count)"
     }
     if ($round8CaptureIntent) {
         Write-Host "round8ArtifactRole=$($round8CaptureIntent.artifactRole)"

@@ -1,5 +1,7 @@
 package net.lucerna.render.lighting.gi;
 
+import net.lucerna.render.tracing.TracedLightingConsumptionEvidence;
+
 import java.util.Objects;
 
 public record LowResDiffuseGiPlan(
@@ -10,6 +12,7 @@ public record LowResDiffuseGiPlan(
         GiRayBudgetAllocation rayBudget,
         DiffuseGiSourceSummary sourceSummary,
         DiffuseGiSceneInputSummary sceneInputSummary,
+        TracedLightingConsumptionEvidence traceConsumptionEvidence,
         DiffuseGiValidationReport validationReport
 ) {
     private static final float ROUND8_HIGH_VARIANCE_THRESHOLD = 0.50F;
@@ -29,6 +32,12 @@ public record LowResDiffuseGiPlan(
         }
         if (sceneInputSummary == null) {
             sceneInputSummary = DiffuseGiSceneInputSummary.from(sourceSummary, cacheSnapshot, cacheConfidence);
+        }
+        if (traceConsumptionEvidence == null) {
+            traceConsumptionEvidence = TracedLightingConsumptionEvidence.notConsumed(
+                    0L,
+                    "gi_plan_trace_consumption_evidence_not_supplied"
+            );
         }
         if (validationReport == null) {
             validationReport = DiffuseGiValidationReport.empty();
@@ -51,6 +60,7 @@ public record LowResDiffuseGiPlan(
                 rayBudget,
                 DiffuseGiSourceSummary.unavailable(),
                 null,
+                null,
                 validationReport
         );
     }
@@ -64,13 +74,30 @@ public record LowResDiffuseGiPlan(
                 this.rayBudget,
                 sourceSummary,
                 DiffuseGiSceneInputSummary.from(sourceSummary, this.cacheSnapshot, this.cacheConfidence),
+                this.traceConsumptionEvidence,
+                this.validationReport
+        );
+    }
+
+    public LowResDiffuseGiPlan withTraceConsumptionEvidence(
+            TracedLightingConsumptionEvidence traceConsumptionEvidence
+    ) {
+        return new LowResDiffuseGiPlan(
+                this.frameInput,
+                this.temporalInput,
+                this.cacheSnapshot,
+                this.cacheConfidence,
+                this.rayBudget,
+                this.sourceSummary,
+                this.sceneInputSummary,
+                traceConsumptionEvidence,
                 this.validationReport
         );
     }
 
     public boolean readyForScheduling() {
         return this.validationReport.valid()
-                && this.frameInput.hasRequiredInputs()
+                && this.frameInput.hasSchedulingInputs()
                 && this.rayBudget.tier().active();
     }
 
@@ -86,6 +113,18 @@ public record LowResDiffuseGiPlan(
         return this.cacheConfidence.usable(this.frameInput.settings().historyConfidenceFloor());
     }
 
+    public boolean tracedLightingConsumedByFinalGiSource() {
+        return this.traceConsumptionEvidence.finalGiSourceConsumed();
+    }
+
+    public boolean tracedLightingHasMaterialDepthSourceCoupling() {
+        return this.traceConsumptionEvidence.hasMaterialDepthSourceCoupling();
+    }
+
+    public boolean realGpuTracedLightingConsumedByFinalGiSource() {
+        return this.traceConsumptionEvidence.realGpuTraversalConsumed();
+    }
+
     public String compactLabel() {
         return "grid=" + this.frameInput.lowResolutionGrid().label()
                 + " temporal=" + this.temporalInput.stateLabel()
@@ -98,6 +137,7 @@ public record LowResDiffuseGiPlan(
                 + " " + this.varianceContributionLabel()
                 + " " + this.emissiveContributionLabel()
                 + " " + this.sceneInputContributionLabel()
+                + " " + this.traceConsumptionContributionLabel()
                 + " sources={" + this.sourceSummary.compactLabel() + "}";
     }
 
@@ -119,6 +159,7 @@ public record LowResDiffuseGiPlan(
                 + " " + this.varianceContributionLabel()
                 + " " + this.emissiveContributionLabel()
                 + " " + this.sceneInputContributionLabel()
+                + " " + this.traceConsumptionContributionLabel()
                 + " reason=" + this.rayBudget.reason();
     }
 
@@ -137,7 +178,8 @@ public record LowResDiffuseGiPlan(
         return this.sourceSummary.debugLabel()
                 + " sceneState=" + this.sceneState()
                 + " " + this.emissiveContributionLabel()
-                + " " + this.sceneInputContributionLabel();
+                + " " + this.sceneInputContributionLabel()
+                + " " + this.traceConsumptionContributionLabel();
     }
 
     private String sceneState() {
@@ -184,5 +226,9 @@ public record LowResDiffuseGiPlan(
 
     private String sceneInputContributionLabel() {
         return "sceneInputs={" + this.sceneInputSummary.compactLabel() + "}";
+    }
+
+    private String traceConsumptionContributionLabel() {
+        return "traceConsumption={" + this.traceConsumptionEvidence.compactLabel() + "}";
     }
 }
