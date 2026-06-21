@@ -63,11 +63,14 @@
 //   shaderDenoiseRealOutputPrerequisitesReady.
 // - Readiness must name each real-output handoff explicitly:
 //   shaderDenoiseOutputImageOwnedByShaderPass=true,
-//   shaderDenoiseOutputStorageWritable=true,
-//   shaderDenoiseOutputBarrierReady=true, and
+//   shaderDenoiseColorAttachmentWrite=true for the current public Mojang
+//   fragment route, shaderDenoiseOutputBarrierReady=true, and
 //   shaderDenoiseOutputFinalCompositeConsumable=true. These fields stay false
 //   for CPU/readback output, public Mojang visual draws, and candidate-only
 //   images even when those paths produce visible pixels.
+// - shaderDenoiseOutputStorageWritable=true is reserved for a future compute or
+//   storage-image route; the current fragment color-attachment output must keep
+//   shaderDenoiseComputeDispatch=false and shaderDenoiseStorageImageWrite=false.
 // - Candidate-only images must keep shaderDenoiseShaderGeneratedOutput=false and
 //   must not be consumed by final composite as a real shader-generated target.
 // - CPU/readback guided visual denoise should be reported as a fallback/source

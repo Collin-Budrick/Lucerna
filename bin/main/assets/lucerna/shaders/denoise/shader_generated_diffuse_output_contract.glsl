@@ -8,7 +8,10 @@
 //   consumes lucerna.lighting.diffuseGi raw-diffuse-gi-rgba8 only, and writes
 //   fragColor into the owned lucerna.denoise.diffuse color target. The
 //   raw-diffuse-gi-rgba8 payload may include traced raw-GI lighting evidence,
-//   but the fragment resource must keep that raw-GI source identity.
+//   but the fragment resource must keep that raw-GI source identity. Because
+//   the runtime .fsh has only InSampler today, its edge preservation is a
+//   raw-signal proxy using luminance, chroma, alpha/confidence, and local
+//   discontinuities; it must report depth/material/history samplers as pending.
 // - denoise/shader_generated_diffuse_output.frag.glsl declares the stricter
 //   sampler/output interface for the pending depth/normal/history and
 //   rejection-mask path. It is still not scheduled by the current placeholder
@@ -40,7 +43,9 @@
 //   by a public Mojang fragment pass rendering into the owned
 //   lucerna.denoise.diffuse color target. A later compute/storage-image variant
 //   may write lucerna.denoise.diffuse plus lucerna.denoise.rejectionMask as
-//   Lucerna-owned storage images.
+//   Lucerna-owned storage images. Runtime status must distinguish these:
+//   shaderDenoiseColorAttachmentWrite=true for the fragment path, while
+//   shaderDenoiseComputeDispatch=false and shaderDenoiseStorageImageWrite=false.
 //
 // Required readable inputs for the future dispatch:
 // - Raw GI: lucerna.lighting.diffuseGi as raw-diffuse-gi-rgba8,
@@ -67,7 +72,10 @@
 //   PreviousNormalRoughnessSampler, PreviousLightingSampler.
 // - Runtime Mojang .fsh variant uses the public Mojang InSampler binding for
 //   lucerna.lighting.diffuseGi raw-diffuse-gi-rgba8 and writes fragColor to
-//   lucerna.denoise.diffuse.
+//   lucerna.denoise.diffuse. Its current material/depth preservation mode is
+//   raw-signal-edge-fallback until scheduler bindings expose real
+//   CurrentDepthSampler, CurrentNormalRoughnessSampler, CurrentMaterialIdSampler,
+//   and history samplers to the public Mojang pass.
 // - Future compute variant may promote these to storage-image names:
 //   OutputDenoisedDiffuseImage and OutputRejectionMaskImage.
 // - Current fragment resource outputs are DenoisedDiffuseOutput and
@@ -101,6 +109,13 @@
 // - shaderDenoiseRealOutputPrerequisitesReady=true: owned render-target or
 //   storage write, barrier, and final-composite consumption contracts are all
 //   satisfied.
+// - Public Mojang fragment readiness may be claimed separately when
+//   shaderDenoiseFragmentPassPrepared=true,
+//   shaderDenoiseFragmentInputsCompleteForCurrentMojangPass=true,
+//   shaderDenoiseColorAttachmentWrite=true, and
+//   shaderDenoiseOutputFinalCompositeConsumable=true. That status must keep
+//   shaderDenoiseInputsCompleteForDispatch=false until the full
+//   depth/normal/material/history sampler set is bound.
 //
 // Non-execution boundary:
 // - Current placeholder resources may reference this contract, but no dispatch,

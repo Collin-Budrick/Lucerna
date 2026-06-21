@@ -17,7 +17,9 @@
 //
 // Keep this shader on the same one-sampler public Mojang contract used by the
 // existing preview pipelines. Depth/albedo/history inputs stay documented in
-// the stricter GLSL contract until the scheduler owns those bindings.
+// the stricter GLSL contract until the scheduler owns those bindings. Until
+// then, this pass treats raw-GI luminance, chroma, confidence, and local
+// discontinuities as a conservative material/depth-preservation proxy.
 //
 // Output contract:
 // - fragColor: denoised diffuse RGBA written into lucerna.denoise.diffuse.
@@ -43,11 +45,14 @@ in vec2 texCoord;
 out vec4 fragColor;
 
 const vec3 LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
-const float CENTER_WEIGHT = 1.45;
-const float AXIS_WEIGHT = 0.23;
-const float DIAGONAL_WEIGHT = 0.12;
-const float WIDE_WEIGHT = 0.055;
-const float RAW_CONTRAST_RESTORE = 0.42;
+const float CENTER_WEIGHT = 1.62;
+const float AXIS_WEIGHT = 0.22;
+const float DIAGONAL_WEIGHT = 0.105;
+const float WIDE_WEIGHT = 0.040;
+const float RAW_CONTRAST_RESTORE = 0.55;
+const float EDGE_CENTER_RESTORE = 0.68;
+const float MATERIAL_PROXY_REJECT = 0.74;
+const float HALO_SUPPRESS = 0.42;
 
 vec2 clampUv(vec2 uv) {
     return clamp(uv, vec2(0.0), vec2(1.0));
@@ -73,16 +78,22 @@ float chromaDistance(vec3 a, vec3 b) {
     return length(max(a, vec3(0.0)) - max(b, vec3(0.0)));
 }
 
+float materialProxyDistance(vec4 centerRaw, vec4 sampleRaw) {
+    float lumaDelta = abs(luminance(centerRaw.rgb) - luminance(sampleRaw.rgb));
+    float chromaDelta = chromaDistance(centerRaw.rgb, sampleRaw.rgb);
+    float confidenceDelta = abs(confidence(centerRaw) - confidence(sampleRaw));
+    float alphaDelta = abs(clamp(centerRaw.a, 0.0, 1.0) - clamp(sampleRaw.a, 0.0, 1.0));
+    return lumaDelta * 1.35 + chromaDelta * 0.72 + confidenceDelta * 0.40 + alphaDelta * 0.22;
+}
+
 float rawCueContinuity(vec4 centerRaw, vec4 sampleRaw) {
     float lumaDelta = abs(luminance(centerRaw.rgb) - luminance(sampleRaw.rgb));
     float chromaDelta = chromaDistance(centerRaw.rgb, sampleRaw.rgb);
-    return exp(-(lumaDelta * 5.0 + chromaDelta * 2.2));
+    return exp(-(lumaDelta * 6.4 + chromaDelta * 2.8));
 }
 
 float rawSignalContinuity(vec4 centerRaw, vec4 sampleRaw) {
-    float lumaDelta = abs(luminance(centerRaw.rgb) - luminance(sampleRaw.rgb));
-    float confidenceDelta = abs(confidence(centerRaw) - confidence(sampleRaw));
-    return exp(-(lumaDelta * 9.0 + confidenceDelta * 1.8));
+    return exp(-materialProxyDistance(centerRaw, sampleRaw) * 7.2);
 }
 
 float sampleWeight(vec2 sampleUv, vec4 centerRaw, float baseWeight) {
@@ -90,7 +101,9 @@ float sampleWeight(vec2 sampleUv, vec4 centerRaw, float baseWeight) {
     float cueWeight = rawCueContinuity(centerRaw, sampleRaw);
     float rawWeight = rawSignalContinuity(centerRaw, sampleRaw);
     float confidenceWeight = mix(0.25, 1.0, max(confidence(centerRaw), confidence(sampleRaw)));
-    return baseWeight * cueWeight * rawWeight * confidenceWeight;
+    float materialProxyEdge = smoothstep(0.022, 0.19, materialProxyDistance(centerRaw, sampleRaw));
+    float edgeStop = mix(1.0, 1.0 - MATERIAL_PROXY_REJECT, materialProxyEdge);
+    return baseWeight * cueWeight * rawWeight * confidenceWeight * edgeStop;
 }
 
 void accumulateSample(inout vec4 sum, inout float weightSum, vec2 sampleUv, vec4 centerRaw, float baseWeight) {
@@ -127,6 +140,36 @@ float localRawLumaRange(vec2 uv, vec4 centerRaw) {
     return max(maxLuma - minLuma, 0.0);
 }
 
+float localRawChromaRange(vec2 uv, vec4 centerRaw) {
+    vec2 texel = texelSize();
+    vec3 center = max(centerRaw.rgb, vec3(0.0));
+    vec3 left = max(rawDiffuseSample(uv - vec2(texel.x, 0.0)).rgb, vec3(0.0));
+    vec3 right = max(rawDiffuseSample(uv + vec2(texel.x, 0.0)).rgb, vec3(0.0));
+    vec3 up = max(rawDiffuseSample(uv - vec2(0.0, texel.y)).rgb, vec3(0.0));
+    vec3 down = max(rawDiffuseSample(uv + vec2(0.0, texel.y)).rgb, vec3(0.0));
+    return max(max(chromaDistance(center, left), chromaDistance(center, right)),
+            max(chromaDistance(center, up), chromaDistance(center, down)));
+}
+
+float localConfidenceRange(vec2 uv, vec4 centerRaw) {
+    vec2 texel = texelSize();
+    float center = confidence(centerRaw);
+    float left = confidence(rawDiffuseSample(uv - vec2(texel.x, 0.0)));
+    float right = confidence(rawDiffuseSample(uv + vec2(texel.x, 0.0)));
+    float up = confidence(rawDiffuseSample(uv - vec2(0.0, texel.y)));
+    float down = confidence(rawDiffuseSample(uv + vec2(0.0, texel.y)));
+    return max(max(abs(center - left), abs(center - right)),
+            max(abs(center - up), abs(center - down)));
+}
+
+float localMaterialDepthProxy(vec2 uv, vec4 centerRaw) {
+    float lumaRange = localRawLumaRange(uv, centerRaw);
+    float chromaRange = localRawChromaRange(uv, centerRaw);
+    float confidenceRange = localConfidenceRange(uv, centerRaw);
+    float structure = lumaRange * 2.15 + chromaRange * 0.94 + confidenceRange * 0.70;
+    return smoothstep(0.012, 0.15, structure);
+}
+
 vec3 localRawMean(vec2 uv, vec4 centerRaw) {
     vec2 texel = texelSize();
     vec3 sum = max(centerRaw.rgb, vec3(0.0)) * 2.0;
@@ -142,7 +185,8 @@ vec3 preserveRawLocalContrast(vec2 uv, vec4 centerRaw, vec3 filteredRgb) {
     vec3 meanRgb = localRawMean(uv, centerRaw);
     vec3 localDetail = centerRgb - meanRgb;
     float range = localRawLumaRange(uv, centerRaw);
-    float structure = smoothstep(0.002, 0.055, range);
+    float proxyBoundary = localMaterialDepthProxy(uv, centerRaw);
+    float structure = max(smoothstep(0.002, 0.055, range), proxyBoundary * 0.72);
     float support = smoothstep(0.001, 0.030, max(confidence(centerRaw), luminance(centerRgb)));
     vec3 contrastRgb = filteredRgb + localDetail * (RAW_CONTRAST_RESTORE * structure * support);
     return max(mix(filteredRgb, contrastRgb, structure * support), vec3(0.0));
@@ -168,7 +212,10 @@ vec4 denoiseDiffuse(vec2 uv, vec4 centerRaw) {
     accumulateSample(sum, weightSum, uv + vec2(0.0, texel.y * 2.0), centerRaw, WIDE_WEIGHT);
     accumulateSample(sum, weightSum, uv + vec2(0.0, -texel.y * 2.0), centerRaw, WIDE_WEIGHT);
 
-    return sum / max(weightSum, 0.0001);
+    vec4 filtered = sum / max(weightSum, 0.0001);
+    float proxyBoundary = localMaterialDepthProxy(uv, centerRaw);
+    float centerRestore = proxyBoundary * EDGE_CENTER_RESTORE;
+    return mix(filtered, vec4(max(centerRaw.rgb, vec3(0.0)), clamp(centerRaw.a, 0.0, 1.0)), centerRestore);
 }
 
 void main() {
@@ -178,10 +225,13 @@ void main() {
     vec4 filtered = denoiseDiffuse(uv, centerRaw);
     float signalGate = smoothstep(0.001, 0.035, max(confidence(centerRaw), luminance(filtered.rgb)));
     float surfaceGate = smoothstep(0.001, 0.020, max(confidence(centerRaw), luminance(centerRaw.rgb)));
-    float edgeRestore = smoothstep(0.003, 0.045, localSignalStructure(uv, centerRaw));
-    vec3 restored = mix(filtered.rgb, max(centerRaw.rgb, vec3(0.0)), edgeRestore * 0.72);
+    float proxyBoundary = localMaterialDepthProxy(uv, centerRaw);
+    float edgeRestore = max(smoothstep(0.003, 0.045, localSignalStructure(uv, centerRaw)), proxyBoundary * 0.86);
+    vec3 restored = mix(filtered.rgb, max(centerRaw.rgb, vec3(0.0)), clamp(edgeRestore * 0.76, 0.0, 0.92));
     vec3 contrastPreserved = preserveRawLocalContrast(uv, centerRaw, restored);
+    vec3 haloSuppressed = mix(contrastPreserved, min(contrastPreserved, max(centerRaw.rgb, vec3(0.0)) * 1.22 + vec3(0.001)),
+            smoothstep(0.035, 0.16, proxyBoundary + localRawChromaRange(uv, centerRaw)) * HALO_SUPPRESS);
     float outputAlpha = clamp(max(filtered.a, confidence(centerRaw)) * signalGate * surfaceGate, 0.0, 1.0);
 
-    fragColor = vec4(max(contrastPreserved, vec3(0.0)) * signalGate * surfaceGate, outputAlpha);
+    fragColor = vec4(max(haloSuppressed, vec3(0.0)) * signalGate * surfaceGate, outputAlpha);
 }

@@ -16,8 +16,10 @@
 // raw-GI substitutes for this path. The current scheduler still uses
 // denoise/noop.glsl until Java or native code binds these semantic inputs and
 // output attachments. If the
-// depth/normal/history bindings are unavailable, the pass must not be claimed
-// as real shader denoise output.
+// depth/normal/material/history bindings are unavailable, the pass may fall
+// back to raw-GI signal edge preservation, but telemetry must report the
+// missing bindings and must not claim the full geometry/history-guided denoise
+// contract.
 //
 // Required readable inputs:
 // - RawDiffuseGiSampler: lucerna.lighting.diffuseGi raw-diffuse-gi-rgba8 only,
@@ -57,6 +59,7 @@ uniform sampler2D PreviousLightingSampler;
 uniform float LucernaShaderDenoiseEnabled;
 uniform float LucernaDepthBindingReady;
 uniform float LucernaNormalBindingReady;
+uniform float LucernaMaterialBindingReady;
 uniform float LucernaHistoryBindingReady;
 uniform float LucernaVarianceClamp;
 uniform float LucernaHistoryBlend;
@@ -97,15 +100,45 @@ float varianceAt(vec2 uv) {
     return max(texture(RawGiVarianceSampler, clampUv(uv)).r, 0.0);
 }
 
+float depthPreservationWeight(float centerDepth, float sampleDepth) {
+    if (LucernaDepthBindingReady < 0.5) {
+        return 1.0;
+    }
+    return exp(-abs(centerDepth - sampleDepth) * 96.0);
+}
+
+float normalPreservationWeight(vec3 centerNormal, vec3 sampleNormal) {
+    if (LucernaNormalBindingReady < 0.5) {
+        return 1.0;
+    }
+    return smoothstep(0.35, 0.98, dot(centerNormal, sampleNormal));
+}
+
+float materialPreservationWeight(float centerMaterial, float sampleMaterial) {
+    if (LucernaMaterialBindingReady < 0.5) {
+        return 1.0;
+    }
+    return 1.0 - smoothstep(0.0005, 0.004, abs(centerMaterial - sampleMaterial));
+}
+
 float sampleWeight(vec2 centerUv, vec2 sampleUv, vec4 centerRaw, float centerDepth, vec3 centerNormal, float centerMaterial) {
     vec4 raw = texture(RawDiffuseGiSampler, clampUv(sampleUv));
-    float sampleDepth = depthAt(sampleUv);
-    vec3 sampleNormal = decodedNormal(CurrentNormalRoughnessSampler, sampleUv);
-    float sampleMaterial = materialIdAt(sampleUv);
+    float sampleDepth = centerDepth;
+    if (LucernaDepthBindingReady >= 0.5) {
+        sampleDepth = depthAt(sampleUv);
+    }
+    vec3 sampleNormal = centerNormal;
+    if (LucernaNormalBindingReady >= 0.5) {
+        sampleNormal = decodedNormal(CurrentNormalRoughnessSampler, sampleUv);
+    }
+    float sampleMaterial = centerMaterial;
+    if (LucernaMaterialBindingReady >= 0.5) {
+        sampleMaterial = materialIdAt(sampleUv);
+    }
 
-    float depthWeight = exp(-abs(centerDepth - sampleDepth) * 96.0);
-    float normalWeight = smoothstep(0.35, 0.98, dot(centerNormal, sampleNormal));
-    float materialWeight = 1.0 - smoothstep(0.0005, 0.004, abs(centerMaterial - sampleMaterial));
+    float depthWeight = depthPreservationWeight(centerDepth, sampleDepth);
+    float normalWeight = normalPreservationWeight(centerNormal, sampleNormal);
+    float materialWeight = materialPreservationWeight(centerMaterial, sampleMaterial);
     float lumaWeight = exp(-abs(luminance(centerRaw.rgb) - luminance(raw.rgb)) * 9.0);
     float confidenceWeight = mix(0.35, 1.0, confidenceAt(sampleUv));
     float varianceWeight = 1.0 / (1.0 + varianceAt(sampleUv) * max(LucernaVarianceClamp, 0.25));
@@ -196,21 +229,33 @@ float historyAcceptance(vec2 uv, float centerDepth, vec3 centerNormal) {
 void main() {
     vec4 centerRaw = texture(RawDiffuseGiSampler, clampUv(texCoord));
 
-    if (LucernaShaderDenoiseEnabled <= 0.0 || LucernaDepthBindingReady < 0.5 || LucernaNormalBindingReady < 0.5) {
+    if (LucernaShaderDenoiseEnabled <= 0.0) {
         DenoisedDiffuseOutput = vec4(0.0);
         RejectionMaskOutput = vec4(1.0, 0.0, 0.0, 1.0);
         return;
     }
 
-    float centerDepth = depthAt(texCoord);
-    vec3 centerNormal = decodedNormal(CurrentNormalRoughnessSampler, texCoord);
-    float centerMaterial = materialIdAt(texCoord);
+    float centerDepth = 1.0;
+    if (LucernaDepthBindingReady >= 0.5) {
+        centerDepth = depthAt(texCoord);
+    }
+    vec3 centerNormal = vec3(0.0, 0.0, 1.0);
+    if (LucernaNormalBindingReady >= 0.5) {
+        centerNormal = decodedNormal(CurrentNormalRoughnessSampler, texCoord);
+    }
+    float centerMaterial = 0.0;
+    if (LucernaMaterialBindingReady >= 0.5) {
+        centerMaterial = materialIdAt(texCoord);
+    }
     float rejectedWeight = 0.0;
     vec4 filtered = spatialDenoise(texCoord, centerRaw, centerDepth, centerNormal, centerMaterial, rejectedWeight);
 
     float historyGate = historyAcceptance(texCoord, centerDepth, centerNormal);
-    vec2 historyUv = clampUv(texCoord - texture(CurrentMotionHistorySampler, clampUv(texCoord)).xy);
-    vec4 previousLighting = texture(PreviousLightingSampler, historyUv);
+    vec4 previousLighting = vec4(0.0);
+    if (LucernaHistoryBindingReady >= 0.5) {
+        vec2 historyUv = clampUv(texCoord - texture(CurrentMotionHistorySampler, clampUv(texCoord)).xy);
+        previousLighting = texture(PreviousLightingSampler, historyUv);
+    }
     float historyBlend = clamp(LucernaHistoryBlend, 0.0, 0.92) * historyGate;
 
     vec3 denoisedRgb = mix(filtered.rgb, max(previousLighting.rgb, vec3(0.0)), historyBlend);
@@ -218,7 +263,12 @@ void main() {
     float confidence = confidenceAt(texCoord);
     float variance = varianceAt(texCoord);
     float varianceReject = smoothstep(0.025, 0.42, variance);
-    float rejection = clamp(max(rejectedWeight, 1.0 - historyGate) * 0.65 + varianceReject * 0.35, 0.0, 1.0);
+    float geometryGuidance = min(min(clamp(LucernaDepthBindingReady, 0.0, 1.0),
+            clamp(LucernaNormalBindingReady, 0.0, 1.0)), clamp(LucernaMaterialBindingReady, 0.0, 1.0));
+    float missingGuidanceReject = (1.0 - geometryGuidance) * 0.18;
+    float rejection = clamp(max(rejectedWeight, 1.0 - historyGate) * 0.62
+            + varianceReject * 0.30
+            + missingGuidanceReject, 0.0, 1.0);
 
     DenoisedDiffuseOutput = vec4(max(denoisedRgb, vec3(0.0)), clamp(max(filtered.a, confidence), 0.0, 1.0));
     RejectionMaskOutput = vec4(rejection, clamp(variance, 0.0, 1.0), confidence, 1.0);

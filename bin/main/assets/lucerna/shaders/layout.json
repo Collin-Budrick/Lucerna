@@ -165,7 +165,11 @@
         "resource": "denoise/shader_generated_diffuse_output.frag.glsl",
         "runtimeMojangFragmentResource": "denoise/shader_generated_diffuse_output.fsh",
         "ownedRenderTarget": "lucerna.denoise.diffuse",
-        "currentExecutionState": "mojang_fragment_resource_present_pending_sampler_and_owned_target_bindings"
+        "executionKind": "public_mojang_fragment_color_attachment",
+        "computeDispatch": false,
+        "storageImageWrite": false,
+        "currentInputPreservationMode": "raw_signal_edge_fallback_until_depth_normal_material_history_samplers_are_bound",
+        "currentExecutionState": "mojang_fragment_color_attachment_resource_present_pending_full_depth_material_history_bindings"
       },
       {
         "key": "overlay.debug_overlay",
@@ -555,7 +559,12 @@
           "contractResource": "denoise/shader_generated_diffuse_output_contract.glsl",
           "generatedBy": "public Mojang fragment pass into an owned Lucerna denoise output texture",
           "ownedRenderTarget": "lucerna.denoise.diffuse",
+          "executionKind": "fragment_color_attachment",
+          "currentOutputWriteKind": "public Mojang fragment color attachment",
           "notComputeDenoiseYet": true,
+          "computeDispatch": false,
+          "storageImageWrite": false,
+          "currentMaterialDepthPreservation": "runtime .fsh uses raw luminance/chroma/confidence edge fallback; strict .frag.glsl preserves depth/normal/material when those samplers are bound",
           "requiredInputs": [
             "raw-diffuse-gi-rgba8 from lucerna.lighting.diffuseGi",
             "public Mojang InSampler raw-diffuse-gi-rgba8",
@@ -564,6 +573,9 @@
           ],
           "runtimeSamplerBindings": [
             "InSampler -> lucerna.lighting.diffuseGi raw-diffuse-gi-rgba8, not lucerna.lighting.direct or native direct-light validation RGBA"
+          ],
+          "currentRuntimeSamplerBindings": [
+            "InSampler only; depth, normal, material, variance, and history samplers are pending scheduler work for the public Mojang runtime path"
           ],
           "requiredSamplerBindings": [
             "RawDiffuseGiSampler -> lucerna.lighting.diffuseGi raw-diffuse-gi-rgba8, not lucerna.lighting.direct or native direct-light validation RGBA",
@@ -590,11 +602,15 @@
           "documentationMarkers": [
             "tracedRawGiInputConsumed",
             "shaderDenoiseInputKind=raw-diffuse-gi-rgba8",
+            "shaderDenoiseColorAttachmentWrite=true",
+            "shaderDenoiseComputeDispatch=false",
+            "shaderDenoiseStorageImageWrite=false",
+            "shaderDenoiseDepthMaterialInputsBound=false",
             "directLightValidationInput=false",
             "diagnosticDirectLightValidationFallback=false"
           ],
           "physicalGiBoundary": "Traced raw-GI input consumption means this pass sampled raw-diffuse-gi-rgba8 that may carry upstream traced lighting evidence; physical GI quality still requires separate traced lighting evidence and controller validation.",
-          "currentExecutionState": "mojang_fsh_resource_present_pending_scheduler_sampler_and_owned_target_bindings"
+          "currentExecutionState": "mojang_fsh_fragment_color_attachment_path_present_pending_full_depth_material_history_bindings"
         }
       ],
       "shaderGeneratedOutputReadiness": {
@@ -602,15 +618,31 @@
         "runtimeMojangFragmentResource": "denoise/shader_generated_diffuse_output.fsh",
         "contractResource": "denoise/shader_generated_diffuse_output_contract.glsl",
         "ownedRenderTarget": "lucerna.denoise.diffuse",
-        "requiredTrueBeforeClaim": [
+        "currentFragmentOutputClaim": [
+          "shaderDenoiseFragmentPassPrepared",
+          "shaderDenoiseFragmentInputsCompleteForCurrentMojangPass",
+          "shaderDenoiseColorAttachmentWrite",
+          "shaderDenoiseOutputFinalCompositeConsumable"
+        ],
+        "requiredTrueBeforeFullDenoiseClaim": [
           "shaderDenoiseInputPrerequisitesReady",
           "shaderDenoiseOutputImageReadinessReady",
           "shaderDenoiseTemporalHistoryReady",
           "shaderDenoiseRealOutputPrerequisitesReady",
           "shaderDenoiseOutputImageOwnedByShaderPass",
-          "shaderDenoiseOutputStorageWritable",
           "shaderDenoiseOutputBarrierReady",
           "shaderDenoiseOutputFinalCompositeConsumable"
+        ],
+        "requiredTrueBeforeComputeStorageClaim": [
+          "shaderDenoiseComputeDispatch",
+          "shaderDenoiseOutputStorageWritable",
+          "shaderDenoiseStorageImageWrite",
+          "shaderDenoiseOutputBarrierReady"
+        ],
+        "requiredFalseForCurrentFragmentPath": [
+          "shaderDenoiseComputeDispatch",
+          "shaderDenoiseStorageImageWrite",
+          "shaderDenoiseOutputStorageWritable"
         ],
         "requiredFalseWhileContractOnly": [
           "shaderDenoiseOutputImageReady",
@@ -618,7 +650,7 @@
           "realDenoiseShaderOutput",
           "realShaderDenoiseOutputReady"
         ],
-        "boundary": "The public Mojang .fsh resource can generate denoised diffuse RGBA into the owned lucerna.denoise.diffuse color target once InSampler is bound to lucerna.lighting.diffuseGi raw-diffuse-gi-rgba8 and the target is bound. Direct-light validation input is not an accepted substitute. tracedRawGiInputConsumed may be reported only when the raw-GI payload carries upstream traced lighting evidence; physical GI quality still requires separate traced evidence. The .frag.glsl resource remains the stricter dual-output contract for rejection-mask work. Current runtime must still report pending scheduler/output bindings until shader execution writes the owned target and publishes the color-attachment handoff; this is public Mojang fragment output, not compute denoise or a storage-image write."
+        "boundary": "The public Mojang .fsh resource can generate denoised diffuse RGBA into the owned lucerna.denoise.diffuse color target once InSampler is bound to lucerna.lighting.diffuseGi raw-diffuse-gi-rgba8 and the target is bound. Direct-light validation input is not an accepted substitute. tracedRawGiInputConsumed may be reported only when the raw-GI payload carries upstream traced lighting evidence; physical GI quality still requires separate traced evidence. The runtime .fsh is a single-sampler fragment color-attachment path with raw-signal edge/material-depth fallback; the .frag.glsl resource remains the stricter depth/normal/material/history dual-output contract for rejection-mask work. Current runtime must report shaderDenoiseColorAttachmentWrite=true, shaderDenoiseComputeDispatch=false, shaderDenoiseStorageImageWrite=false, and pending full depth/material/history inputs unless those samplers are actually bound. This is public Mojang fragment output, not compute denoise or a storage-image write."
       },
       "round5DirectResolveMode": {
         "modeKey": "direct_only_or_final_direct",
@@ -1733,7 +1765,7 @@
         "shaderGeneratedOutputFragment": "denoise/shader_generated_diffuse_output.frag.glsl",
         "runtimeMojangOutputFragment": "denoise/shader_generated_diffuse_output.fsh",
         "publicMojangVisualShaping": "core/round7_denoised_gi_visual.fsh",
-        "executionBoundary": "Only denoise/noop.glsl is the current compute placeholder. The public Mojang denoise output fragment is not execution proof until a scheduler binds raw-diffuse-gi-rgba8 from lucerna.lighting.diffuseGi through InSampler, rejects direct-light validation input as a substitute, and binds lucerna.denoise.diffuse as the owned draw target. tracedRawGiInputConsumed requires upstream traced raw-GI evidence and still does not prove physical GI quality. The stricter .frag.glsl contract remains pending for normal/material/history and rejection-mask output bindings."
+        "executionBoundary": "Only denoise/noop.glsl is the current compute placeholder. The public Mojang denoise output fragment is a separate color-attachment route: it can count only after the scheduler binds raw-diffuse-gi-rgba8 from lucerna.lighting.diffuseGi through InSampler, rejects direct-light validation input as a substitute, binds lucerna.denoise.diffuse as the owned draw target, and publishes the color-attachment handoff. Its current runtime material/depth preservation is a raw-signal edge fallback. tracedRawGiInputConsumed requires upstream traced raw-GI evidence and still does not prove physical GI quality. The stricter .frag.glsl contract remains pending for normal/material/history and rejection-mask output bindings."
       },
       "descriptorSets": [
         "frame",
@@ -1812,6 +1844,10 @@
           "tracedRawGiInputConsumed",
           "shaderDenoiseInputKind=raw-diffuse-gi-rgba8",
           "rawGiInputReady=true",
+          "shaderDenoiseColorAttachmentWrite=true",
+          "shaderDenoiseComputeDispatch=false",
+          "shaderDenoiseStorageImageWrite=false",
+          "shaderDenoiseDepthMaterialInputsBound=false",
           "directLightValidationInput=false",
           "diagnosticDirectLightValidationFallback=false"
         ],
@@ -1820,8 +1856,8 @@
           "public-mojang-final-visual-shaping",
           "shader-generated-denoise-output-image"
         ],
-        "currentExecutionState": "mojang_fsh_resource_present_pending_scheduler_sampler_and_owned_target_bindings",
-        "noOverclaim": "Do not set shaderDenoiseOutputImageReady, shaderDenoiseShaderGeneratedOutput, realDenoiseShaderOutput, or realShaderDenoiseOutputReady until the public Mojang fragment pass consumes raw-diffuse-gi-rgba8 from lucerna.lighting.diffuseGi rather than direct-light validation input, actually writes lucerna.denoise.diffuse as an owned output target, and its color-attachment barrier is validated. This is public Mojang fragment output, not compute denoise or a storage-image write. Physical GI quality still needs traced lighting evidence beyond this resource contract."
+        "currentExecutionState": "mojang_fsh_fragment_color_attachment_path_present_pending_full_depth_material_history_bindings",
+        "noOverclaim": "Do not set shaderDenoiseOutputImageReady, shaderDenoiseShaderGeneratedOutput, realDenoiseShaderOutput, or realShaderDenoiseOutputReady until the public Mojang fragment pass consumes raw-diffuse-gi-rgba8 from lucerna.lighting.diffuseGi rather than direct-light validation input, actually writes lucerna.denoise.diffuse as an owned output target, and its color-attachment handoff is validated. This is public Mojang fragment output, not compute denoise or a storage-image write; report shaderDenoiseComputeDispatch=false and shaderDenoiseStorageImageWrite=false on this route. Physical GI quality still needs traced lighting evidence beyond this resource contract."
       },
       "dependsOn": [
         "lucerna.gbuffer.main",
@@ -2356,7 +2392,7 @@
     {
       "id": "round7.shader_generated_denoise_resource",
       "owner": "controller",
-      "description": "Confirm denoise/shader_generated_diffuse_output.fsh is a runtime-loadable public Mojang fragment resource that binds InSampler to lucerna.lighting.diffuseGi raw-diffuse-gi-rgba8, rejects lucerna.lighting.direct and native direct-light validation RGBA as substitutes, preserves local raw-GI contrast instead of proof masks/fullscreen wash/focus-window shortcuts, and writes fragColor into the owned lucerna.denoise.diffuse target. tracedRawGiInputConsumed requires upstream traced raw-GI evidence and still does not prove physical GI quality. The stricter denoise/shader_generated_diffuse_output.frag.glsl contract still covers confidence, variance, current depth/normal/material/motion, previous depth/normal/lighting, DenoisedDiffuseOutput, and RejectionMaskOutput before any broader real shader-denoise readiness claim."
+      "description": "Confirm denoise/shader_generated_diffuse_output.fsh is a runtime-loadable public Mojang fragment resource that binds InSampler to lucerna.lighting.diffuseGi raw-diffuse-gi-rgba8, rejects lucerna.lighting.direct and native direct-light validation RGBA as substitutes, uses raw-GI luminance/chroma/confidence edges as the current material/depth-preserving fallback instead of proof masks/fullscreen wash/focus-window shortcuts, and writes fragColor into the owned lucerna.denoise.diffuse target. tracedRawGiInputConsumed requires upstream traced raw-GI evidence and still does not prove physical GI quality. The stricter denoise/shader_generated_diffuse_output.frag.glsl contract still covers confidence, variance, current depth/normal/material/motion, previous depth/normal/lighting, DenoisedDiffuseOutput, and RejectionMaskOutput before any broader full shader-denoise readiness claim; the current public Mojang route remains fragment color-attachment output, not compute/storage-image denoise."
     },
     {
       "id": "lighting.adaptive_sampling_metadata",

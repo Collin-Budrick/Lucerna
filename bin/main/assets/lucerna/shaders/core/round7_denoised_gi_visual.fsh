@@ -18,6 +18,10 @@ out vec4 fragColor;
 // Boundary markers for telemetry/docs:
 // - This shader samples a CPU/readback guided visual or candidate payload and
 //   writes only the current public draw output.
+// - When the input is lucerna.denoise.diffuse from
+//   denoise/shader_generated_diffuse_output.fsh, this file is still only the
+//   final-color consumer/visual shaper. The producer remains a public Mojang
+//   fragment color-attachment pass, not compute or storage-image denoise.
 // - It does not create lucerna.denoise.diffuse, lucerna.denoise.rejectionMask,
 //   a shader output image, or a history/variance quality target.
 // - Keep realShaderDenoiseOutputReady=false and
@@ -244,10 +248,10 @@ vec4 softGameplaySample(vec2 uv) {
     sum += sourceSample(uv + texel * vec2(-3.0, 3.0)) * 0.055;
     sum += sourceSample(uv + texel * vec2(3.0, -3.0)) * 0.055;
     sum += sourceSample(uv + texel * vec2(-3.0, -3.0)) * 0.055;
-    sum += sourceSample(uv + vec2(0.036, 0.018)) * 0.035;
-    sum += sourceSample(uv + vec2(-0.032, 0.022)) * 0.035;
-    sum += sourceSample(uv + vec2(0.028, -0.024)) * 0.035;
-    sum += sourceSample(uv + vec2(-0.038, -0.018)) * 0.035;
+    sum += sourceSample(uv + texel * vec2(5.0, 2.0)) * 0.035;
+    sum += sourceSample(uv + texel * vec2(-5.0, 2.0)) * 0.035;
+    sum += sourceSample(uv + texel * vec2(4.0, -3.0)) * 0.035;
+    sum += sourceSample(uv + texel * vec2(-4.0, -3.0)) * 0.035;
     return sum;
 }
 

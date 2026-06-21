@@ -54,7 +54,9 @@
 //   shaderDenoiseOutputImageCandidateReady,
 //   shaderDenoiseOutputImageCandidateNonGpu,
 //   shaderDenoiseOutputImageReady, shaderDenoiseOutputImageOwnedByShaderPass,
-//   shaderDenoiseOutputStorageWritable, shaderDenoiseOutputBarrierReady,
+//   shaderDenoiseColorAttachmentWrite for the current public Mojang fragment
+//   path, shaderDenoiseOutputStorageWritable for a future compute/storage-image
+//   path, shaderDenoiseOutputBarrierReady,
 //   shaderDenoiseOutputFinalCompositeConsumable, and
 //   realShaderDenoiseOutputReady.
 // - Temporal/history readiness is a separate gate from output image readiness:
