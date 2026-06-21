@@ -229,7 +229,7 @@ public record ShaderDenoiseOutputContract(
         return new ShaderDenoiseOutputContract(
                 snapshot.hasExecutionTelemetry(),
                 snapshot.shaderDenoiseDispatchPrepared(),
-                snapshot.shaderDenoiseRealOutputPathReady(),
+                snapshot.shaderDenoiseOutputImageReadinessReady(),
                 snapshot.shaderDenoiseDispatchPrepared(),
                 snapshot.shaderDenoiseOutputImageReady(),
                 snapshot.shaderDenoiseOutputImageOwnedByShaderPass(),
@@ -245,8 +245,8 @@ public record ShaderDenoiseOutputContract(
                 snapshot.realShaderDenoiseOutputReady(),
                 snapshot.rawGiInputReady(),
                 snapshot.edgeInputsAvailable(),
-                snapshot.temporalHistory(),
-                snapshot.hasHistoryCounters(),
+                snapshot.shaderDenoiseTemporalHistoryReady(),
+                snapshot.hasHistoryCounters() && snapshot.historyConfidenceAvailable(),
                 snapshot.historyConfidenceAvailable(),
                 snapshot.historyConfidenceAvailable(),
                 snapshot.dispatchGeneration(),
@@ -262,7 +262,7 @@ public record ShaderDenoiseOutputContract(
                         : candidateOnly
                                 ? "shader_denoise_candidate_image_only"
                                 : "shader_denoise_cpu_readback_boundary",
-                snapshot.shaderDenoiseOutputImageCandidateBoundary(),
+                snapshot.shaderDenoiseRealOutputBoundary(),
                 snapshot.denoiseReadinessBoundary(),
                 snapshot.shaderDenoiseOutputBlockerReason(),
                 snapshot.shaderDenoiseOutputReadinessLabel(),
@@ -273,24 +273,50 @@ public record ShaderDenoiseOutputContract(
         );
     }
 
-    public boolean readyForControllerShaderProof() {
-        return this.contractReady
-                && this.dispatchPathImplemented
-                && this.shaderWritableOutput
-                && this.shaderDispatchPrepared
+    public boolean shaderOutputImageReadinessReady() {
+        return this.shaderWritableOutput
                 && this.shaderOutputImageReady
                 && this.shaderOutputImageOwnedByShaderPass
                 && this.shaderOutputStorageWritable
                 && this.shaderOutputBarrierReady
                 && this.shaderOutputFinalCompositeConsumable
                 && this.shaderOutputMaterialReady
-                && this.shaderGeneratedOutput
-                && !this.publicMojangShaderVisualOutputReady
-                && !this.cpuReadbackFallbackActive
-                && this.realDenoiseShaderOutput
                 && !this.shaderOutputImageCandidateReady
                 && !this.shaderOutputImageCandidateCpuStaged
-                && !this.shaderOutputImageCandidateNonGpu
+                && !this.shaderOutputImageCandidateNonGpu;
+    }
+
+    public boolean temporalHistoryReadinessReady() {
+        return this.temporalInputsBound
+                && this.historyRejectionInputsBound
+                && this.varianceInputsBound
+                && this.confidenceInputsBound;
+    }
+
+    public boolean cpuReadbackGuidedVisualDenoiseActive() {
+        return this.cpuReadbackFallbackActive
+                || this.publicMojangShaderVisualOutputAttempted
+                || this.publicMojangShaderVisualOutputSubmitted
+                || this.publicMojangShaderVisualOutputReady
+                || this.shaderOutputImageCandidateReady
+                || this.shaderOutputImageCandidateCpuStaged
+                || this.shaderOutputImageCandidateNonGpu;
+    }
+
+    public boolean realShaderOutputPrerequisitesReady() {
+        return this.contractReady
+                && this.dispatchPathImplemented
+                && this.shaderDispatchPrepared
+                && this.shaderDenoiseInputsCompleteForDispatch()
+                && this.shaderOutputImageReadinessReady()
+                && this.temporalHistoryReadinessReady()
+                && !this.cpuReadbackGuidedVisualDenoiseActive();
+    }
+
+    public boolean readyForControllerShaderProof() {
+        return this.realShaderOutputPrerequisitesReady()
+                && this.shaderGeneratedOutput
+                && this.realDenoiseShaderOutput
                 && this.width > 0
                 && this.height > 0;
     }

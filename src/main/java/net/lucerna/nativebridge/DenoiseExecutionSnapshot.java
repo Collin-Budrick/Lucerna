@@ -844,13 +844,19 @@ public record DenoiseExecutionSnapshot(
                     ? "real-shader-denoise-output-with-quality-evidence"
                     : "real-shader-denoise-output-without-quality-evidence";
         }
+        if (this.shaderDenoiseRealOutputPrerequisitesReady()) {
+            return "real-shader-output-prerequisites-ready; shader-generated-pixels-or-controller-proof-missing";
+        }
+        if (this.shaderDenoiseOutputImageReadinessReady() && !this.shaderDenoiseTemporalHistoryReady()) {
+            return "shader-output-image-ready; temporal-history-readiness-missing; real-shader-output=false";
+        }
         if (!this.cpuDenoisedOutputReadbackReady()) {
             return "not-ready:missing-accepted-cpu-output-readback";
         }
         if (this.denoiseQualityEvidenceReady()) {
-            return "cpu-output-readback-ready; quality-evidence-present; real-shader-output=false";
+            return "cpu-output-readback-ready; guided-visual-denoise-only; quality-evidence-present; real-shader-output=false";
         }
-        return "cpu-output-readback-ready; denoise-quality-not-proven; real-shader-output=false";
+        return "cpu-output-readback-ready; guided-visual-denoise-only; denoise-quality-not-proven; real-shader-output=false";
     }
 
     public String debugSummary() {
@@ -895,6 +901,7 @@ public record DenoiseExecutionSnapshot(
                 + " denoisedOutputDiffersFromRaw=" + this.denoisedOutputDiffersFromRaw
                 + " realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
                 + " rawGiInputReady=" + this.rawGiInputReady
+                + " shaderDenoiseInputPrerequisitesReady=" + this.shaderDenoiseInputPrerequisitesReady()
                 + " cpuDenoisedReadbackReady=" + this.cpuDenoisedReadbackReady
                 + " shaderDenoiseDispatchPrepared=" + this.shaderDenoiseDispatchPrepared
                 + " shaderDenoiseInputReady=" + this.shaderDenoiseInputReady
@@ -909,6 +916,9 @@ public record DenoiseExecutionSnapshot(
                 + " shaderDenoiseOutputBarrierReady=" + this.shaderDenoiseOutputBarrierReady
                 + " shaderDenoiseOutputFinalCompositeConsumable=" + this.shaderDenoiseOutputFinalCompositeConsumable
                 + " shaderDenoiseRealOutputPathReady=" + this.shaderDenoiseRealOutputPathReady()
+                + " shaderDenoiseOutputImageReadinessReady=" + this.shaderDenoiseOutputImageReadinessReady()
+                + " shaderDenoiseTemporalHistoryReady=" + this.shaderDenoiseTemporalHistoryReady()
+                + " shaderDenoiseRealOutputPrerequisitesReady=" + this.shaderDenoiseRealOutputPrerequisitesReady()
                 + " shaderDenoiseOutputImageCandidateReady=" + this.shaderDenoiseOutputImageCandidateReady
                 + " shaderDenoiseOutputImageCandidateCpuStaged=" + this.shaderDenoiseOutputImageCandidateCpuStaged
                 + " shaderDenoiseOutputImageCandidateNonGpu=" + this.shaderDenoiseOutputImageCandidateNonGpu
@@ -916,8 +926,10 @@ public record DenoiseExecutionSnapshot(
                 + " shaderDenoiseCpuReadbackFallbackActive=" + this.shaderDenoiseCpuReadbackFallbackActive()
                 + " shaderDenoiseCpuReadbackFallbackReported=" + this.shaderDenoiseCpuReadbackFallbackReported
                 + " shaderDenoiseCpuReadbackFallbackDerived=" + this.shaderDenoiseCpuReadbackFallbackDerived()
+                + " cpuReadbackGuidedVisualDenoiseActive=" + this.cpuReadbackGuidedVisualDenoiseActive()
                 + " shaderDenoiseOutputReadinessLabel=" + this.shaderDenoiseOutputReadinessLabel()
                 + " shaderDenoiseOutputBlockerReason=" + this.shaderDenoiseOutputBlockerReason()
+                + " shaderDenoiseRealOutputBoundary=\"" + this.shaderDenoiseRealOutputBoundary() + "\""
                 + " shaderDenoiseNoOverclaimStatus=" + this.shaderDenoiseNoOverclaimStatus()
                 + " shaderDenoiseOutputPrerequisites=\"" + this.shaderDenoiseOutputPrerequisitesSummary() + "\""
                 + " shaderDenoiseOutputImageCandidateSize=" + this.shaderDenoiseOutputImageCandidateWidth
