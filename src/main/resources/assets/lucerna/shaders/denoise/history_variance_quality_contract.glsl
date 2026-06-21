@@ -50,5 +50,9 @@
 //   shaderDenoiseOutputStorageWritable, shaderDenoiseOutputBarrierReady,
 //   shaderDenoiseOutputFinalCompositeConsumable, and
 //   realShaderDenoiseOutputReady.
+// - Temporal/history readiness is a separate gate from output image readiness:
+//   current/previous depth, normal/roughness, material id, motion/history,
+//   rejection counters, and history confidence must all be ready before shader
+//   output can move from image-ready to real shader-generated denoise proof.
 void main() {
 }

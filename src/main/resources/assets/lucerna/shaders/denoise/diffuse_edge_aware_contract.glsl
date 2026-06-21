@@ -49,6 +49,11 @@
 // - shaderDenoiseOutputImageReady and realShaderDenoiseOutputReady require this
 //   pass to own a writable shader output image/material and to write it from
 //   shader dispatch with the barriers described in layout.json.
+// - The real-output prerequisite bundle must stay explicit in telemetry:
+//   shaderDenoiseInputPrerequisitesReady,
+//   shaderDenoiseOutputImageReadinessReady,
+//   shaderDenoiseTemporalHistoryReady, and
+//   shaderDenoiseRealOutputPrerequisitesReady.
 // - Readiness must name each real-output handoff explicitly:
 //   shaderDenoiseOutputImageOwnedByShaderPass=true,
 //   shaderDenoiseOutputStorageWritable=true,
@@ -58,6 +63,8 @@
 //   images even when those paths produce visible pixels.
 // - Candidate-only images must keep shaderDenoiseShaderGeneratedOutput=false and
 //   must not be consumed by final composite as a real shader-generated target.
+// - CPU/readback guided visual denoise should be reported as a fallback/source
+//   identity, not as lucerna.denoise.diffuse readiness.
 //
 // Evidence boundary:
 // - realDenoiseShaderOutput=false while this resource remains contract-only.

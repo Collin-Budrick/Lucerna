@@ -295,8 +295,6 @@ public record ShaderDenoiseOutputContract(
 
     public boolean cpuReadbackGuidedVisualDenoiseActive() {
         return this.cpuReadbackFallbackActive
-                || this.publicMojangShaderVisualOutputAttempted
-                || this.publicMojangShaderVisualOutputSubmitted
                 || this.publicMojangShaderVisualOutputReady
                 || this.shaderOutputImageCandidateReady
                 || this.shaderOutputImageCandidateCpuStaged
@@ -337,7 +335,11 @@ public record ShaderDenoiseOutputContract(
                 + " publicMojangVisualSubmitted=" + this.publicMojangShaderVisualOutputSubmitted
                 + " publicMojangVisualReady=" + this.publicMojangShaderVisualOutputReady
                 + " cpuReadbackFallbackActive=" + this.cpuReadbackFallbackActive
+                + " cpuReadbackGuidedVisualActive=" + this.cpuReadbackGuidedVisualDenoiseActive()
                 + " realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
+                + " realShaderOutputPrerequisitesReady=" + this.realShaderOutputPrerequisitesReady()
+                + " outputImageReadinessReady=" + this.shaderOutputImageReadinessReady()
+                + " temporalHistoryReady=" + this.temporalHistoryReadinessReady()
                 + " candidateOnly=" + this.shaderOutputImageCandidateReady
                 + " candidateCpuStaged=" + this.shaderOutputImageCandidateCpuStaged
                 + " candidateNonGpu=" + this.shaderOutputImageCandidateNonGpu
@@ -388,7 +390,11 @@ public record ShaderDenoiseOutputContract(
                 + " publicMojangVisualSubmitted=" + this.publicMojangShaderVisualOutputSubmitted
                 + " publicMojangVisualReady=" + this.publicMojangShaderVisualOutputReady
                 + " cpuReadbackFallbackActive=" + this.cpuReadbackFallbackActive
+                + " cpuReadbackGuidedVisualActive=" + this.cpuReadbackGuidedVisualDenoiseActive()
                 + " realDenoiseShaderOutput=" + this.realDenoiseShaderOutput
+                + " realShaderOutputPrerequisitesReady=" + this.realShaderOutputPrerequisitesReady()
+                + " outputImageReadinessReady=" + this.shaderOutputImageReadinessReady()
+                + " temporalHistoryReady=" + this.temporalHistoryReadinessReady()
                 + " candidateOnly=" + this.shaderOutputImageCandidateReady
                 + " candidateCpuStaged=" + this.shaderOutputImageCandidateCpuStaged
                 + " candidateNonGpu=" + this.shaderOutputImageCandidateNonGpu
@@ -409,7 +415,11 @@ public record ShaderDenoiseOutputContract(
                 + " publicMojangVisualSubmitted=" + this.publicMojangShaderVisualOutputSubmitted
                 + " publicMojangVisualReady=" + this.publicMojangShaderVisualOutputReady
                 + " cpuFallback=" + this.cpuReadbackFallbackActive
+                + " cpuReadbackGuidedVisualActive=" + this.cpuReadbackGuidedVisualDenoiseActive()
                 + " realShaderOutput=" + this.realDenoiseShaderOutput
+                + " realShaderOutputPrerequisitesReady=" + this.realShaderOutputPrerequisitesReady()
+                + " outputImageReadinessReady=" + this.shaderOutputImageReadinessReady()
+                + " temporalHistoryReady=" + this.temporalHistoryReadinessReady()
                 + " candidateOnly=" + this.shaderOutputImageCandidateReady
                 + " candidateCpuStaged=" + this.shaderOutputImageCandidateCpuStaged
                 + " candidateNonGpu=" + this.shaderOutputImageCandidateNonGpu
@@ -422,6 +432,10 @@ public record ShaderDenoiseOutputContract(
     public String qualityBoundarySummary() {
         return "rawVsDenoisedQualityBoundary=" + this.rawVsDenoisedQualityBoundary
                 + "; executionBoundary=" + this.outputExecutionBoundary
+                + "; realShaderOutputPrerequisitesReady=" + this.realShaderOutputPrerequisitesReady()
+                + "; outputImageReadinessReady=" + this.shaderOutputImageReadinessReady()
+                + "; temporalHistoryReady=" + this.temporalHistoryReadinessReady()
+                + "; cpuReadbackGuidedVisualActive=" + this.cpuReadbackGuidedVisualDenoiseActive()
                 + "; publicMojangVisualBoundary=" + this.publicMojangShaderVisualOutputBoundary();
     }
 

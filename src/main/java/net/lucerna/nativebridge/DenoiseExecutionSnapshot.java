@@ -631,7 +631,7 @@ public record DenoiseExecutionSnapshot(
 
     public boolean cpuReadbackGuidedVisualDenoiseActive() {
         return this.shaderDenoiseCpuReadbackFallbackActive()
-                || this.publicMojangShaderVisualOutputActive()
+                || this.publicMojangShaderVisualOutputReady
                 || this.shaderDenoiseOutputImageCandidatePresent()
                 || this.shaderDenoiseOutputImageCandidateCpuStaged
                 || this.shaderDenoiseOutputImageCandidateNonGpu;

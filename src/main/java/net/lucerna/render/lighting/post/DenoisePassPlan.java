@@ -182,6 +182,22 @@ public record DenoisePassPlan(
         return this.shaderOutputContract.cpuReadbackFallbackActive();
     }
 
+    public boolean shaderDenoiseCpuReadbackGuidedVisualActive() {
+        return this.shaderOutputContract.cpuReadbackGuidedVisualDenoiseActive();
+    }
+
+    public boolean shaderDenoiseOutputImageReadinessReady() {
+        return this.shaderOutputContract.shaderOutputImageReadinessReady();
+    }
+
+    public boolean shaderDenoiseTemporalHistoryReadinessReady() {
+        return this.shaderOutputContract.temporalHistoryReadinessReady();
+    }
+
+    public boolean shaderDenoiseRealOutputPrerequisitesReady() {
+        return this.shaderOutputContract.realShaderOutputPrerequisitesReady();
+    }
+
     public boolean readyForControllerShaderDenoiseProof() {
         return this.shaderOutputContract.readyForControllerShaderProof();
     }
@@ -216,6 +232,12 @@ public record DenoisePassPlan(
                     ? "mixed-cpu-readback-plus-controller-ready-true-shader-generated-output"
                     : "true-shader-generated-output";
         }
+        if (this.shaderDenoiseRealOutputPrerequisitesReady()) {
+            return "real-shader-output-prerequisites-ready-no-generated-output";
+        }
+        if (this.shaderDenoiseCpuReadbackGuidedVisualActive()) {
+            return "cpu-readback-guided-visual-denoise-only";
+        }
         if (this.writesDiffuseOutput()) {
             return "cpu-readback-denoised-gi";
         }
@@ -226,11 +248,22 @@ public record DenoisePassPlan(
         if (this.readyForControllerShaderDenoiseProof()) {
             return "true-shader-generated-denoised-gi;owned-writable-output;barrier-ready;final-composite-consumable";
         }
+        if (this.shaderDenoiseRealOutputPrerequisitesReady()) {
+            return "real-shader-output-prerequisites-ready;awaiting-shader-generated-pixels-or-controller-proof";
+        }
+        if (this.shaderDenoiseOutputImageReadinessReady()) {
+            return this.shaderDenoiseTemporalHistoryReadinessReady()
+                    ? "shader-output-image-readiness-ready;awaiting-shader-generated-output"
+                    : "shader-output-image-readiness-ready;temporal-history-readiness-blocked";
+        }
         if (this.shaderDenoiseOutputImageReady()) {
             return "shader-output-image-ready-without-owned-writable-real-generated-output";
         }
         if (this.shaderDenoiseDispatchPrepared()) {
             return "shader-dispatch-prepared-no-output-image";
+        }
+        if (this.shaderDenoiseCpuReadbackGuidedVisualActive()) {
+            return "cpu-readback-guided-visual-denoise-only;not-real-shader-output";
         }
         if (this.writesDiffuseOutput()) {
             return "cpu-readback-denoised-gi-fallback;public-mojang-visual-shader-output-requires-submitted-draw";
@@ -241,6 +274,9 @@ public record DenoisePassPlan(
     public String shaderDenoiseOutputBlockerForFinalComposite() {
         if (this.readyForControllerShaderDenoiseProof()) {
             return "none:true-shader-generated-output-ready";
+        }
+        if (this.shaderDenoiseRealOutputPrerequisitesReady()) {
+            return "shader-generated pixels or controller proof missing after prerequisites became ready";
         }
         String readiness = this.shaderDenoiseReadinessReason();
         if (readiness != null && !readiness.isBlank()) {
