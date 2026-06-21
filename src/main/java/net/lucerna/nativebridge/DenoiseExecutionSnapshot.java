@@ -588,10 +588,78 @@ public record DenoiseExecutionSnapshot(
         return "public Mojang shader visual output attempted; submission/readiness not proven";
     }
 
+    public boolean shaderDenoiseInputPrerequisitesReady() {
+        return this.hasExecutionTelemetry()
+                && this.shaderDenoiseInputReady
+                && this.rawGiInputReady
+                && this.edgeInputsAvailable
+                && (this.rawGiInputAvailable || this.diffuseGiSignalAvailable);
+    }
+
+    public boolean shaderDenoiseOutputImageReadinessReady() {
+        return this.hasExecutionTelemetry()
+                && this.shaderDenoiseOutputReady
+                && this.shaderDenoiseOutputImageReady
+                && this.shaderDenoiseOutputImageOwnedByShaderPass
+                && this.shaderDenoiseOutputStorageWritable
+                && this.shaderDenoiseOutputBarrierReady
+                && this.shaderDenoiseOutputFinalCompositeConsumable
+                && this.shaderDenoiseOutputMaterialReady
+                && !this.shaderDenoiseOutputImageCandidatePresent()
+                && !this.shaderDenoiseOutputImageCandidateCpuStaged
+                && !this.shaderDenoiseOutputImageCandidateNonGpu;
+    }
+
+    public boolean shaderDenoiseTemporalHistoryReady() {
+        return this.hasExecutionTelemetry()
+                && this.temporalReady
+                && this.temporalHistory
+                && this.hasHistoryCounters()
+                && this.historyConfidenceAvailable
+                && !this.temporalGhostingRisk;
+    }
+
+    public boolean shaderDenoiseRealOutputPrerequisitesReady() {
+        return this.hasExecutionTelemetry()
+                && this.shaderDenoiseDispatchPrepared
+                && this.shaderDenoiseInputPrerequisitesReady()
+                && this.shaderDenoiseOutputImageReadinessReady()
+                && this.shaderDenoiseTemporalHistoryReady()
+                && !this.publicMojangShaderVisualOutputReady
+                && !this.shaderDenoiseCpuReadbackFallbackReported;
+    }
+
+    public boolean cpuReadbackGuidedVisualDenoiseActive() {
+        return this.shaderDenoiseCpuReadbackFallbackActive()
+                || this.publicMojangShaderVisualOutputActive()
+                || this.shaderDenoiseOutputImageCandidatePresent()
+                || this.shaderDenoiseOutputImageCandidateCpuStaged
+                || this.shaderDenoiseOutputImageCandidateNonGpu;
+    }
+
+    public String shaderDenoiseRealOutputBoundary() {
+        if (!this.hasExecutionTelemetry()) {
+            return "no-denoise-execution-telemetry";
+        }
+        return "realShaderDenoiseOutputBoundary"
+                + " inputPrerequisitesReady=" + this.shaderDenoiseInputPrerequisitesReady()
+                + " outputImageReadinessReady=" + this.shaderDenoiseOutputImageReadinessReady()
+                + " temporalHistoryReady=" + this.shaderDenoiseTemporalHistoryReady()
+                + " realOutputPrerequisitesReady=" + this.shaderDenoiseRealOutputPrerequisitesReady()
+                + " cpuReadbackGuidedVisualActive=" + this.cpuReadbackGuidedVisualDenoiseActive()
+                + " realShaderDenoiseOutputReady=" + this.realShaderDenoiseOutputReady()
+                + " blocker=" + this.shaderDenoiseOutputBlockerReason();
+    }
+
     public String shaderDenoiseOutputPrerequisitesSummary() {
         return "shaderDenoiseOutputPrerequisites"
                 + " dispatchPrepared=" + this.shaderDenoiseDispatchPrepared
                 + " inputReady=" + this.shaderDenoiseInputReady
+                + " inputPrerequisitesReady=" + this.shaderDenoiseInputPrerequisitesReady()
+                + " rawGiInputReady=" + this.rawGiInputReady
+                + " rawGiInputAvailable=" + this.rawGiInputAvailable
+                + " edgeInputsAvailable=" + this.edgeInputsAvailable
+                + " diffuseGiSignalAvailable=" + this.diffuseGiSignalAvailable
                 + " publicMojangVisualAttempted=" + this.publicMojangShaderVisualOutputAttempted
                 + " publicMojangVisualSubmitted=" + this.publicMojangShaderVisualOutputSubmitted
                 + " publicMojangVisualReady=" + this.publicMojangShaderVisualOutputReady
@@ -602,13 +670,22 @@ public record DenoiseExecutionSnapshot(
                 + " barrierReady=" + this.shaderDenoiseOutputBarrierReady
                 + " finalCompositeConsumable=" + this.shaderDenoiseOutputFinalCompositeConsumable
                 + " materialReady=" + this.shaderDenoiseOutputMaterialReady
+                + " outputImageReadinessReady=" + this.shaderDenoiseOutputImageReadinessReady()
+                + " temporalReady=" + this.temporalReady
+                + " temporalHistory=" + this.temporalHistory
+                + " historyCounters=" + this.hasHistoryCounters()
+                + " historyConfidenceAvailable=" + this.historyConfidenceAvailable
+                + " temporalGhostingRisk=" + this.temporalGhostingRisk
+                + " temporalHistoryReady=" + this.shaderDenoiseTemporalHistoryReady()
                 + " shaderGenerated=" + this.shaderDenoiseShaderGeneratedOutput
                 + " realShaderFlag=" + this.realDenoiseShaderOutput
+                + " realOutputPrerequisitesReady=" + this.shaderDenoiseRealOutputPrerequisitesReady()
                 + " realOutputPathReady=" + this.shaderDenoiseRealOutputPathReady()
                 + " realShaderDenoiseOutputReady=" + this.realShaderDenoiseOutputReady()
                 + " cpuReadbackFallback=" + this.shaderDenoiseCpuReadbackFallbackActive()
                 + " cpuReadbackFallbackReported=" + this.shaderDenoiseCpuReadbackFallbackReported
                 + " cpuReadbackFallbackDerived=" + this.shaderDenoiseCpuReadbackFallbackDerived()
+                + " cpuReadbackGuidedVisualActive=" + this.cpuReadbackGuidedVisualDenoiseActive()
                 + " candidateOnly=" + this.shaderDenoiseOutputImageCandidatePresent()
                 + " candidateCpuStaged=" + this.shaderDenoiseOutputImageCandidateCpuStaged
                 + " candidateNonGpu=" + this.shaderDenoiseOutputImageCandidateNonGpu
@@ -623,19 +700,7 @@ public record DenoiseExecutionSnapshot(
     }
 
     public boolean shaderDenoiseRealOutputPathReady() {
-        return this.hasExecutionTelemetry()
-                && this.shaderDenoiseDispatchPrepared
-                && this.shaderDenoiseInputReady
-                && this.shaderDenoiseOutputReady
-                && this.shaderDenoiseOutputImageReady
-                && this.shaderDenoiseOutputImageOwnedByShaderPass
-                && this.shaderDenoiseOutputStorageWritable
-                && this.shaderDenoiseOutputBarrierReady
-                && this.shaderDenoiseOutputFinalCompositeConsumable
-                && this.shaderDenoiseOutputMaterialReady
-                && !this.publicMojangShaderVisualOutputReady
-                && !this.shaderDenoiseOutputImageCandidateCpuStaged
-                && !this.shaderDenoiseOutputImageCandidateNonGpu;
+        return this.shaderDenoiseRealOutputPrerequisitesReady();
     }
 
     public String shaderDenoiseOutputBlockerReason() {
@@ -651,8 +716,17 @@ public record DenoiseExecutionSnapshot(
         if (!this.shaderDenoiseInputReady) {
             return "shader-denoise-input-not-ready";
         }
+        if (!this.rawGiInputReady || (!this.rawGiInputAvailable && !this.diffuseGiSignalAvailable)) {
+            return "shader-denoise-raw-gi-input-not-ready";
+        }
+        if (!this.edgeInputsAvailable) {
+            return "shader-denoise-edge-inputs-not-ready";
+        }
+        if (!this.shaderDenoiseOutputReady) {
+            return "shader-denoise-output-readiness-not-reported";
+        }
         if (!this.shaderDenoiseOutputImageReady) {
-            return this.shaderDenoiseOutputImageBlocker;
+            return this.normalizedShaderDenoiseOutputImageBlocker();
         }
         if (!this.shaderDenoiseOutputImageOwnedByShaderPass) {
             return "shader-denoise-output-image-not-owned-by-shader-pass";
@@ -669,8 +743,32 @@ public record DenoiseExecutionSnapshot(
         if (!this.shaderDenoiseOutputMaterialReady) {
             return "shader-denoise-output-material-handoff-not-ready";
         }
+        if (this.shaderDenoiseOutputImageCandidateCpuStaged || this.shaderDenoiseOutputImageCandidateNonGpu) {
+            return "shader-denoise-output-candidate-is-cpu-staged-or-non-gpu";
+        }
+        if (this.shaderDenoiseOutputImageCandidatePresent()) {
+            return "shader-denoise-output-candidate-is-boundary-only";
+        }
+        if (!this.temporalReady) {
+            return "shader-denoise-temporal-history-not-ready";
+        }
+        if (!this.temporalHistory) {
+            return "shader-denoise-temporal-history-inputs-not-bound";
+        }
+        if (!this.hasHistoryCounters()) {
+            return "shader-denoise-history-counters-not-ready";
+        }
+        if (!this.historyConfidenceAvailable) {
+            return "shader-denoise-history-confidence-not-ready";
+        }
+        if (this.temporalGhostingRisk) {
+            return "shader-denoise-temporal-ghosting-risk";
+        }
         if (this.publicMojangShaderVisualOutputReady) {
             return "public-mojang-visual-output-is-not-real-shader-denoise-output";
+        }
+        if (this.shaderDenoiseCpuReadbackFallbackReported) {
+            return "cpu-readback-guided-visual-denoise-active";
         }
         if (!this.shaderDenoiseShaderGeneratedOutput) {
             return "shader-denoise-output-is-not-shader-generated";
@@ -678,15 +776,18 @@ public record DenoiseExecutionSnapshot(
         if (!this.realDenoiseShaderOutput) {
             return "real-denoise-shader-output-flag-false";
         }
-        if (this.shaderDenoiseOutputImageCandidateCpuStaged || this.shaderDenoiseOutputImageCandidateNonGpu) {
-            return "shader-denoise-output-candidate-is-cpu-staged-or-non-gpu";
-        }
-        return this.shaderDenoiseOutputImageBlocker;
+        return this.normalizedShaderDenoiseOutputImageBlocker();
     }
 
     public String shaderDenoiseOutputReadinessLabel() {
         if (this.realShaderDenoiseOutputReady()) {
             return "real-shader-output-ready";
+        }
+        if (this.shaderDenoiseRealOutputPrerequisitesReady()) {
+            return "real-shader-output-prerequisites-ready";
+        }
+        if (this.shaderDenoiseOutputImageReadinessReady() && !this.shaderDenoiseTemporalHistoryReady()) {
+            return "shader-output-image-ready-temporal-history-blocked";
         }
         if (this.shaderDenoiseCpuReadbackFallbackActive()) {
             return "cpu-readback-fallback-active";
@@ -707,6 +808,15 @@ public record DenoiseExecutionSnapshot(
             return "shader-output-blocked";
         }
         return "shader-output-unavailable";
+    }
+
+    private String normalizedShaderDenoiseOutputImageBlocker() {
+        if (this.shaderDenoiseOutputImageBlocker == null
+                || this.shaderDenoiseOutputImageBlocker.isBlank()
+                || "unknown".equals(this.shaderDenoiseOutputImageBlocker)) {
+            return "shader-denoise-output-image-not-ready";
+        }
+        return this.shaderDenoiseOutputImageBlocker;
     }
 
     public String shaderDenoiseOutputImageCandidateBoundary() {

@@ -604,7 +604,7 @@ function Get-VisualLightingMilestone1CaptureIntent {
         "Debug" {
             return [ordered]@{
                 rendererEnabled = $true
-                debugOverlay = "VISUAL_LIGHTING_MILESTONE1_PROOF"
+                debugOverlay = "FIRST_LIGHTING_PHYSICAL_PROOF"
                 compositeMode = "FINAL_LUCERNA_COMPOSITE"
                 artifactRole = "visual-lighting-milestone1-debug"
                 sceneKind = "dry-daytime-colored-emissive-bounce"
