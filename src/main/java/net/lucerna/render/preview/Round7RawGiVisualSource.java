@@ -53,7 +53,8 @@ public record Round7RawGiVisualSource(
                 EVIDENCE_LABEL,
                 SHADER_LABEL,
                 true,
-                "Round 7 RAW_GI visual mode can draw the native diffuse-GI RGBA8 payload as a raw source view"
+                "Round 7 RAW_GI visual mode can draw the native diffuse-GI RGBA8 payload as a raw source view; "
+                        + payload.spatialGiPayloadSummary()
         );
     }
 
@@ -75,6 +76,7 @@ public record Round7RawGiVisualSource(
                 + ",shader=" + this.shaderLabel
                 + ",sourceIdentity=" + this.sourceIdentity()
                 + ",sourceClass=" + this.sourceClassLabel()
+                + ",spatialPayloadIdentity=" + this.spatialPayloadIdentitySummary()
                 + ",sourceAuthenticity=\"" + this.sourceAuthenticityBoundary() + "\""
                 + ",projectionBoundary=\"" + this.surfaceProjectionBoundary() + "\""
                 + ",qualityReadiness=\"" + this.qualityReadinessBoundary() + "\""
@@ -89,6 +91,16 @@ public record Round7RawGiVisualSource(
 
     public String sourceClassLabel() {
         return "raw-gi-cpu/readback-native-output;not-denoised;not-real-shader-denoise";
+    }
+
+    public String spatialPayloadIdentitySummary() {
+        return "sourceKind=raw-diffuse-gi-rgba8-cpu-readback"
+                + ",rawGiSourceReady=" + this.sourceReady
+                + ",spatiallyVaryingGiPayloadReady=defer-to-payload-summary"
+                + ",physicalSceneTiedGiEvidenceReady=defer-to-payload-summary"
+                + ",gpuTraversalExecuted=false"
+                + ",nativeComputeGiExecuted=false"
+                + ",nativeComputeDenoiseExecuted=false";
     }
 
     public String sourceAuthenticityBoundary() {

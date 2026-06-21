@@ -378,6 +378,57 @@ public record DirectionalShadowMapOutputSnapshot(
         return this.realShadowMapOutputReady();
     }
 
+    public boolean readyForFinalCompositeConsumption() {
+        return this.readyForPreviewPayload()
+                && this.conservativeCpuOutput
+                && this.outputSampleCount > 0
+                && this.outputCasterCount > 0
+                && this.outputReceiverCount > 0
+                && this.depthCoveredTexelCount > 0;
+    }
+
+    public boolean finalCompositeConsumptionBoundaryHonest() {
+        return this.readyForFinalCompositeConsumption()
+                && !this.gpuShadowMapGenerated
+                && !this.hardwareRtShadowMapGenerated;
+    }
+
+    public boolean softShadowMaskReady() {
+        return this.finalCompositeConsumptionBoundaryHonest()
+                && this.hasDepthMapCoverage()
+                && this.hasNonzeroChecksum()
+                && this.outputSampleCount > 0;
+    }
+
+    public boolean receiverTiedShadowMaskReady() {
+        return this.softShadowMaskReady()
+                && this.outputReceiverCount > 0
+                && this.receiverCount > 0
+                && this.receiverCandidateCount >= this.receiverCount
+                && this.receiverRejectedCount >= 0;
+    }
+
+    public boolean receiverTiedSoftShadowPayloadReady() {
+        return this.receiverTiedShadowMaskReady()
+                && this.outputSampleCount >= this.outputReceiverCount
+                && this.depthCoveredTexelCount > 0;
+    }
+
+    public int coveredDepthPermille() {
+        if (this.depthTexelCount <= 0 || this.depthCoveredTexelCount <= 0) {
+            return 0;
+        }
+        long scaled = (long) this.depthCoveredTexelCount * 1000L;
+        return (int) Math.min(1000L, scaled / Math.max(1, this.depthTexelCount));
+    }
+
+    public boolean visualQualityStillBlocked() {
+        return !this.receiverTiedSoftShadowPayloadReady()
+                || !this.consumedByLighting
+                || this.gpuShadowMapGenerated
+                || this.hardwareRtShadowMapGenerated;
+    }
+
     public boolean honestGpuBoundary() {
         return !this.gpuShadowMapGenerated && !this.hardwareRtShadowMapGenerated && !this.consumedByLighting;
     }
@@ -385,6 +436,46 @@ public record DirectionalShadowMapOutputSnapshot(
     public int expectedByteCount() {
         long bytes = Math.max(0L, this.texelCount) * 4L;
         return bytes > Integer.MAX_VALUE ? -1 : (int) bytes;
+    }
+
+    public String finalCompositeReadinessReason() {
+        if (!this.readyForPreviewPayload()) {
+            return this.previewReadinessReason();
+        }
+        if (!this.conservativeCpuOutput) {
+            return "native directional shadow-map payload is not marked as conservative CPU output";
+        }
+        if (this.outputSampleCount <= 0 || this.outputCasterCount <= 0 || this.outputReceiverCount <= 0) {
+            return "native directional shadow-map lacks output sample/caster/receiver metadata for consumption";
+        }
+        if (this.depthCoveredTexelCount <= 0) {
+            return "native directional shadow-map has no covered depth texels for receiver consumption";
+        }
+        return "native conservative shadow-map output is ready for final-composite consumption";
+    }
+
+    public String budgetSummary() {
+        return "shadowMapPayloadBudget bytes=" + this.expectedByteCount()
+                + " texels=" + this.texelCount
+                + " size=" + this.texelWidth + "x" + this.texelHeight
+                + " depthCoveredTexels=" + this.depthCoveredTexelCount
+                + " outputSamples=" + this.outputSampleCount;
+    }
+
+    public String finalCompositeConsumptionSummary() {
+        return "shadowMapConsumptionReady=" + this.readyForFinalCompositeConsumption()
+                + " finalCompositeBoundaryHonest=" + this.finalCompositeConsumptionBoundaryHonest()
+                + " softShadowMaskReady=" + this.softShadowMaskReady()
+                + " receiverTiedShadowMaskReady=" + this.receiverTiedShadowMaskReady()
+                + " receiverTiedSoftShadowPayloadReady=" + this.receiverTiedSoftShadowPayloadReady()
+                + " sourceKind=native-conservative-shadow-map-rgba8"
+                + " gpuShadowMapGenerated=" + this.gpuShadowMapGenerated
+                + " hardwareRtShadowMapGenerated=" + this.hardwareRtShadowMapGenerated
+                + " consumedByLighting=" + this.consumedByLighting
+                + " coveredDepthPermille=" + this.coveredDepthPermille()
+                + " " + this.budgetSummary()
+                + " blockers=" + this.blockerSummary()
+                + " reason=" + this.finalCompositeReadinessReason();
     }
 
     public String previewReadinessReason() {
@@ -401,6 +492,59 @@ public record DirectionalShadowMapOutputSnapshot(
                 + " consumedByLighting=" + this.consumedByLighting
                 + " hardwareRtBlocker=" + this.hardwareRtBlocker
                 + " honestGpuBoundary=" + this.honestGpuBoundary();
+    }
+
+    public String softShadowMaskSummary() {
+        return "softShadowMaskReady=" + this.softShadowMaskReady()
+                + " softReceiverTiedShadowMask=" + this.receiverTiedSoftShadowPayloadReady()
+                + " shadowMaskReceiverTied=" + this.receiverTiedShadowMaskReady()
+                + " shadowMaskSoftened=" + this.receiverTiedSoftShadowPayloadReady()
+                + " readyForFinalCompositeConsumption=" + this.readyForFinalCompositeConsumption()
+                + " finalCompositeBoundaryHonest=" + this.finalCompositeConsumptionBoundaryHonest()
+                + " visualQualityStillBlocked=" + this.visualQualityStillBlocked()
+                + " outputSamples=" + this.outputSampleCount
+                + " outputCasters=" + this.outputCasterCount
+                + " outputReceivers=" + this.outputReceiverCount
+                + " depthCoveredTexels=" + this.depthCoveredTexelCount
+                + " coveredDepthPermille=" + this.coveredDepthPermille()
+                + " checksum=" + this.checksum
+                + " blockers=" + this.blockerSummary();
+    }
+
+    public String receiverTiedSoftShadowPayloadSummary() {
+        return "receiverTiedSoftShadowPayloadReady=" + this.receiverTiedSoftShadowPayloadReady()
+                + " softReceiverTiedShadowMask=" + this.receiverTiedSoftShadowPayloadReady()
+                + " shadowMaskReceiverTied=" + this.receiverTiedShadowMaskReady()
+                + " shadowMaskSoftened=" + this.receiverTiedSoftShadowPayloadReady()
+                + " sourceKind=native-conservative-shadow-map-rgba8"
+                + " receiverCount=" + this.receiverCount
+                + " receiverCandidates=" + this.receiverCandidateCount
+                + " receiverRejected=" + this.receiverRejectedCount
+                + " outputReceivers=" + this.outputReceiverCount
+                + " outputSamples=" + this.outputSampleCount
+                + " depthCoveredTexels=" + this.depthCoveredTexelCount
+                + " coveredDepthPermille=" + this.coveredDepthPermille()
+                + " gpuTraversalExecuted=false"
+                + " hardwareRtShadowMapGenerated=" + this.hardwareRtShadowMapGenerated
+                + " gpuShadowMapGenerated=" + this.gpuShadowMapGenerated
+                + " blocker=\"" + this.blockerSummary() + "\"";
+    }
+
+    public String blockerSummary() {
+        StringBuilder builder = new StringBuilder();
+        appendBlocker(builder, !this.readyForPreviewPayload(), this.previewReadinessReason());
+        appendBlocker(builder, !this.conservativeCpuOutput, "not conservative CPU shadow-mask output");
+        appendBlocker(builder, this.outputSampleCount <= 0, "no output samples");
+        appendBlocker(builder, this.outputCasterCount <= 0, "no output casters");
+        appendBlocker(builder, this.outputReceiverCount <= 0, "no output receivers");
+        appendBlocker(builder, this.receiverCount <= 0, "no receiver telemetry");
+        appendBlocker(builder, this.receiverCandidateCount < this.receiverCount, "receiver candidate count is incomplete");
+        appendBlocker(builder, this.depthCoveredTexelCount <= 0, "no covered depth texels");
+        appendBlocker(builder, !this.hasNonzeroChecksum(), "shadow-mask checksum is zero");
+        appendBlocker(builder, !this.consumedByLighting, "not consumed by lighting/final composite");
+        appendBlocker(builder, this.gpuShadowMapGenerated || this.hardwareRtShadowMapGenerated,
+                "status overclaims GPU or hardware-RT shadow output");
+        return builder.length() == 0 ? "none" : builder.toString();
     }
 
     public String debugSummary() {
@@ -434,6 +578,7 @@ public record DirectionalShadowMapOutputSnapshot(
                 + " casterBlocker=" + this.casterBlocker
                 + " depthBlocker=" + this.depthBlocker
                 + " " + this.boundarySummary()
+                + " " + this.finalCompositeConsumptionSummary()
                 + " reason=" + this.previewReadinessReason();
     }
 
@@ -600,5 +745,15 @@ public record DirectionalShadowMapOutputSnapshot(
     private static int saturatingPixelCount(int width, int height) {
         long pixels = Math.max(0L, width) * Math.max(0L, height);
         return pixels > Integer.MAX_VALUE ? 0 : (int) pixels;
+    }
+
+    private static void appendBlocker(StringBuilder builder, boolean active, String message) {
+        if (!active) {
+            return;
+        }
+        if (builder.length() > 0) {
+            builder.append("; ");
+        }
+        builder.append(message);
     }
 }

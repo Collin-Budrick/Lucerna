@@ -260,6 +260,19 @@ public record LucernaFrameAttachmentMetadata(
         return depthViewPresent() && javaOpaque();
     }
 
+    public boolean finalCompositeColorAttachmentReady() {
+        return this.phase.safeForLightingComposite()
+                && hasExtent()
+                && this.javaOpaqueObjects.commandEncoderPresent()
+                && this.javaOpaqueObjects.colorTargetPresent();
+    }
+
+    public boolean finalCompositeDepthSampleBindingReady() {
+        return finalCompositeColorAttachmentReady()
+                && depthTextureSampleBindingReady()
+                && this.javaOpaqueObjects.depthTargetPresent();
+    }
+
     public boolean hasCommandHandle() {
         return this.commandBufferHandle != 0L;
     }
@@ -292,7 +305,17 @@ public record LucernaFrameAttachmentMetadata(
     public String attachmentStatusLabel() {
         return nativeWritableStatusLabel()
                 + ", metadataOnly=" + metadataOnly()
+                + ", " + finalCompositeAttachmentStatusLabel()
                 + ", " + this.javaOpaqueObjects.statusLabel();
+    }
+
+    public String finalCompositeAttachmentStatusLabel() {
+        return "finalCompositeColorAttachmentReady=" + finalCompositeColorAttachmentReady()
+                + ", finalCompositeDepthSampleBindingReady=" + finalCompositeDepthSampleBindingReady()
+                + ", finalCompositeWorldColorPhase=" + this.phase.worldColorTarget()
+                + ", finalCompositeHudPreservingPhase=" + this.phase.hudPreserving()
+                + ", finalCompositeSafePhase=" + this.phase.safeForLightingComposite()
+                + ", finalCompositeSource=live-minecraft-main-render-target";
     }
 
     private static String normalizeLabel(String label) {

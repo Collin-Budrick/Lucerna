@@ -23,6 +23,7 @@ public final class ShaderDenoiseOutputRenderTarget implements AutoCloseable {
     private static final String OUTPUT_IDENTITY = "lucerna.denoise.diffuse/public-mojang-fragment-color-attachment";
     private static final String OUTPUT_BOUNDARY =
             "fragment color attachment, not compute dispatch or storage-image write";
+    private static final int MAX_REASON_CHARS = 180;
 
     private final String textureLabel;
     private final String usageLabel;
@@ -365,7 +366,7 @@ public final class ShaderDenoiseOutputRenderTarget implements AutoCloseable {
                     case CLOSED -> "shader denoise output render target is closed";
                 };
             } else {
-                reason = reason.trim();
+                reason = compactReason(reason.trim());
             }
         }
 
@@ -381,8 +382,56 @@ public final class ShaderDenoiseOutputRenderTarget implements AutoCloseable {
                     && this.sampler != null;
         }
 
+        public boolean ownedOutputTargetReady() {
+            return this.availableForRenderPass()
+                    && this.availableForSampling()
+                    && this.width > 0
+                    && this.height > 0
+                    && this.allocationGeneration > 0L;
+        }
+
         public String identityKey() {
             return Long.toUnsignedString(this.identityChecksum, 16);
+        }
+
+        public String blockerSummary() {
+            if (this.ownedOutputTargetReady()) {
+                return "none; owned shader denoise output target is renderable and sampleable";
+            }
+            StringBuilder builder = new StringBuilder();
+            appendBlocker(builder, this.status != LifecycleStatus.READY, "status=" + this.status);
+            appendBlocker(builder, !this.textureReady, "texture not ready");
+            appendBlocker(builder, !this.renderTargetReady, "render target view not ready");
+            appendBlocker(builder, !this.samplerReady, "sampler not ready");
+            appendBlocker(builder, this.width <= 0 || this.height <= 0, "invalid extent");
+            appendBlocker(builder, this.allocationGeneration <= 0L, "no allocation generation");
+            return builder.length() == 0 ? "unknown render target blocker" : builder.toString();
+        }
+
+        public String playableProofSummary() {
+            return "ownedOutputTargetReady=" + this.ownedOutputTargetReady()
+                    + ",availableForRenderPass=" + this.availableForRenderPass()
+                    + ",availableForSampling=" + this.availableForSampling()
+                    + ",extent=" + this.width + "x" + this.height
+                    + ",allocationGeneration=" + this.allocationGeneration
+                    + ",identityKey=" + this.identityKey()
+                    + ",outputIdentity=\"" + OUTPUT_IDENTITY + "\""
+                    + ",outputWriteKind=fragment-color-attachment"
+                    + ",blockers=\"" + this.blockerSummary() + "\"";
+        }
+
+        public String compactSummary() {
+            return "status=" + this.status
+                    + ",availableForRenderPass=" + this.availableForRenderPass()
+                    + ",availableForSampling=" + this.availableForSampling()
+                    + ",extent=" + this.width + "x" + this.height
+                    + ",allocationGeneration=" + this.allocationGeneration
+                    + ",identityKey=" + this.identityKey()
+                    + ",outputIdentity=\"" + OUTPUT_IDENTITY + "\""
+                    + ",outputWriteKind=fragment-color-attachment"
+                    + ",computeDispatch=false"
+                    + ",storageImageWrite=false"
+                    + ",reason=" + this.reason;
         }
 
         public String summary() {
@@ -408,5 +457,22 @@ public final class ShaderDenoiseOutputRenderTarget implements AutoCloseable {
                     + ",shaderDenoiseOutputBoundary=\"" + OUTPUT_BOUNDARY + "\""
                     + ",reason=" + this.reason;
         }
+    }
+
+    private static void appendBlocker(StringBuilder builder, boolean active, String message) {
+        if (!active) {
+            return;
+        }
+        if (builder.length() > 0) {
+            builder.append("; ");
+        }
+        builder.append(message);
+    }
+
+    private static String compactReason(String value) {
+        if (value.length() <= MAX_REASON_CHARS) {
+            return value;
+        }
+        return value.substring(0, MAX_REASON_CHARS - 3) + "...";
     }
 }

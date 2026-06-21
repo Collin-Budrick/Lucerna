@@ -65,6 +65,10 @@ uniform float LucernaVarianceClamp;
 uniform float LucernaHistoryBlend;
 
 const vec3 LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
+const float CHECKER_ARTIFACT_REJECT = 0.54;
+const float EDGE_AWARE_NEIGHBORHOOD_SLACK = 0.16;
+
+vec3 localRawMean(vec2 uv, vec4 centerRaw);
 
 vec2 clampUv(vec2 uv) {
     return clamp(uv, vec2(0.0), vec2(1.0));
@@ -146,7 +150,85 @@ float sampleWeight(vec2 centerUv, vec2 sampleUv, vec4 centerRaw, float centerDep
     return depthWeight * normalWeight * materialWeight * lumaWeight * confidenceWeight * varianceWeight;
 }
 
+float localConfidenceRange(vec2 uv) {
+    vec2 texel = texelSize(RawDiffuseGiSampler);
+    float center = confidenceAt(uv);
+    float left = confidenceAt(uv - vec2(texel.x, 0.0));
+    float right = confidenceAt(uv + vec2(texel.x, 0.0));
+    float up = confidenceAt(uv - vec2(0.0, texel.y));
+    float down = confidenceAt(uv + vec2(0.0, texel.y));
+    return max(max(abs(center - left), abs(center - right)),
+            max(abs(center - up), abs(center - down)));
+}
+
+float localRawChromaRange(vec2 uv, vec4 centerRaw) {
+    vec2 texel = texelSize(RawDiffuseGiSampler);
+    vec3 center = max(centerRaw.rgb, vec3(0.0));
+    vec3 left = max(texture(RawDiffuseGiSampler, clampUv(uv - vec2(texel.x, 0.0))).rgb, vec3(0.0));
+    vec3 right = max(texture(RawDiffuseGiSampler, clampUv(uv + vec2(texel.x, 0.0))).rgb, vec3(0.0));
+    vec3 up = max(texture(RawDiffuseGiSampler, clampUv(uv - vec2(0.0, texel.y))).rgb, vec3(0.0));
+    vec3 down = max(texture(RawDiffuseGiSampler, clampUv(uv + vec2(0.0, texel.y))).rgb, vec3(0.0));
+    return max(max(length(center - left), length(center - right)),
+            max(length(center - up), length(center - down)));
+}
+
+float checkerArtifactProxy(vec2 uv, vec4 centerRaw) {
+    vec2 texel = texelSize(RawDiffuseGiSampler);
+    float center = confidenceAt(uv);
+    float axis = (
+            confidenceAt(uv + vec2(texel.x, 0.0))
+            + confidenceAt(uv + vec2(-texel.x, 0.0))
+            + confidenceAt(uv + vec2(0.0, texel.y))
+            + confidenceAt(uv + vec2(0.0, -texel.y))) * 0.25;
+    float diagonal = (
+            confidenceAt(uv + texel * vec2(1.0, 1.0))
+            + confidenceAt(uv + texel * vec2(-1.0, 1.0))
+            + confidenceAt(uv + texel * vec2(1.0, -1.0))
+            + confidenceAt(uv + texel * vec2(-1.0, -1.0))) * 0.25;
+    float alternating = abs(center - axis) + max(diagonal - axis, 0.0) * 0.70;
+    float geometryOrRawEdge = localConfidenceRange(uv) + localRawChromaRange(uv, centerRaw) * 0.60;
+    return smoothstep(0.020, 0.16, alternating) * (1.0 - smoothstep(0.10, 0.32, geometryOrRawEdge));
+}
+
+vec3 localRawMin(vec2 uv, vec4 centerRaw) {
+    vec2 texel = texelSize(RawDiffuseGiSampler);
+    vec3 minRgb = max(centerRaw.rgb, vec3(0.0));
+    minRgb = min(minRgb, max(texture(RawDiffuseGiSampler, clampUv(uv + vec2(texel.x, 0.0))).rgb, vec3(0.0)));
+    minRgb = min(minRgb, max(texture(RawDiffuseGiSampler, clampUv(uv + vec2(-texel.x, 0.0))).rgb, vec3(0.0)));
+    minRgb = min(minRgb, max(texture(RawDiffuseGiSampler, clampUv(uv + vec2(0.0, texel.y))).rgb, vec3(0.0)));
+    minRgb = min(minRgb, max(texture(RawDiffuseGiSampler, clampUv(uv + vec2(0.0, -texel.y))).rgb, vec3(0.0)));
+    minRgb = min(minRgb, max(texture(RawDiffuseGiSampler, clampUv(uv + texel * vec2(1.0, 1.0))).rgb, vec3(0.0)));
+    minRgb = min(minRgb, max(texture(RawDiffuseGiSampler, clampUv(uv + texel * vec2(-1.0, 1.0))).rgb, vec3(0.0)));
+    minRgb = min(minRgb, max(texture(RawDiffuseGiSampler, clampUv(uv + texel * vec2(1.0, -1.0))).rgb, vec3(0.0)));
+    minRgb = min(minRgb, max(texture(RawDiffuseGiSampler, clampUv(uv + texel * vec2(-1.0, -1.0))).rgb, vec3(0.0)));
+    return minRgb;
+}
+
+vec3 localRawMax(vec2 uv, vec4 centerRaw) {
+    vec2 texel = texelSize(RawDiffuseGiSampler);
+    vec3 maxRgb = max(centerRaw.rgb, vec3(0.0));
+    maxRgb = max(maxRgb, max(texture(RawDiffuseGiSampler, clampUv(uv + vec2(texel.x, 0.0))).rgb, vec3(0.0)));
+    maxRgb = max(maxRgb, max(texture(RawDiffuseGiSampler, clampUv(uv + vec2(-texel.x, 0.0))).rgb, vec3(0.0)));
+    maxRgb = max(maxRgb, max(texture(RawDiffuseGiSampler, clampUv(uv + vec2(0.0, texel.y))).rgb, vec3(0.0)));
+    maxRgb = max(maxRgb, max(texture(RawDiffuseGiSampler, clampUv(uv + vec2(0.0, -texel.y))).rgb, vec3(0.0)));
+    maxRgb = max(maxRgb, max(texture(RawDiffuseGiSampler, clampUv(uv + texel * vec2(1.0, 1.0))).rgb, vec3(0.0)));
+    maxRgb = max(maxRgb, max(texture(RawDiffuseGiSampler, clampUv(uv + texel * vec2(-1.0, 1.0))).rgb, vec3(0.0)));
+    maxRgb = max(maxRgb, max(texture(RawDiffuseGiSampler, clampUv(uv + texel * vec2(1.0, -1.0))).rgb, vec3(0.0)));
+    maxRgb = max(maxRgb, max(texture(RawDiffuseGiSampler, clampUv(uv + texel * vec2(-1.0, -1.0))).rgb, vec3(0.0)));
+    return maxRgb;
+}
+
+vec3 clampToRawNeighborhood(vec2 uv, vec4 centerRaw, vec3 candidate, float slack) {
+    vec3 minRgb = localRawMin(uv, centerRaw);
+    vec3 maxRgb = localRawMax(uv, centerRaw);
+    vec3 range = max(maxRgb - minRgb, vec3(0.001));
+    return clamp(candidate, max(minRgb - range * slack, vec3(0.0)), maxRgb + range * slack + vec3(0.001));
+}
+
 vec4 spatialDenoise(vec2 uv, vec4 centerRaw, float centerDepth, vec3 centerNormal, float centerMaterial, out float rejectedWeight) {
+    // Source-gated denoise marker: smoothing is accepted only when the raw GI
+    // signal and available depth/normal/material guidance agree. This preserves
+    // payload edges and keeps checker suppression separate from geometry edges.
     vec2 texel = texelSize(RawDiffuseGiSampler);
     vec2 offsets[8] = vec2[](
         vec2(1.0, 0.0),
@@ -175,7 +257,11 @@ vec4 spatialDenoise(vec2 uv, vec4 centerRaw, float centerDepth, vec3 centerNorma
     }
 
     rejectedWeight = clamp(rejected / 8.0, 0.0, 1.0);
-    return vec4(sumColor / max(sumWeight, 0.0001), clamp(sumAlpha / max(sumWeight, 0.0001), 0.0, 1.0));
+    vec3 filtered = sumColor / max(sumWeight, 0.0001);
+    float checkerReject = checkerArtifactProxy(uv, centerRaw) * CHECKER_ARTIFACT_REJECT;
+    filtered = clampToRawNeighborhood(uv, centerRaw, filtered, EDGE_AWARE_NEIGHBORHOOD_SLACK);
+    filtered = mix(filtered, localRawMean(uv, centerRaw), checkerReject);
+    return vec4(filtered, clamp(sumAlpha / max(sumWeight, 0.0001), 0.0, 1.0));
 }
 
 vec3 localRawMean(vec2 uv, vec4 centerRaw) {
@@ -200,6 +286,37 @@ float localRawLumaRange(vec2 uv, vec4 centerRaw) {
     minLuma = min(minLuma, min(min(left, right), min(up, down)));
     maxLuma = max(maxLuma, max(max(left, right), max(up, down)));
     return max(maxLuma - minLuma, 0.0);
+}
+
+float lowResolutionPlateauReject(vec2 uv, vec4 centerRaw) {
+    vec2 texel = texelSize(RawDiffuseGiSampler);
+    float centerConfidence = max(confidenceAt(uv), luminance(centerRaw.rgb) * 18.0);
+    float axisConfidence = (
+            max(confidenceAt(uv + vec2(texel.x * 2.0, 0.0)),
+                    luminance(texture(RawDiffuseGiSampler, clampUv(uv + vec2(texel.x * 2.0, 0.0))).rgb) * 18.0)
+            + max(confidenceAt(uv + vec2(-texel.x * 2.0, 0.0)),
+                    luminance(texture(RawDiffuseGiSampler, clampUv(uv + vec2(-texel.x * 2.0, 0.0))).rgb) * 18.0)
+            + max(confidenceAt(uv + vec2(0.0, texel.y * 2.0)),
+                    luminance(texture(RawDiffuseGiSampler, clampUv(uv + vec2(0.0, texel.y * 2.0))).rgb) * 18.0)
+            + max(confidenceAt(uv + vec2(0.0, -texel.y * 2.0)),
+                    luminance(texture(RawDiffuseGiSampler, clampUv(uv + vec2(0.0, -texel.y * 2.0))).rgb) * 18.0)) * 0.25;
+    float diagonalConfidence = (
+            max(confidenceAt(uv + texel * vec2(2.0, 2.0)),
+                    luminance(texture(RawDiffuseGiSampler, clampUv(uv + texel * vec2(2.0, 2.0))).rgb) * 18.0)
+            + max(confidenceAt(uv + texel * vec2(-2.0, 2.0)),
+                    luminance(texture(RawDiffuseGiSampler, clampUv(uv + texel * vec2(-2.0, 2.0))).rgb) * 18.0)
+            + max(confidenceAt(uv + texel * vec2(2.0, -2.0)),
+                    luminance(texture(RawDiffuseGiSampler, clampUv(uv + texel * vec2(2.0, -2.0))).rgb) * 18.0)
+            + max(confidenceAt(uv + texel * vec2(-2.0, -2.0)),
+                    luminance(texture(RawDiffuseGiSampler, clampUv(uv + texel * vec2(-2.0, -2.0))).rgb) * 18.0)) * 0.25;
+    float broadSignal = max(centerConfidence, max(axisConfidence, diagonalConfidence));
+    float plateau = 1.0 - smoothstep(0.010, 0.070,
+            abs(centerConfidence - axisConfidence) + abs(axisConfidence - diagonalConfidence));
+    float structure = localRawChromaRange(uv, centerRaw) * 0.72
+            + localRawLumaRange(uv, centerRaw) * 1.20
+            + localConfidenceRange(uv) * 0.72;
+    return smoothstep(0.050, 0.34, broadSignal) * plateau
+            * (1.0 - smoothstep(0.030, 0.18, structure));
 }
 
 vec3 preserveRawLocalContrast(vec2 uv, vec4 centerRaw, vec3 denoisedRgb) {
@@ -260,6 +377,11 @@ void main() {
 
     vec3 denoisedRgb = mix(filtered.rgb, max(previousLighting.rgb, vec3(0.0)), historyBlend);
     denoisedRgb = preserveRawLocalContrast(texCoord, centerRaw, denoisedRgb);
+    denoisedRgb = clampToRawNeighborhood(texCoord, centerRaw, denoisedRgb,
+            EDGE_AWARE_NEIGHBORHOOD_SLACK + (1.0 - historyGate) * 0.08);
+    float plateauReject = lowResolutionPlateauReject(texCoord, centerRaw);
+    denoisedRgb = mix(denoisedRgb, max(centerRaw.rgb, vec3(0.0)),
+            plateauReject * (1.0 - historyGate * 0.45) * 0.50);
     float confidence = confidenceAt(texCoord);
     float variance = varianceAt(texCoord);
     float varianceReject = smoothstep(0.025, 0.42, variance);
@@ -268,8 +390,12 @@ void main() {
     float missingGuidanceReject = (1.0 - geometryGuidance) * 0.18;
     float rejection = clamp(max(rejectedWeight, 1.0 - historyGate) * 0.62
             + varianceReject * 0.30
-            + missingGuidanceReject, 0.0, 1.0);
+            + missingGuidanceReject
+            + plateauReject * 0.26, 0.0, 1.0);
 
+    // Raw-GI input preservation and non-compute boundary marker: this resource
+    // may write color attachments when scheduled, but it does not claim Vulkan
+    // compute, storage-image denoise, or hardware denoise by existing alone.
     DenoisedDiffuseOutput = vec4(max(denoisedRgb, vec3(0.0)), clamp(max(filtered.a, confidence), 0.0, 1.0));
     RejectionMaskOutput = vec4(rejection, clamp(variance, 0.0, 1.0), confidence, 1.0);
 }

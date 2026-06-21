@@ -645,6 +645,61 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 || normalizedReason.contains("shader_denoise_still_not_compute_boundary=true");
     }
 
+    public boolean submittedNativeComputeDenoiseExecuted() {
+        String normalizedReason = this.normalizedReason();
+        if (normalizedReason.contains("nativecomputedenoiseexecuted=false")
+                || normalizedReason.contains("native_compute_denoise_executed=false")
+                || normalizedReason.contains("computedenoiseexecuted=false")
+                || normalizedReason.contains("compute_denoise_executed=false")) {
+            return false;
+        }
+        return this.submitted
+                && (this.shaderGeneratedDenoiseOutputStatus.nativeComputeDenoiseExecuted()
+                || normalizedReason.contains("nativecomputedenoiseexecuted=true")
+                || normalizedReason.contains("native_compute_denoise_executed=true")
+                || normalizedReason.contains("computedenoiseexecuted=true")
+                || normalizedReason.contains("compute_denoise_executed=true"));
+    }
+
+    public boolean submittedGpuTraversalExecuted() {
+        String normalizedReason = this.normalizedReason();
+        if (normalizedReason.contains("realgputraversalexecuted=false")
+                || normalizedReason.contains("real_gpu_traversal_executed=false")
+                || normalizedReason.contains("gputraversalexecuted=false")
+                || normalizedReason.contains("gpu_traversal_executed=false")) {
+            return false;
+        }
+        return this.submitted
+                && (normalizedReason.contains("realgputraversalexecuted=true")
+                || normalizedReason.contains("real_gpu_traversal_executed=true")
+                || normalizedReason.contains("gputraversalexecuted=true")
+                || normalizedReason.contains("gpu_traversal_executed=true"));
+    }
+
+    public boolean submittedPhysicalRendererNoOverclaim() {
+        return !this.submittedNativeComputeDenoiseExecuted()
+                && !this.submittedGpuTraversalExecuted();
+    }
+
+    public String physicalRendererNoOverclaimSummary() {
+        return "physicalRendererNoOverclaim=" + this.submittedPhysicalRendererNoOverclaim()
+                + ",nativeComputeDenoiseExecuted=" + this.submittedNativeComputeDenoiseExecuted()
+                + ",nativeComputeDenoiseBlocker=\""
+                + (this.submittedNativeComputeDenoiseExecuted()
+                ? "none"
+                : "not reported by final composite submission; public Mojang fragment output is not native Vulkan compute denoise")
+                + "\""
+                + ",gpuTraversalExecuted=" + this.submittedGpuTraversalExecuted()
+                + ",gpuTraversalBlocker=\""
+                + (this.submittedGpuTraversalExecuted()
+                ? "none"
+                : "not reported by final composite submission; GI/traced evidence must come from a separate traversal status")
+                + "\""
+                + ",shaderGeneratedDenoiseNoOverclaim=\""
+                + this.shaderGeneratedDenoiseOutputStatus.noOverclaimBlockerSummary()
+                + "\"";
+    }
+
     public boolean submittedShaderDenoiseRawDiffuseGiInput() {
         if (!this.submitted) {
             return false;
@@ -774,6 +829,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + this.submittedShaderDenoiseCpuReadbackFallbackInactive()
                 + ",shaderDenoiseStillNotComputeBoundary="
                 + this.submittedShaderDenoiseStillNotComputeBoundary()
+                + ",nativeComputeDenoiseExecuted=" + this.submittedNativeComputeDenoiseExecuted()
+                + ",gpuTraversalExecuted=" + this.submittedGpuTraversalExecuted()
+                + ",physicalRendererNoOverclaim=\"" + this.physicalRendererNoOverclaimSummary() + "\""
                 + ",realShaderDenoiseOutputReady=" + readyState(this.submittedRealShaderDenoiseOutputReady())
                 + ",round7.shaderDenoise.outputImageReady=" + this.submittedShaderDenoiseOutputImageReady()
                 + ",round7.shaderDenoise.passGeneratedFinalColorOutput="
@@ -824,6 +882,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",cpuReadbackFallbackActive=" + this.submittedShaderDenoiseCpuReadbackFallbackActive()
                 + ",cpuReadbackFallbackInactive=" + this.submittedShaderDenoiseCpuReadbackFallbackInactive()
                 + ",stillNotComputeBoundary=" + this.submittedShaderDenoiseStillNotComputeBoundary()
+                + ",nativeComputeDenoiseExecuted=" + this.submittedNativeComputeDenoiseExecuted()
+                + ",gpuTraversalExecuted=" + this.submittedGpuTraversalExecuted()
+                + ",physicalRendererNoOverclaim=\"" + this.physicalRendererNoOverclaimSummary() + "\""
                 + ",shaderDenoiseSourceClassification=" + this.shaderDenoiseSourceClassification()
                 + ",shaderGeneratedDenoisedOutput=" + this.submittedShaderDenoisedGiSource()
                 + ",realShaderDenoiseOutputReady=" + this.submittedRealShaderDenoiseOutputReady()
@@ -857,6 +918,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + this.submittedShadowMapCompositeNoOverclaimBoundary()
                 + ",shaderDenoiseOverclaim=" + this.submittedShaderDenoiseOverclaim()
                 + ",shaderDenoiseNoOverclaim=" + !this.submittedShaderDenoiseOverclaim()
+                + ",nativeComputeDenoiseExecuted=" + this.submittedNativeComputeDenoiseExecuted()
+                + ",gpuTraversalExecuted=" + this.submittedGpuTraversalExecuted()
+                + ",physicalRendererNoOverclaim=" + this.submittedPhysicalRendererNoOverclaim()
                 + ",previewEvidenceClean=" + !this.submittedPreviewOnlyEvidence();
     }
 

@@ -59,6 +59,19 @@ Entry requires active Sodium Vulkan, native world/material upload generations, a
 
 The milestone is limited to basic sun/moon, bounded emissive sampling, voxel shadow-ray visibility, low-resolution single-bounce diffuse GI, cache confidence/variance/ray-budget metadata, edge-aware denoise, and final composite. Iris shader-pack rendering, swapchain ownership, hardware RT, volumetrics, water/transparency handling, temporal upscaling, and ReSTIR reservoirs stay out of scope.
 
+## Next Physical-Renderer Slice Boundary
+
+This section documents the intended proof target only. It is not validation evidence, and it does not require the normal gameplay path to run heavy proof workloads.
+
+The next physical-renderer visual-quality slice should prove four things together under controller-run same-scene evidence:
+
+- Receiver-tied soft shadows: native conservative mask output may be softened only where receiver/depth/contact evidence supports it, with fixed screen-space blobs, fullscreen darkening, focus-window paths, and proof overlays rejected.
+- Spatially varying GI: diffuse GI should vary with emissive source position, receiver geometry, material/color, depth/G-buffer evidence, traced-lighting counters, and source/receiver distance instead of appearing as a uniform tint or detached panel wash.
+- Shader denoise visual output: the denoise visual path should preserve `raw-diffuse-gi-rgba8` source identity, produce a shader-owned output image consumed by the final composite, and keep CPU/readback candidate or visual-shaping fallbacks labeled as boundaries rather than shader denoise proof.
+- Playable normal-path bypass: default gameplay must keep expensive proof/readback/native telemetry workloads bypassed unless an explicit proof mode enables them, so the visual-quality proof does not regress everyday playability.
+
+Required controller evidence remains fresh Sodium + Iris + Vulkan in-client baseline/enabled/playable captures plus logs that show receiver-tied shadow markers, spatial GI variation markers, shader-denoise output/final-composite consumption markers, and clean no-overclaim markers. Hardware RT, GPU voxel traversal, native Vulkan compute or storage-image denoise, physically correct production GI, and polished shader-pack-quality final visuals remain open unless separate controller evidence explicitly proves them.
+
 ## Round 5 Direct Output And Resolve
 
 Round 5 narrows the immediate visible milestone to one direct-lighting proof before later GI quality work. The public output remains `lucerna.lighting.direct`: full-resolution linear RGB direct radiance, with alpha reserved for direct visibility or confidence. The direct pass may use Lucerna-owned frame constants, G-buffer attachments, `MaterialTable`, `VoxelOccupancy`, `BlueNoiseTexture`, and `EmissiveBlockList`.
@@ -81,6 +94,10 @@ Visible direct output is not considered complete from metadata alone. It remains
 
 `composite/native_shadow_mask_composite.fsh` reserves the public resource id `lucerna:shaders/composite/native_shadow_mask_composite.fsh` for final-composite consumption of a native conservative shadow-map/mask payload. The expected payload is `lucerna.lighting.nativeConservativeShadowMask` with R coverage, G receiver support, B optional contact/edge confidence, and A validity/confidence. The shader samples this payload through public Mojang `InSampler` and emits black alpha for conservative source-over darkening before HUD composition.
 
+Java readiness for this path is `DirectionalShadowMapOutputPayload.readyForFinalCompositeConsumption()`. It is intentionally budget-friendly proof metadata: dimensions, byte count, nonzero displayable RGBA8 mask data, native sample/caster/receiver counts, depth coverage, checksum, and an explicit `sourceKind=native-conservative-shadow-map-rgba8`. It does not claim GPU shadow-map generation, hardware RT, path tracing, physical GI, or shader-generated denoise.
+
+The public Mojang consumer now applies a compact receiver-tied mask filter before alpha output. Parser-facing proof language may use `softShadowMaskComposite=true`, `edgeAwareShadowMask=true`, `receiverTiedShadow=true`, and `screenSpaceDecalRejected=true` only for this final-composite consumer behavior: these markers mean the mask was locally softened with receiver/contact confidence and flat/fullscreen/fixed-blob fallback paths remain rejected. They do not mean true GPU shadow-map generation, ray-traced shadows, hardware RT, or physically complete shadowing.
+
 This resource is a consumer only. It is not a path-traced shadow system, not a screen-space shadow decal proof, not a shader-generated shadow-map output, and not shader-generated denoise. Controller proof must compare same-scene baseline/enabled screenshots and logs that show native mask output readiness, nonzero receiver-supported mask coverage, and absence of fixed screen-space blob, proof-marker, focus-window, bloom, fog, or denoise-overclaim fallbacks.
 
 `composite/depth_aware_shadow_mask_composite.frag.glsl` reserves the resource id `lucerna:shaders/composite/depth_aware_shadow_mask_composite.frag.glsl` for a later scheduler path that can bind Lucerna-owned same-frame depth and normal inputs. Its sampler contract is:
@@ -90,7 +107,7 @@ This resource is a consumer only. It is not a path-traced shadow system, not a s
 - `CurrentNormalRoughnessSampler`: `lucerna.gbuffer.normalRoughness`
 - `SourceLightingSampler`: `lucerna.lighting.direct`
 
-The shader attenuates the native mask by depth continuity, optional normal agreement, receiver support, and source-lighting support. This is deliberately not a decorative screen-space darkener: `LucernaDepthBindingReady=false` makes the resource transparent, and missing depth binding must be logged as a pending binding rather than a fallback visual path.
+The shader attenuates the native mask by depth continuity, optional normal agreement, receiver support, and source-lighting support. It also applies a depth-aware bilateral mask filter so softening stays tied to the receiver surface and does not smear across depth or normal discontinuities. This is deliberately not a decorative screen-space darkener: `LucernaDepthBindingReady=false` makes the resource transparent, and missing depth binding must be logged as a pending binding rather than a fallback visual path. The same documentation markers, `softShadowMaskComposite`, `edgeAwareShadowMask`, `receiverTiedShadow`, and `screenSpaceDecalRejected`, are valid for this resource only when the scheduler binds the declared mask/depth inputs and controller validation confirms same-frame depth consumption.
 
 ## Round 5 Debug Overlay Inputs
 

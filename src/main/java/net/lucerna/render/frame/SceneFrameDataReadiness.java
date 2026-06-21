@@ -277,6 +277,59 @@ public record SceneFrameDataReadiness(
         return sceneSampleCount(GBufferSceneDataKind.EMISSIVE);
     }
 
+    public boolean playablePhysicalDepthSamplingReady() {
+        return this.frameConstantsReady
+                && buffer(GBufferSceneDataKind.DEPTH)
+                .map(GBufferSceneDataReadiness::playablePhysicalDepthSamplingReady)
+                .orElse(false);
+    }
+
+    public int liveDepthSampleCount() {
+        return buffer(GBufferSceneDataKind.DEPTH)
+                .map(GBufferSceneDataReadiness::liveDepthSampleCount)
+                .orElse(0);
+    }
+
+    public int liveNonzeroDepthSampleCount() {
+        return buffer(GBufferSceneDataKind.DEPTH)
+                .map(GBufferSceneDataReadiness::liveNonzeroDepthSampleCount)
+                .orElse(0);
+    }
+
+    public boolean playablePhysicalGBufferSamplingReady() {
+        if (!this.frameConstantsReady) {
+            return false;
+        }
+        for (GBufferSceneDataKind kind : GBufferSceneDataKind.lightingRequired()) {
+            Optional<GBufferSceneDataReadiness> readiness = buffer(kind);
+            if (readiness.isEmpty() || !readiness.get().playablePhysicalSceneDataSamplingReady()) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public int liveLightingSceneSampleCount() {
+        int total = 0;
+        for (GBufferSceneDataKind kind : GBufferSceneDataKind.lightingRequired()) {
+            total += buffer(kind)
+                    .map(GBufferSceneDataReadiness::liveSceneSampleCount)
+                    .orElse(0);
+        }
+        return total;
+    }
+
+    public int minimumLiveLightingSceneSampleCount() {
+        int minimum = Integer.MAX_VALUE;
+        for (GBufferSceneDataKind kind : GBufferSceneDataKind.lightingRequired()) {
+            int count = buffer(kind)
+                    .map(GBufferSceneDataReadiness::liveSceneSampleCount)
+                    .orElse(0);
+            minimum = Math.min(minimum, count);
+        }
+        return minimum == Integer.MAX_VALUE ? 0 : minimum;
+    }
+
     public boolean trueMotionHistorySamplingReady() {
         return trueSampledSceneDataReady(GBufferSceneDataKind.MOTION_HISTORY);
     }
@@ -401,6 +454,63 @@ public record SceneFrameDataReadiness(
         return String.join(",", trueLightingSceneDataBlockers());
     }
 
+    public List<String> playablePhysicalSamplingBlockers() {
+        List<String> blockers = new ArrayList<>();
+        if (!this.frameConstantsReady) {
+            blockers.add("frameConstants=missingRequiredConstants");
+        }
+        for (GBufferSceneDataKind kind : GBufferSceneDataKind.lightingRequired()) {
+            Optional<GBufferSceneDataReadiness> readiness = buffer(kind);
+            if (readiness.isEmpty()) {
+                blockers.add(kind.label() + "=readinessMissing");
+                continue;
+            }
+            GBufferSceneDataReadiness buffer = readiness.get();
+            if (!buffer.playablePhysicalSceneDataSamplingReady()) {
+                blockers.add(kind.label()
+                        + "=" + buffer.statusCode()
+                        + ":source=" + buffer.frameDataSource().kind().label()
+                        + ":liveSamples=" + buffer.liveSceneSampleCount()
+                        + ":metadataOnly=" + buffer.metadataOnly()
+                        + ":publicOpaque=" + buffer.publicMojangOpaqueOnlyFallback());
+            }
+        }
+        return List.copyOf(blockers);
+    }
+
+    public String playablePhysicalSamplingBlockerSummary() {
+        if (playablePhysicalGBufferSamplingReady()) {
+            return "ready";
+        }
+        return String.join(",", playablePhysicalSamplingBlockers());
+    }
+
+    public String playablePhysicalProofStatusLabel() {
+        return "playablePhysicalDepthSamplingReady=" + playablePhysicalDepthSamplingReady()
+                + ", playablePhysicalGBufferSamplingReady=" + playablePhysicalGBufferSamplingReady()
+                + ", liveDepthSampleCount=" + liveDepthSampleCount()
+                + ", liveNonzeroDepthSampleCount=" + liveNonzeroDepthSampleCount()
+                + ", minDepth=" + minDepth()
+                + ", maxDepth=" + maxDepth()
+                + ", normalLiveSampleCount=" + buffer(GBufferSceneDataKind.NORMAL)
+                .map(GBufferSceneDataReadiness::liveSceneSampleCount)
+                .orElse(0)
+                + ", materialLiveSampleCount=" + buffer(GBufferSceneDataKind.MATERIAL)
+                .map(GBufferSceneDataReadiness::liveSceneSampleCount)
+                .orElse(0)
+                + ", albedoLiveSampleCount=" + buffer(GBufferSceneDataKind.ALBEDO)
+                .map(GBufferSceneDataReadiness::liveSceneSampleCount)
+                .orElse(0)
+                + ", emissiveLiveSampleCount=" + buffer(GBufferSceneDataKind.EMISSIVE)
+                .map(GBufferSceneDataReadiness::liveSceneSampleCount)
+                .orElse(0)
+                + ", liveLightingSceneSampleCount=" + liveLightingSceneSampleCount()
+                + ", minimumLiveLightingSceneSampleCount=" + minimumLiveLightingSceneSampleCount()
+                + ", metadataOnly=" + this.frameAttachmentMetadataOnly
+                + ", publicMojangOpaqueOnly=" + this.frameAttachmentJavaOpaque
+                + ", blockers=" + playablePhysicalSamplingBlockerSummary();
+    }
+
     public String statusLabel() {
         return "frameIndex=" + this.frameIndex
                 + ", gBufferGeneration=" + this.gBufferGeneration
@@ -430,10 +540,17 @@ public record SceneFrameDataReadiness(
                 + ", trueEmissiveSamplingReady=" + trueEmissiveSamplingReady()
                 + ", emissiveSampleCount=" + emissiveSampleCount()
                 + ", trueMotionHistorySamplingReady=" + trueMotionHistorySamplingReady()
+                + ", playablePhysicalDepthSamplingReady=" + playablePhysicalDepthSamplingReady()
+                + ", playablePhysicalGBufferSamplingReady=" + playablePhysicalGBufferSamplingReady()
+                + ", liveDepthSampleCount=" + liveDepthSampleCount()
+                + ", liveNonzeroDepthSampleCount=" + liveNonzeroDepthSampleCount()
+                + ", liveLightingSceneSampleCount=" + liveLightingSceneSampleCount()
+                + ", minimumLiveLightingSceneSampleCount=" + minimumLiveLightingSceneSampleCount()
                 + ", truePhysicalGiShadowSamplingReady=" + truePhysicalGiShadowSamplingReady()
                 + ", trueLightingSceneDataSamplingReady=" + trueLightingSceneDataSamplingReady()
                 + ", anySyntheticOrContractFrameData=" + anySyntheticOrContractFrameData()
                 + ", syntheticOrContractKinds=" + syntheticOrContractKinds()
+                + ", playablePhysicalSamplingBlockers=" + playablePhysicalSamplingBlockerSummary()
                 + ", trueSamplingBlockers=" + trueSamplingBlockerSummary()
                 + ", trueLightingSceneDataBlockers=" + trueLightingSceneDataBlockerSummary()
                 + ", blockers=" + blockerSummary();
@@ -528,6 +645,7 @@ public record SceneFrameDataReadiness(
                 + ", safeForAttachment=" + frameTarget.safeForAttachment()
                 + ", worldColorTarget=" + frameTarget.worldColorTarget()
                 + ", preservesHud=" + frameTarget.preservesHud()
+                + ", " + frameTarget.finalCompositeSafetyStatusLabel()
                 + ", " + metadataStatus;
     }
 }

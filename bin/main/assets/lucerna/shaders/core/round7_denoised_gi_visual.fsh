@@ -53,7 +53,11 @@ const float DETAIL_RESTORE_GAIN = 0.46;
 const float DIRECTIONAL_EDGE_SUPPRESSION = 0.72;
 const float EDGE_OUTPUT_DAMPING = 0.58;
 const float HALO_REJECT_STRENGTH = 0.46;
+const float CHECKER_SUPPRESS_STRENGTH = 0.54;
+const float LOW_RES_BLOCK_REJECT_STRENGTH = 0.42;
 const vec3 MAX_ADDITIVE_PER_DRAW = vec3(0.050, 0.056, 0.064);
+
+float diagonalSignalGradient(vec2 uv);
 
 vec2 safeTexelSize() {
     return 1.0 / max(vec2(textureSize(InSampler, 0)), vec2(1.0));
@@ -100,6 +104,24 @@ float localSignalGradient(vec2 uv) {
             + offsetSignalGradient(uv, vec2(0.0, texel.y));
 }
 
+float checkerArtifactProxy(vec2 uv) {
+    vec2 texel = safeTexelSize();
+    float center = signalConfidence(sourceSample(uv));
+    float axis = (
+            signalConfidence(sourceSample(uv + vec2(texel.x, 0.0)))
+            + signalConfidence(sourceSample(uv + vec2(-texel.x, 0.0)))
+            + signalConfidence(sourceSample(uv + vec2(0.0, texel.y)))
+            + signalConfidence(sourceSample(uv + vec2(0.0, -texel.y)))) * 0.25;
+    float diagonal = (
+            signalConfidence(sourceSample(uv + texel * vec2(1.0, 1.0)))
+            + signalConfidence(sourceSample(uv + texel * vec2(-1.0, 1.0)))
+            + signalConfidence(sourceSample(uv + texel * vec2(1.0, -1.0)))
+            + signalConfidence(sourceSample(uv + texel * vec2(-1.0, -1.0)))) * 0.25;
+    float alternating = abs(center - axis) + max(diagonal - axis, 0.0) * 0.65;
+    float structuralEdge = localSignalGradient(uv) + diagonalSignalGradient(uv) * 0.36;
+    return smoothstep(0.025, 0.18, alternating) * (1.0 - smoothstep(0.12, 0.34, structuralEdge));
+}
+
 float diagonalSignalGradient(vec2 uv) {
     vec2 texel = safeTexelSize();
     float diagonalA = signalConfidence(sourceSample(uv + texel * vec2(1.5, 1.5)))
@@ -107,6 +129,39 @@ float diagonalSignalGradient(vec2 uv) {
     float diagonalB = signalConfidence(sourceSample(uv + texel * vec2(-1.5, 1.5)))
             - signalConfidence(sourceSample(uv + texel * vec2(1.5, -1.5)));
     return abs(diagonalA) + abs(diagonalB);
+}
+
+vec3 neighborhoodClamp(vec2 uv, vec3 candidate, float slack) {
+    vec2 texel = safeTexelSize();
+    vec3 center = max(sourceSample(uv).rgb, vec3(0.0));
+    vec3 minRgb = center;
+    vec3 maxRgb = center;
+    vec3 sampleRgb = max(sourceSample(uv + vec2(texel.x, 0.0)).rgb, vec3(0.0));
+    minRgb = min(minRgb, sampleRgb);
+    maxRgb = max(maxRgb, sampleRgb);
+    sampleRgb = max(sourceSample(uv + vec2(-texel.x, 0.0)).rgb, vec3(0.0));
+    minRgb = min(minRgb, sampleRgb);
+    maxRgb = max(maxRgb, sampleRgb);
+    sampleRgb = max(sourceSample(uv + vec2(0.0, texel.y)).rgb, vec3(0.0));
+    minRgb = min(minRgb, sampleRgb);
+    maxRgb = max(maxRgb, sampleRgb);
+    sampleRgb = max(sourceSample(uv + vec2(0.0, -texel.y)).rgb, vec3(0.0));
+    minRgb = min(minRgb, sampleRgb);
+    maxRgb = max(maxRgb, sampleRgb);
+    sampleRgb = max(sourceSample(uv + texel * vec2(1.0, 1.0)).rgb, vec3(0.0));
+    minRgb = min(minRgb, sampleRgb);
+    maxRgb = max(maxRgb, sampleRgb);
+    sampleRgb = max(sourceSample(uv + texel * vec2(-1.0, 1.0)).rgb, vec3(0.0));
+    minRgb = min(minRgb, sampleRgb);
+    maxRgb = max(maxRgb, sampleRgb);
+    sampleRgb = max(sourceSample(uv + texel * vec2(1.0, -1.0)).rgb, vec3(0.0));
+    minRgb = min(minRgb, sampleRgb);
+    maxRgb = max(maxRgb, sampleRgb);
+    sampleRgb = max(sourceSample(uv + texel * vec2(-1.0, -1.0)).rgb, vec3(0.0));
+    minRgb = min(minRgb, sampleRgb);
+    maxRgb = max(maxRgb, sampleRgb);
+    vec3 range = max(maxRgb - minRgb, vec3(0.001));
+    return clamp(candidate, max(minRgb - range * slack, vec3(0.0)), maxRgb + range * slack + vec3(0.001));
 }
 
 float localMaterialStructure(vec2 uv, vec4 center) {
@@ -122,6 +177,29 @@ float localMaterialStructure(vec2 uv, vec4 center) {
             length(max(verticalA.rgb, vec3(0.0)) - max(verticalB.rgb, vec3(0.0))));
     float confidenceStructure = localSignalGradient(uv) + diagonalSignalGradient(uv) * 0.50;
     return clamp(chromaSpan(center.rgb) * 0.75 + lumaStructure * 2.0 + chromaStructure * 0.55 + confidenceStructure, 0.0, 1.0);
+}
+
+float lowResolutionPlateauReject(vec2 uv, vec4 center) {
+    vec2 texel = safeTexelSize();
+    float centerConfidence = signalConfidence(center);
+    float axisConfidence = (
+            signalConfidence(sourceSample(uv + vec2(texel.x * 2.0, 0.0)))
+            + signalConfidence(sourceSample(uv + vec2(-texel.x * 2.0, 0.0)))
+            + signalConfidence(sourceSample(uv + vec2(0.0, texel.y * 2.0)))
+            + signalConfidence(sourceSample(uv + vec2(0.0, -texel.y * 2.0)))) * 0.25;
+    float diagonalConfidence = (
+            signalConfidence(sourceSample(uv + texel * vec2(2.0, 2.0)))
+            + signalConfidence(sourceSample(uv + texel * vec2(-2.0, 2.0)))
+            + signalConfidence(sourceSample(uv + texel * vec2(2.0, -2.0)))
+            + signalConfidence(sourceSample(uv + texel * vec2(-2.0, -2.0)))) * 0.25;
+    float broadSignal = max(centerConfidence, max(axisConfidence, diagonalConfidence));
+    float plateau = 1.0 - smoothstep(0.012, 0.075,
+            abs(centerConfidence - axisConfidence) + abs(axisConfidence - diagonalConfidence));
+    float structure = localMaterialStructure(uv, center)
+            + localSignalGradient(uv) * 0.58
+            + diagonalSignalGradient(uv) * 0.32;
+    return smoothstep(0.050, 0.34, broadSignal) * plateau
+            * (1.0 - smoothstep(0.030, 0.18, structure));
 }
 
 float edgeAwareOutputGate(vec2 uv, vec4 center, vec4 denoised) {
@@ -255,6 +333,20 @@ vec4 softGameplaySample(vec2 uv) {
     return sum;
 }
 
+vec4 sourceGatedGameplaySample(vec2 uv) {
+    // Source-gated denoise marker: this is still only the public Mojang
+    // visual consumer of raw-GI-like input. It preserves local source edges and
+    // suppresses low-resolution checker/block artifacts before final shaping.
+    vec4 center = sourceSample(uv);
+    vec4 soft = softGameplaySample(uv);
+    float checker = checkerArtifactProxy(uv);
+    float sourceGate = smoothstep(0.010, 0.16, max(signalConfidence(center), signalConfidence(soft)));
+    float edgeGuard = smoothstep(0.020, 0.22, localMaterialStructure(uv, center) + localSignalGradient(uv) * 0.42);
+    vec4 antiChecker = mix(center, soft, (1.0 - edgeGuard * 0.72) * sourceGate);
+    antiChecker.rgb = neighborhoodClamp(uv, antiChecker.rgb, 0.20 + edgeGuard * 0.24);
+    return mix(soft, antiChecker, checker * CHECKER_SUPPRESS_STRENGTH);
+}
+
 float sourceSurfaceMask(vec2 uv, vec4 center, vec4 denoised) {
     vec2 texel = safeTexelSize();
     float centerConfidence = max(signalConfidence(center), signalConfidence(denoised));
@@ -320,20 +412,32 @@ vec3 postTonalResponse(vec3 color, float confidence, float surfaceMask) {
 }
 
 void main() {
-    vec4 center = softGameplaySample(texCoord);
+    // Raw-GI input preservation marker: all smoothing is gated by the sampled
+    // payload's own signal and local discontinuities; this is not a fullscreen
+    // wash or fixed proof overlay.
+    vec4 center = sourceGatedGameplaySample(texCoord);
     vec4 denoised = mix(denoisedSample(texCoord), center, 0.72);
     float confidence = clamp(max(signalConfidence(center), signalConfidence(denoised)), 0.0, 1.0);
     float surfaceMask = sourceSurfaceMask(texCoord, center, denoised);
     float structureMask = mix(0.26, 0.74, smoothstep(0.018, 0.16, localMaterialStructure(texCoord, center)));
+    float checkerArtifact = checkerArtifactProxy(texCoord);
+    float plateauReject = lowResolutionPlateauReject(texCoord, center);
+    surfaceMask *= 1.0 - plateauReject * (1.0 - structureMask) * 0.48;
 
     vec3 shaped = denoised.rgb;
+    shaped = neighborhoodClamp(texCoord, shaped, 0.24);
     shaped = max(shaped, vec3(SIGNAL_FLOOR) * confidence);
     shaped = mix(vec3(luminance(shaped)), shaped, 0.62 + smoothstep(0.03, 0.36, chromaSpan(shaped)) * 0.22);
     shaped *= SIGNAL_GAIN * smoothstep(0.08, 0.92, confidence) * surfaceMask * structureMask;
     shaped *= mix(0.58, 1.0, edgeAwareOutputGate(texCoord, center, denoised));
     shaped = suppressCandidateHalo(texCoord, center, denoised, shaped) * 0.82;
     shaped += localSignalBounce(texCoord, center, denoised, surfaceMask) * mix(0.20, 0.82, confidence * surfaceMask);
+    shaped = mix(shaped, neighborhoodClamp(texCoord, shaped, 0.10), checkerArtifact * LOW_RES_BLOCK_REJECT_STRENGTH);
+    shaped = mix(shaped, max(center.rgb, vec3(0.0)), plateauReject * (1.0 - structureMask) * 0.36);
     shaped = postTonalResponse(shaped, confidence, surfaceMask);
 
+    // Non-compute boundary marker: this public fragment pass only contributes a
+    // source-gated denoised visual color; it does not claim Vulkan compute,
+    // hardware denoise, storage-image writes, or temporal history.
     fragColor = vec4(min(max(shaped, vec3(0.0)), MAX_ADDITIVE_PER_DRAW), 1.0);
 }

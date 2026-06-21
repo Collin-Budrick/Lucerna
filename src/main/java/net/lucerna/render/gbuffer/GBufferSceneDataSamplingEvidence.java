@@ -443,6 +443,23 @@ public record GBufferSceneDataSamplingEvidence(
         return provesDepthSampling() ? this.sampleCount : 0;
     }
 
+    public boolean playablePhysicalDepthSamplingReady() {
+        return provesDepthSampling()
+                && !metadataOnly()
+                && !missing()
+                && !synthetic()
+                && !contractOnly()
+                && !publicMojangOpaqueOnly();
+    }
+
+    public int liveDepthSampleCount() {
+        return playablePhysicalDepthSamplingReady() ? this.sampleCount : 0;
+    }
+
+    public int liveNonzeroDepthSampleCount() {
+        return playablePhysicalDepthSamplingReady() ? this.nonzeroDepthSampleCount : 0;
+    }
+
     public String depthSamplingMarker() {
         return this.sourceKind.label();
     }
@@ -484,6 +501,19 @@ public record GBufferSceneDataSamplingEvidence(
                 + ", depthSamplingMarker=" + depthSamplingMarker()
                 + ", depthSamplingBlocker=" + depthSamplingBlocker()
                 + ", blockerReason=" + this.blockerReason;
+    }
+
+    public String playablePhysicalStatusLabel() {
+        return "playablePhysicalDepthSamplingReady=" + playablePhysicalDepthSamplingReady()
+                + ", liveDepthSampleCount=" + liveDepthSampleCount()
+                + ", liveNonzeroDepthSampleCount=" + liveNonzeroDepthSampleCount()
+                + ", depthRange=" + minNormalizedDepth() + ".." + maxNormalizedDepth()
+                + ", sourceKind=" + this.sourceKind.label()
+                + ", metadataOnly=" + metadataOnly()
+                + ", publicMojangOpaqueOnly=" + publicMojangOpaqueOnly()
+                + ", synthetic=" + synthetic()
+                + ", contractOnly=" + contractOnly()
+                + ", blocker=" + depthSamplingBlocker();
     }
 
     private static double clampNormalizedDepth(double value) {

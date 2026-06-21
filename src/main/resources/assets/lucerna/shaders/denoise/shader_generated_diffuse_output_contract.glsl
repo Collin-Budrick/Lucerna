@@ -39,6 +39,13 @@
 // - Public-Mojang final visual shaping is core/round7_denoised_gi_visual.fsh
 //   or composite/final_composite.frag.glsl drawing into the borrowed world
 //   color path. It is not a denoise output-image producer.
+// - Source-gated denoise means smoothing is constrained by raw-GI luminance,
+//   chroma, confidence, and available geometry/history agreement. It must not
+//   turn sparse payloads into a fullscreen wash or proof overlay.
+// - Raw-GI input preservation means the center payload and neighborhood
+//   min/max bounds remain authoritative at edges. Artifact suppression may
+//   reduce checker/block noise, but it must not invent unrelated color or
+//   claim physically correct bounce without upstream traced-light evidence.
 // - Real shader-generated denoise output for the current slice may be produced
 //   by a public Mojang fragment pass rendering into the owned
 //   lucerna.denoise.diffuse color target. A later compute/storage-image variant
@@ -126,6 +133,10 @@
 //   raw-diffuse-gi-rgba8 input and lucerna.denoise.diffuse as the owned draw
 //   target. It remains a public Mojang fragment output path, not compute
 //   denoise and not a storage-image write.
+// - Edge-aware visual smoothing in the current resources is shader-side
+//   bilateral-style filtering, checker rejection, and neighborhood clamping.
+//   It is a quality improvement for the public fragment path, not native Vulkan
+//   compute, hardware denoise, NRD, or temporal path-tracing reconstruction.
 // - Until the scheduler binds and runs a real implementation, telemetry must
 //   keep shaderGeneratedDenoisedGI=false, realDenoiseShaderOutput=false,
 //   realShaderDenoiseOutputReady=false, and shaderDenoiseOverclaimPresent=false.

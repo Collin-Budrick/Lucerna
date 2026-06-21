@@ -53,6 +53,11 @@ const float RAW_CONTRAST_RESTORE = 0.55;
 const float EDGE_CENTER_RESTORE = 0.68;
 const float MATERIAL_PROXY_REJECT = 0.74;
 const float HALO_SUPPRESS = 0.42;
+const float CHECKER_ARTIFACT_REJECT = 0.58;
+const float LOW_RES_EDGE_SLACK = 0.18;
+
+float localRawChromaRange(vec2 uv, vec4 centerRaw);
+float localConfidenceRange(vec2 uv, vec4 centerRaw);
 
 vec2 clampUv(vec2 uv) {
     return clamp(uv, vec2(0.0), vec2(1.0));
@@ -104,6 +109,59 @@ float sampleWeight(vec2 sampleUv, vec4 centerRaw, float baseWeight) {
     float materialProxyEdge = smoothstep(0.022, 0.19, materialProxyDistance(centerRaw, sampleRaw));
     float edgeStop = mix(1.0, 1.0 - MATERIAL_PROXY_REJECT, materialProxyEdge);
     return baseWeight * cueWeight * rawWeight * confidenceWeight * edgeStop;
+}
+
+float checkerArtifactProxy(vec2 uv, vec4 centerRaw) {
+    vec2 texel = texelSize();
+    float center = confidence(centerRaw);
+    float axis = (
+            confidence(rawDiffuseSample(uv + vec2(texel.x, 0.0)))
+            + confidence(rawDiffuseSample(uv + vec2(-texel.x, 0.0)))
+            + confidence(rawDiffuseSample(uv + vec2(0.0, texel.y)))
+            + confidence(rawDiffuseSample(uv + vec2(0.0, -texel.y)))) * 0.25;
+    float diagonal = (
+            confidence(rawDiffuseSample(uv + texel * vec2(1.0, 1.0)))
+            + confidence(rawDiffuseSample(uv + texel * vec2(-1.0, 1.0)))
+            + confidence(rawDiffuseSample(uv + texel * vec2(1.0, -1.0)))
+            + confidence(rawDiffuseSample(uv + texel * vec2(-1.0, -1.0)))) * 0.25;
+    float alternating = abs(center - axis) + max(diagonal - axis, 0.0) * 0.70;
+    float edgeStructure = localConfidenceRange(uv, centerRaw) + localRawChromaRange(uv, centerRaw) * 0.55;
+    return smoothstep(0.018, 0.15, alternating) * (1.0 - smoothstep(0.095, 0.30, edgeStructure));
+}
+
+vec3 localRawMin(vec2 uv, vec4 centerRaw) {
+    vec2 texel = texelSize();
+    vec3 minRgb = max(centerRaw.rgb, vec3(0.0));
+    minRgb = min(minRgb, max(rawDiffuseSample(uv + vec2(texel.x, 0.0)).rgb, vec3(0.0)));
+    minRgb = min(minRgb, max(rawDiffuseSample(uv + vec2(-texel.x, 0.0)).rgb, vec3(0.0)));
+    minRgb = min(minRgb, max(rawDiffuseSample(uv + vec2(0.0, texel.y)).rgb, vec3(0.0)));
+    minRgb = min(minRgb, max(rawDiffuseSample(uv + vec2(0.0, -texel.y)).rgb, vec3(0.0)));
+    minRgb = min(minRgb, max(rawDiffuseSample(uv + texel * vec2(1.0, 1.0)).rgb, vec3(0.0)));
+    minRgb = min(minRgb, max(rawDiffuseSample(uv + texel * vec2(-1.0, 1.0)).rgb, vec3(0.0)));
+    minRgb = min(minRgb, max(rawDiffuseSample(uv + texel * vec2(1.0, -1.0)).rgb, vec3(0.0)));
+    minRgb = min(minRgb, max(rawDiffuseSample(uv + texel * vec2(-1.0, -1.0)).rgb, vec3(0.0)));
+    return minRgb;
+}
+
+vec3 localRawMax(vec2 uv, vec4 centerRaw) {
+    vec2 texel = texelSize();
+    vec3 maxRgb = max(centerRaw.rgb, vec3(0.0));
+    maxRgb = max(maxRgb, max(rawDiffuseSample(uv + vec2(texel.x, 0.0)).rgb, vec3(0.0)));
+    maxRgb = max(maxRgb, max(rawDiffuseSample(uv + vec2(-texel.x, 0.0)).rgb, vec3(0.0)));
+    maxRgb = max(maxRgb, max(rawDiffuseSample(uv + vec2(0.0, texel.y)).rgb, vec3(0.0)));
+    maxRgb = max(maxRgb, max(rawDiffuseSample(uv + vec2(0.0, -texel.y)).rgb, vec3(0.0)));
+    maxRgb = max(maxRgb, max(rawDiffuseSample(uv + texel * vec2(1.0, 1.0)).rgb, vec3(0.0)));
+    maxRgb = max(maxRgb, max(rawDiffuseSample(uv + texel * vec2(-1.0, 1.0)).rgb, vec3(0.0)));
+    maxRgb = max(maxRgb, max(rawDiffuseSample(uv + texel * vec2(1.0, -1.0)).rgb, vec3(0.0)));
+    maxRgb = max(maxRgb, max(rawDiffuseSample(uv + texel * vec2(-1.0, -1.0)).rgb, vec3(0.0)));
+    return maxRgb;
+}
+
+vec3 clampToRawNeighborhood(vec2 uv, vec4 centerRaw, vec3 candidate, float slack) {
+    vec3 minRgb = localRawMin(uv, centerRaw);
+    vec3 maxRgb = localRawMax(uv, centerRaw);
+    vec3 range = max(maxRgb - minRgb, vec3(0.001));
+    return clamp(candidate, max(minRgb - range * slack, vec3(0.0)), maxRgb + range * slack + vec3(0.001));
 }
 
 void accumulateSample(inout vec4 sum, inout float weightSum, vec2 sampleUv, vec4 centerRaw, float baseWeight) {
@@ -170,6 +228,29 @@ float localMaterialDepthProxy(vec2 uv, vec4 centerRaw) {
     return smoothstep(0.012, 0.15, structure);
 }
 
+float lowResolutionPlateauReject(vec2 uv, vec4 centerRaw) {
+    vec2 texel = texelSize();
+    float centerConfidence = confidence(centerRaw);
+    float axisConfidence = (
+            confidence(rawDiffuseSample(uv + vec2(texel.x * 2.0, 0.0)))
+            + confidence(rawDiffuseSample(uv + vec2(-texel.x * 2.0, 0.0)))
+            + confidence(rawDiffuseSample(uv + vec2(0.0, texel.y * 2.0)))
+            + confidence(rawDiffuseSample(uv + vec2(0.0, -texel.y * 2.0)))) * 0.25;
+    float diagonalConfidence = (
+            confidence(rawDiffuseSample(uv + texel * vec2(2.0, 2.0)))
+            + confidence(rawDiffuseSample(uv + texel * vec2(-2.0, 2.0)))
+            + confidence(rawDiffuseSample(uv + texel * vec2(2.0, -2.0)))
+            + confidence(rawDiffuseSample(uv + texel * vec2(-2.0, -2.0)))) * 0.25;
+    float broadSignal = max(centerConfidence, max(axisConfidence, diagonalConfidence));
+    float plateau = 1.0 - smoothstep(0.010, 0.070,
+            abs(centerConfidence - axisConfidence) + abs(axisConfidence - diagonalConfidence));
+    float structure = localMaterialDepthProxy(uv, centerRaw)
+            + localRawChromaRange(uv, centerRaw) * 0.72
+            + localRawLumaRange(uv, centerRaw) * 1.20;
+    return smoothstep(0.050, 0.34, broadSignal) * plateau
+            * (1.0 - smoothstep(0.030, 0.18, structure));
+}
+
 vec3 localRawMean(vec2 uv, vec4 centerRaw) {
     vec2 texel = texelSize();
     vec3 sum = max(centerRaw.rgb, vec3(0.0)) * 2.0;
@@ -193,6 +274,9 @@ vec3 preserveRawLocalContrast(vec2 uv, vec4 centerRaw, vec3 filteredRgb) {
 }
 
 vec4 denoiseDiffuse(vec2 uv, vec4 centerRaw) {
+    // Source-gated denoise marker: the pass only smooths samples that agree
+    // with the raw-diffuse-gi-rgba8 signal proxy, preserving payload edges and
+    // rejecting isolated checker/block artifacts instead of painting a wash.
     vec2 texel = texelSize();
     vec4 sum = vec4(max(centerRaw.rgb, vec3(0.0)), clamp(centerRaw.a, 0.0, 1.0)) * CENTER_WEIGHT;
     float weightSum = CENTER_WEIGHT;
@@ -214,6 +298,9 @@ vec4 denoiseDiffuse(vec2 uv, vec4 centerRaw) {
 
     vec4 filtered = sum / max(weightSum, 0.0001);
     float proxyBoundary = localMaterialDepthProxy(uv, centerRaw);
+    float checkerReject = checkerArtifactProxy(uv, centerRaw) * CHECKER_ARTIFACT_REJECT;
+    filtered.rgb = clampToRawNeighborhood(uv, centerRaw, filtered.rgb, LOW_RES_EDGE_SLACK + proxyBoundary * 0.18);
+    filtered.rgb = mix(filtered.rgb, localRawMean(uv, centerRaw), checkerReject * (1.0 - proxyBoundary * 0.65));
     float centerRestore = proxyBoundary * EDGE_CENTER_RESTORE;
     return mix(filtered, vec4(max(centerRaw.rgb, vec3(0.0)), clamp(centerRaw.a, 0.0, 1.0)), centerRestore);
 }
@@ -231,7 +318,17 @@ void main() {
     vec3 contrastPreserved = preserveRawLocalContrast(uv, centerRaw, restored);
     vec3 haloSuppressed = mix(contrastPreserved, min(contrastPreserved, max(centerRaw.rgb, vec3(0.0)) * 1.22 + vec3(0.001)),
             smoothstep(0.035, 0.16, proxyBoundary + localRawChromaRange(uv, centerRaw)) * HALO_SUPPRESS);
-    float outputAlpha = clamp(max(filtered.a, confidence(centerRaw)) * signalGate * surfaceGate, 0.0, 1.0);
+    haloSuppressed = clampToRawNeighborhood(uv, centerRaw, haloSuppressed, 0.22 + proxyBoundary * 0.18);
+    float plateauReject = lowResolutionPlateauReject(uv, centerRaw);
+    haloSuppressed = mix(haloSuppressed, max(centerRaw.rgb, vec3(0.0)),
+            plateauReject * (1.0 - proxyBoundary * 0.70) * 0.48);
+    float outputAlpha = clamp(max(filtered.a, confidence(centerRaw))
+            * signalGate
+            * surfaceGate
+            * (1.0 - plateauReject * 0.34), 0.0, 1.0);
 
+    // Raw-GI input preservation and non-compute boundary marker: this public
+    // Mojang fragment pass writes a color attachment from InSampler only. It is
+    // not Vulkan compute, not a storage-image write, and not hardware denoise.
     fragColor = vec4(max(haloSuppressed, vec3(0.0)) * signalGate * surfaceGate, outputAlpha);
 }

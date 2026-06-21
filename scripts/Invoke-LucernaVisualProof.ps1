@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ShaderDenoisedGi", "ShaderDenoiseFinalComposite", "ShaderDenoiseDebug", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalBaseline", "TemporalStable", "TemporalMoved", "UserVisibleBaseline", "UserVisibleFinalComposite", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay", "ForestComplexCullingOverlay", "VoxelRayDebug", "RtEntityDebug", "HybridHitDebug", "DirectReservoirDebug", "GiReservoirDebug", "ReservoirReuseDebug", "DirectBruteBaseline", "RestirDirectEnabled", "RestirTemporalStable", "RestirTemporalMoved", "RestirExecutionDebug", "PhysicalBaseline", "PhysicalEnabled", "PhysicalDebug", "ShadowMapSlice", "DepthShadowSlice", "FullProof", "EmissiveSpill", "ColoredBounce", "ContactShadows", "ShaderDenoiseOutput", "TracedGiConsumption", "FinalPhysicalComposite")]
+    [ValidateSet("Baseline", "Enabled", "Debug", "Direct", "RawGi", "DenoisedGi", "FinalComposite", "ShaderDenoisedGi", "ShaderDenoiseFinalComposite", "ShaderDenoiseDebug", "ParticleBaseline", "ParticleFinalComposite", "TranslucentBaseline", "TranslucentFinalComposite", "TemporalBaseline", "TemporalStable", "TemporalMoved", "UserVisibleBaseline", "UserVisibleFinalComposite", "StableHeatmap", "MovedHeatmap", "EmissiveHeatmap", "HistoryStable", "HistoryMoved", "FlatClusterOverlay", "InteriorCullingOverlay", "HighDistanceCullingOverlay", "ForestComplexCullingOverlay", "VoxelRayDebug", "RtEntityDebug", "HybridHitDebug", "DirectReservoirDebug", "GiReservoirDebug", "ReservoirReuseDebug", "DirectBruteBaseline", "RestirDirectEnabled", "RestirTemporalStable", "RestirTemporalMoved", "RestirExecutionDebug", "PhysicalBaseline", "PhysicalEnabled", "PhysicalDebug", "ShadowMapSlice", "DepthShadowSlice", "FullProof", "PlayablePhysical", "VisualQualityBaseline", "VisualQualityEnabled", "VisualQualityPlayablePhysical", "EmissiveSpill", "ColoredBounce", "ContactShadows", "ShaderDenoiseOutput", "TracedGiConsumption", "FinalPhysicalComposite")]
     [string] $Mode,
 
     [ValidateSet("Round5Direct", "Round5DirectSurface", "Round6DiffuseGi", "Round6NativeDiffuseGi", "Round6NativeDiffuseGiNoMarker", "Round56PhysicalLighting", "Round7DenoiseComposite", "Round7CompositeStability", "Round7EmissiveGiSurface", "Round7FinalPhysicalComposite", "Round7ShaderDenoiseOutput", "VisualLightingMilestone1", "RealRendererMilestone1", "Round8AdaptiveHeatmaps", "Round9VirtualizedGeometry", "Round10HybridTracing", "Round11Restir")]
@@ -743,6 +743,23 @@ function Get-RealRendererMilestone1CaptureIntent {
         "realRendererMilestone1\.partialSlices=.*shadowMapSlice.*depthShadowSlice",
         "realRendererMilestone1\.rejects=.*screenSpaceShadowDecals.*lowResDirectTextureFinalProof.*focusWindowProofMarker.*metadataOnly.*shaderDenoiseOverclaim.*proofOverlays.*menuChatScreenshots.*wrongWindow.*blankScreenshot"
     )
+    $visualQualityComparisonPatterns = @(
+        "realRendererMilestone1\.visualQualityComparisonProfile=true.*sameSceneBaselineEnabledPlayableRequired=true",
+        "realRendererMilestone1\.visualQualityComparisonSequence=.*PhysicalBaseline.*VisualQualityEnabled.*VisualQualityPlayablePhysical",
+        "realRendererMilestone1\.visualQualityRejects=.*fullscreenWash.*fixedLightBlob.*proofOverlays.*focusWindowOnly.*lowResDebugSubstitution.*screenSpaceDecalOnly.*wrongWindow.*menuChatScreenshots",
+        "realRendererMilestone1\.cleanCaptureContract=.*inWorldOnly.*menuClosedRequired=true.*chatClosedRequired=true.*wrongWindowScreenshotForbidden=true.*blankScreenshotForbidden=true"
+    )
+    $normalHeavyWorkloadBypassPatterns = @(
+        "(?:Lucerna playable renderer path active: .*heavyProofWorkload=false|realRendererMilestone1\.visualQualityEnabled=true.*heavyProofWorkload=false)",
+        "(?:nativeLightingDispatchBypassed|native_lighting_dispatch_bypassed)=true",
+        "(?:nativeReadbackBypassed|native_readback_bypassed)=true",
+        "(?:round9Round10Round11TelemetryBypassed|round9_round10_round11_telemetry_bypassed)=true"
+    )
+    $softReceiverTiedShadowMaskPatterns = @(
+        "(?:softReceiverTiedShadowMask|soft_receiver_tied_shadow_mask|receiverTiedSoftShadowMask|receiver_tied_soft_shadow_mask)=true",
+        "(?:shadowMaskReceiverTied|shadow_mask_receiver_tied|shadowMaskReceiverWorldSpace|shadow_mask_receiver_world_space)=true",
+        "(?:shadowMaskSoftened|shadow_mask_softened|softShadowMask|soft_shadow_mask)=true"
+    )
     $fullRendererProfilePatterns = @(
         "realRendererMilestone1\.fullRendererProofProfile=true.*sameInWorldRunRequired=true.*physicalGiRequired=true.*realShadowMapOutputRequired=true.*shadowMapConsumptionRequired=true.*trueDepthGBufferSamplingRequired=true.*tracedLightingConsumptionRequired=true.*shaderGeneratedDenoiseOutputRequired=true",
         "realRendererMilestone1\.cleanCaptureContract=.*inWorldOnly.*menuClosedRequired=true.*chatClosedRequired=true.*proofOverlaysForbidden=true.*wrongWindowScreenshotForbidden=true.*blankScreenshotForbidden=true"
@@ -813,6 +830,13 @@ function Get-RealRendererMilestone1CaptureIntent {
         "(?:shaderGeneratedDenoiseOutputEvidence|shaderGeneratedDenoiseOutputEvidenceReady|shader_generated_denoise_output_evidence)=true",
         "(?:round7\.shaderDenoise\.cpuReadbackFallbackActive|shaderDenoiseCpuReadbackFallbackActive|cpuReadbackDenoiseFallbackActive|cpu_readback_denoise_fallback_active|cpuReadbackFallbackActive)=false"
     )
+    $playablePhysicalRendererBudgetPatterns = @(
+        "(?:realRendererMilestone1\.playablePhysicalProfile|real_renderer_milestone1_playable_physical_profile)=true",
+        "(?:realRendererMilestone1\.playableBudgetRequired|playablePhysicalBudgetRequired|playable_physical_budget_required)=true",
+        "(?:playablePhysicalRendererBudget|playable_physical_renderer_budget|lowCostPhysicalRendererBudget|low_cost_physical_renderer_budget)=(?:true|active|enabled)",
+        "(?:heavyProofWorkload|heavy_proof_workload|fullProofWorkload|full_proof_workload)=false",
+        "(?:proofTelemetryBudget|proof_telemetry_budget|rendererTelemetryBudget|renderer_telemetry_budget)=(?:playable|low-cost|budgeted)"
+    )
     $shaderDenoiseOpenBoundaryPatterns = @(
         "(?:round7\.shaderDenoise\.shaderGeneratedOutput|shaderDenoiseShaderGeneratedOutput|shader_denoise_shader_generated_output|shaderGeneratedDenoiseOutput)=false",
         "(?:round7\.shaderDenoise\.realOutputReady|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=false",
@@ -828,6 +852,23 @@ function Get-RealRendererMilestone1CaptureIntent {
         "(?:low_res_direct_texture_final_proof_rejected|lowResolutionDirectTextureFinalProofRejected|low_res_direct_texture_debug_draw_rejected)=true",
         "(?:screen_space_shadow_decal_proof_rejected|screenSpaceShadowDecalProofRejected|screen_space_only_shadow_rejected)=true",
         "(?:shader_denoise_overclaim_rejected|shaderDenoiseOverclaimRejected)=true"
+    )
+    $realRendererPlayablePhysicalPatterns = @($scenePatterns) + @($fullRendererProfilePatterns) + @($playablePhysicalRendererBudgetPatterns) + @($physicalGiFullProofPatterns) + @($depthGBufferFullProofPatterns) + @($depthGBufferSourceProofPatterns) + @($shadowMapOutputPatterns) + @($shadowMapFinalCompositeConsumptionBasePatterns) + @($tracedLightingFullProofPatterns) + @($shaderDenoiseSeparationPatterns) + @($shaderGeneratedDenoiseFullProofPatterns) + @(
+        "(?:realRendererMilestone1\.playablePhysicalProof|realRendererMilestone1PlayablePhysicalProof|real_renderer_milestone1_playable_physical_proof)=true",
+        "(?:metadata_only_proof_rejected|metadata_preview_rejected|metadata_only_rejected)=true",
+        "(?:focus_window_capture_rejected|focus_window_rejected|focus_window_only_rejected)=true",
+        "(?:proof_marker_evidence_rejected|proof_marker_rejected|proof_marker_source_rejected)=true",
+        "(?:low_res_direct_texture_final_proof_rejected|lowResolutionDirectTextureFinalProofRejected|low_res_direct_texture_debug_draw_rejected)=true",
+        "(?:screen_space_shadow_decal_proof_rejected|screenSpaceShadowDecalProofRejected|screen_space_only_shadow_rejected)=true",
+        "(?:shader_denoise_overclaim_rejected|shaderDenoiseOverclaimRejected)=true"
+    )
+    $realRendererVisualQualityEnabledPatterns = @($scenePatterns) + @($visualQualityComparisonPatterns) + @($normalHeavyWorkloadBypassPatterns) + @(
+        "realRendererMilestone1\.visualQualityEnabled=true",
+        "(?:heavyProofWorkload|heavy_proof_workload|fullProofWorkload|full_proof_workload)=false"
+    )
+    $realRendererVisualQualityPlayablePhysicalPatterns = @($realRendererPlayablePhysicalPatterns) + @($visualQualityComparisonPatterns) + @($softReceiverTiedShadowMaskPatterns) + @(
+        "realRendererMilestone1\.visualQualityPlayablePhysical=true",
+        "(?:shaderDenoiseOutputConsumedByFinalComposite|shader_denoise_output_consumed_by_final_composite|shaderGeneratedDenoiseOutputConsumedByFinalComposite|shader_generated_denoise_output_consumed_by_final_composite)=true|(?:shaderOutputSourceConsumed|shaderDenoiseOutputSourceConsumed|shader_denoise_output_source_consumed)=true"
     )
     $realRendererShadowMapConsumedPatterns = @($scenePatterns) + @($shadowMapOutputPatterns) + @($shadowMapFinalCompositeConsumptionPatterns) + @($depthGBufferOpenBoundaryPatterns) + @($tracedLightingOpenBoundaryPatterns) + @($shaderDenoiseOpenBoundaryPatterns) + @(
         "(?:realRendererMilestone1\.proof|realRendererMilestone1Proof|real_renderer_milestone1_proof)=false",
@@ -849,6 +890,19 @@ function Get-RealRendererMilestone1CaptureIntent {
 
     switch ($CaptureMode) {
         "Baseline" { return Get-RealRendererMilestone1CaptureIntent "PhysicalBaseline" }
+        "VisualQualityBaseline" {
+            return [ordered]@{
+                rendererEnabled = $false
+                debugOverlay = "OFF"
+                compositeMode = "BASE_VANILLA_ONLY"
+                artifactRole = "real-renderer-milestone1-visual-quality-baseline"
+                sceneKind = "depth-gbuffer-shadowmap-traced-denoise"
+                sceneState = "same-camera-visual-quality-baseline-off"
+                sceneAction = "real-renderer-milestone1"
+                hideHudForScreenshot = $true
+                requiredPatterns = @($baselinePatterns) + @($scenePatterns) + @($visualQualityComparisonPatterns)
+            }
+        }
         "PhysicalBaseline" {
             return [ordered]@{
                 rendererEnabled = $false
@@ -863,6 +917,19 @@ function Get-RealRendererMilestone1CaptureIntent {
             }
         }
         "Enabled" { return Get-RealRendererMilestone1CaptureIntent "PhysicalEnabled" }
+        "VisualQualityEnabled" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "real-renderer-milestone1-visual-quality-enabled"
+                sceneKind = "depth-gbuffer-shadowmap-traced-denoise"
+                sceneState = "same-camera-visual-quality-enabled-heavy-workload-bypass"
+                sceneAction = "real-renderer-milestone1"
+                hideHudForScreenshot = $true
+                requiredPatterns = @($realRendererVisualQualityEnabledPatterns)
+            }
+        }
         "ShadowMapSlice" { return Get-RealRendererMilestone1CaptureIntent "PhysicalEnabled" }
         "PhysicalEnabled" {
             return [ordered]@{
@@ -901,6 +968,32 @@ function Get-RealRendererMilestone1CaptureIntent {
                 sceneAction = "real-renderer-milestone1"
                 hideHudForScreenshot = $true
                 requiredPatterns = @($realRendererFullProofPatterns)
+            }
+        }
+        "PlayablePhysical" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "real-renderer-milestone1-playable-physical"
+                sceneKind = "depth-gbuffer-shadowmap-traced-denoise"
+                sceneState = "same-camera-real-renderer-playable-physical-budget"
+                sceneAction = "real-renderer-milestone1"
+                hideHudForScreenshot = $true
+                requiredPatterns = @($realRendererPlayablePhysicalPatterns)
+            }
+        }
+        "VisualQualityPlayablePhysical" {
+            return [ordered]@{
+                rendererEnabled = $true
+                debugOverlay = "OFF"
+                compositeMode = "FINAL_LUCERNA_COMPOSITE"
+                artifactRole = "real-renderer-milestone1-visual-quality-playable-physical"
+                sceneKind = "depth-gbuffer-shadowmap-traced-denoise"
+                sceneState = "same-camera-visual-quality-playable-physical-budget"
+                sceneAction = "real-renderer-milestone1"
+                hideHudForScreenshot = $true
+                requiredPatterns = @($realRendererVisualQualityPlayablePhysicalPatterns)
             }
         }
         "FinalPhysicalComposite" { return Get-RealRendererMilestone1CaptureIntent "PhysicalEnabled" }
@@ -1706,6 +1799,63 @@ function Send-MinecraftKeys {
     Start-Sleep -Milliseconds 250
 }
 
+function Click-MinecraftRelative {
+    param(
+        [double] $RelativeX,
+        [double] $RelativeY
+    )
+
+    $windowProcess = Focus-MinecraftWindow
+    if (-not ("LucernaValidationWindowBounds" -as [type])) {
+        Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class LucernaValidationWindowBounds {
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT rect);
+}
+"@
+    }
+    if (-not ("LucernaValidationMouse" -as [type])) {
+        Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+
+public static class LucernaValidationMouse {
+    [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int X, int Y);
+
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(int dwFlags, int dx, int dy, int dwData, UIntPtr dwExtraInfo);
+}
+"@
+    }
+
+    $rect = New-Object LucernaValidationWindowBounds+RECT
+    if (-not [LucernaValidationWindowBounds]::GetWindowRect($windowProcess.MainWindowHandle, [ref]$rect)) {
+        return
+    }
+    $width = [Math]::Max(1, $rect.Right - $rect.Left)
+    $height = [Math]::Max(1, $rect.Bottom - $rect.Top)
+    $x = [int]($rect.Left + ($width * $RelativeX))
+    $y = [int]($rect.Top + ($height * $RelativeY))
+    [void] [LucernaValidationMouse]::SetCursorPos($x, $y)
+    Start-Sleep -Milliseconds 80
+    [LucernaValidationMouse]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 80
+    [LucernaValidationMouse]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 250
+}
+
 function Send-MinecraftChatCommand {
     param([string] $Command)
 
@@ -1752,6 +1902,9 @@ function Ensure-MinecraftGameplayFocus {
     # - In the pause menu, T is ignored and Escape returns to gameplay.
     Send-MinecraftKeys "t"
     Send-MinecraftKeys "{ESC}"
+    # If the pause menu remained open, this clicks the Back to Game button.
+    # In gameplay, the same click is just a harmless world click.
+    Click-MinecraftRelative 0.5 0.38
     Start-Sleep -Milliseconds 500
 }
 
@@ -2070,6 +2223,7 @@ function Invoke-RealRendererMilestone1SceneAction {
     Send-MinecraftChatCommand "/time set 6000"
     Send-MinecraftChatCommand "/effect clear @s"
 
+    $visualQualityScene = [string]$env:LUCERNA_REAL_RENDERER_MILESTONE1_ARTIFACT_ROLE -like "real-renderer-milestone1-visual-quality-*"
     Send-MinecraftChatCommand "/kill @e[type=!player,distance=..96]"
     Send-MinecraftChatCommand "/fill -16 180 -34 16 191 -2 minecraft:air"
     Send-MinecraftChatCommand "/fill -16 179 -34 16 179 -2 minecraft:smooth_stone"
@@ -2085,8 +2239,15 @@ function Invoke-RealRendererMilestone1SceneAction {
     Send-MinecraftChatCommand "/fill 5 180 -14 5 186 -14 minecraft:spruce_log"
     Send-MinecraftChatCommand "/fill -9 185 -20 -1 188 -12 minecraft:oak_leaves"
     Send-MinecraftChatCommand "/fill 1 185 -20 9 188 -12 minecraft:spruce_leaves"
-    Send-MinecraftChatCommand "/fill -13 180 -25 -7 183 -25 minecraft:glass"
-    Send-MinecraftChatCommand "/fill 7 180 -25 13 181 -25 minecraft:water"
+    if ($visualQualityScene) {
+        Send-MinecraftChatCommand "/fill -13 180 -25 -7 183 -25 minecraft:air"
+        Send-MinecraftChatCommand "/fill 7 180 -25 13 181 -25 minecraft:air"
+        Send-MinecraftChatCommand "/fill -13 179 -25 -7 179 -25 minecraft:smooth_stone"
+        Send-MinecraftChatCommand "/fill 7 179 -25 13 179 -25 minecraft:smooth_stone"
+    } else {
+        Send-MinecraftChatCommand "/fill -13 180 -25 -7 183 -25 minecraft:glass"
+        Send-MinecraftChatCommand "/fill 7 180 -25 13 181 -25 minecraft:water"
+    }
     Send-MinecraftChatCommand "/fill -2 180 -18 2 183 -18 minecraft:copper_block"
     Send-MinecraftChatCommand "/setblock -7 180 -11 minecraft:cobblestone_wall"
     Send-MinecraftChatCommand "/setblock 7 180 -11 minecraft:cobblestone_wall"
@@ -2094,7 +2255,7 @@ function Invoke-RealRendererMilestone1SceneAction {
     Send-MinecraftChatCommand "/time set 6000"
     Send-MinecraftChatCommand "/tp @s 0 181.55 -30 0 6"
     Start-Sleep -Seconds 3
-    Add-LucernaControllerMarker $MarkerPath "realRendererMilestone1.scene=depth-gbuffer-shadowmap-traced-denoise dryScene=true dayTime=true timeOfDay=6000 weather=clear sameCamera=true yaw=0 pitch=6 camera=0,181.55,-30 depthGBufferSurfaces=smooth_stone,concrete,glass,water,copper emissiveSources=minecraft:glowstone,minecraft:sea_lantern,minecraft:redstone_lamp shadowCasters=oak_log,spruce_log,oak_leaves,spruce_leaves realRendererMilestone1.fullProofRequirements=physicalGi,trueDepthGBufferSampling,realShadowMapOutput,tracedLightingConsumption,shaderGeneratedDenoise realRendererMilestone1.partialSlices=shadowMapSlice,depthShadowSlice realRendererMilestone1.depthShadowSliceRequirements=trueDepthGBufferSampling,realShadowMapOutput,shadowMapConsumption,tracedLightingOpenAllowed,shaderDenoiseOpenAllowed realRendererMilestone1.rejects=screenSpaceShadowDecals,lowResDirectTextureFinalProof,focusWindowProofMarker,metadataOnly,shaderDenoiseOverclaim,proofOverlays,menuChatScreenshots,wrongWindow,blankScreenshot"
+    Add-LucernaControllerMarker $MarkerPath "realRendererMilestone1.scene=depth-gbuffer-shadowmap-traced-denoise dryScene=true dayTime=true timeOfDay=6000 weather=clear sameCamera=true yaw=0 pitch=6 camera=0,181.55,-30 visualQualityDryForeground=$visualQualityScene depthGBufferSurfaces=smooth_stone,concrete,glass,water,copper emissiveSources=minecraft:glowstone,minecraft:sea_lantern,minecraft:redstone_lamp shadowCasters=oak_log,spruce_log,oak_leaves,spruce_leaves realRendererMilestone1.fullProofRequirements=physicalGi,trueDepthGBufferSampling,realShadowMapOutput,tracedLightingConsumption,shaderGeneratedDenoise realRendererMilestone1.partialSlices=shadowMapSlice,depthShadowSlice realRendererMilestone1.depthShadowSliceRequirements=trueDepthGBufferSampling,realShadowMapOutput,shadowMapConsumption,tracedLightingOpenAllowed,shaderDenoiseOpenAllowed realRendererMilestone1.rejects=screenSpaceShadowDecals,lowResDirectTextureFinalProof,focusWindowProofMarker,metadataOnly,shaderDenoiseOverclaim,proofOverlays,menuChatScreenshots,wrongWindow,blankScreenshot"
 }
 
 function Invoke-Round9SceneAction {
@@ -2567,6 +2728,9 @@ $screenshotDir = Join-Path $root "run\screenshots"
 New-Item -ItemType Directory -Force -Path $validationDir | Out-Null
 New-Item -ItemType Directory -Force -Path $screenshotArchiveDir | Out-Null
 New-Item -ItemType Directory -Force -Path $screenshotDir | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $root "run\validation-control") | Out-Null
+$controllerScreenshotTriggerFile = Join-Path $root ("run\validation-control\controller-screenshot-{0}-{1}.trigger" -f $scenario, $stamp)
+Remove-Item -LiteralPath $controllerScreenshotTriggerFile -Force -ErrorAction SilentlyContinue
 
 $configPath = Join-Path $root "run\config\lucerna.json"
 $backupConfig = $null
@@ -2817,18 +2981,31 @@ try {
     if ($ValidationProfile -eq "RealRendererMilestone1") {
         $realRendererMilestone1FullProofIntent = [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-full-proof"
         $realRendererMilestone1DepthShadowIntent = [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-depth-shadow-slice"
+        $realRendererMilestone1PlayablePhysicalIntent = [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-playable-physical" -or [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-visual-quality-playable-physical"
+        $realRendererMilestone1VisualQualityIntent = [string]$realRendererMilestone1CaptureIntent.artifactRole -like "real-renderer-milestone1-visual-quality-*"
+        $realRendererMilestone1VisualQualityEnabledIntent = [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-visual-quality-enabled"
         $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE"] = "1"
         $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_CAPTURE_MODE"] = [string]$realRendererMilestone1CaptureIntent.artifactRole
         $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_ARTIFACT_ROLE"] = [string]$realRendererMilestone1CaptureIntent.artifactRole
         $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_SCENE"] = [string]$realRendererMilestone1CaptureIntent.sceneKind
         $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_SCENE_STATE"] = [string]$realRendererMilestone1CaptureIntent.sceneState
-        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_STRICT_PROOF"] = "true"
-        $psi.Environment["LUCERNA_REQUIRE_TRUE_DEPTH_GBUFFER_SAMPLING"] = if ($realRendererMilestone1FullProofIntent -or $realRendererMilestone1DepthShadowIntent) { "true" } else { "false" }
-        $psi.Environment["LUCERNA_REQUIRE_REAL_SHADOW_MAP_OUTPUT"] = "true"
-        $psi.Environment["LUCERNA_REQUIRE_TRACED_LIGHTING_CONSUMPTION"] = if ($realRendererMilestone1FullProofIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_SCENE_SETUP"] = "real-renderer-milestone1"
+        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_STRICT_PROOF"] = if ($realRendererMilestone1VisualQualityEnabledIntent) { "false" } else { "true" }
+        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_VISUAL_QUALITY_COMPARISON"] = if ($realRendererMilestone1VisualQualityIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_REQUIRE_BASELINE_ENABLED_PLAYABLE_SCREENSHOTS"] = if ($realRendererMilestone1VisualQualityIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_PLAYABLE_PHYSICAL_PROOF"] = if ($realRendererMilestone1PlayablePhysicalIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REQUIRE_PLAYABLE_PHYSICAL_RENDERER_BUDGET"] = if ($realRendererMilestone1PlayablePhysicalIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REJECT_HEAVY_PROOF_WORKLOAD_FOR_PLAYABLE_PHYSICAL"] = if ($realRendererMilestone1PlayablePhysicalIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_PLAYABLE_PHYSICAL_RENDERER"] = if ($realRendererMilestone1PlayablePhysicalIntent) { "true" } else { "false" }
+        if ($realRendererMilestone1PlayablePhysicalIntent -and -not $psi.Environment.ContainsKey("LUCERNA_PLAYABLE_PHYSICAL_RENDERER_CADENCE_TICKS")) {
+            $psi.Environment["LUCERNA_PLAYABLE_PHYSICAL_RENDERER_CADENCE_TICKS"] = "40"
+        }
+        $psi.Environment["LUCERNA_REQUIRE_TRUE_DEPTH_GBUFFER_SAMPLING"] = if (-not $realRendererMilestone1VisualQualityEnabledIntent -and ($realRendererMilestone1FullProofIntent -or $realRendererMilestone1DepthShadowIntent -or $realRendererMilestone1PlayablePhysicalIntent)) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REQUIRE_REAL_SHADOW_MAP_OUTPUT"] = if ($realRendererMilestone1VisualQualityEnabledIntent) { "false" } else { "true" }
+        $psi.Environment["LUCERNA_REQUIRE_TRACED_LIGHTING_CONSUMPTION"] = if ($realRendererMilestone1FullProofIntent -or $realRendererMilestone1PlayablePhysicalIntent) { "true" } else { "false" }
         $psi.Environment["LUCERNA_REQUIRE_SHADER_DENOISE_OUTPUT_SEPARATION"] = "true"
-        $psi.Environment["LUCERNA_REQUIRE_PHYSICAL_GI_FULL_PROOF"] = if ($realRendererMilestone1FullProofIntent) { "true" } else { "false" }
-        $psi.Environment["LUCERNA_REQUIRE_SHADER_GENERATED_DENOISE_OUTPUT"] = if ($realRendererMilestone1FullProofIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REQUIRE_PHYSICAL_GI_FULL_PROOF"] = if ($realRendererMilestone1FullProofIntent -or $realRendererMilestone1PlayablePhysicalIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REQUIRE_SHADER_GENERATED_DENOISE_OUTPUT"] = if ($realRendererMilestone1FullProofIntent -or $realRendererMilestone1PlayablePhysicalIntent) { "true" } else { "false" }
         $psi.Environment["LUCERNA_ALLOW_TRACED_LIGHTING_OPEN_FOR_DEPTH_SHADOW_SLICE"] = if ($realRendererMilestone1DepthShadowIntent) { "true" } else { "false" }
         $psi.Environment["LUCERNA_ALLOW_SHADER_DENOISE_OPEN_FOR_DEPTH_SHADOW_SLICE"] = if ($realRendererMilestone1DepthShadowIntent) { "true" } else { "false" }
         $psi.Environment["LUCERNA_REJECT_SCREEN_SPACE_SHADOW_DECAL_PROOF"] = "true"
@@ -2837,9 +3014,13 @@ try {
         $psi.Environment["LUCERNA_REJECT_FOCUS_WINDOW_PROOF_MARKER_PATHS"] = "true"
         $psi.Environment["LUCERNA_REJECT_SHADER_DENOISE_OVERCLAIM"] = "true"
         $psi.Environment["LUCERNA_REJECT_PROOF_OVERLAYS"] = "true"
+        $psi.Environment["LUCERNA_REJECT_FULLSCREEN_WASH_VISUALS"] = "true"
+        $psi.Environment["LUCERNA_REJECT_FIXED_BLOB_VISUALS"] = "true"
+        $psi.Environment["LUCERNA_REJECT_LOW_RES_DEBUG_MARKERS"] = "true"
+        $psi.Environment["LUCERNA_REQUIRE_RECEIVER_TIED_SOFT_SHADOW_MASK"] = if ($realRendererMilestone1VisualQualityIntent -and $realRendererMilestone1PlayablePhysicalIntent) { "true" } else { "false" }
         $psi.Environment["LUCERNA_REJECT_MENU_CHAT_SCREENSHOT_PROOF"] = "true"
-        $psi.Environment["LUCERNA_REQUIRE_CLEAN_IN_WORLD_SCREENSHOT"] = if ($realRendererMilestone1FullProofIntent) { "true" } else { "false" }
-        $psi.Environment["LUCERNA_REQUIRE_SAME_RUN_FULL_RENDERER_PROOF"] = if ($realRendererMilestone1FullProofIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REQUIRE_CLEAN_IN_WORLD_SCREENSHOT"] = if ($realRendererMilestone1FullProofIntent -or $realRendererMilestone1PlayablePhysicalIntent -or $realRendererMilestone1VisualQualityIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REQUIRE_SAME_RUN_FULL_RENDERER_PROOF"] = if ($realRendererMilestone1FullProofIntent -or $realRendererMilestone1PlayablePhysicalIntent) { "true" } else { "false" }
     }
     if ($ValidationProfile -eq "Round7DenoiseComposite") {
         $psi.Environment["LUCERNA_ROUND7_CAPTURE_MODE"] = [string]$round7CaptureIntent.artifactRole
@@ -2913,6 +3094,7 @@ try {
         $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_REQUEST"] = "true"
         $screenshotDelayTicks = if ($ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7ShaderDenoiseOutput" -or ($ValidationProfile -eq "Round11Restir" -and $round11CaptureIntent -and [string]$round11CaptureIntent.sceneKind -eq "round11-restir-temporal")) { "1400" } else { "180" }
         $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_DELAY_TICKS"] = $screenshotDelayTicks
+        $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_TRIGGER_FILE"] = $controllerScreenshotTriggerFile
     }
     $script:LucernaMinecraftLaunchStart = Get-Date
     $process = [System.Diagnostics.Process]::Start($psi)
@@ -3284,6 +3466,22 @@ try {
             "debug_marker_only=true",
             "diagnostic-fullscreen",
             "fullscreen-warm-additive",
+            "fullscreenWash=true",
+            "fullscreen_wash=true",
+            "fullscreen-wash",
+            "fixedLightBlob=true",
+            "fixed_light_blob=true",
+            "fixedLightBlobVisual=true",
+            "fixed_light_blob_visual=true",
+            "screenSpaceDecalOnly=true",
+            "screen_space_decal_only=true",
+            "lowResDebugSubstitution=true",
+            "low_res_debug_substitution=true",
+            "(?:heavyProofWorkload|heavy_proof_workload|fullProofWorkload|full_proof_workload)=true",
+            "(?:playablePhysicalRendererBudgeted|playable_physical_renderer_budgeted|playablePhysicalRendererBudget|playable_physical_renderer_budget|lowCostPhysicalRendererBudget|low_cost_physical_renderer_budget)=(?:false|inactive|disabled)",
+            "(?:proofTelemetryBudget|proof_telemetry_budget|rendererTelemetryBudget|renderer_telemetry_budget)=(?:full|unbounded|heavy)",
+            "(?:minecraftFps|minecraft_fps|currentFps|current_fps|proofFps|proof_fps|fps)=0(?:\.0+)?(?:\D|$)",
+            "(?:minecraftFps|minecraft_fps|currentFps|current_fps|proofFps|proof_fps|fps)=1(?:\.0+)?(?:\D|$)",
             "low_res_direct_texture_final_proof_rejected=false",
             "lowResolutionDirectTextureFinalProofRejected=false",
             "low_res_direct_texture_debug_draw_rejected=false",
@@ -3308,7 +3506,24 @@ try {
             "native error",
             "Vulkan error"
         )
-        if ($realRendererMilestone1CaptureIntent -and [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-full-proof") {
+        if ($realRendererMilestone1CaptureIntent -and ([string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-full-proof" -or [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-playable-physical" -or [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-visual-quality-enabled" -or [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-visual-quality-playable-physical")) {
+            $startupReadinessNoiseAllowedForFullProof = @(
+                "metadataOnlyActive=true",
+                "metadata_only_active=true",
+                "metadataOnlyTracing=true",
+                "metadata_only_tracing=true",
+                "tracedLightingMetadataOnly=true",
+                "traced_lighting_metadata_only=true",
+                "gBufferDepthMetadataOnly=true",
+                "g_buffer_depth_metadata_only=true",
+                "depth_sampling_metadata_only=true",
+                "sourceIdentity=native-direct-light-rgba8",
+                "source_identity=native-direct-light-rgba8"
+            )
+            $realRendererForbiddenPatterns = @(
+                $realRendererForbiddenPatterns |
+                        Where-Object { $startupReadinessNoiseAllowedForFullProof -notcontains $_ }
+            )
             $realRendererForbiddenPatterns += @(
                 "debugOverlay=SHADER_DENOISE_OUTPUT_PROOF",
                 "debug\.overlay=SHADER_DENOISE_OUTPUT_PROOF",
@@ -3316,7 +3531,12 @@ try {
                 "hideGuiBeforeScreenshot=false",
                 "fullRendererProofOverclaimPresent=true",
                 "full_renderer_proof_overclaim_present=true",
-                "realRendererMilestone1OverclaimPresent=true"
+                "realRendererMilestone1OverclaimPresent=true",
+                "fullscreen_blob=true",
+                "fullscreenBlob=true",
+                "fullscreen_blob_visual=true",
+                "fixed_light_blob=true",
+                "fixedLightBlob=true"
             )
         }
         $realRendererForbiddenPatterns + @($PhysicalLightingForbiddenLogPattern)
@@ -3477,6 +3697,26 @@ try {
     if ($ValidationProfile -eq "RealRendererMilestone1" -and $realRendererMilestone1CaptureIntent -and [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-full-proof") {
         Add-LucernaControllerMarker $markerLog "realRendererMilestone1.fullRendererProofProfile=true inClientScreenshotRequired=true sodiumIrisVulkanRequired=true sameInWorldRunRequired=true physicalGiRequired=true realShadowMapOutputRequired=true shadowMapConsumptionRequired=true trueDepthGBufferSamplingRequired=true tracedLightingConsumptionRequired=true shaderGeneratedDenoiseOutputRequired=true proofOverlayForbidden=true focusWindowOnlyForbidden=true lowResDebugSubstitutionForbidden=true metadataOnlyEvidenceForbidden=true overclaimForbidden=true menuScreenshotForbidden=true chatScreenshotForbidden=true"
         Add-LucernaControllerMarker $markerLog "realRendererMilestone1.cleanCaptureContract=inWorldOnly menuClosedRequired=true chatClosedRequired=true pauseMenuAvoidance=true proofOverlaysForbidden=true wrongWindowScreenshotForbidden=true blankScreenshotForbidden=true noWindowFallback=true"
+    }
+    if ($ValidationProfile -eq "RealRendererMilestone1" -and $realRendererMilestone1CaptureIntent -and ([string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-playable-physical" -or [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-visual-quality-playable-physical")) {
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.fullRendererProofProfile=true realRendererMilestone1.playablePhysicalProfile=true inClientScreenshotRequired=true sodiumIrisVulkanRequired=true sameInWorldRunRequired=true physicalGiRequired=true realShadowMapOutputRequired=true shadowMapConsumptionRequired=true trueDepthGBufferSamplingRequired=true tracedLightingConsumptionRequired=true shaderGeneratedDenoiseOutputRequired=true proofOverlayForbidden=true fullscreenBlobForbidden=true focusWindowOnlyForbidden=true lowResDebugSubstitutionForbidden=true metadataOnlyEvidenceForbidden=true overclaimForbidden=true menuScreenshotForbidden=true chatScreenshotForbidden=true"
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.cleanCaptureContract=inWorldOnly menuClosedRequired=true chatClosedRequired=true pauseMenuAvoidance=true proofOverlaysForbidden=true wrongWindowScreenshotForbidden=true blankScreenshotForbidden=true noWindowFallback=true"
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.playableBudgetRequired=true playablePhysicalBudgetRequired=true proofTelemetryBudget=playable heavyProofWorkload=false fullProofWorkload=false lowCostPhysicalRendererBudget=active"
+    }
+    if ($ValidationProfile -eq "RealRendererMilestone1" -and $realRendererMilestone1CaptureIntent -and [string]$realRendererMilestone1CaptureIntent.artifactRole -like "real-renderer-milestone1-visual-quality-*") {
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.visualQualityComparisonProfile=true sameSceneBaselineEnabledPlayableRequired=true inClientScreenshotsRequired=true comparableBaselineEnabledPlayableScreenshotsRequired=true"
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.visualQualityComparisonSequence=PhysicalBaseline,VisualQualityEnabled,VisualQualityPlayablePhysical"
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.visualQualityRejects=fullscreenWash,fixedLightBlob,proofOverlays,focusWindowOnly,lowResDebugSubstitution,screenSpaceDecalOnly,oneFpsProofWorkload,wrongWindow,menuChatScreenshots"
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.cleanCaptureContract=inWorldOnly menuClosedRequired=true chatClosedRequired=true pauseMenuAvoidance=true proofOverlaysForbidden=true wrongWindowScreenshotForbidden=true blankScreenshotForbidden=true noWindowFallback=true"
+        if ([string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-visual-quality-baseline") {
+            Add-LucernaControllerMarker $markerLog "realRendererMilestone1.visualQualityBaseline=true rendererEnabled=false sameCameraBaseline=true"
+        }
+        if ([string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-visual-quality-enabled") {
+            Add-LucernaControllerMarker $markerLog "realRendererMilestone1.visualQualityEnabled=true heavyProofWorkload=false fullProofWorkload=false normalGameplayPathRequired=true nativeLightingDispatchBypassed=true nativeReadbackBypassed=true round9Round10Round11TelemetryBypassed=true"
+        }
+        if ([string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-visual-quality-playable-physical") {
+            Add-LucernaControllerMarker $markerLog "realRendererMilestone1.visualQualityPlayablePhysical=true playablePhysicalRendererRequired=true receiverTiedSoftShadowMaskRequired=true"
+        }
     }
     $earlyFailureLogPaths = @($gradleOut, $gradleErr)
     $script:AllowNativeLoadFailureForCurrentVisualProof = (
@@ -3650,6 +3890,7 @@ try {
         Add-LucernaControllerMarker $markerLog "realRendererMilestone1.captureRole=$($realRendererMilestone1CaptureIntent.artifactRole) hideGuiBeforeScreenshot=true realRendererMilestoneScreenshot=true commandFeedback=false chatCleared=true"
         Send-MinecraftKeys "{F1}"
         $hudHiddenForScreenshot = $true
+        Ensure-MinecraftGameplayFocus
         Start-Sleep -Seconds 3
     } elseif ($ValidationProfile -eq "Round7EmissiveGiSurface") {
         Add-LucernaControllerMarker $markerLog "round7.emissiveGiSurface.captureRole=$($round7SurfaceCaptureIntent.artifactRole) hideGuiBeforeScreenshot=false fixedWorldSurfaceRegion=true commandFeedback=false chatCleared=true"
@@ -3709,10 +3950,10 @@ try {
                 $repeatMarkerPrefix = if ($ValidationProfile -eq "Round11Restir") { "round11.stability.temporal" } else { "round7.stability.temporal" }
                 Add-LucernaControllerMarker $markerLog "$repeatMarkerPrefix.repeatCapture index=$($captureIndex + 1) count=$effectiveCaptureCount label=$captureLabelSafe intervalSeconds=$TemporalCaptureIntervalSeconds sceneState=$repeatSceneState"
             }
-            Focus-MinecraftWindow | Out-Null
-            # Clear-MinecraftChat already returns the client to gameplay before this loop.
-            # Extra Escape toggles here can open the pause menu and contaminate F2 captures.
-            Start-Sleep -Milliseconds 500
+            Ensure-MinecraftGameplayFocus
+            # Normalize the client back into gameplay immediately before F2 capture.
+            # This prevents stale pause/menu focus from contaminating in-client proof screenshots.
+            Start-Sleep -Milliseconds 900
             $captureStartedAt = Get-Date
             $elapsedFromPreviousStartMs = if ($previousCaptureStartedAt) {
                 [Math]::Round(($captureStartedAt - $previousCaptureStartedAt).TotalMilliseconds, 3)
@@ -3732,9 +3973,9 @@ try {
                     $screenshot = Wait-NewScreenshot $screenshotDir $existingScreenshotNames $beforeScreenshot $screenshotDeadline -RequireNewAfter
                     $capturedScreenshotSource = "minecraft-in-client-f2-repeat"
                 } else {
-                    Send-MinecraftKeys "{F2}"
+                    Set-Content -LiteralPath $controllerScreenshotTriggerFile -Value "capture=$captureIndex started=$($beforeScreenshot.ToString('O'))" -Encoding ASCII
                     $screenshot = Wait-NewScreenshot $screenshotDir $existingScreenshotNames $beforeScreenshot $screenshotDeadline -RequireNewAfter
-                    $capturedScreenshotSource = "minecraft-in-client"
+                    $capturedScreenshotSource = "minecraft-in-client-controller-hook"
                 }
                 Copy-Item -LiteralPath $screenshot.FullName -Destination $captureArchivePath -Force
             } else {
@@ -3904,7 +4145,11 @@ try {
     if ($realRendererMilestone1CaptureIntent) {
         $realRendererMilestone1FullProof = $realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-full-proof"
         $realRendererMilestone1DepthShadowSlice = $realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-depth-shadow-slice"
-        $realRendererMilestone1ProofScope = if ($realRendererMilestone1FullProof) { "full-renderer-proof" } elseif ($realRendererMilestone1DepthShadowSlice) { "depth-shadow-slice" } else { "shadow-map-consumption-slice" }
+        $realRendererMilestone1PlayablePhysical = $realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-playable-physical" -or $realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-visual-quality-playable-physical"
+        $realRendererMilestone1VisualQuality = $realRendererMilestone1CaptureIntent.artifactRole -like "real-renderer-milestone1-visual-quality-*"
+        $realRendererMilestone1VisualQualityEnabled = $realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-visual-quality-enabled"
+        $realRendererMilestone1VisualQualityPlayablePhysical = $realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-visual-quality-playable-physical"
+        $realRendererMilestone1ProofScope = if ($realRendererMilestone1PlayablePhysical) { "playable-physical-renderer-proof" } elseif ($realRendererMilestone1FullProof) { "full-renderer-proof" } elseif ($realRendererMilestone1DepthShadowSlice) { "depth-shadow-slice" } else { "shadow-map-consumption-slice" }
         Write-Host "realRendererMilestone1ArtifactRole=$($realRendererMilestone1CaptureIntent.artifactRole)"
         Write-Host "realRendererMilestone1Scene=$($realRendererMilestone1CaptureIntent.sceneKind)"
         Write-Host "realRendererMilestone1SceneState=$($realRendererMilestone1CaptureIntent.sceneState)"
@@ -3912,23 +4157,35 @@ try {
         Write-Host "realRendererMilestone1DebugOverlay=$($realRendererMilestone1CaptureIntent.debugOverlay)"
         Write-Host "realRendererMilestone1SameCameraRequired=true"
         Write-Host "realRendererMilestone1ProofScope=$realRendererMilestone1ProofScope"
-        Write-Host "realRendererMilestone1TrueDepthGBufferRequired=$($realRendererMilestone1FullProof -or $realRendererMilestone1DepthShadowSlice)"
+        Write-Host "realRendererMilestone1.visualQualityComparisonProfile=$realRendererMilestone1VisualQuality sameSceneBaselineEnabledPlayableRequired=$realRendererMilestone1VisualQuality inClientScreenshotsRequired=$realRendererMilestone1VisualQuality"
+        Write-Host "realRendererMilestone1.visualQualityComparisonSequence=PhysicalBaseline,VisualQualityEnabled,VisualQualityPlayablePhysical"
+        Write-Host "realRendererMilestone1.visualQualityEnabled=$realRendererMilestone1VisualQualityEnabled"
+        Write-Host "realRendererMilestone1.visualQualityPlayablePhysical=$realRendererMilestone1VisualQualityPlayablePhysical"
+        Write-Host "realRendererMilestone1.visualQualityRejects=fullscreenWash,fixedLightBlob,proofOverlays,focusWindowOnly,lowResDebugSubstitution,screenSpaceDecalOnly,wrongWindow,menuChatScreenshots"
+        Write-Host "realRendererMilestone1PlayablePhysicalBudgetRequired=$realRendererMilestone1PlayablePhysical"
+        Write-Host "realRendererMilestone1RejectHeavyProofWorkloadForPlayablePhysical=$realRendererMilestone1PlayablePhysical"
+        Write-Host "realRendererMilestone1TrueDepthGBufferRequired=$($realRendererMilestone1FullProof -or $realRendererMilestone1DepthShadowSlice -or $realRendererMilestone1PlayablePhysical)"
         Write-Host "realRendererMilestone1DepthShadowSliceRequired=$realRendererMilestone1DepthShadowSlice"
-        Write-Host "realRendererMilestone1PhysicalGiRequired=$realRendererMilestone1FullProof"
-        Write-Host "realRendererMilestone1SameRunFullRendererProofRequired=$realRendererMilestone1FullProof"
-        Write-Host "realRendererMilestone1CleanInWorldScreenshotRequired=$realRendererMilestone1FullProof"
+        Write-Host "realRendererMilestone1PhysicalGiRequired=$($realRendererMilestone1FullProof -or $realRendererMilestone1PlayablePhysical)"
+        Write-Host "realRendererMilestone1SameRunFullRendererProofRequired=$($realRendererMilestone1FullProof -or $realRendererMilestone1PlayablePhysical)"
+        Write-Host "realRendererMilestone1CleanInWorldScreenshotRequired=$($realRendererMilestone1FullProof -or $realRendererMilestone1PlayablePhysical)"
         Write-Host "realRendererMilestone1NativeShadowMapGeneratedRequired=true"
         Write-Host "realRendererMilestone1ShadowMapConsumptionRequired=true"
-        Write-Host "realRendererMilestone1TracedLightingConsumptionRequired=$realRendererMilestone1FullProof"
+        Write-Host "realRendererMilestone1TracedLightingConsumptionRequired=$($realRendererMilestone1FullProof -or $realRendererMilestone1PlayablePhysical)"
         Write-Host "realRendererMilestone1ShaderDenoiseSeparationRequired=true"
-        Write-Host "realRendererMilestone1ShaderGeneratedDenoiseRequired=$realRendererMilestone1FullProof"
+        Write-Host "realRendererMilestone1ShaderGeneratedDenoiseRequired=$($realRendererMilestone1FullProof -or $realRendererMilestone1PlayablePhysical)"
         Write-Host "realRendererMilestone1RejectScreenSpaceShadowDecals=true"
         Write-Host "realRendererMilestone1RejectLowResDirectTextureFinalProof=true"
         Write-Host "realRendererMilestone1RejectFocusWindowProofMarkerPaths=true"
         Write-Host "realRendererMilestone1RejectMetadataOnlyEvidence=true"
         Write-Host "realRendererMilestone1RejectShaderDenoiseOverclaim=true"
         Write-Host "realRendererMilestone1RejectProofOverlays=true"
-        Write-Host "realRendererMilestone1RejectMenuChatScreenshots=$realRendererMilestone1FullProof"
+        Write-Host "realRendererMilestone1RejectFullscreenBlobs=$($realRendererMilestone1FullProof -or $realRendererMilestone1PlayablePhysical)"
+        Write-Host "realRendererMilestone1RejectFullscreenWash=true"
+        Write-Host "realRendererMilestone1RejectFixedLightBlob=true"
+        Write-Host "realRendererMilestone1RejectLowResDebugSubstitution=true"
+        Write-Host "realRendererMilestone1ReceiverTiedSoftShadowMaskRequired=$realRendererMilestone1VisualQualityPlayablePhysical"
+        Write-Host "realRendererMilestone1RejectMenuChatScreenshots=$($realRendererMilestone1FullProof -or $realRendererMilestone1PlayablePhysical)"
         Write-Host "realRendererMilestone1RejectWrongWindowBlankScreenshots=true"
         Write-Host "realRendererMilestone1HudHiddenForScreenshot=$hudHiddenForScreenshot"
         Write-Host "realRendererMilestone1RequiredPatternCount=$($enabledPatterns.Count)"
@@ -3993,4 +4250,5 @@ try {
             Write-Warning "Could not remove quick-play alias ${aliasPath}: $($_.Exception.Message)"
         }
     }
+    Remove-Item -LiteralPath $controllerScreenshotTriggerFile -Force -ErrorAction SilentlyContinue
 }

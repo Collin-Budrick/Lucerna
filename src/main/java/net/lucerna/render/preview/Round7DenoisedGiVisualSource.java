@@ -164,6 +164,7 @@ public record Round7DenoisedGiVisualSource(
                 + ",sourceClass=" + this.sourceClassLabel()
                 + ",readinessIdentity=" + this.readinessIdentitySummary()
                 + ",shaderOutputCandidate=\"" + this.shaderOutputCandidateSummary() + "\""
+                + ",physicalRendererNoOverclaim=\"" + this.physicalRendererNoOverclaimSummary() + "\""
                 + ",sourceAuthenticity=\"" + this.sourceAuthenticityBoundary() + "\""
                 + ",projectionBoundary=\"" + this.surfaceProjectionBoundary() + "\""
                 + ",qualityBoundary=\"" + this.qualityBoundary() + "\""
@@ -206,8 +207,19 @@ public record Round7DenoisedGiVisualSource(
                 + ",shaderGeneratedDenoisedGI=" + readyState(this.shaderGeneratedDenoisedSourceReady())
                 + ",shaderOutputImageCandidate=" + readyState(this.shaderOutputImageCandidatePresent())
                 + ",realShaderDenoiseOutputReady=" + readyState(this.realShaderDenoiseOutputReady())
+                + ",nativeComputeDenoiseExecuted=false"
+                + ",gpuTraversalExecuted=false"
                 + ",overclaimPrevented=" + (this.sourceKind != DenoisedSourceKind.SHADER_GENERATED_DENOISED_GI
                 || this.realShaderDenoiseOutputReady());
+    }
+
+    public String physicalRendererNoOverclaimSummary() {
+        return "nativeComputeDenoiseExecuted=false"
+                + ",gpuTraversalExecuted=false"
+                + ",nativeComputeDenoiseBlocker=\"Round 7 denoised visual source identity does not prove native Vulkan compute denoise\""
+                + ",gpuTraversalBlocker=\"Round 7 denoised visual source identity does not prove real GPU traversal\""
+                + ",sourceKind=" + this.sourceKind.sourceIdentityLabel()
+                + ",realShaderDenoiseOutputReady=" + this.realShaderDenoiseOutputReady();
     }
 
     public String shaderOutputCandidateSummary() {

@@ -14,6 +14,15 @@ Use -RequireFullRendererMilestoneProof when the log should prove the next full-r
 milestone in one in-world run: physical GI evidence, real shadow-map output and final
 composite consumption, true depth/G-buffer sampling, traced lighting consumption, and
 shader-generated denoise output, with screenshot/proof-overlay/metadata shortcuts rejected.
+Use -RequirePlayablePhysicalRendererMilestoneProof when the same evidence must be present
+inside a playable-budget capture: Vulkan, renderer enabled, low-cost renderer budget markers,
+shadow-map consumption, true depth/G-buffer sampling, traced lighting consumption, and
+shader-generated denoise output, while proof overlays, fullscreen blobs, low-res substitutions,
+and focus-window shortcuts are rejected.
+Use -RequireRealWorldVisualQualityComparisonProof after the controller captures comparable
+baseline, normal-enabled, and playable-physical screenshots from the same scene. This rejects
+the old low-resolution overlay/fixed-blob/fullscreen-wash failure mode and requires the
+log to prove normal heavy-workload bypass plus playable physical renderer evidence.
 #>
 param(
     [Parameter(Mandatory = $true)]
@@ -316,6 +325,36 @@ param(
         "realRendererMilestone1ProofScope=full-renderer-proof"
     ),
 
+    [string[]] $PlayablePhysicalRendererProfilePatterns = @(
+        "realRendererMilestone1\.playablePhysicalProfile=true",
+        "realRendererMilestone1\.proofScope=playable-physical-renderer-proof",
+        "realRendererMilestone1ProofScope=playable-physical-renderer-proof"
+    ),
+
+    [string[]] $PlayablePhysicalRendererBudgetPatterns = @(
+        "(?:realRendererMilestone1\.playableBudgetRequired|playablePhysicalBudgetRequired|playable_physical_budget_required)=true",
+        "(?:playablePhysicalRendererBudget|playable_physical_renderer_budget|lowCostPhysicalRendererBudget|low_cost_physical_renderer_budget)=(?:true|active|enabled)",
+        "(?:heavyProofWorkload|heavy_proof_workload|fullProofWorkload|full_proof_workload)=false",
+        "(?:proofTelemetryBudget|proof_telemetry_budget|rendererTelemetryBudget|renderer_telemetry_budget)=(?:playable|low-cost|budgeted)"
+    ),
+
+    [string[]] $RealWorldVisualQualityComparisonProfilePatterns = @(
+        "realRendererMilestone1\.visualQualityComparisonProfile=true.*sameSceneBaselineEnabledPlayableRequired=true",
+        "realRendererMilestone1\.visualQualityComparisonSequence=.*PhysicalBaseline.*VisualQualityEnabled.*VisualQualityPlayablePhysical",
+        "realRendererMilestone1\.visualQualityRejects=.*fullscreenWash.*fixedLightBlob.*proofOverlays.*focusWindowOnly.*lowResDebugSubstitution.*screenSpaceDecalOnly.*wrongWindow.*menuChatScreenshots"
+    ),
+
+    [string[]] $NormalHeavyWorkloadBypassPatterns = @(
+        "realRendererMilestone1\.visualQualityEnabled=true.*heavyProofWorkload=false.*fullProofWorkload=false.*normalGameplayPathRequired=true.*nativeLightingDispatchBypassed=true.*nativeReadbackBypassed=true.*round9Round10Round11TelemetryBypassed=true",
+        "Lucerna playable renderer path active: .*heavyProofWorkload=false.*nativeLightingDispatchBypassed=true.*nativeReadbackBypassed=true.*round9Round10Round11TelemetryBypassed=true"
+    ),
+
+    [string[]] $SoftReceiverTiedShadowMaskPatterns = @(
+        "(?:softReceiverTiedShadowMask|soft_receiver_tied_shadow_mask|receiverTiedSoftShadowMask|receiver_tied_soft_shadow_mask)=true",
+        "(?:shadowMaskReceiverTied|shadow_mask_receiver_tied|shadowMaskReceiverWorldSpace|shadow_mask_receiver_world_space)=true",
+        "(?:shadowMaskSoftened|shadow_mask_softened|softShadowMask|soft_shadow_mask)=true"
+    ),
+
     [string[]] $CleanInWorldCaptureContractPatterns = @(
         "realRendererMilestone1\.cleanCaptureContract=.*inWorldOnly.*menuClosedRequired=true.*chatClosedRequired=true",
         "realRendererMilestone1CleanInWorldScreenshotRequired=True",
@@ -342,7 +381,18 @@ param(
         "(?:debugMarkerOnly|debug_marker_only)=true",
         "(?:cpuDirectTextureComposite|cpu_direct_texture_composite)=true",
         "diagnostic-fullscreen",
-        "fullscreen-warm-additive"
+        "fullscreen-warm-additive",
+        "fullscreenWash=true",
+        "fullscreen_wash=true",
+        "fullscreen-wash",
+        "(?:fullscreen_blob|fullscreenBlob|fullscreen_blob_visual|fixed_light_blob|fixedLightBlob|fixedLightBlobVisual|fixed_light_blob_visual)=true",
+        "(?:screenSpaceDecalOnly|screen_space_decal_only)=true",
+        "(?:lowResDebugSubstitution|low_res_debug_substitution)=true",
+        "(?:heavyProofWorkload|heavy_proof_workload|fullProofWorkload|full_proof_workload)=true",
+        "(?:playablePhysicalRendererBudgeted|playable_physical_renderer_budgeted|playablePhysicalRendererBudget|playable_physical_renderer_budget|lowCostPhysicalRendererBudget|low_cost_physical_renderer_budget)=(?:false|inactive|disabled)",
+        "(?:proofTelemetryBudget|proof_telemetry_budget|rendererTelemetryBudget|renderer_telemetry_budget)=(?:full|unbounded|heavy)",
+        "(?:minecraftFps|minecraft_fps|currentFps|current_fps|proofFps|proof_fps|fps)=0(?:\.0+)?(?:\D|$)",
+        "(?:minecraftFps|minecraft_fps|currentFps|current_fps|proofFps|proof_fps|fps)=1(?:\.0+)?(?:\D|$)"
     ),
 
     [string[]] $TrueDepthGBufferSamplingPatterns = @(
@@ -433,7 +483,11 @@ param(
 
     [switch] $RequirePhysicalGiEvidence,
 
-    [switch] $RequireFullRendererMilestoneProof
+    [switch] $RequireFullRendererMilestoneProof,
+
+    [switch] $RequirePlayablePhysicalRendererMilestoneProof,
+
+    [switch] $RequireRealWorldVisualQualityComparisonProof
 )
 
 $ErrorActionPreference = "Stop"
@@ -1043,6 +1097,11 @@ function Measure-Round7LogProof {
     $physicalGiEvidence = Get-Round7PhysicalGiEvidence $log
     $tracedGiConsumptionEvidence = Get-Round7TracedGiConsumptionEvidence $log
     $fullRendererProofProfilePresent = Test-AnyRegex $log $FullRendererProofProfilePatterns
+    $playablePhysicalRendererProfilePresent = Test-AnyRegex $log $PlayablePhysicalRendererProfilePatterns
+    $playablePhysicalRendererBudgetPresent = Test-AnyRegex $log $PlayablePhysicalRendererBudgetPatterns
+    $realWorldVisualQualityComparisonProfilePresent = Test-AnyRegex $log $RealWorldVisualQualityComparisonProfilePatterns
+    $normalHeavyWorkloadBypassPresent = Test-AnyRegex $log $NormalHeavyWorkloadBypassPatterns
+    $softReceiverTiedShadowMaskPresent = Test-AnyRegex $log $SoftReceiverTiedShadowMaskPatterns
     $cleanInWorldCaptureContractPresent = Test-AnyRegex $log $CleanInWorldCaptureContractPatterns
     $menuChatScreenshotContaminationPresent = Test-AnyRegex $log $MenuChatScreenshotContaminationPatterns
     $proofOverlayEvidencePresent = Test-AnyRegex $log $ProofOverlayEvidencePatterns
@@ -1210,6 +1269,11 @@ function Measure-Round7LogProof {
             physicalGiEvidencePresent = [bool]$physicalGiEvidence.present
             physicalGiOverclaimPresent = $physicalGiOverclaimPresent
             fullRendererProofProfilePresent = $fullRendererProofProfilePresent
+            playablePhysicalRendererProfilePresent = $playablePhysicalRendererProfilePresent
+            playablePhysicalRendererBudgetPresent = $playablePhysicalRendererBudgetPresent
+            realWorldVisualQualityComparisonProfilePresent = $realWorldVisualQualityComparisonProfilePresent
+            normalHeavyWorkloadBypassPresent = $normalHeavyWorkloadBypassPresent
+            softReceiverTiedShadowMaskPresent = $softReceiverTiedShadowMaskPresent
             cleanInWorldCaptureContractPresent = $cleanInWorldCaptureContractPresent
             menuChatScreenshotContaminationPresent = $menuChatScreenshotContaminationPresent
             proofOverlayEvidencePresent = $proofOverlayEvidencePresent
@@ -1315,10 +1379,13 @@ $denoiseQuality = Compare-Roughness $rawRoughnessInDenoiseRegion $denoisedRoughn
 
 $logProof = if ([string]::IsNullOrWhiteSpace($logResolved)) { $null } else { Measure-Round7LogProof $logResolved }
 $fullRendererMilestoneProofRequired = [bool]$RequireFullRendererMilestoneProof
-$physicalGiEvidenceRequired = [bool]($RequirePhysicalGiEvidence -or $fullRendererMilestoneProofRequired)
-$tracedGiConsumptionRequired = [bool]($RequireTracedGiConsumption -or $fullRendererMilestoneProofRequired)
-$shaderDenoiseEvidenceRequired = [bool]($RequireShaderDenoiseEvidence -or $RequireShaderGeneratedDenoiseOutput -or $tracedGiConsumptionRequired -or $fullRendererMilestoneProofRequired)
-$shaderGeneratedOutputRequiredForProof = [bool]($RequireShaderGeneratedDenoiseOutput -or $tracedGiConsumptionRequired -or $fullRendererMilestoneProofRequired)
+$playablePhysicalRendererMilestoneProofRequired = [bool]$RequirePlayablePhysicalRendererMilestoneProof
+$realWorldVisualQualityComparisonProofRequired = [bool]$RequireRealWorldVisualQualityComparisonProof
+$physicalRendererMilestoneProofRequired = [bool]($fullRendererMilestoneProofRequired -or $playablePhysicalRendererMilestoneProofRequired -or $realWorldVisualQualityComparisonProofRequired)
+$physicalGiEvidenceRequired = [bool]($RequirePhysicalGiEvidence -or $physicalRendererMilestoneProofRequired)
+$tracedGiConsumptionRequired = [bool]($RequireTracedGiConsumption -or $physicalRendererMilestoneProofRequired)
+$shaderDenoiseEvidenceRequired = [bool]($RequireShaderDenoiseEvidence -or $RequireShaderGeneratedDenoiseOutput -or $tracedGiConsumptionRequired -or $physicalRendererMilestoneProofRequired)
+$shaderGeneratedOutputRequiredForProof = [bool]($RequireShaderGeneratedDenoiseOutput -or $tracedGiConsumptionRequired -or $physicalRendererMilestoneProofRequired)
 $failures = New-Object System.Collections.Generic.List[string]
 
 foreach ($entry in @(
@@ -1380,8 +1447,8 @@ if ($shaderDenoiseEvidenceRequired -and [string]::IsNullOrWhiteSpace($logResolve
 if ($tracedGiConsumptionRequired -and [string]::IsNullOrWhiteSpace($logResolved)) {
     $failures.Add("Traced GI consumption proof requires -LogPath so traced consumption and coupling counters can be checked.")
 }
-if ($fullRendererMilestoneProofRequired -and [string]::IsNullOrWhiteSpace($logResolved)) {
-    $failures.Add("Full renderer milestone proof requires -LogPath so physical GI, depth/G-buffer, shadow-map, traced lighting, shader-denoise, and contamination rejection markers can be checked.")
+if ($physicalRendererMilestoneProofRequired -and [string]::IsNullOrWhiteSpace($logResolved)) {
+    $failures.Add("Physical renderer milestone proof requires -LogPath so physical GI, depth/G-buffer, shadow-map, traced lighting, shader-denoise, playable-budget, and contamination rejection markers can be checked.")
 }
 if ($logProof) {
     if (-not $logProof.markers.directSourcePresent) {
@@ -1584,6 +1651,97 @@ if ($logProof) {
             $failures.Add("Full renderer milestone proof rejects physical GI, shader-denoise, GPU traversal, or full-renderer overclaim markers.")
         }
     }
+    if ($playablePhysicalRendererMilestoneProofRequired) {
+        if (-not $logProof.markers.playablePhysicalRendererProfilePresent) {
+            $failures.Add("Playable physical renderer milestone proof requires a RealRendererMilestone1 playable-physical profile marker from the controller harness.")
+        }
+        if (-not $logProof.markers.playablePhysicalRendererBudgetPresent) {
+            $failures.Add("Playable physical renderer milestone proof requires low-cost/playable budget markers, including heavyProofWorkload=false/fullProofWorkload=false.")
+        }
+        if (-not $logProof.markers.cleanInWorldCaptureContractPresent) {
+            $failures.Add("Playable physical renderer milestone proof requires a clean in-world capture contract marker: menu closed, chat closed, proof overlays forbidden, wrong-window/blank capture forbidden.")
+        }
+        if ($logProof.markers.menuChatScreenshotContaminationPresent) {
+            $failures.Add("Playable physical renderer milestone proof rejects menu/chat screenshot contamination markers.")
+        }
+        if ($logProof.markers.proofOverlayEvidencePresent -or $logProof.markers.proofMarkerPresent) {
+            $failures.Add("Playable physical renderer milestone proof rejects proof overlays and proof-marker evidence.")
+        }
+        if ($logProof.markers.focusWindowOnlyPresent) {
+            $failures.Add("Playable physical renderer milestone proof rejects focus-window-only final composite paths.")
+        }
+        if ($logProof.markers.lowResDebugSubstitutionPresent) {
+            $failures.Add("Playable physical renderer milestone proof rejects fullscreen blobs, low-resolution debug substitutions, and CPU direct texture composites.")
+        }
+        if ($logProof.markers.metadataOnlyPreviewPresent -or $logProof.markers.metadataOnlyTracingPresent -or $logProof.markers.depthGBufferMetadataOnlyPresent) {
+            $failures.Add("Playable physical renderer milestone proof rejects metadata-only preview, tracing, or depth/G-buffer evidence.")
+        }
+        if (-not $logProof.markers.trueDepthGBufferSamplingProven) {
+            $failures.Add("Playable physical renderer milestone proof requires true depth/G-buffer sampling: positive sample count, Java/native/shader evidence source, and metadata-only=false.")
+        }
+        if (-not $logProof.markers.realShadowMapOutputProven) {
+            $failures.Add("Playable physical renderer milestone proof requires real/native shadow-map output with positive shadow-map sample/caster/receiver/output counters.")
+        }
+        if (-not $logProof.markers.shadowMapOutputConsumedPresent) {
+            $failures.Add("Playable physical renderer milestone proof requires shadow-map output consumed by the final in-world composite.")
+        }
+        if ($logProof.markers.fullRendererOverclaimPresent -or $logProof.markers.physicalGiOverclaimPresent -or $logProof.markers.shaderDenoiseOverclaimPresent -or $logProof.markers.realGpuTraversalOverclaimPresent) {
+            $failures.Add("Playable physical renderer milestone proof rejects physical GI, shader-denoise, GPU traversal, or full-renderer overclaim markers.")
+        }
+    }
+    if ($realWorldVisualQualityComparisonProofRequired) {
+        if ([string]::IsNullOrWhiteSpace($DebugImagePath) -or -not $debugResolved) {
+            $failures.Add("Real-world visual quality comparison proof requires baseline, enabled/final, and playable-physical screenshots; pass the playable-physical screenshot as -DebugImagePath.")
+        }
+        if (-not $logProof.markers.realWorldVisualQualityComparisonProfilePresent) {
+            $failures.Add("Real-world visual quality comparison proof requires controller markers for the baseline/enabled/playable-physical comparison sequence.")
+        }
+        if (-not $logProof.markers.normalHeavyWorkloadBypassPresent) {
+            $failures.Add("Real-world visual quality comparison proof requires normal non-proof gameplay bypass evidence: heavyProofWorkload=false plus native lighting/readback/telemetry bypass markers.")
+        }
+        if (-not $logProof.markers.playablePhysicalRendererProfilePresent) {
+            $failures.Add("Real-world visual quality comparison proof requires the playable-physical renderer profile marker.")
+        }
+        if (-not $logProof.markers.playablePhysicalRendererBudgetPresent) {
+            $failures.Add("Real-world visual quality comparison proof requires playable low-cost budget markers, including heavyProofWorkload=false/fullProofWorkload=false.")
+        }
+        if (-not $logProof.markers.cleanInWorldCaptureContractPresent) {
+            $failures.Add("Real-world visual quality comparison proof requires a clean in-world screenshot contract: no menu/chat, no wrong-window fallback, no blank screenshot.")
+        }
+        if ($logProof.markers.menuChatScreenshotContaminationPresent) {
+            $failures.Add("Real-world visual quality comparison proof rejects menu/chat screenshot contamination markers.")
+        }
+        if ($logProof.markers.proofOverlayEvidencePresent -or $logProof.markers.proofMarkerPresent) {
+            $failures.Add("Real-world visual quality comparison proof rejects proof overlays and proof-marker evidence.")
+        }
+        if ($logProof.markers.focusWindowOnlyPresent) {
+            $failures.Add("Real-world visual quality comparison proof rejects focus-window-only composite paths.")
+        }
+        if ($logProof.markers.lowResDebugSubstitutionPresent) {
+            $failures.Add("Real-world visual quality comparison proof rejects fullscreen wash, fixed light blobs, screen-space decal-only proof, low-resolution debug substitution, CPU direct texture composites, and 0-1 FPS/full proof workload markers.")
+        }
+        if ($logProof.markers.metadataOnlyPreviewPresent -or $logProof.markers.metadataOnlyTracingPresent -or $logProof.markers.depthGBufferMetadataOnlyPresent) {
+            $failures.Add("Real-world visual quality comparison proof rejects metadata-only preview, tracing, or depth/G-buffer evidence.")
+        }
+        if ($logProof.markers.fullRendererOverclaimPresent -or $logProof.markers.physicalGiOverclaimPresent -or $logProof.markers.shaderDenoiseOverclaimPresent -or $logProof.markers.realGpuTraversalOverclaimPresent) {
+            $failures.Add("Real-world visual quality comparison proof rejects physical GI, shader-denoise, GPU traversal, or full-renderer overclaim markers.")
+        }
+        if (-not $logProof.markers.softReceiverTiedShadowMaskPresent) {
+            $failures.Add("Real-world visual quality comparison proof requires a soft, receiver-tied shadow-mask marker rather than a detached screen-space blob/decal.")
+        }
+        if (-not $logProof.markers.trueDepthGBufferSamplingProven) {
+            $failures.Add("Real-world visual quality comparison proof requires true depth/G-buffer sampling with positive sample count and Java/native/shader evidence sources.")
+        }
+        if (-not $logProof.markers.realShadowMapOutputProven -or -not $logProof.markers.shadowMapOutputConsumedPresent) {
+            $failures.Add("Real-world visual quality comparison proof requires real shadow-map output consumed by the final in-world composite.")
+        }
+        if (-not $logProof.markers.tracedGiConsumptionPresent) {
+            $failures.Add("Real-world visual quality comparison proof requires traced/raw GI lighting consumed by the final in-game composite.")
+        }
+        if (-not $logProof.markers.shaderGeneratedDenoiseOutputImageSliceProven) {
+            $failures.Add("Real-world visual quality comparison proof requires shader-generated denoise output consumed by the final composite with CPU/readback fallback inactive.")
+        }
+    }
 }
 
 $result = [ordered]@{
@@ -1625,6 +1783,8 @@ $result = [ordered]@{
         requireShaderGeneratedDenoiseOutput = [bool]$RequireShaderGeneratedDenoiseOutput
         requireTracedGiConsumption = [bool]$RequireTracedGiConsumption
         requireFullRendererMilestoneProof = [bool]$RequireFullRendererMilestoneProof
+        requirePlayablePhysicalRendererMilestoneProof = [bool]$RequirePlayablePhysicalRendererMilestoneProof
+        requireRealWorldVisualQualityComparisonProof = $realWorldVisualQualityComparisonProofRequired
         shaderDenoiseEvidenceRequired = $shaderDenoiseEvidenceRequired
         shaderGeneratedOutputRequiredForProof = $shaderGeneratedOutputRequiredForProof
         physicalGiEvidenceRequired = $physicalGiEvidenceRequired
@@ -1728,6 +1888,9 @@ $result = [ordered]@{
             fullRendererMilestone = [ordered]@{
                 required = $fullRendererMilestoneProofRequired
                 profileMarkerPresent = if ($logProof) { [bool]$logProof.markers.fullRendererProofProfilePresent } else { $null }
+                playablePhysicalRequired = $playablePhysicalRendererMilestoneProofRequired
+                playablePhysicalProfileMarkerPresent = if ($logProof) { [bool]$logProof.markers.playablePhysicalRendererProfilePresent } else { $null }
+                playablePhysicalBudgetPresent = if ($logProof) { [bool]$logProof.markers.playablePhysicalRendererBudgetPresent } else { $null }
                 cleanInWorldCaptureContractPresent = if ($logProof) { [bool]$logProof.markers.cleanInWorldCaptureContractPresent } else { $null }
                 menuChatScreenshotContaminationPresent = if ($logProof) { [bool]$logProof.markers.menuChatScreenshotContaminationPresent } else { $null }
                 proofOverlayEvidencePresent = if ($logProof) { [bool]$logProof.markers.proofOverlayEvidencePresent } else { $null }
@@ -1762,6 +1925,62 @@ $result = [ordered]@{
                     "full_renderer_milestone_log_proof_present"
                 } else {
                     "full_renderer_milestone_log_proof_missing_or_contaminated"
+                }
+                playablePhysicalClassification = if (-not $playablePhysicalRendererMilestoneProofRequired) {
+                    "not_required"
+                } elseif (-not $logProof) {
+                    "missing_log"
+                } elseif (
+                    [bool]$logProof.markers.playablePhysicalRendererProfilePresent -and
+                    [bool]$logProof.markers.playablePhysicalRendererBudgetPresent -and
+                    [bool]$logProof.markers.cleanInWorldCaptureContractPresent -and
+                    [bool]$logProof.markers.trueDepthGBufferSamplingProven -and
+                    [bool]$logProof.markers.realShadowMapOutputProven -and
+                    [bool]$logProof.markers.shadowMapOutputConsumedPresent -and
+                    -not [bool]$logProof.markers.menuChatScreenshotContaminationPresent -and
+                    -not [bool]$logProof.markers.proofOverlayEvidencePresent -and
+                    -not [bool]$logProof.markers.lowResDebugSubstitutionPresent -and
+                    -not [bool]$logProof.markers.fullRendererOverclaimPresent
+                ) {
+                    "playable_physical_renderer_log_proof_present"
+                } else {
+                    "playable_physical_renderer_log_proof_missing_or_contaminated"
+                }
+                realWorldVisualQualityComparison = [ordered]@{
+                    required = $realWorldVisualQualityComparisonProofRequired
+                    profileMarkerPresent = if ($logProof) { [bool]$logProof.markers.realWorldVisualQualityComparisonProfilePresent } else { $null }
+                    normalHeavyWorkloadBypassPresent = if ($logProof) { [bool]$logProof.markers.normalHeavyWorkloadBypassPresent } else { $null }
+                    softReceiverTiedShadowMaskPresent = if ($logProof) { [bool]$logProof.markers.softReceiverTiedShadowMaskPresent } else { $null }
+                    baselineScreenshotPresent = [bool]$baselineResolved
+                    enabledScreenshotPresent = [bool]$finalResolved
+                    playablePhysicalScreenshotPresent = [bool]$debugResolved
+                    classification = if (-not $realWorldVisualQualityComparisonProofRequired) {
+                        "not_required"
+                    } elseif (-not $logProof) {
+                        "missing_log"
+                    } elseif (
+                        [bool]$baselineResolved -and
+                        [bool]$finalResolved -and
+                        [bool]$debugResolved -and
+                        [bool]$logProof.markers.realWorldVisualQualityComparisonProfilePresent -and
+                        [bool]$logProof.markers.normalHeavyWorkloadBypassPresent -and
+                        [bool]$logProof.markers.playablePhysicalRendererProfilePresent -and
+                        [bool]$logProof.markers.playablePhysicalRendererBudgetPresent -and
+                        [bool]$logProof.markers.softReceiverTiedShadowMaskPresent -and
+                        [bool]$logProof.markers.trueDepthGBufferSamplingProven -and
+                        [bool]$logProof.markers.realShadowMapOutputProven -and
+                        [bool]$logProof.markers.shadowMapOutputConsumedPresent -and
+                        [bool]$logProof.markers.tracedGiConsumptionPresent -and
+                        [bool]$logProof.markers.shaderGeneratedDenoiseOutputImageSliceProven -and
+                        -not [bool]$logProof.markers.menuChatScreenshotContaminationPresent -and
+                        -not [bool]$logProof.markers.proofOverlayEvidencePresent -and
+                        -not [bool]$logProof.markers.focusWindowOnlyPresent -and
+                        -not [bool]$logProof.markers.lowResDebugSubstitutionPresent
+                    ) {
+                        "real_world_visual_quality_comparison_present"
+                    } else {
+                        "real_world_visual_quality_comparison_missing_or_contaminated"
+                    }
                 }
             }
             denoisedGi = [ordered]@{
@@ -2054,6 +2273,8 @@ if ($logProof) {
     Write-Host "physicalGiEvidencePresent=$($logProof.markers.physicalGiEvidencePresent)"
     Write-Host "physicalGiOverclaimPresent=$($logProof.markers.physicalGiOverclaimPresent)"
     Write-Host "fullRendererProofProfilePresent=$($logProof.markers.fullRendererProofProfilePresent)"
+    Write-Host "playablePhysicalRendererProfilePresent=$($logProof.markers.playablePhysicalRendererProfilePresent)"
+    Write-Host "playablePhysicalRendererBudgetPresent=$($logProof.markers.playablePhysicalRendererBudgetPresent)"
     Write-Host "cleanInWorldCaptureContractPresent=$($logProof.markers.cleanInWorldCaptureContractPresent)"
     Write-Host "menuChatScreenshotContaminationPresent=$($logProof.markers.menuChatScreenshotContaminationPresent)"
     Write-Host "proofOverlayEvidencePresent=$($logProof.markers.proofOverlayEvidencePresent)"

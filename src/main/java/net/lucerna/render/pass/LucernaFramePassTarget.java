@@ -122,6 +122,28 @@ public record LucernaFramePassTarget(
                 && this.attachmentMetadata.nativeWritable();
     }
 
+    public boolean finalCompositeWorldColorAttachmentReady() {
+        return this.safeForAttachment()
+                && this.attachmentMetadataPhaseMatches()
+                && this.attachmentMetadata.finalCompositeColorAttachmentReady();
+    }
+
+    public boolean finalCompositeDepthSampleBindingReady() {
+        return finalCompositeWorldColorAttachmentReady()
+                && this.depthTarget != null
+                && this.attachmentMetadata.finalCompositeDepthSampleBindingReady();
+    }
+
+    public String finalCompositeSafetyStatusLabel() {
+        return "finalCompositeWorldColorAttachmentReady=" + finalCompositeWorldColorAttachmentReady()
+                + ", finalCompositeDepthSampleBindingReady=" + finalCompositeDepthSampleBindingReady()
+                + ", finalCompositeBeforeHandHud=" + preservesHud()
+                + ", finalCompositeTouchesHud=false"
+                + ", finalCompositeTouchesHand=false"
+                + ", finalCompositeTouchesPostHud=false"
+                + ", finalCompositeTranslucencyBoundary=" + this.phase.name();
+    }
+
     public boolean preservesHud() {
         return this.phase.hudPreserving();
     }

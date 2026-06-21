@@ -278,6 +278,64 @@ public record Round6DiffuseGiCpuOutputSnapshot(
                 && this.resolveRecorded;
     }
 
+    public boolean physicalSceneTiedGiEvidenceReady() {
+        return this.readyForPreviewPayload()
+                && this.physicalSceneLinked
+                && this.physicalSurfaceContribution
+                && this.physicalGiSamples > 0L
+                && this.physicalGiHitSamples > 0L
+                && this.surfaceMaterialHitCoupledSamples > 0L
+                && this.geometryHitCoupledSamples > 0L;
+    }
+
+    public boolean spatiallyVaryingGiPayloadReady() {
+        return this.readyForPreviewPayload()
+                && this.outputPixels > 1
+                && (this.visibleSignalNonzeroPixels > 0L
+                || this.physicalGiHitSamples > 0L
+                || this.physicalSceneLinkScore > 0L)
+                && !"0".equals(this.outputChecksum);
+    }
+
+    public boolean gpuTraversalExecuted() {
+        return false;
+    }
+
+    public boolean nativeComputeGiExecuted() {
+        return false;
+    }
+
+    public String physicalRendererNoOverclaimBlockers() {
+        StringBuilder builder = new StringBuilder();
+        appendBlocker(builder, !this.gpuTraversalExecuted(),
+                "gpuTraversalExecuted=false: Round 6 GI payload is CPU/native readback telemetry, not GPU traversal");
+        appendBlocker(builder, !this.nativeComputeGiExecuted(),
+                "nativeComputeGiExecuted=false: no native Vulkan compute GI execution is reported by this DTO");
+        appendBlocker(builder, !this.physicalSceneTiedGiEvidenceReady(),
+                "physical scene/material coupled GI evidence incomplete");
+        return builder.length() == 0 ? "none" : builder.toString();
+    }
+
+    public String spatialGiPayloadSummary() {
+        return "spatiallyVaryingGiPayloadReady=" + this.spatiallyVaryingGiPayloadReady()
+                + " physicalSceneTiedGiEvidenceReady=" + this.physicalSceneTiedGiEvidenceReady()
+                + " sourceKind=raw-diffuse-gi-rgba8-cpu-readback"
+                + " outputSize=" + this.outputWidth + "x" + this.outputHeight
+                + " outputPixels=" + this.outputPixels
+                + " outputChecksum=" + this.outputChecksum
+                + " visibleSignalNonzeroPixels=" + this.visibleSignalNonzeroPixels
+                + " physicalGiSamples=" + this.physicalGiSamples
+                + " physicalGiHitSamples=" + this.physicalGiHitSamples
+                + " surfaceMaterialHitCoupledSamples=" + this.surfaceMaterialHitCoupledSamples
+                + " geometryHitCoupledSamples=" + this.geometryHitCoupledSamples
+                + " physicalSceneLinkScore=" + this.physicalSceneLinkScore
+                + " physicalSceneLinked=" + this.physicalSceneLinked
+                + " physicalSurfaceContribution=" + this.physicalSurfaceContribution
+                + " gpuTraversalExecuted=" + this.gpuTraversalExecuted()
+                + " nativeComputeGiExecuted=" + this.nativeComputeGiExecuted()
+                + " noOverclaimBlockers=\"" + this.physicalRendererNoOverclaimBlockers() + "\"";
+    }
+
     public String pixelPayloadStatus() {
         if (!this.hasCpuOutputTelemetry()) {
             return "native Round 6 diffuse GI CPU output telemetry is not available";
@@ -308,8 +366,19 @@ public record Round6DiffuseGiCpuOutputSnapshot(
                 + " geometryHitCoupledSamples=" + this.geometryHitCoupledSamples
                 + " physicalSceneLinked=" + this.physicalSceneLinked
                 + " physicalSurfaceContribution=" + this.physicalSurfaceContribution
+                + " " + this.spatialGiPayloadSummary()
                 + " outputMarker=" + this.outputMarker
                 + " reason=" + this.readinessReason;
+    }
+
+    private static void appendBlocker(StringBuilder builder, boolean active, String message) {
+        if (!active) {
+            return;
+        }
+        if (builder.length() > 0) {
+            builder.append("; ");
+        }
+        builder.append(message);
     }
 
     private static String extractBlock(String source, String marker) {

@@ -3,6 +3,7 @@
 #include "lucerna_resource_manager.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
@@ -112,10 +113,17 @@ constexpr std::uint64_t kNativeDirectionalShadowMapWidth = 64;
 constexpr std::uint64_t kNativeDirectionalShadowMapHeight = 64;
 constexpr std::size_t kNativeDirectionalShadowMapMaxCasters = 128;
 constexpr std::size_t kNativeDirectionalShadowMapMaxReceivers = 512;
+constexpr std::int32_t kNativeDirectionalShadowMaskDepthSearchRadius = 2;
+constexpr std::int32_t kNativeDirectionalShadowMaskMaxPenumbraRadius = 3;
 constexpr std::size_t kRound11RestirDiMaxCandidateCount = 4096;
 constexpr std::size_t kRound11RestirDiMaxReservoirCount = 64;
 constexpr float kRound11RestirDiPreviewGain = 0.075F;
 constexpr std::uint64_t kRound6CpuRayTraversalSampleLimit = 256;
+constexpr std::uint64_t kPlayablePhysicalGiTraceRayLimit = 128;
+constexpr std::uint64_t kPlayablePhysicalGiTraceMaxCellColumns = 64;
+constexpr std::uint64_t kPlayablePhysicalGiTraceMaxCellRows = 36;
+constexpr std::uint64_t kPlayablePhysicalGiTraceCellLimit =
+        kPlayablePhysicalGiTraceMaxCellColumns * kPlayablePhysicalGiTraceMaxCellRows;
 constexpr std::int32_t kMaxDiffuseGiCpuOutputWidth = 1024;
 constexpr std::int32_t kMaxDiffuseGiCpuOutputHeight = 1024;
 constexpr std::uint64_t kRound9ClusterVoxelCapacity = 8ULL * 8ULL * 8ULL;
@@ -603,8 +611,22 @@ struct ConservativeDirectionalShadowMapResult {
     std::uint64_t mask_output_checksum = 0;
     std::uint64_t mask_nonzero_sample_count = 0;
     std::uint64_t mask_occluded_sample_count = 0;
+    std::uint64_t mask_soft_penumbra_sample_count = 0;
+    std::uint64_t mask_filtered_sample_count = 0;
+    std::uint64_t mask_receiver_confidence_sample_count = 0;
+    std::uint64_t mask_edge_confidence_sample_count = 0;
+    std::uint64_t mask_receiver_depth_coupled_sample_count = 0;
+    std::uint64_t mask_receiver_material_coupled_sample_count = 0;
+    std::uint64_t mask_conservative_not_screen_space_sample_count = 0;
+    std::uint64_t mask_world_space_receiver_coupled_sample_count = 0;
+    std::uint64_t mask_spatially_variant_sample_count = 0;
+    std::uint64_t mask_low_confidence_rejected_sample_count = 0;
     float min_light_space_depth = 0.0F;
     float max_light_space_depth = 0.0F;
+    float mean_receiver_confidence = 0.0F;
+    float mean_edge_confidence = 0.0F;
+    float mean_spatial_variance = 0.0F;
+    float mean_depth_delta = 0.0F;
     std::vector<std::uint8_t> mask_rgba8;
     std::string blocker;
     std::string receiver_blocker = "native_directional_shadow_map_receivers_not_evaluated";
@@ -613,11 +635,28 @@ struct ConservativeDirectionalShadowMapResult {
     std::string hardware_rt_blocker =
             "native_conservative_cpu_directional_shadow_map_not_hardware_ray_tracing";
     std::string mask_blocker = "native_directional_shadow_mask_not_generated";
+    std::string mask_quality_blocker = "native_directional_shadow_mask_receiver_coupling_not_evaluated";
     std::string marker =
             "native_cpu_directional_shadow_map_from_uploaded_section_casters_and_shadow_receivers";
     std::string mask_marker =
             "native_conservative_directional_shadow_mask_rgba8_from_shadow_map_receivers_no_screen_space_decal";
 };
+
+void accumulate_shadow_mask_channel(
+        std::vector<float>& mask_channels,
+        std::size_t pixel_index,
+        std::size_t channel,
+        float value) {
+    const auto offset = pixel_index * 4ULL + channel;
+    if (offset >= mask_channels.size()) {
+        return;
+    }
+    mask_channels[offset] = std::max(mask_channels[offset], std::clamp(value, 0.0F, 1.0F));
+}
+
+std::uint8_t quantize_shadow_mask_channel(float value) {
+    return static_cast<std::uint8_t>(std::clamp(value * 255.0F, 0.0F, 255.0F));
+}
 
 DirectionalShadowMapLightSpacePoint project_directional_shadow_map_point(float x, float y, float z) {
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(z)) {
@@ -900,6 +939,13 @@ ConservativeDirectionalShadowMapResult build_conservative_directional_shadow_map
     result.mask_output_checksum = 1469598103934665603ULL;
     mix_checksum(result.mask_output_checksum, result.checksum);
     result.mask_rgba8.assign(static_cast<std::size_t>(result.mask_output_pixel_count) * 4, 0);
+    std::vector<float> mask_channels(result.mask_rgba8.size(), 0.0F);
+    double receiver_confidence_sum = 0.0;
+    double edge_confidence_sum = 0.0;
+    double spatial_variance_sum = 0.0;
+    double depth_delta_sum = 0.0;
+    std::uint64_t receiver_depth_delta_count = 0;
+    std::uint64_t receiver_spatial_variance_count = 0;
 
     for (std::size_t receiver_index = 0; receiver_index < receiver_limit; receiver_index++) {
         const auto contributes = strided_int_or_zero(
@@ -910,6 +956,11 @@ ConservativeDirectionalShadowMapResult build_conservative_directional_shadow_map
         if (contributes == 0) {
             continue;
         }
+        const auto source_id = strided_int_or_zero(
+                packet.shadow_candidate_metadata,
+                receiver_index,
+                kDirectShadowCandidateMetadataStride,
+                kDirectShadowCandidateSourceIdOffset);
         const auto point = project_directional_shadow_map_point(
                 strided_float_raw_or_zero(
                         packet.shadow_candidate_rays,
@@ -942,18 +993,30 @@ ConservativeDirectionalShadowMapResult build_conservative_directional_shadow_map
                 result.texel_height));
         bool has_caster_depth = false;
         float nearest_depth = 0.0F;
-        for (std::int32_t y = std::max(0, center_y - 1);
-                y <= std::min<std::int32_t>(static_cast<std::int32_t>(result.texel_height) - 1, center_y + 1);
+        double depth_sum = 0.0;
+        double depth_square_sum = 0.0;
+        std::uint64_t local_depth_sample_count = 0;
+        std::uint64_t local_depth_slot_count = 0;
+        for (std::int32_t y = std::max(0, center_y - kNativeDirectionalShadowMaskDepthSearchRadius);
+                y <= std::min<std::int32_t>(
+                        static_cast<std::int32_t>(result.texel_height) - 1,
+                        center_y + kNativeDirectionalShadowMaskDepthSearchRadius);
                 y++) {
-            for (std::int32_t x = std::max(0, center_x - 1);
-                    x <= std::min<std::int32_t>(static_cast<std::int32_t>(result.texel_width) - 1, center_x + 1);
+            for (std::int32_t x = std::max(0, center_x - kNativeDirectionalShadowMaskDepthSearchRadius);
+                    x <= std::min<std::int32_t>(
+                            static_cast<std::int32_t>(result.texel_width) - 1,
+                            center_x + kNativeDirectionalShadowMaskDepthSearchRadius);
                     x++) {
+                local_depth_slot_count++;
                 const auto index = static_cast<std::size_t>(
                         static_cast<std::uint64_t>(y) * result.texel_width
                         + static_cast<std::uint64_t>(x));
                 if (written[index] == 0) {
                     continue;
                 }
+                local_depth_sample_count++;
+                depth_sum += static_cast<double>(depth_map[index]);
+                depth_square_sum += static_cast<double>(depth_map[index]) * static_cast<double>(depth_map[index]);
                 nearest_depth = has_caster_depth
                         ? std::min(nearest_depth, depth_map[index])
                         : depth_map[index];
@@ -962,44 +1025,221 @@ ConservativeDirectionalShadowMapResult build_conservative_directional_shadow_map
         }
 
         const float depth_delta = has_caster_depth ? point.depth - nearest_depth : 0.0F;
-        const float shadow_strength = has_caster_depth && depth_delta > 0.015F
-                ? std::clamp(0.22F + depth_delta * 0.46F, 0.0F, 1.0F)
+        const float receiver_confidence = local_depth_slot_count == 0
+                ? 0.0F
+                : std::clamp(
+                        static_cast<float>(local_depth_sample_count)
+                                / static_cast<float>(local_depth_slot_count),
+                        0.0F,
+                        1.0F);
+        const double depth_mean = local_depth_sample_count == 0
+                ? 0.0
+                : depth_sum / static_cast<double>(local_depth_sample_count);
+        const double depth_variance = local_depth_sample_count == 0
+                ? 0.0
+                : std::max(
+                        0.0,
+                        depth_square_sum / static_cast<double>(local_depth_sample_count)
+                                - depth_mean * depth_mean);
+        const float depth_stddev = static_cast<float>(std::sqrt(depth_variance));
+        const float edge_confidence = has_caster_depth
+                ? std::clamp(1.0F - depth_stddev * 0.55F, 0.12F, 1.0F)
                 : 0.0F;
         const float receiver_weight = std::clamp(strided_float_or_zero(
                 packet.shadow_candidate_rays,
                 receiver_index,
                 kDirectShadowCandidateRayStride,
                 kDirectShadowRayContributionWeightOffset), 0.10F, 2.0F);
-        const auto red = static_cast<std::uint8_t>(std::clamp(
-                shadow_strength * 255.0F,
+        const float receiver_material_coupling = std::clamp(
+                (source_id != 0 ? 0.48F : 0.0F)
+                        + std::min(receiver_weight, 1.25F) * 0.30F
+                        + receiver_confidence * 0.18F
+                        + edge_confidence * 0.10F,
                 0.0F,
-                255.0F));
-        const auto green = static_cast<std::uint8_t>(std::clamp(
-                (0.32F + std::min(receiver_weight, 1.0F) * 0.42F) * 255.0F,
-                0.0F,
-                255.0F));
-        const auto blue = static_cast<std::uint8_t>(has_caster_depth
-                ? std::clamp(80.0F + std::min(std::max(depth_delta, 0.0F), 2.0F) * 72.0F, 0.0F, 255.0F)
+                1.0F);
+        const float receiver_depth_coupling = has_caster_depth && depth_delta > 0.0F
+                ? std::clamp(
+                        std::min(depth_delta, 1.75F) * 0.34F
+                                + receiver_confidence * 0.36F
+                                + edge_confidence * 0.18F,
+                        0.0F,
+                        1.0F)
+                : 0.0F;
+        const bool material_coupled_receiver = receiver_material_coupling > 0.20F;
+        const bool world_space_receiver_coupled = point.valid
+                && has_caster_depth
+                && depth_delta > 0.025F
+                && receiver_confidence >= 0.08F
+                && receiver_depth_coupling > 0.10F;
+        const bool low_confidence_rejected = has_caster_depth
+                && (depth_delta <= 0.025F || receiver_confidence < 0.08F);
+        if (low_confidence_rejected) {
+            result.mask_low_confidence_rejected_sample_count++;
+        }
+        if (has_caster_depth && depth_delta > 0.0F) {
+            depth_delta_sum += static_cast<double>(depth_delta);
+            receiver_depth_delta_count++;
+        }
+        if (depth_variance > 0.0001) {
+            spatial_variance_sum += depth_variance;
+            receiver_spatial_variance_count++;
+        }
+        const float shadow_strength = world_space_receiver_coupled
+                ? std::clamp(
+                        (0.08F + std::min(depth_delta, 1.75F) * 0.24F)
+                                * (0.34F + receiver_confidence * 0.44F)
+                                * (0.74F + edge_confidence * 0.20F)
+                                * (0.72F + receiver_material_coupling * 0.28F),
+                        0.0F,
+                        0.68F)
+                : 0.0F;
+        receiver_confidence_sum += receiver_confidence;
+        edge_confidence_sum += edge_confidence;
+        if (receiver_confidence > 0.0F) {
+            result.mask_receiver_confidence_sample_count++;
+        }
+        if (edge_confidence > 0.0F) {
+            result.mask_edge_confidence_sample_count++;
+        }
+
+        const auto splat_radius = static_cast<std::int32_t>(shadow_strength > 0.0F
+                ? std::clamp(
+                        0.85F + receiver_confidence * 0.95F
+                                + std::min(std::max(depth_delta, 0.0F), 1.5F) * 0.18F
+                                + std::clamp(depth_stddev, 0.0F, 0.75F) * 0.32F,
+                        1.0F,
+                        std::min(
+                                2.0F,
+                                static_cast<float>(kNativeDirectionalShadowMaskMaxPenumbraRadius)))
                 : 0.0F);
-        const auto alpha = static_cast<std::uint8_t>(std::max<std::uint8_t>(
-                green,
-                red));
-        const auto splat_radius = static_cast<std::int32_t>(shadow_strength > 0.0F ? 1 : 0);
+        const float radius_scale = static_cast<float>(std::max(splat_radius, 1));
         for (std::int32_t y = std::max(0, center_y - splat_radius);
                 y <= std::min<std::int32_t>(static_cast<std::int32_t>(result.texel_height) - 1, center_y + splat_radius);
                 y++) {
             for (std::int32_t x = std::max(0, center_x - splat_radius);
                     x <= std::min<std::int32_t>(static_cast<std::int32_t>(result.texel_width) - 1, center_x + splat_radius);
                     x++) {
-                const auto offset = static_cast<std::size_t>(
-                        (static_cast<std::uint64_t>(y) * result.texel_width
-                                + static_cast<std::uint64_t>(x)) * 4ULL);
-                result.mask_rgba8[offset] = std::max(result.mask_rgba8[offset], red);
-                result.mask_rgba8[offset + 1] = std::max(result.mask_rgba8[offset + 1], green);
-                result.mask_rgba8[offset + 2] = std::max(result.mask_rgba8[offset + 2], blue);
-                result.mask_rgba8[offset + 3] = std::max(result.mask_rgba8[offset + 3], alpha);
+                const float dx = static_cast<float>(x - center_x);
+                const float dy = static_cast<float>(y - center_y);
+                const float distance = std::sqrt(dx * dx + dy * dy);
+                if (distance > radius_scale + 0.001F) {
+                    continue;
+                }
+                const float radial_weight = std::clamp(
+                        1.0F - (distance / (radius_scale + 0.75F)),
+                        0.0F,
+                        1.0F);
+                const float soft_weight = radial_weight * radial_weight
+                        * (0.50F + edge_confidence * 0.34F)
+                        * (0.62F + receiver_confidence * 0.38F);
+                const float receiver_channel = std::clamp(
+                        receiver_confidence * 0.54F
+                                + receiver_material_coupling * 0.28F
+                                + receiver_depth_coupling * 0.18F,
+                        0.0F,
+                        1.0F);
+                const float edge_channel = has_caster_depth
+                        ? std::clamp(
+                                edge_confidence * 0.48F
+                                        + receiver_depth_coupling * 0.34F
+                                        + std::clamp(depth_stddev, 0.0F, 1.0F) * 0.10F,
+                                0.0F,
+                                1.0F)
+                        : 0.0F;
+                const float red = std::clamp(shadow_strength * soft_weight, 0.0F, 1.0F);
+                const float green = receiver_channel * std::clamp(0.22F + soft_weight * 0.64F, 0.0F, 1.0F);
+                const float blue = edge_channel * std::clamp(0.18F + soft_weight * 0.68F, 0.0F, 1.0F);
+                const float alpha = std::clamp(
+                        std::max(red, green * 0.46F)
+                                * (0.58F + receiver_confidence * 0.30F)
+                                * (0.72F + receiver_depth_coupling * 0.28F),
+                        0.0F,
+                        1.0F);
+                const auto pixel_index = static_cast<std::size_t>(
+                        static_cast<std::uint64_t>(y) * result.texel_width
+                        + static_cast<std::uint64_t>(x));
+                accumulate_shadow_mask_channel(mask_channels, pixel_index, 0, red);
+                accumulate_shadow_mask_channel(mask_channels, pixel_index, 1, green);
+                accumulate_shadow_mask_channel(mask_channels, pixel_index, 2, blue);
+                accumulate_shadow_mask_channel(mask_channels, pixel_index, 3, alpha);
+                if (soft_weight > 0.02F) {
+                    result.mask_soft_penumbra_sample_count++;
+                    result.mask_conservative_not_screen_space_sample_count++;
+                    if (receiver_depth_coupling > 0.10F) {
+                        result.mask_receiver_depth_coupled_sample_count++;
+                    }
+                    if (material_coupled_receiver) {
+                        result.mask_receiver_material_coupled_sample_count++;
+                    }
+                    if (world_space_receiver_coupled) {
+                        result.mask_world_space_receiver_coupled_sample_count++;
+                    }
+                    if (depth_variance > 0.0001) {
+                        result.mask_spatially_variant_sample_count++;
+                    }
+                }
             }
         }
+    }
+
+    std::vector<float> filtered_channels(mask_channels.size(), 0.0F);
+    for (std::uint64_t y = 0; y < result.texel_height; y++) {
+        for (std::uint64_t x = 0; x < result.texel_width; x++) {
+            float weight_sum = 0.0F;
+            std::array<float, 4> channel_sum{0.0F, 0.0F, 0.0F, 0.0F};
+            for (std::int32_t ky = -1; ky <= 1; ky++) {
+                const auto sample_y = static_cast<std::int64_t>(y) + ky;
+                if (sample_y < 0 || sample_y >= static_cast<std::int64_t>(result.texel_height)) {
+                    continue;
+                }
+                for (std::int32_t kx = -1; kx <= 1; kx++) {
+                    const auto sample_x = static_cast<std::int64_t>(x) + kx;
+                    if (sample_x < 0 || sample_x >= static_cast<std::int64_t>(result.texel_width)) {
+                        continue;
+                    }
+                    const float kernel = (kx == 0 && ky == 0)
+                            ? 4.0F
+                            : (kx == 0 || ky == 0 ? 2.0F : 1.0F);
+                    const auto sample_offset = static_cast<std::size_t>(
+                            (static_cast<std::uint64_t>(sample_y) * result.texel_width
+                                    + static_cast<std::uint64_t>(sample_x)) * 4ULL);
+                    for (std::size_t channel = 0; channel < 4; channel++) {
+                        channel_sum[channel] += mask_channels[sample_offset + channel] * kernel;
+                    }
+                    weight_sum += kernel;
+                }
+            }
+            const auto offset = static_cast<std::size_t>((y * result.texel_width + x) * 4ULL);
+            for (std::size_t channel = 0; channel < 4; channel++) {
+                const float blurred_value = weight_sum > 0.0F
+                        ? std::clamp(channel_sum[channel] / weight_sum, 0.0F, 1.0F)
+                        : 0.0F;
+                const float center_value = mask_channels[offset + channel];
+                const float blended_value = center_value * 0.62F + blurred_value * 0.38F;
+                filtered_channels[offset + channel] = std::clamp(blended_value, 0.0F, 1.0F);
+            }
+            if (mask_channels[offset + 3] <= 0.001F && filtered_channels[offset + 3] < 0.055F) {
+                for (std::size_t channel = 0; channel < 4; channel++) {
+                    filtered_channels[offset + channel] *= 0.35F;
+                }
+            }
+            if (filtered_channels[offset + 3] < 0.010F || filtered_channels[offset] < 0.006F) {
+                for (std::size_t channel = 0; channel < 4; channel++) {
+                    filtered_channels[offset + channel] = 0.0F;
+                }
+            }
+            if (std::abs(filtered_channels[offset + 3] - mask_channels[offset + 3]) > 0.002F
+                    && filtered_channels[offset + 3] > 0.0F) {
+                result.mask_filtered_sample_count++;
+            }
+        }
+    }
+
+    for (std::size_t offset = 0; offset + 3 < result.mask_rgba8.size(); offset += 4) {
+        result.mask_rgba8[offset] = quantize_shadow_mask_channel(filtered_channels[offset]);
+        result.mask_rgba8[offset + 1] = quantize_shadow_mask_channel(filtered_channels[offset + 1]);
+        result.mask_rgba8[offset + 2] = quantize_shadow_mask_channel(filtered_channels[offset + 2]);
+        result.mask_rgba8[offset + 3] = quantize_shadow_mask_channel(filtered_channels[offset + 3]);
     }
 
     for (std::size_t offset = 0; offset + 3 < result.mask_rgba8.size(); offset += 4) {
@@ -1014,15 +1254,46 @@ ConservativeDirectionalShadowMapResult build_conservative_directional_shadow_map
         mix_checksum(result.mask_output_checksum, result.mask_rgba8[offset + 2]);
         mix_checksum(result.mask_output_checksum, result.mask_rgba8[offset + 3]);
     }
+    if (result.receiver_count > 0) {
+        result.mean_receiver_confidence = static_cast<float>(
+                receiver_confidence_sum / static_cast<double>(result.receiver_count));
+        result.mean_edge_confidence = static_cast<float>(
+                edge_confidence_sum / static_cast<double>(result.receiver_count));
+    }
+    if (receiver_spatial_variance_count > 0) {
+        result.mean_spatial_variance = static_cast<float>(
+                spatial_variance_sum / static_cast<double>(receiver_spatial_variance_count));
+    }
+    if (receiver_depth_delta_count > 0) {
+        result.mean_depth_delta = static_cast<float>(
+                depth_delta_sum / static_cast<double>(receiver_depth_delta_count));
+    }
 
     if (result.mask_rgba8.empty() || result.mask_nonzero_sample_count == 0) {
         result.mask_rgba8.clear();
         result.mask_output_checksum = 0;
         result.mask_blocker = "native_directional_shadow_mask_has_no_receiver_samples";
+        result.mask_quality_blocker = result.mask_low_confidence_rejected_sample_count != 0
+                ? "native_directional_shadow_mask_rejected_low_confidence_receiver_samples"
+                : result.mask_blocker;
     } else {
         result.mask_output_generated = true;
         result.mask_output_ready = true;
         result.mask_blocker.clear();
+        if (result.mask_world_space_receiver_coupled_sample_count == 0) {
+            result.mask_quality_blocker =
+                    "native_directional_shadow_mask_missing_world_space_receiver_coupling";
+        } else if (result.mask_receiver_material_coupled_sample_count == 0) {
+            result.mask_quality_blocker =
+                    "native_directional_shadow_mask_missing_receiver_material_coupling";
+        } else if (result.mask_spatially_variant_sample_count == 0) {
+            result.mask_quality_blocker =
+                    "native_directional_shadow_mask_missing_spatial_variance";
+        } else {
+            result.mask_quality_blocker.clear();
+        }
+        result.mask_marker =
+                "native_conservative_directional_shadow_mask_rgba8_receiver_depth_material_world_space_coupled_softened_no_screen_space_decal";
     }
 
     result.generated = true;
@@ -1630,6 +1901,10 @@ void append_round6_execution_status(
         << ",receiver_material_coupled_samples="
         << execution.last_receiver_material_coupled_sample_count
         << ",receiver_depth_coupled_samples=" << execution.last_receiver_depth_coupled_sample_count
+        << ",world_space_receiver_coupled="
+        << (execution.last_receiver_material_coupling_recorded
+                && execution.last_receiver_depth_coupling_recorded)
+        << ",spatial_variance_recorded=" << execution.last_cpu_output_spatially_graded
         << ",surface_normal_confident_samples=" << execution.last_surface_normal_confident_sample_count
         << ",occlusion_dirty_modulated_samples=" << execution.last_occlusion_dirty_modulated_sample_count
         << ",physical_gi_samples=" << execution.last_physical_gi_sample_count
@@ -1654,6 +1929,39 @@ void append_round6_execution_status(
         << ",cpu_ray_traversal_mean_shadow_weight="
         << execution.last_cpu_ray_traversal_mean_shadow_weight
         << ",cpu_ray_traversal_checksum=" << execution.last_cpu_ray_traversal_checksum
+        << ",playable_physical_gi_trace_requested_rays="
+        << execution.last_playable_physical_gi_trace_requested_rays
+        << ",playable_physical_gi_trace_capped_rays="
+        << execution.last_playable_physical_gi_trace_capped_rays
+        << ",playable_physical_gi_trace_sampled_cells="
+        << execution.last_playable_physical_gi_trace_sampled_cells
+        << ",playable_physical_gi_trace_sampled_cell_limit="
+        << execution.last_playable_physical_gi_trace_sampled_cell_limit
+        << ",playable_physical_gi_trace_cell_stride="
+        << execution.last_playable_physical_gi_trace_cell_stride_x
+        << "x" << execution.last_playable_physical_gi_trace_cell_stride_y
+        << ",playable_physical_gi_trace_colored_bounce_samples="
+        << execution.last_playable_physical_gi_trace_colored_bounce_samples
+        << ",playable_physical_gi_trace_colored_bounce_hits="
+        << execution.last_playable_physical_gi_trace_colored_bounce_hits
+        << ",playable_physical_gi_trace_emissive_bounce_samples="
+        << execution.last_playable_physical_gi_trace_emissive_bounce_samples
+        << ",playable_physical_gi_trace_emissive_bounce_hits="
+        << execution.last_playable_physical_gi_trace_emissive_bounce_hits
+        << ",playable_physical_gi_trace_material_coupled_samples="
+        << execution.last_playable_physical_gi_trace_material_coupled_samples
+        << ",playable_physical_gi_trace_depth_coupled_samples="
+        << execution.last_playable_physical_gi_trace_depth_coupled_samples
+        << ",playable_physical_gi_trace_colored_bounce_energy="
+        << execution.last_playable_physical_gi_trace_colored_bounce_energy
+        << ",playable_physical_gi_trace_emissive_bounce_energy="
+        << execution.last_playable_physical_gi_trace_emissive_bounce_energy
+        << ",playable_physical_gi_trace_material_coupling="
+        << execution.last_playable_physical_gi_trace_material_coupling
+        << ",playable_physical_gi_trace_depth_coupling="
+        << execution.last_playable_physical_gi_trace_depth_coupling
+        << ",playable_physical_gi_trace_checksum="
+        << execution.last_playable_physical_gi_trace_checksum
         << ",surface_material_hit_coupled_samples="
         << execution.last_surface_material_hit_coupled_sample_count
         << ",geometry_hit_coupled_samples=" << execution.last_geometry_hit_coupled_sample_count
@@ -1757,6 +2065,14 @@ void append_round6_execution_status(
         << ",cpu_ray_traversal_used_uploaded_shadow_candidates="
         << execution.last_cpu_ray_traversal_used_uploaded_shadow_candidates
         << ",realGpuTraversalExecuted=" << execution.last_real_gpu_traversal_executed
+        << ",playable_physical_gi_trace_mode="
+        << execution.last_playable_physical_gi_trace_mode
+        << ",playable_physical_gi_trace_budget_capped="
+        << execution.last_playable_physical_gi_trace_budget_capped
+        << ",playable_physical_gi_trace_recorded="
+        << execution.last_playable_physical_gi_trace_recorded
+        << ",playable_physical_gi_trace_gpu_overclaim_rejected="
+        << execution.last_playable_physical_gi_trace_gpu_overclaim_rejected
         << ",realShadowMapExecuted=" << execution.last_real_shadow_map_executed
         << ",realShaderDenoiseExecuted=" << execution.last_real_shader_denoise_executed
         << ",surface_material_hit_coupling_recorded="
@@ -1792,6 +2108,12 @@ void append_round6_execution_status(
         << "\""
         << ",emissive_receiver_coupling_marker=\""
         << execution.last_emissive_receiver_coupling_marker
+        << "\""
+        << ",playable_physical_gi_trace_marker=\""
+        << execution.last_playable_physical_gi_trace_marker
+        << "\""
+        << ",playable_physical_gi_trace_blocker=\""
+        << execution.last_playable_physical_gi_trace_blocker
         << "\""
         << ",contact_shadow_marker=\"" << execution.last_contact_shadow_marker
         << "\""
@@ -1901,6 +2223,11 @@ void append_denoise_execution_status(
         << ",raw_gi_input_available=" << execution.last_raw_gi_input_available
         << ",raw_direct_input_available=" << execution.last_raw_direct_input_available
         << ",raw_gi_input_ready=" << execution.last_raw_gi_input_ready
+        << ",raw_gi_denoise_ready=" << execution.last_shader_denoise_raw_diffuse_gi_input_ready
+        << ",raw_gi_denoise_blocker=\"" << (execution.last_shader_denoise_raw_diffuse_gi_input_ready
+            ? "none"
+            : execution.last_shader_denoise_input_blocker)
+        << "\""
         << ",shader_denoise_raw_diffuse_gi_input_ready="
         << execution.last_shader_denoise_raw_diffuse_gi_input_ready
         << ",shader_denoise_direct_light_validation_input_ready="
@@ -2287,6 +2614,34 @@ void append_direct_shadow_map_status(
         << ",checksum=" << execution.last_shadow_mask_output_checksum
         << ",nonzero_samples=" << execution.last_shadow_mask_nonzero_sample_count
         << ",occluded_samples=" << execution.last_shadow_mask_occluded_sample_count
+        << ",soft_penumbra_samples=" << execution.last_shadow_mask_soft_penumbra_sample_count
+        << ",softPenumbraSamples=" << execution.last_shadow_mask_soft_penumbra_sample_count
+        << ",filtered_shadow_mask_samples=" << execution.last_shadow_mask_filtered_sample_count
+        << ",filteredShadowMask=" << (execution.last_shadow_mask_filtered_sample_count != 0)
+        << ",receiver_confidence_samples=" << execution.last_shadow_mask_receiver_confidence_sample_count
+        << ",receiverConfidenceSamples=" << execution.last_shadow_mask_receiver_confidence_sample_count
+        << ",edge_confidence_samples=" << execution.last_shadow_mask_edge_confidence_sample_count
+        << ",edgeConfidenceSamples=" << execution.last_shadow_mask_edge_confidence_sample_count
+        << ",receiver_depth_coupled_samples=" << execution.last_shadow_mask_receiver_depth_coupled_sample_count
+        << ",receiverDepthCoupledSamples=" << execution.last_shadow_mask_receiver_depth_coupled_sample_count
+        << ",receiver_material_coupled_samples=" << execution.last_shadow_mask_receiver_material_coupled_sample_count
+        << ",receiverMaterialCoupledSamples=" << execution.last_shadow_mask_receiver_material_coupled_sample_count
+        << ",world_space_receiver_coupled_samples=" << execution.last_shadow_mask_world_space_receiver_coupled_sample_count
+        << ",worldSpaceReceiverCoupledSamples=" << execution.last_shadow_mask_world_space_receiver_coupled_sample_count
+        << ",shadowMaskReceiverWorldSpaceCoupled=" << execution.last_shadow_mask_receiver_world_space_coupled
+        << ",spatially_variant_samples=" << execution.last_shadow_mask_spatially_variant_sample_count
+        << ",shadowMaskSpatiallyVariant=" << execution.last_shadow_mask_spatially_variant
+        << ",low_confidence_rejected_samples=" << execution.last_shadow_mask_low_confidence_rejected_sample_count
+        << ",conservative_not_screen_space_samples=" << execution.last_shadow_mask_conservative_not_screen_space_sample_count
+        << ",conservativeNotScreenSpace=" << (execution.last_shadow_mask_conservative_not_screen_space_sample_count != 0)
+        << ",mean_receiver_confidence=" << execution.last_shadow_mask_mean_receiver_confidence
+        << ",meanReceiverConfidence=" << execution.last_shadow_mask_mean_receiver_confidence
+        << ",mean_edge_confidence=" << execution.last_shadow_mask_mean_edge_confidence
+        << ",meanEdgeConfidence=" << execution.last_shadow_mask_mean_edge_confidence
+        << ",mean_spatial_variance=" << execution.last_shadow_mask_mean_spatial_variance
+        << ",meanSpatialVariance=" << execution.last_shadow_mask_mean_spatial_variance
+        << ",mean_depth_delta=" << execution.last_shadow_mask_mean_depth_delta
+        << ",meanDepthDelta=" << execution.last_shadow_mask_mean_depth_delta
         << ",marker=\"" << (execution.last_shadow_mask_output_marker.empty()
             ? "native_directional_shadow_mask_not_generated_no_screen_space_or_world_space_decal_fallback"
             : execution.last_shadow_mask_output_marker)
@@ -2294,6 +2649,10 @@ void append_direct_shadow_map_status(
         << ",blocker=\"" << (execution.last_shadow_mask_output_blocker.empty()
             ? "none"
             : execution.last_shadow_mask_output_blocker)
+        << "\""
+        << ",quality_blocker=\"" << (execution.last_shadow_mask_quality_blocker.empty()
+            ? "none"
+            : execution.last_shadow_mask_quality_blocker)
         << "\"}";
 }
 
@@ -6691,6 +7050,16 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
     execution.last_shadow_mask_output_checksum = 0;
     execution.last_shadow_mask_nonzero_sample_count = 0;
     execution.last_shadow_mask_occluded_sample_count = 0;
+    execution.last_shadow_mask_soft_penumbra_sample_count = 0;
+    execution.last_shadow_mask_filtered_sample_count = 0;
+    execution.last_shadow_mask_receiver_confidence_sample_count = 0;
+    execution.last_shadow_mask_edge_confidence_sample_count = 0;
+    execution.last_shadow_mask_receiver_depth_coupled_sample_count = 0;
+    execution.last_shadow_mask_receiver_material_coupled_sample_count = 0;
+    execution.last_shadow_mask_conservative_not_screen_space_sample_count = 0;
+    execution.last_shadow_mask_world_space_receiver_coupled_sample_count = 0;
+    execution.last_shadow_mask_spatially_variant_sample_count = 0;
+    execution.last_shadow_mask_low_confidence_rejected_sample_count = 0;
     execution.last_physical_surface_energy = 0.0F;
     execution.last_preview_fallback_energy = 0.0F;
     execution.last_surface_payload_confidence = 0.0F;
@@ -6698,6 +7067,10 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
     execution.last_emissive_spill_max_radius = 0.0F;
     execution.last_shadow_map_min_light_space_depth = 0.0F;
     execution.last_shadow_map_max_light_space_depth = 0.0F;
+    execution.last_shadow_mask_mean_receiver_confidence = 0.0F;
+    execution.last_shadow_mask_mean_edge_confidence = 0.0F;
+    execution.last_shadow_mask_mean_spatial_variance = 0.0F;
+    execution.last_shadow_mask_mean_depth_delta = 0.0F;
     execution.last_physical_surface_contribution = false;
     execution.last_preview_fallback_contribution = false;
     execution.last_focus_window_contribution = false;
@@ -6712,6 +7085,8 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
     execution.last_shadow_mask_cpu_conservative = false;
     execution.last_shadow_mask_screen_space_decal_fallback = false;
     execution.last_shadow_mask_world_space_decal_fallback = false;
+    execution.last_shadow_mask_receiver_world_space_coupled = false;
+    execution.last_shadow_mask_spatially_variant = false;
     execution.last_output_marker.clear();
     execution.last_shadow_map_marker =
             "native_directional_shadow_map_not_attempted_no_screen_space_or_world_space_decal_fallback";
@@ -6724,6 +7099,7 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
     execution.last_shadow_mask_output_marker =
             "native_directional_shadow_mask_not_attempted_no_screen_space_or_world_space_decal_fallback";
     execution.last_shadow_mask_output_blocker = "direct_stage_not_evaluated";
+    execution.last_shadow_mask_quality_blocker = "direct_stage_not_evaluated";
     shadow_map_cpu_output_mask_rgba8_.clear();
 
     if (!direct_stage.enabled_this_packet) {
@@ -6736,6 +7112,7 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
         execution.last_shadow_map_caster_blocker = "direct_stage_disabled";
         execution.last_shadow_map_depth_blocker = "direct_stage_disabled";
         execution.last_shadow_mask_output_blocker = "direct_stage_disabled";
+        execution.last_shadow_mask_quality_blocker = "direct_stage_disabled";
         return 0;
     }
 
@@ -6751,6 +7128,7 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
             execution.last_shadow_map_caster_blocker = "direct_stage_validation_missing";
             execution.last_shadow_map_depth_blocker = "direct_stage_validation_missing";
             execution.last_shadow_mask_output_blocker = "direct_stage_validation_missing";
+            execution.last_shadow_mask_quality_blocker = "direct_stage_validation_missing";
         } else {
             execution.last_readiness_reason = "direct_stage_has_no_outputs";
             execution.last_shadow_map_blocker = "direct_stage_has_no_outputs";
@@ -6758,6 +7136,7 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
             execution.last_shadow_map_caster_blocker = "direct_stage_has_no_outputs";
             execution.last_shadow_map_depth_blocker = "direct_stage_has_no_outputs";
             execution.last_shadow_mask_output_blocker = "direct_stage_has_no_outputs";
+            execution.last_shadow_mask_quality_blocker = "direct_stage_has_no_outputs";
         }
         return 0;
     }
@@ -6834,8 +7213,32 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
         execution.last_shadow_mask_output_checksum = shadow_map.mask_output_checksum;
         execution.last_shadow_mask_nonzero_sample_count = shadow_map.mask_nonzero_sample_count;
         execution.last_shadow_mask_occluded_sample_count = shadow_map.mask_occluded_sample_count;
+        execution.last_shadow_mask_soft_penumbra_sample_count = shadow_map.mask_soft_penumbra_sample_count;
+        execution.last_shadow_mask_filtered_sample_count = shadow_map.mask_filtered_sample_count;
+        execution.last_shadow_mask_receiver_confidence_sample_count = shadow_map.mask_receiver_confidence_sample_count;
+        execution.last_shadow_mask_edge_confidence_sample_count = shadow_map.mask_edge_confidence_sample_count;
+        execution.last_shadow_mask_receiver_depth_coupled_sample_count = shadow_map.mask_receiver_depth_coupled_sample_count;
+        execution.last_shadow_mask_receiver_material_coupled_sample_count = shadow_map.mask_receiver_material_coupled_sample_count;
+        execution.last_shadow_mask_conservative_not_screen_space_sample_count =
+                shadow_map.mask_conservative_not_screen_space_sample_count;
+        execution.last_shadow_mask_world_space_receiver_coupled_sample_count =
+                shadow_map.mask_world_space_receiver_coupled_sample_count;
+        execution.last_shadow_mask_spatially_variant_sample_count =
+                shadow_map.mask_spatially_variant_sample_count;
+        execution.last_shadow_mask_low_confidence_rejected_sample_count =
+                shadow_map.mask_low_confidence_rejected_sample_count;
+        execution.last_shadow_mask_mean_receiver_confidence = shadow_map.mean_receiver_confidence;
+        execution.last_shadow_mask_mean_edge_confidence = shadow_map.mean_edge_confidence;
+        execution.last_shadow_mask_mean_spatial_variance = shadow_map.mean_spatial_variance;
+        execution.last_shadow_mask_mean_depth_delta = shadow_map.mean_depth_delta;
+        execution.last_shadow_mask_receiver_world_space_coupled =
+                shadow_map.mask_world_space_receiver_coupled_sample_count != 0;
+        execution.last_shadow_mask_spatially_variant =
+                shadow_map.mask_spatially_variant_sample_count != 0
+                && shadow_map.mean_spatial_variance > 0.0001F;
         execution.last_shadow_mask_output_marker = shadow_map.mask_marker;
         execution.last_shadow_mask_output_blocker = shadow_map.mask_output_ready ? "" : shadow_map.mask_blocker;
+        execution.last_shadow_mask_quality_blocker = shadow_map.mask_quality_blocker;
         shadow_map_cpu_output_mask_rgba8_ = shadow_map.mask_output_ready
                 ? shadow_map.mask_rgba8
                 : std::vector<std::uint8_t>{};
@@ -6845,18 +7248,21 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
         execution.last_shadow_map_caster_blocker = execution.last_shadow_map_blocker;
         execution.last_shadow_map_depth_blocker = execution.last_shadow_map_blocker;
         execution.last_shadow_mask_output_blocker = "direct_payload_not_accepted_for_native_directional_shadow_map";
+        execution.last_shadow_mask_quality_blocker = execution.last_shadow_mask_output_blocker;
     } else if (!execution.last_payload_has_direct_work) {
         execution.last_shadow_map_blocker = "direct_payload_has_no_direct_work_for_native_directional_shadow_map";
         execution.last_shadow_map_receiver_blocker = execution.last_shadow_map_blocker;
         execution.last_shadow_map_caster_blocker = execution.last_shadow_map_blocker;
         execution.last_shadow_map_depth_blocker = execution.last_shadow_map_blocker;
         execution.last_shadow_mask_output_blocker = "direct_payload_has_no_direct_work_for_native_directional_shadow_map";
+        execution.last_shadow_mask_quality_blocker = execution.last_shadow_mask_output_blocker;
     } else if (!execution.last_payload_ready_for_shadow_tracing) {
         execution.last_shadow_map_blocker = "direct_payload_not_ready_for_shadow_tracing";
         execution.last_shadow_map_receiver_blocker = execution.last_shadow_map_blocker;
         execution.last_shadow_map_caster_blocker = execution.last_shadow_map_blocker;
         execution.last_shadow_map_depth_blocker = execution.last_shadow_map_blocker;
         execution.last_shadow_mask_output_blocker = "direct_payload_not_ready_for_shadow_tracing";
+        execution.last_shadow_mask_quality_blocker = execution.last_shadow_mask_output_blocker;
     } else {
         execution.last_shadow_map_blocker =
                 "direct_payload_missing_shadow_candidates_or_section_snapshots_for_native_directional_shadow_map";
@@ -6865,6 +7271,7 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
         execution.last_shadow_map_depth_blocker = execution.last_shadow_map_blocker;
         execution.last_shadow_mask_output_blocker =
                 "direct_payload_missing_shadow_candidates_or_section_snapshots_for_native_directional_shadow_map";
+        execution.last_shadow_mask_quality_blocker = execution.last_shadow_mask_output_blocker;
     }
     if (has_payload && pixel_count != 0) {
         const auto emissive_count = static_cast<std::size_t>(last_direct_lighting_payload_packet_.selected_emissive_count);
@@ -7524,6 +7931,19 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_cpu_ray_traversal_material_sample_count = 0;
     execution.last_cpu_ray_traversal_bounce_sample_count = 0;
     execution.last_cpu_ray_traversal_checksum = 0;
+    execution.last_playable_physical_gi_trace_requested_rays = 0;
+    execution.last_playable_physical_gi_trace_capped_rays = 0;
+    execution.last_playable_physical_gi_trace_sampled_cells = 0;
+    execution.last_playable_physical_gi_trace_sampled_cell_limit = 0;
+    execution.last_playable_physical_gi_trace_cell_stride_x = 0;
+    execution.last_playable_physical_gi_trace_cell_stride_y = 0;
+    execution.last_playable_physical_gi_trace_colored_bounce_samples = 0;
+    execution.last_playable_physical_gi_trace_colored_bounce_hits = 0;
+    execution.last_playable_physical_gi_trace_emissive_bounce_samples = 0;
+    execution.last_playable_physical_gi_trace_emissive_bounce_hits = 0;
+    execution.last_playable_physical_gi_trace_material_coupled_samples = 0;
+    execution.last_playable_physical_gi_trace_depth_coupled_samples = 0;
+    execution.last_playable_physical_gi_trace_checksum = 0;
     execution.last_surface_material_hit_coupled_sample_count = 0;
     execution.last_geometry_hit_coupled_sample_count = 0;
     execution.last_contact_shadow_sample_count = 0;
@@ -7571,6 +7991,10 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_cpu_ray_traversal_colored_bounce_energy = 0.0F;
     execution.last_cpu_ray_traversal_mean_occlusion = 0.0F;
     execution.last_cpu_ray_traversal_mean_shadow_weight = 0.0F;
+    execution.last_playable_physical_gi_trace_colored_bounce_energy = 0.0F;
+    execution.last_playable_physical_gi_trace_emissive_bounce_energy = 0.0F;
+    execution.last_playable_physical_gi_trace_material_coupling = 0.0F;
+    execution.last_playable_physical_gi_trace_depth_coupling = 0.0F;
     execution.last_emissive_contribution_energy = 0.0F;
     execution.last_sun_contribution_energy = 0.0F;
     execution.last_occlusion_dirty_influence = 0.0F;
@@ -7604,6 +8028,10 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_cpu_ray_traversal_used_uploaded_materials = false;
     execution.last_cpu_ray_traversal_used_uploaded_shadow_candidates = false;
     execution.last_real_gpu_traversal_executed = false;
+    execution.last_playable_physical_gi_trace_mode = false;
+    execution.last_playable_physical_gi_trace_budget_capped = false;
+    execution.last_playable_physical_gi_trace_recorded = false;
+    execution.last_playable_physical_gi_trace_gpu_overclaim_rejected = true;
     execution.last_real_shadow_map_executed = false;
     execution.last_real_shader_denoise_executed = false;
     execution.last_surface_material_hit_coupling_recorded = false;
@@ -7630,6 +8058,9 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
     execution.last_physical_sample_marker.clear();
     execution.last_surface_material_hit_marker.clear();
     execution.last_emissive_receiver_coupling_marker.clear();
+    execution.last_playable_physical_gi_trace_marker.clear();
+    execution.last_playable_physical_gi_trace_blocker =
+            std::string(to_string(dispatch_stage)) + "_playable_physical_gi_trace_not_attempted";
     execution.last_contact_shadow_marker.clear();
     execution.last_proof_boundary_marker =
             std::string(to_string(dispatch_stage)) + "_requires_native_scene_linked_output_not_capture_artifact";
@@ -8213,7 +8644,16 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                             ? uploaded_traversal_pair_budget
                             : std::min(dispatch_trace_budget, uploaded_traversal_pair_budget);
                     const std::uint64_t cpu_traversal_sample_limit =
-                            std::min(cpu_traversal_budget, kRound6CpuRayTraversalSampleLimit);
+                            std::min(
+                                    std::min(cpu_traversal_budget, kRound6CpuRayTraversalSampleLimit),
+                                    kPlayablePhysicalGiTraceRayLimit);
+                    execution.last_playable_physical_gi_trace_mode = true;
+                    execution.last_playable_physical_gi_trace_requested_rays = cpu_traversal_budget;
+                    execution.last_playable_physical_gi_trace_capped_rays = cpu_traversal_sample_limit;
+                    execution.last_playable_physical_gi_trace_budget_capped =
+                            cpu_traversal_budget > cpu_traversal_sample_limit;
+                    execution.last_playable_physical_gi_trace_gpu_overclaim_rejected =
+                            !execution.last_real_gpu_traversal_executed;
                     if (cpu_traversal_sample_limit != 0
                             && (traversal_has_surfaces
                                     || traversal_has_emissives
@@ -8469,9 +8909,51 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                 traversal_has_materials && traversal_material_samples != 0;
                         execution.last_cpu_ray_traversal_used_uploaded_shadow_candidates =
                                 traversal_has_shadow_candidates && traversal_shadow_candidates != 0;
+                        execution.last_playable_physical_gi_trace_marker =
+                                "native_playable_low_res_physical_gi_trace_budgeted_cpu_proof_not_gpu_traversal";
+                        execution.last_playable_physical_gi_trace_blocker =
+                                execution.last_real_gpu_traversal_executed
+                                        ? "unexpected_gpu_traversal_flag_set_for_playable_cpu_trace"
+                                        : "real_gpu_traversal_not_claimed_cpu_budgeted_low_res_trace";
+                    } else {
+                        execution.last_playable_physical_gi_trace_marker =
+                                "native_playable_low_res_physical_gi_trace_no_samples";
+                        execution.last_playable_physical_gi_trace_blocker =
+                                cpu_traversal_sample_limit == 0
+                                        ? "playable_physical_gi_trace_budget_zero"
+                                        : "playable_physical_gi_trace_missing_scene_inputs";
                     }
                     execution.last_cpu_output_cache_response = cache_response;
                     execution.last_cpu_output_material_response = material_response;
+                    const std::uint64_t playable_trace_cell_stride_x = std::max<std::uint64_t>(
+                            1,
+                            (preview_width + kPlayablePhysicalGiTraceMaxCellColumns - 1)
+                                    / kPlayablePhysicalGiTraceMaxCellColumns);
+                    const std::uint64_t playable_trace_cell_stride_y = std::max<std::uint64_t>(
+                            1,
+                            (preview_height + kPlayablePhysicalGiTraceMaxCellRows - 1)
+                                    / kPlayablePhysicalGiTraceMaxCellRows);
+                    const std::uint64_t playable_trace_columns =
+                            (preview_width + playable_trace_cell_stride_x - 1)
+                                    / playable_trace_cell_stride_x;
+                    const std::uint64_t playable_trace_rows =
+                            (preview_height + playable_trace_cell_stride_y - 1)
+                                    / playable_trace_cell_stride_y;
+                    const std::uint64_t playable_trace_cell_limit = std::min(
+                            kPlayablePhysicalGiTraceCellLimit,
+                            saturated_multiply(playable_trace_columns, playable_trace_rows));
+                    std::uint64_t playable_trace_sampled_cells = 0;
+                    std::uint64_t playable_trace_colored_bounce_samples = 0;
+                    std::uint64_t playable_trace_colored_bounce_hits = 0;
+                    std::uint64_t playable_trace_emissive_bounce_samples = 0;
+                    std::uint64_t playable_trace_emissive_bounce_hits = 0;
+                    std::uint64_t playable_trace_material_coupled_samples = 0;
+                    std::uint64_t playable_trace_depth_coupled_samples = 0;
+                    std::uint64_t playable_trace_checksum = 1469598103934665603ULL;
+                    float playable_trace_colored_bounce_energy = 0.0F;
+                    float playable_trace_emissive_bounce_energy = 0.0F;
+                    float playable_trace_material_coupling_sum = 0.0F;
+                    float playable_trace_depth_coupling_sum = 0.0F;
                     for (std::uint64_t pixel = 0; pixel < preview_pixel_count; pixel++) {
                         const auto offset = static_cast<std::size_t>(pixel * 4);
                         const auto pixel_x = pixel % preview_width;
@@ -9211,6 +9693,48 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                         const bool receiver_depth_coupled_sample = physical_gi_hit_sample
                                 && receiver_depth_proxy_available
                                 && receiver_depth_coupling > 0.07F;
+                        const bool playable_trace_cell =
+                                (pixel_x % playable_trace_cell_stride_x) == 0
+                                && (pixel_y % playable_trace_cell_stride_y) == 0
+                                && playable_trace_sampled_cells < playable_trace_cell_limit;
+                        if (playable_trace_cell) {
+                            playable_trace_sampled_cells++;
+                            mix_checksum(playable_trace_checksum, pixel);
+                            mix_checksum(
+                                    playable_trace_checksum,
+                                    static_cast<std::uint64_t>(pixel_output_energy * 1000.0F));
+                            mix_checksum(
+                                    playable_trace_checksum,
+                                    static_cast<std::uint64_t>(receiver_material_coupling * 1000.0F));
+                            mix_checksum(
+                                    playable_trace_checksum,
+                                    static_cast<std::uint64_t>(receiver_depth_coupling * 1000.0F));
+                            mix_checksum(playable_trace_checksum, physical_gi_hit_sample ? 1ULL : 0ULL);
+                            if (colored_bounce_sample) {
+                                playable_trace_colored_bounce_samples++;
+                                playable_trace_colored_bounce_energy +=
+                                        colored_bounce_red + colored_bounce_green + colored_bounce_blue;
+                            }
+                            if (colored_bounce_hit) {
+                                playable_trace_colored_bounce_hits++;
+                            }
+                            if (emissive_bounce_sample) {
+                                playable_trace_emissive_bounce_samples++;
+                                playable_trace_emissive_bounce_energy +=
+                                        physical_emissive_energy + emissive_receiver_energy;
+                            }
+                            if (emissive_bounce_hit) {
+                                playable_trace_emissive_bounce_hits++;
+                            }
+                            if (material_coupled_bounce_sample) {
+                                playable_trace_material_coupled_samples++;
+                                playable_trace_material_coupling_sum += material_hit_coupling;
+                            }
+                            if (receiver_depth_coupled_sample) {
+                                playable_trace_depth_coupled_samples++;
+                                playable_trace_depth_coupling_sum += receiver_depth_coupling;
+                            }
+                        }
                         if (writes_surface_pixel) {
                             surface_pixels_written++;
                         }
@@ -9374,6 +9898,42 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                     execution.last_physical_output_checksum = physical_output_checksum;
                     execution.last_colored_bounce_checksum =
                             colored_bounce_samples == 0 ? 0 : colored_bounce_checksum;
+                    execution.last_playable_physical_gi_trace_sampled_cells =
+                            playable_trace_sampled_cells;
+                    execution.last_playable_physical_gi_trace_sampled_cell_limit =
+                            playable_trace_cell_limit;
+                    execution.last_playable_physical_gi_trace_cell_stride_x =
+                            playable_trace_cell_stride_x;
+                    execution.last_playable_physical_gi_trace_cell_stride_y =
+                            playable_trace_cell_stride_y;
+                    execution.last_playable_physical_gi_trace_colored_bounce_samples =
+                            playable_trace_colored_bounce_samples;
+                    execution.last_playable_physical_gi_trace_colored_bounce_hits =
+                            playable_trace_colored_bounce_hits;
+                    execution.last_playable_physical_gi_trace_emissive_bounce_samples =
+                            playable_trace_emissive_bounce_samples;
+                    execution.last_playable_physical_gi_trace_emissive_bounce_hits =
+                            playable_trace_emissive_bounce_hits;
+                    execution.last_playable_physical_gi_trace_material_coupled_samples =
+                            playable_trace_material_coupled_samples;
+                    execution.last_playable_physical_gi_trace_depth_coupled_samples =
+                            playable_trace_depth_coupled_samples;
+                    execution.last_playable_physical_gi_trace_checksum =
+                            playable_trace_sampled_cells == 0 ? 0 : playable_trace_checksum;
+                    execution.last_playable_physical_gi_trace_colored_bounce_energy =
+                            playable_trace_colored_bounce_energy;
+                    execution.last_playable_physical_gi_trace_emissive_bounce_energy =
+                            playable_trace_emissive_bounce_energy;
+                    execution.last_playable_physical_gi_trace_material_coupling =
+                            playable_trace_material_coupled_samples == 0
+                            ? 0.0F
+                            : playable_trace_material_coupling_sum
+                                    / static_cast<float>(playable_trace_material_coupled_samples);
+                    execution.last_playable_physical_gi_trace_depth_coupling =
+                            playable_trace_depth_coupled_samples == 0
+                            ? 0.0F
+                            : playable_trace_depth_coupling_sum
+                                    / static_cast<float>(playable_trace_depth_coupled_samples);
                     execution.last_scene_linked_sample_count = scene_linked_samples;
                     execution.last_material_color_modulated_sample_count = material_color_samples;
                     execution.last_colored_bounce_sample_count = colored_bounce_samples;
@@ -9503,6 +10063,31 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                             occlusion_dirty_samples != 0 && execution.last_occlusion_dirty_influence > 0.0F;
                     execution.last_output_write_energy_recorded =
                             output_write_energy > 0.0F && physical_output_checksum != 0;
+                    execution.last_playable_physical_gi_trace_recorded =
+                            execution.last_playable_physical_gi_trace_sampled_cells != 0
+                            && execution.last_playable_physical_gi_trace_capped_rays != 0
+                            && execution.last_playable_physical_gi_trace_checksum != 0
+                            && (execution.last_playable_physical_gi_trace_colored_bounce_hits != 0
+                                    || execution.last_playable_physical_gi_trace_emissive_bounce_hits != 0
+                                    || execution.last_playable_physical_gi_trace_material_coupled_samples != 0
+                                    || execution.last_playable_physical_gi_trace_depth_coupled_samples != 0);
+                    execution.last_playable_physical_gi_trace_gpu_overclaim_rejected =
+                            !execution.last_real_gpu_traversal_executed;
+                    if (execution.last_playable_physical_gi_trace_recorded) {
+                        execution.last_playable_physical_gi_trace_marker =
+                                "native_playable_low_res_physical_gi_trace_cells_recorded_cpu_bounded_not_gpu";
+                        execution.last_playable_physical_gi_trace_blocker =
+                                "real_gpu_traversal_not_claimed_cpu_budgeted_low_res_trace";
+                    } else if (execution.last_playable_physical_gi_trace_sampled_cells == 0) {
+                        execution.last_playable_physical_gi_trace_blocker =
+                                "playable_physical_gi_trace_low_res_cells_not_sampled";
+                    } else if (execution.last_playable_physical_gi_trace_capped_rays == 0) {
+                        execution.last_playable_physical_gi_trace_blocker =
+                                "playable_physical_gi_trace_ray_budget_zero";
+                    } else {
+                        execution.last_playable_physical_gi_trace_blocker =
+                                "playable_physical_gi_trace_scene_coupling_incomplete";
+                    }
                     execution.last_physical_output_marker = execution.last_output_write_energy_recorded
                             ? "native_diffuse_gi_cpu_preview_physical_output_energy_checksum_recorded"
                             : "native_diffuse_gi_cpu_preview_physical_output_energy_missing";

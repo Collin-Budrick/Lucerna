@@ -788,7 +788,57 @@ public record DenoiseExecutionSnapshot(
     }
 
     public boolean shaderDenoiseNoOverclaimStatus() {
-        return !this.realShaderDenoiseOutputReady();
+        return this.shaderDenoiseNoNativeComputeOverclaim()
+                && this.shaderDenoiseNoGpuTraversalOverclaim()
+                && !this.shaderDenoiseUsesDirectLightValidationInput();
+    }
+
+    public boolean shaderDenoiseNoNativeComputeOverclaim() {
+        return !this.nativeComputeDenoiseExecuted();
+    }
+
+    public boolean shaderDenoiseNoGpuTraversalOverclaim() {
+        return !this.gpuTraversalDenoiseInputExecuted();
+    }
+
+    public boolean nativeComputeDenoiseExecuted() {
+        return false;
+    }
+
+    public boolean gpuTraversalDenoiseInputExecuted() {
+        return false;
+    }
+
+    public String nativeComputeDenoiseBlocker() {
+        if (this.nativeComputeDenoiseExecuted()) {
+            return "none";
+        }
+        if (!this.hasExecutionTelemetry()) {
+            return "no-denoise-execution-telemetry";
+        }
+        if (this.realShaderDenoiseOutputReady()) {
+            return "real denoise output is a shader-generated output contract, but this DTO does not report native Vulkan compute dispatch execution";
+        }
+        if (this.publicMojangShaderVisualOutputActive() || this.shaderDenoiseOutputImageCandidatePresent()) {
+            return "public Mojang fragment/candidate visual path is present, not native Vulkan compute denoise";
+        }
+        if (this.shaderDenoiseCpuReadbackFallbackActive()) {
+            return "CPU/readback denoise fallback is active, not native Vulkan compute denoise";
+        }
+        return "native Vulkan compute denoise execution is not reported";
+    }
+
+    public String gpuTraversalDenoiseInputBlocker() {
+        if (this.gpuTraversalDenoiseInputExecuted()) {
+            return "none";
+        }
+        if (!this.hasExecutionTelemetry()) {
+            return "no-denoise-execution-telemetry";
+        }
+        if (this.shaderDenoiseRealTracedInputReady) {
+            return "traced input is reported, but no real GPU traversal execution flag is present in this denoise DTO";
+        }
+        return "GPU traversal execution is not reported; raw GI/traced input evidence remains CPU/native metadata unless another status proves traversal";
     }
 
     public boolean publicMojangShaderVisualOutputActive() {
@@ -823,6 +873,13 @@ public record DenoiseExecutionSnapshot(
                 || "native-direct-light-rgba8-validation-input".equals(this.shaderDenoiseInputKind);
     }
 
+    public boolean shaderDenoiseStrictRawDiffuseGiInputIdentityReady() {
+        return this.shaderDenoiseUsesRawDiffuseGiInput()
+                && !this.shaderDenoiseUsesDirectLightValidationInput()
+                && this.shaderDenoiseInputReady
+                && this.rawGiInputReady;
+    }
+
     public String shaderDenoiseInputBoundary() {
         if (!this.hasExecutionTelemetry()) {
             return "no-denoise-execution-telemetry";
@@ -837,6 +894,26 @@ public record DenoiseExecutionSnapshot(
             return "diffuse GI metadata present but raw diffuse-GI RGBA8 input is not ready";
         }
         return this.shaderDenoiseInputBlocker;
+    }
+
+    public String shaderDenoiseInputIdentitySummary() {
+        return "shaderDenoiseInputIdentity"
+                + " strictRawDiffuseGiInput=" + this.shaderDenoiseStrictRawDiffuseGiInputIdentityReady()
+                + " inputKind=" + this.shaderDenoiseInputKind
+                + " inputStatus=" + this.shaderDenoiseInputStatus
+                + " inputReady=" + this.shaderDenoiseInputReady
+                + " rawGiInputReady=" + this.rawGiInputReady
+                + " rawDiffuseGiInputReady=" + this.shaderDenoiseRawDiffuseGiInputReady
+                + " directLightValidationInputActive=" + this.shaderDenoiseUsesDirectLightValidationInput()
+                + " physicalGiEvidence=" + this.shaderDenoisePhysicalGiInputEvidence
+                + " physicalGiBlocker=" + this.shaderDenoisePhysicalGiBlocker
+                + " realTracedInputReady=" + this.shaderDenoiseRealTracedInputReady
+                + " tracingBlocker=" + this.shaderDenoiseTracingBlocker
+                + " gpuTraversalExecuted=" + this.gpuTraversalDenoiseInputExecuted()
+                + " gpuTraversalBlocker=\"" + this.gpuTraversalDenoiseInputBlocker() + "\""
+                + " nativeComputeDenoiseExecuted=" + this.nativeComputeDenoiseExecuted()
+                + " nativeComputeDenoiseBlocker=\"" + this.nativeComputeDenoiseBlocker() + "\""
+                + " boundary=\"" + this.shaderDenoiseInputBoundary() + "\"";
     }
 
     public boolean shaderDenoiseInputPrerequisitesReady() {
@@ -912,7 +989,22 @@ public record DenoiseExecutionSnapshot(
                 + " shaderGeneratedDenoiseOutputFinalCompositeConsumed="
                 + this.shaderGeneratedDenoiseOutputFinalCompositeConsumed
                 + " shaderGeneratedDenoiseOutputMarker=" + this.shaderGeneratedDenoiseOutputMarker
+                + " nativeComputeDenoiseExecuted=" + this.nativeComputeDenoiseExecuted()
+                + " gpuTraversalExecuted=" + this.gpuTraversalDenoiseInputExecuted()
+                + " noOverclaimSummary=\"" + this.physicalRendererNoOverclaimSummary() + "\""
                 + " blocker=" + this.shaderDenoiseOutputBlockerReason();
+    }
+
+    public String physicalRendererNoOverclaimSummary() {
+        return "shaderDenoiseNoOverclaimStatus=" + this.shaderDenoiseNoOverclaimStatus()
+                + " noNativeComputeOverclaim=" + this.shaderDenoiseNoNativeComputeOverclaim()
+                + " noGpuTraversalOverclaim=" + this.shaderDenoiseNoGpuTraversalOverclaim()
+                + " nativeComputeDenoiseExecuted=" + this.nativeComputeDenoiseExecuted()
+                + " nativeComputeDenoiseBlocker=\"" + this.nativeComputeDenoiseBlocker() + "\""
+                + " gpuTraversalExecuted=" + this.gpuTraversalDenoiseInputExecuted()
+                + " gpuTraversalBlocker=\"" + this.gpuTraversalDenoiseInputBlocker() + "\""
+                + " directLightValidationInputActive=" + this.shaderDenoiseUsesDirectLightValidationInput()
+                + " shaderDenoiseInputIdentity=\"" + this.shaderDenoiseInputIdentitySummary() + "\"";
     }
 
     public String shaderDenoiseOutputPrerequisitesSummary() {
@@ -931,6 +1023,7 @@ public record DenoiseExecutionSnapshot(
                 + " realTracedInputReady=" + this.shaderDenoiseRealTracedInputReady
                 + " tracingBlocker=" + this.shaderDenoiseTracingBlocker
                 + " inputBoundary=\"" + this.shaderDenoiseInputBoundary() + "\""
+                + " inputIdentity=\"" + this.shaderDenoiseInputIdentitySummary() + "\""
                 + " edgeInputsAvailable=" + this.edgeInputsAvailable
                 + " diffuseGiSignalAvailable=" + this.diffuseGiSignalAvailable
                 + " publicMojangVisualAttempted=" + this.publicMojangShaderVisualOutputAttempted
@@ -971,7 +1064,8 @@ public record DenoiseExecutionSnapshot(
                 + " candidateCpuStaged=" + this.shaderDenoiseOutputImageCandidateCpuStaged
                 + " candidateNonGpu=" + this.shaderDenoiseOutputImageCandidateNonGpu
                 + " blocker=" + this.shaderDenoiseOutputBlockerReason()
-                + " noOverclaim=" + this.shaderDenoiseNoOverclaimStatus();
+                + " noOverclaim=" + this.shaderDenoiseNoOverclaimStatus()
+                + " noOverclaimSummary=\"" + this.physicalRendererNoOverclaimSummary() + "\"";
     }
 
     public boolean realShaderDenoiseOutputReady() {
@@ -1223,6 +1317,7 @@ public record DenoiseExecutionSnapshot(
                 + " shaderDenoiseRealTracedInputReady=" + this.shaderDenoiseRealTracedInputReady
                 + " shaderDenoiseTracingBlocker=" + this.shaderDenoiseTracingBlocker
                 + " shaderDenoiseInputBoundary=\"" + this.shaderDenoiseInputBoundary() + "\""
+                + " shaderDenoiseInputIdentity=\"" + this.shaderDenoiseInputIdentitySummary() + "\""
                 + " denoisedIntent=" + this.denoisedOutputIntent
                 + " denoisedCpuOutputGenerated=" + this.denoisedCpuOutputGenerated
                 + " denoisedOutputPixels=" + this.denoisedOutputPixels
@@ -1273,6 +1368,11 @@ public record DenoiseExecutionSnapshot(
                 + " shaderDenoiseOutputBlockerReason=" + this.shaderDenoiseOutputBlockerReason()
                 + " shaderDenoiseRealOutputBoundary=\"" + this.shaderDenoiseRealOutputBoundary() + "\""
                 + " shaderDenoiseNoOverclaimStatus=" + this.shaderDenoiseNoOverclaimStatus()
+                + " shaderDenoiseNoNativeComputeOverclaim=" + this.shaderDenoiseNoNativeComputeOverclaim()
+                + " shaderDenoiseNoGpuTraversalOverclaim=" + this.shaderDenoiseNoGpuTraversalOverclaim()
+                + " nativeComputeDenoiseExecuted=" + this.nativeComputeDenoiseExecuted()
+                + " gpuTraversalExecuted=" + this.gpuTraversalDenoiseInputExecuted()
+                + " physicalRendererNoOverclaim=\"" + this.physicalRendererNoOverclaimSummary() + "\""
                 + " shaderDenoiseOutputPrerequisites=\"" + this.shaderDenoiseOutputPrerequisitesSummary() + "\""
                 + " shaderDenoiseOutputImageCandidateSize=" + this.shaderDenoiseOutputImageCandidateWidth
                 + "x" + this.shaderDenoiseOutputImageCandidateHeight

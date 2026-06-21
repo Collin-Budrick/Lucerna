@@ -349,6 +349,35 @@ public record GBufferSceneDataReadiness(
         return depthSamplingEvidenceReady() ? this.samplingEvidence.sampleCount() : 0;
     }
 
+    public boolean playablePhysicalDepthSamplingReady() {
+        return this.kind == GBufferSceneDataKind.DEPTH
+                && trueSampledSceneDataReady()
+                && depthSamplingEvidenceReady()
+                && !metadataOnly()
+                && !publicMojangOpaqueOnlyFallback()
+                && !missing()
+                && this.samplingEvidence.playablePhysicalDepthSamplingReady();
+    }
+
+    public int liveDepthSampleCount() {
+        return playablePhysicalDepthSamplingReady() ? this.samplingEvidence.liveDepthSampleCount() : 0;
+    }
+
+    public int liveNonzeroDepthSampleCount() {
+        return playablePhysicalDepthSamplingReady() ? this.samplingEvidence.liveNonzeroDepthSampleCount() : 0;
+    }
+
+    public boolean playablePhysicalSceneDataSamplingReady() {
+        return trueSampledSceneDataReady()
+                && !metadataOnly()
+                && !publicMojangOpaqueOnlyFallback()
+                && !missing();
+    }
+
+    public int liveSceneSampleCount() {
+        return playablePhysicalSceneDataSamplingReady() ? sceneSampleCount() : 0;
+    }
+
     public String depthSamplingMarker() {
         if (this.kind != GBufferSceneDataKind.DEPTH) {
             return "not-depth";
@@ -409,11 +438,31 @@ public record GBufferSceneDataReadiness(
                 + ", depthTextureSampleBindingReady=" + depthTextureSampleBindingReady()
                 + ", depthSamplingEvidenceReady=" + depthSamplingEvidenceReady()
                 + ", depthSampleCount=" + depthSampleCount()
+                + ", playablePhysicalDepthSamplingReady=" + playablePhysicalDepthSamplingReady()
+                + ", liveDepthSampleCount=" + liveDepthSampleCount()
+                + ", liveNonzeroDepthSampleCount=" + liveNonzeroDepthSampleCount()
+                + ", playablePhysicalSceneDataSamplingReady=" + playablePhysicalSceneDataSamplingReady()
+                + ", liveSceneSampleCount=" + liveSceneSampleCount()
                 + ", depthSamplingMarker=" + depthSamplingMarker()
                 + ", depthSamplingBlocker=" + depthSamplingBlocker()
                 + ", samplingBlockerReason=" + samplingBlockerReason()
                 + ", samplingEvidence={" + this.samplingEvidence.statusLabel() + "}"
                 + ", blocker=" + this.blocker
+                + "}";
+    }
+
+    public String playablePhysicalProofStatusLabel() {
+        return this.kind.label()
+                + "{ready=" + playablePhysicalSceneDataSamplingReady()
+                + ", liveSampleCount=" + liveSceneSampleCount()
+                + ", sourceKind=" + this.frameDataSource.kind().label()
+                + ", samplingSourceKind=" + samplingSourceKind().label()
+                + ", metadataOnly=" + metadataOnly()
+                + ", publicMojangOpaqueOnlyFallback=" + publicMojangOpaqueOnlyFallback()
+                + ", synthetic=" + this.frameDataSynthetic
+                + ", contractOnly=" + this.frameDataContractOnly
+                + ", missing=" + missing()
+                + ", blocker=" + (playablePhysicalSceneDataSamplingReady() ? "ready" : samplingBlockerReason())
                 + "}";
     }
 

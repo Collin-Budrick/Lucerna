@@ -25,6 +25,8 @@ uniform float LucernaFinalCompositeEnabled;
 
 const float LUCERNA_MAX_DIRECT_RADIANCE = 4.0;
 const float LUCERNA_MAX_DIFFUSE_RADIANCE = 2.0;
+const float LOW_RES_BLOCK_REJECT = 0.62;
+const float TEXTURE_DETAIL_RESTORE = 0.38;
 const vec3 LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
 
 vec3 boundedRadiance(vec3 value, float limit) {
@@ -47,6 +49,75 @@ float chromaSpan(vec3 color) {
 
 float lightingSignal(vec4 value) {
     return clamp(max(value.a, luminance(value.rgb) * 18.0), 0.0, 1.0);
+}
+
+float lightingSignalAt(sampler2D source, vec2 uv) {
+    return lightingSignal(texture(source, clamp(uv, vec2(0.0), vec2(1.0))));
+}
+
+float worldTextureStructure(vec2 uv, vec3 centerColor) {
+    vec2 texel = safeTexelSize(LucernaWorldColor);
+    vec3 left = texture(LucernaWorldColor, clamp(uv - vec2(texel.x, 0.0), vec2(0.0), vec2(1.0))).rgb;
+    vec3 right = texture(LucernaWorldColor, clamp(uv + vec2(texel.x, 0.0), vec2(0.0), vec2(1.0))).rgb;
+    vec3 up = texture(LucernaWorldColor, clamp(uv - vec2(0.0, texel.y), vec2(0.0), vec2(1.0))).rgb;
+    vec3 down = texture(LucernaWorldColor, clamp(uv + vec2(0.0, texel.y), vec2(0.0), vec2(1.0))).rgb;
+    float lumaStructure = abs(luminance(centerColor) - luminance(left))
+            + abs(luminance(centerColor) - luminance(right))
+            + abs(luminance(centerColor) - luminance(up))
+            + abs(luminance(centerColor) - luminance(down));
+    float chromaStructure = max(max(length(centerColor - left), length(centerColor - right)),
+            max(length(centerColor - up), length(centerColor - down)));
+    return clamp(lumaStructure * 1.35 + chromaStructure * 0.55, 0.0, 1.0);
+}
+
+vec3 localWorldMean(vec2 uv, vec3 centerColor) {
+    vec2 texel = safeTexelSize(LucernaWorldColor);
+    vec3 sum = centerColor * 2.0;
+    sum += texture(LucernaWorldColor, clamp(uv - vec2(texel.x, 0.0), vec2(0.0), vec2(1.0))).rgb;
+    sum += texture(LucernaWorldColor, clamp(uv + vec2(texel.x, 0.0), vec2(0.0), vec2(1.0))).rgb;
+    sum += texture(LucernaWorldColor, clamp(uv - vec2(0.0, texel.y), vec2(0.0), vec2(1.0))).rgb;
+    sum += texture(LucernaWorldColor, clamp(uv + vec2(0.0, texel.y), vec2(0.0), vec2(1.0))).rgb;
+    return sum / 6.0;
+}
+
+vec3 localWorldMin(vec2 uv, vec3 centerColor) {
+    vec2 texel = safeTexelSize(LucernaWorldColor);
+    vec3 minRgb = centerColor;
+    minRgb = min(minRgb, texture(LucernaWorldColor, clamp(uv - vec2(texel.x, 0.0), vec2(0.0), vec2(1.0))).rgb);
+    minRgb = min(minRgb, texture(LucernaWorldColor, clamp(uv + vec2(texel.x, 0.0), vec2(0.0), vec2(1.0))).rgb);
+    minRgb = min(minRgb, texture(LucernaWorldColor, clamp(uv - vec2(0.0, texel.y), vec2(0.0), vec2(1.0))).rgb);
+    minRgb = min(minRgb, texture(LucernaWorldColor, clamp(uv + vec2(0.0, texel.y), vec2(0.0), vec2(1.0))).rgb);
+    return minRgb;
+}
+
+vec3 localWorldMax(vec2 uv, vec3 centerColor) {
+    vec2 texel = safeTexelSize(LucernaWorldColor);
+    vec3 maxRgb = centerColor;
+    maxRgb = max(maxRgb, texture(LucernaWorldColor, clamp(uv - vec2(texel.x, 0.0), vec2(0.0), vec2(1.0))).rgb);
+    maxRgb = max(maxRgb, texture(LucernaWorldColor, clamp(uv + vec2(texel.x, 0.0), vec2(0.0), vec2(1.0))).rgb);
+    maxRgb = max(maxRgb, texture(LucernaWorldColor, clamp(uv - vec2(0.0, texel.y), vec2(0.0), vec2(1.0))).rgb);
+    maxRgb = max(maxRgb, texture(LucernaWorldColor, clamp(uv + vec2(0.0, texel.y), vec2(0.0), vec2(1.0))).rgb);
+    return maxRgb;
+}
+
+float lowResolutionBlockReject(vec2 uv, vec4 directLighting, vec4 denoisedDiffuse) {
+    vec2 directTexel = safeTexelSize(LucernaDirectLighting);
+    vec2 diffuseTexel = safeTexelSize(LucernaDenoisedDiffuse);
+    float center = max(lightingSignal(directLighting), lightingSignal(denoisedDiffuse));
+    float directAxis = (
+            lightingSignalAt(LucernaDirectLighting, uv + vec2(directTexel.x, 0.0))
+            + lightingSignalAt(LucernaDirectLighting, uv - vec2(directTexel.x, 0.0))
+            + lightingSignalAt(LucernaDirectLighting, uv + vec2(0.0, directTexel.y))
+            + lightingSignalAt(LucernaDirectLighting, uv - vec2(0.0, directTexel.y))) * 0.25;
+    float diffuseAxis = (
+            lightingSignalAt(LucernaDenoisedDiffuse, uv + vec2(diffuseTexel.x, 0.0))
+            + lightingSignalAt(LucernaDenoisedDiffuse, uv - vec2(diffuseTexel.x, 0.0))
+            + lightingSignalAt(LucernaDenoisedDiffuse, uv + vec2(0.0, diffuseTexel.y))
+            + lightingSignalAt(LucernaDenoisedDiffuse, uv - vec2(0.0, diffuseTexel.y))) * 0.25;
+    float axis = max(directAxis, diffuseAxis);
+    float blockyPlateau = smoothstep(0.055, 0.26, max(center, axis))
+            * (1.0 - smoothstep(0.010, 0.085, abs(center - axis)));
+    return blockyPlateau;
 }
 
 float albedoStructure(vec2 uv, vec3 centerAlbedo) {
@@ -108,6 +179,11 @@ void main() {
 
     vec3 baseColor = clamp(worldColor.rgb, vec3(0.0), vec3(1.0));
     vec3 albedo = clamp(albedoOpacity.rgb, vec3(0.0), vec3(1.0));
+    float receiverDetail = max(albedoStructure(texCoord, albedo),
+            worldTextureStructure(texCoord, baseColor));
+    float blockReject = lowResolutionBlockReject(texCoord, directLighting, denoisedDiffuse)
+            * (1.0 - smoothstep(0.035, 0.22, receiverDetail));
+    float receiverLocalMask = surfaceMask * mix(1.0, 1.0 - LOW_RES_BLOCK_REJECT, blockReject);
     vec3 directSpill = boundedRadiance(directLighting.rgb, LUCERNA_MAX_DIRECT_RADIANCE)
         * max(LucernaDirectCompositeGain, 0.0)
         * directVisibility;
@@ -115,8 +191,19 @@ void main() {
         * max(LucernaDiffuseCompositeGain, 0.0);
     vec3 visualDenoiseContribution = coloredBounceGi * mix(vec3(1.0), normalize(albedo + vec3(0.0001)) * 1.25, 0.34);
 
-    vec3 litColor = baseColor * (1.0 - contactShadow * surfaceMask)
-            + (directSpill + visualDenoiseContribution) * albedo * surfaceMask;
+    vec3 litColor = baseColor * (1.0 - contactShadow * receiverLocalMask)
+            + (directSpill + visualDenoiseContribution) * albedo * receiverLocalMask;
+    vec3 localMean = localWorldMean(texCoord, baseColor);
+    vec3 localDetail = baseColor - localMean;
+    litColor += localDetail * (TEXTURE_DETAIL_RESTORE
+            * smoothstep(0.020, 0.20, receiverDetail)
+            * receiverLocalMask);
+    vec3 localMin = localWorldMin(texCoord, baseColor);
+    vec3 localMax = localWorldMax(texCoord, baseColor);
+    vec3 localRange = max(localMax - localMin, vec3(0.010));
+    vec3 lowerBound = max(localMin - localRange * 0.30, vec3(0.0));
+    vec3 upperBound = min(max(localMax, baseColor) + localRange * (0.80 + receiverLocalMask) + vec3(0.045), vec3(1.0));
+    litColor = clamp(litColor, lowerBound, upperBound);
     vec3 finalColor = mix(baseColor, clamp(litColor, vec3(0.0), vec3(1.0)), enabled);
 
     float overlayAlpha = clamp(debugOverlay.a * LucernaDebugOverlayAlpha, 0.0, 1.0);

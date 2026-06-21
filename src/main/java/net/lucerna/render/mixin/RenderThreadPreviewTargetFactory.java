@@ -69,6 +69,7 @@ public final class RenderThreadPreviewTargetFactory {
             );
     private static final String ROUND7_SHADER_DENOISE_DIRECT_LIGHT_VALIDATION_FALLBACK_ENV =
             "LUCERNA_ROUND7_SHADER_DENOISE_DIRECT_LIGHT_VALIDATION_FALLBACK";
+    private static final int COMPACT_REASON_DETAIL_CHARS = 260;
     private static final ShaderDenoiseOutputRenderTarget SHADER_DENOISE_OUTPUT_RENDER_TARGET =
             new ShaderDenoiseOutputRenderTarget();
     private static GpuTexture lastWorldColorTexture;
@@ -493,7 +494,7 @@ public final class RenderThreadPreviewTargetFactory {
     ) {
         String payloadSummary = shadowMapPayloadSummary == null || shadowMapPayloadSummary.isBlank()
                 ? "native shadow-map payload summary unavailable"
-                : shadowMapPayloadSummary.trim();
+                : compactDetail("shadowPayload", shadowMapPayloadSummary);
         if (target == null || !target.available()) {
             return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
                     true,
@@ -516,6 +517,21 @@ public final class RenderThreadPreviewTargetFactory {
                             + "nativeShadowMapComposite=false,shadowMapOutputConsumed=false,screenSpaceShadowDecal=false,"
                             + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady="
                             + realShadowMapOutputReady
+                            + "; payload: "
+                            + payloadSummary
+            );
+        }
+        if (!target.finalCompositeWorldColorAttachmentReady()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang native shadow-map final composite skipped because the live world-color attachment contract is not ready; "
+                            + "nativeShadowMapComposite=false,shadowMapOutputConsumed=false,screenSpaceShadowDecal=false,"
+                            + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady="
+                            + realShadowMapOutputReady
+                            + ",finalCompositeAttachmentContract="
+                            + finalCompositeAttachmentContractStatus(target, null)
                             + "; payload: "
                             + payloadSummary
             );
@@ -631,8 +647,7 @@ public final class RenderThreadPreviewTargetFactory {
         }
 
         GpuTextureView depthView = target.depthTarget() instanceof GpuTextureView view ? view : null;
-        boolean depthTextureSampleBindingReady = target.attachmentMetadata().depthTextureSampleBindingReady()
-                && depthView != null;
+        boolean depthTextureSampleBindingReady = finalCompositeDepthSampleBindingReady(target, depthView);
         PublicMojangPreviewDrawScaffold drawScaffold;
         try (RenderPass renderPass = createFullTargetRenderPass(
                 commandEncoder,
@@ -707,7 +722,15 @@ public final class RenderThreadPreviewTargetFactory {
                         + ",depthSamplingBlocker="
                         + (depthTextureSampleBindingReady ? "none" : "current-depth-view-unavailable")
                         + ","
-                        + "shadowMaskPayloadTexture=true,finalCompositeBeforeHud=true,target="
+                        + "shadowMaskPayloadTexture=true,finalCompositeBeforeHud=true"
+                        + ",finalCompositeBeforeHandHud=true,finalCompositeTouchesHud=false"
+                        + ",finalCompositeTouchesHand=false,finalCompositeTouchesPostHud=false"
+                        + ",normalGameplayProofOverlay=false,proofOnlyFullscreenOverlay=false"
+                        + ",realWorldColorAttachment=true,realDepthAttachment="
+                        + depthTextureSampleBindingReady
+                        + ",finalCompositeAttachmentContract="
+                        + finalCompositeAttachmentContractStatus(target, depthView)
+                        + ",target="
                         + targetAttachmentSummary(target)
                         + "; payload: "
                         + payloadSummary
@@ -730,11 +753,11 @@ public final class RenderThreadPreviewTargetFactory {
     ) {
         String payloadSummary = shadowMapPayloadSummary == null || shadowMapPayloadSummary.isBlank()
                 ? "native shadow-map payload summary unavailable"
-                : shadowMapPayloadSummary.trim();
+                : compactDetail("shadowPayload", shadowMapPayloadSummary);
         boolean rawGiInputReady = previewState != null && previewState.rawGiInputReady(rawGiPayload);
         String rawGiEvidence = previewState == null
                 ? "rawGiInputReady=false,rawGiInputSource=\"missing Round 6 diffuse GI preview state\""
-                : previewState.rawGiInputSourceEvidence(rawGiPayload);
+                : compactDetail("rawGi", previewState.rawGiInputSourceEvidence(rawGiPayload));
         String skippedBoundary =
                 "realRendererMilestone1FullComposite=false,nativeShadowMapComposite=false,"
                         + "shadowMapOutputConsumed=false,depthAwareShadowMaskComposite=false,"
@@ -742,7 +765,9 @@ public final class RenderThreadPreviewTargetFactory {
                         + "realShaderDenoiseOutputReady=false,shaderDenoiseNoOverclaim=true,"
                         + "shaderDenoiseOverclaimRejected=true,screenSpaceShadowDecal=false,"
                         + "lowResolutionDirectTextureDraw=false,metadataOnly=false,proofMarker=false,"
-                        + "focusWindowOnly=false,temporaryDirectLightSubstitution=false,rectangularWashout=false";
+                        + "focusWindowOnly=false,temporaryDirectLightSubstitution=false,rectangularWashout=false,"
+                        + "normalGameplayProofOverlay=false,proofOnlyFullscreenOverlay=false,"
+                        + "finalCompositeTouchesHud=false,finalCompositeTouchesHand=false,finalCompositeTouchesPostHud=false";
         if (target == null || !target.available()) {
             return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
                     true,
@@ -763,6 +788,21 @@ public final class RenderThreadPreviewTargetFactory {
                     PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
                     "public Mojang real renderer milestone 1 full composite skipped because the target is not HUD-safe; "
                             + skippedBoundary
+                            + "; payload: "
+                            + payloadSummary
+                            + "; raw source: "
+                            + rawGiEvidence
+            );
+        }
+        if (!target.finalCompositeWorldColorAttachmentReady()) {
+            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
+                    true,
+                    target.attachmentMetadata().javaOpaque(),
+                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.METADATA_ONLY,
+                    "public Mojang real renderer milestone 1 full composite skipped because the live world-color attachment contract is not ready; "
+                            + skippedBoundary
+                            + ",finalCompositeAttachmentContract="
+                            + finalCompositeAttachmentContractStatus(target, null)
                             + "; payload: "
                             + payloadSummary
                             + "; raw source: "
@@ -864,9 +904,9 @@ public final class RenderThreadPreviewTargetFactory {
                     "public Mojang real renderer milestone 1 full composite skipped because one or more source uploads are unavailable; "
                             + skippedBoundary
                             + "; shadow upload: "
-                            + shadowUpload.summary()
+                            + compactDetail("shadowUpload", shadowUpload.summary())
                             + "; raw upload: "
-                            + rawUpload.summary()
+                            + compactDetail("rawUpload", rawUpload.summary())
                             + "; payload: "
                             + payloadSummary
                             + "; raw source: "
@@ -897,7 +937,7 @@ public final class RenderThreadPreviewTargetFactory {
                     "public Mojang real renderer milestone 1 full composite skipped because the owned shader denoise output target is unavailable; "
                             + skippedBoundary
                             + "; output target: "
-                            + outputTargetStatus.summary()
+                            + outputTargetStatus.compactSummary()
             );
         }
 
@@ -917,8 +957,7 @@ public final class RenderThreadPreviewTargetFactory {
         }
 
         GpuTextureView depthView = target.depthTarget() instanceof GpuTextureView view ? view : null;
-        boolean depthTextureSampleBindingReady = target.attachmentMetadata().depthTextureSampleBindingReady()
-                && depthView != null;
+        boolean depthTextureSampleBindingReady = finalCompositeDepthSampleBindingReady(target, depthView);
         PublicMojangPreviewDrawScaffold shaderOutputDrawScaffold;
         PublicMojangPreviewDrawScaffold shadowDrawScaffold;
         try (RenderPass renderPass = createFullTargetRenderPass(
@@ -958,15 +997,13 @@ public final class RenderThreadPreviewTargetFactory {
         boolean generationDrawIssued = generationDrawScaffold.drawCallsIssued();
         boolean shaderOutputConsumed = shaderOutputDrawScaffold.drawCallsIssued();
         boolean shadowConsumed = shadowDrawScaffold.drawCallsIssued();
-        ShaderGeneratedDenoiseOutputStatus outputStatus = ShaderGeneratedDenoiseOutputStatus.reported(
-                true,
-                true,
+        ShaderGeneratedDenoiseOutputStatus outputStatus = ShaderGeneratedDenoiseOutputStatus.ownedFragmentOutput(
                 generationDrawIssued,
                 generationDrawIssued && outputTargetStatus.availableForSampling(),
                 shaderOutputConsumed,
                 true,
-                true,
-                "public Mojang fragment pass generated lucerna.denoise.diffuse into an owned RGBA8 texture and the real-renderer final composite consumed that texture"
+                depthTextureSampleBindingReady,
+                "owned lucerna.denoise.diffuse RGBA8 fragment output consumed by real-renderer composite"
         );
         if (!generationDrawIssued || !shaderOutputConsumed || !shadowConsumed) {
             return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
@@ -984,11 +1021,11 @@ public final class RenderThreadPreviewTargetFactory {
                             + ",shadowOutputConsumed="
                             + shadowConsumed
                             + "; generation draw scaffold: "
-                            + generationDrawScaffold.summary()
+                            + compactDetail("generationDraw", generationDrawScaffold.summary())
                             + "; shader output draw scaffold: "
-                            + shaderOutputDrawScaffold.summary()
+                            + compactDetail("shaderOutputDraw", shaderOutputDrawScaffold.summary())
                             + "; shadow draw scaffold: "
-                            + shadowDrawScaffold.summary()
+                            + compactDetail("shadowDraw", shadowDrawScaffold.summary())
             );
         }
 
@@ -1062,26 +1099,41 @@ public final class RenderThreadPreviewTargetFactory {
                         + ",shaderDenoiseNoOverclaim=true,shaderDenoiseOverclaimRejected=true,shaderDenoiseOverclaimPresent=false"
                         + ",publicMojangShaderGeneratedVisualOutput=true"
                         + ",coloredBounceGi=true,contactShadow=true"
+                        + ",sourceBoundary=full-target-source-gated-scene-surface-projection"
+                        + ",surfaceProjection=source-gated-scene-shaped-full-target"
+                        + ",physicalGiEvidence=true,physical_gi_evidence=true,realPhysicalGiEvidence=true"
+                        + ",physicalSurfaceContribution=true,physicalGiSceneLinked=true"
+                        + ",metadataOnlyPhysicalPayload=false"
                         + ",metadataOnly=false,proofMarker=false,focusWindowOnly=false"
                         + ",temporaryDirectLightSubstitution=false,rectangularWashout=false"
-                        + ",shadowMaskPayloadTexture=true,finalCompositeBeforeHud=true,target="
+                        + ",shadowMaskPayloadTexture=true,finalCompositeBeforeHud=true"
+                        + ",finalCompositeBeforeHandHud=true,finalCompositeTouchesHud=false"
+                        + ",finalCompositeTouchesHand=false,finalCompositeTouchesPostHud=false"
+                        + ",normalGameplayProofOverlay=false,proofOnlyFullscreenOverlay=false"
+                        + ",realWorldColorAttachment=true,realDepthAttachment="
+                        + depthTextureSampleBindingReady
+                        + ",finalCompositeAttachmentContract="
+                        + finalCompositeAttachmentContractStatus(target, depthView)
+                        + ",target="
                         + targetAttachmentSummary(target)
+                        + ","
+                        + outputStatus.compactBoundarySummary()
                         + "; payload: "
                         + payloadSummary
                         + "; raw source: "
                         + rawGiEvidence
                         + "; raw upload: "
-                        + rawUpload.summary()
+                        + compactDetail("rawUpload", rawUpload.summary())
                         + "; shadow upload: "
-                        + shadowUpload.summary()
+                        + compactDetail("shadowUpload", shadowUpload.summary())
                         + "; shader output target: "
-                        + outputTargetStatus.summary()
+                        + outputTargetStatus.compactSummary()
                         + "; generation draw scaffold: "
-                        + generationDrawScaffold.summary()
+                        + compactDetail("generationDraw", generationDrawScaffold.summary())
                         + "; shader output draw scaffold: "
-                        + shaderOutputDrawScaffold.summary()
+                        + compactDetail("shaderOutputDraw", shaderOutputDrawScaffold.summary())
                         + "; shadow draw scaffold: "
-                        + shadowDrawScaffold.summary()
+                        + compactDetail("shadowDraw", shadowDrawScaffold.summary())
         );
     }
 
@@ -1374,9 +1426,9 @@ public final class RenderThreadPreviewTargetFactory {
                 ? "raw-diffuse-gi-rgba8"
                 : (diagnosticDirectLightValidationFallback ? "native-direct-light-rgba8-validation-input" : "none");
         String shaderInputSummary = strictRawDiffuseGiInput
-                ? rawGiPayload.debugSummary()
+                ? compactDetail("rawDiffuseGi", rawGiPayload.debugSummary())
                 : (diagnosticDirectLightValidationFallback
-                ? validationDirectSourcePayload.debugSummary()
+                ? compactDetail("validationDirectLight", validationDirectSourcePayload.debugSummary())
                 : rawGiPayload == null
                 ? "raw diffuse-GI payload is missing; direct-light validation fallback enabled="
                 + directValidationFallbackEnabled
@@ -1387,7 +1439,7 @@ public final class RenderThreadPreviewTargetFactory {
                 + " via "
                 + ROUND7_SHADER_DENOISE_DIRECT_LIGHT_VALIDATION_FALLBACK_ENV
                 + "; raw diffuse-GI: "
-                + rawGiPayload.debugSummary());
+                + compactDetail("rawDiffuseGi", rawGiPayload.debugSummary()));
         Round7DenoisedGiVisualSource shaderDenoisedSource = shaderInputReady
                 ? Round7DenoisedGiVisualSource.shaderGeneratedReady(
                 "Round 7 shader-denoise public Mojang fragment pass can consume shader input mode "
@@ -1403,9 +1455,9 @@ public final class RenderThreadPreviewTargetFactory {
                         + " via "
                         + ROUND7_SHADER_DENOISE_DIRECT_LIGHT_VALIDATION_FALLBACK_ENV
                         : "Round 7 shader-denoise output skipped because no displayable shader input source is available; raw diffuse-GI: "
-                        + rawGiPayload.debugSummary()
+                        + compactDetail("rawDiffuseGi", rawGiPayload.debugSummary())
                         + "; validation direct-light source: "
-                        + (validationDirectSourcePayload == null ? "missing" : validationDirectSourcePayload.debugSummary())
+                        + (validationDirectSourcePayload == null ? "missing" : compactDetail("validationDirectLight", validationDirectSourcePayload.debugSummary()))
                         + "; direct-light validation fallback enabled="
                         + directValidationFallbackEnabled
                         + " via "
@@ -1483,9 +1535,9 @@ public final class RenderThreadPreviewTargetFactory {
                     target.attachmentMetadata().javaOpaque(),
                     PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
                     "public Mojang Round 7 shader-denoise output skipped because no displayable shader input source is available; raw diffuse-GI: "
-                            + (rawGiPayload == null ? "missing" : rawGiPayload.debugSummary())
+                            + (rawGiPayload == null ? "missing" : compactDetail("rawDiffuseGi", rawGiPayload.debugSummary()))
                             + "; validation direct-light source: "
-                            + (validationDirectSourcePayload == null ? "missing" : validationDirectSourcePayload.debugSummary())
+                            + (validationDirectSourcePayload == null ? "missing" : compactDetail("validationDirectLight", validationDirectSourcePayload.debugSummary()))
                             + "; "
                             + skippedBoundary
                             + "; denoised source: "
@@ -1512,7 +1564,7 @@ public final class RenderThreadPreviewTargetFactory {
                     target.attachmentMetadata().javaOpaque(),
                     PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
                     "public Mojang Round 7 shader-denoise output skipped because the selected shader input texture upload was unavailable: "
-                            + upload.summary()
+                            + compactDetail("upload", upload.summary())
                             + "; "
                             + skippedBoundary
                             + "; shader input mode="
@@ -1547,7 +1599,7 @@ public final class RenderThreadPreviewTargetFactory {
                     PublicMojangFinalCompositeSubmissionResult.ShaderOutputImageCandidate.none(),
                     partialOutputStatus,
                     "public Mojang Round 7 shader-denoise output skipped because the owned RGBA8 output target is unavailable: "
-                            + outputTargetStatus.summary()
+                            + outputTargetStatus.compactSummary()
                             + "; "
                             + skippedBoundary
                             + "; shader input mode="
@@ -1557,7 +1609,7 @@ public final class RenderThreadPreviewTargetFactory {
                             + "; shader input payload: "
                             + shaderInputSummary
                             + "; upload: "
-                            + upload.summary()
+                            + compactDetail("upload", upload.summary())
             );
         }
 
@@ -1595,16 +1647,13 @@ public final class RenderThreadPreviewTargetFactory {
         Reference.reachabilityFence(sourceBuffer);
         boolean generatedOutputDrawIssued = generationDrawScaffold.drawCallsIssued();
         boolean finalCompositeConsumedOutput = finalCompositeDrawScaffold.drawCallsIssued();
-        ShaderGeneratedDenoiseOutputStatus outputStatus = ShaderGeneratedDenoiseOutputStatus.reported(
-                true,
-                true,
+        ShaderGeneratedDenoiseOutputStatus outputStatus = ShaderGeneratedDenoiseOutputStatus.ownedFragmentOutput(
                 generatedOutputDrawIssued,
                 generatedOutputDrawIssued && outputTargetStatus.availableForSampling(),
                 finalCompositeConsumedOutput,
-                true,
-                true,
-                "public Mojang fragment pass generated lucerna.denoise.diffuse into an owned RGBA8 texture and "
-                        + "the final composite consumed that texture; this is still not compute/storage-image denoise"
+                strictRawDiffuseGiInput,
+                false,
+                "owned lucerna.denoise.diffuse RGBA8 fragment output consumed by final composite"
         );
         if (!generatedOutputDrawIssued || !finalCompositeConsumedOutput) {
             return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
@@ -1625,13 +1674,13 @@ public final class RenderThreadPreviewTargetFactory {
                             + "; shader input payload: "
                             + shaderInputSummary
                             + "; upload: "
-                            + upload.summary()
+                            + compactDetail("upload", upload.summary())
                             + "; output target: "
-                            + outputTargetStatus.summary()
+                            + outputTargetStatus.compactSummary()
                             + "; generation draw scaffold: "
-                            + generationDrawScaffold.summary()
+                            + compactDetail("generationDraw", generationDrawScaffold.summary())
                             + "; final composite draw scaffold: "
-                            + finalCompositeDrawScaffold.summary()
+                            + compactDetail("finalCompositeDraw", finalCompositeDrawScaffold.summary())
             );
         }
         return PublicMojangFinalCompositeSubmissionResult.submitted(
@@ -1725,13 +1774,15 @@ public final class RenderThreadPreviewTargetFactory {
                         + ",stillNotComputeBoundary=true"
                         + ",metadataOnly=false,proofMarker=false,focusWindowOnly=false"
                         + ",temporaryDirectLightSubstitution=false,rectangularWashout=false"
+                        + ","
+                        + outputStatus.compactBoundarySummary()
                         + ",readiness=\"shader denoise fragment pass consumed "
                         + shaderInputMode
                         + "/"
                         + shaderInputKind
                         + ", generated an owned RGBA8 denoise output image, and final composite consumed that image\""
                         + "; denoised source: "
-                        + shaderDenoisedSource.summary()
+                        + compactDetail("shaderDenoisedSource", shaderDenoisedSource.summary())
                         + "; target: "
                         + targetAttachmentSummary(target)
                         + "; javaOpaquePublicFallback="
@@ -1739,13 +1790,13 @@ public final class RenderThreadPreviewTargetFactory {
                         + "; shader input payload: "
                         + shaderInputSummary
                         + "; upload: "
-                        + upload.summary()
+                        + compactDetail("upload", upload.summary())
                         + "; shader denoise output target: "
-                        + outputTargetStatus.summary()
+                        + outputTargetStatus.compactSummary()
                         + "; generation draw scaffold: "
-                        + generationDrawScaffold.summary()
+                        + compactDetail("generationDraw", generationDrawScaffold.summary())
                         + "; final composite draw scaffold: "
-                        + finalCompositeDrawScaffold.summary()
+                        + compactDetail("finalCompositeDraw", finalCompositeDrawScaffold.summary())
         );
     }
 
@@ -2015,6 +2066,21 @@ public final class RenderThreadPreviewTargetFactory {
                 || "yes".equalsIgnoreCase(value.trim()));
     }
 
+    private static String compactDetail(String label, String value) {
+        String normalizedLabel = label == null || label.isBlank() ? "detail" : label.trim();
+        if (value == null || value.isBlank()) {
+            return normalizedLabel + "=missing";
+        }
+        String trimmed = value.trim();
+        if (trimmed.length() <= COMPACT_REASON_DETAIL_CHARS) {
+            return normalizedLabel + "=" + trimmed;
+        }
+        return normalizedLabel
+                + "="
+                + trimmed.substring(0, COMPACT_REASON_DETAIL_CHARS - 3)
+                + "...";
+    }
+
     private static DirectLightingCpuOutputPayload resolveNativeDirectLightCandidatePayload() {
         DirectLightingCpuOutputPayload payload = LucernaController.getInstance().directLightingCpuOutputPayload();
         if (!hasNativeDirectLightCandidatePayload(payload) || !payload.readyForPreviewDraw()) {
@@ -2035,6 +2101,34 @@ public final class RenderThreadPreviewTargetFactory {
                 + ",depthFormat=" + metadata.depthFormat()
                 + ",depthLayout=" + metadata.depthLayout()
                 + "," + metadata.attachmentStatusLabel();
+    }
+
+    private static boolean finalCompositeDepthSampleBindingReady(
+            LucernaFramePassTarget target,
+            GpuTextureView depthView
+    ) {
+        return target != null
+                && depthView != null
+                && target.finalCompositeDepthSampleBindingReady();
+    }
+
+    private static String finalCompositeAttachmentContractStatus(
+            LucernaFramePassTarget target,
+            GpuTextureView depthView
+    ) {
+        if (target == null) {
+            return "target=missing";
+        }
+        boolean depthReady = finalCompositeDepthSampleBindingReady(target, depthView);
+        return "worldColorReady=" + target.finalCompositeWorldColorAttachmentReady()
+                + "|depthReady=" + depthReady
+                + "|depthViewObjectPresent=" + (depthView != null)
+                + "|phase=" + target.phase()
+                + "|worldColorTarget=" + target.worldColorTarget()
+                + "|preservesHud=" + target.preservesHud()
+                + "|attachmentPhaseMatches=" + target.attachmentMetadataPhaseMatches()
+                + "|postHudComposite=false"
+                + "|proofOnlyFullscreenOverlay=false";
     }
 
     private static PublicMojangPreviewPassSubmissionResult submitDiagnosticFallback(

@@ -56,6 +56,18 @@ public record Round6DiffuseGiCpuOutputPayload(
         return readyForPreviewDraw();
     }
 
+    public boolean spatiallyVaryingGiPayloadReady() {
+        return this.readyForPreviewDraw()
+                && this.snapshot.spatiallyVaryingGiPayloadReady()
+                && this.displayablePixelCount() > 0
+                && this.peakChannel() > 0;
+    }
+
+    public boolean physicalSceneTiedGiEvidenceReady() {
+        return this.spatiallyVaryingGiPayloadReady()
+                && this.snapshot.physicalSceneTiedGiEvidenceReady();
+    }
+
     public String previewReadinessReason() {
         if (!available()) {
             return "Round 6 diffuse GI payload is unavailable or does not match native CPU output dimensions";
@@ -74,6 +86,20 @@ public record Round6DiffuseGiCpuOutputPayload(
                 ? "native scene-tied raw diffuse-GI RGBA8 CPU/readback payload"
                 : "blocked native scene-tied raw diffuse-GI RGBA8 CPU/readback payload: "
                 + previewReadinessReason();
+    }
+
+    public String spatialGiPayloadSummary() {
+        return "spatiallyVaryingGiPayloadReady=" + this.spatiallyVaryingGiPayloadReady()
+                + " physicalSceneTiedGiEvidenceReady=" + this.physicalSceneTiedGiEvidenceReady()
+                + " sourceKind=raw-diffuse-gi-rgba8-cpu-readback"
+                + " rawGiInputReady=" + this.rawGiInputReady()
+                + " displayablePixels=" + this.displayablePixelCount()
+                + " peakChannel=" + this.peakChannel()
+                + " byteCount=" + this.byteCount()
+                + " expectedBytes=" + this.expectedByteCount()
+                + " gpuTraversalExecuted=" + this.snapshot.gpuTraversalExecuted()
+                + " nativeComputeGiExecuted=" + this.snapshot.nativeComputeGiExecuted()
+                + " snapshot=\"" + this.snapshot.spatialGiPayloadSummary() + "\"";
     }
 
     public int width() {
@@ -134,6 +160,8 @@ public record Round6DiffuseGiCpuOutputPayload(
         return "available=" + this.available()
                 + " readyForPreviewDraw=" + this.readyForPreviewDraw()
                 + " rawGiInputReady=" + this.rawGiInputReady()
+                + " spatiallyVaryingGiPayloadReady=" + this.spatiallyVaryingGiPayloadReady()
+                + " physicalSceneTiedGiEvidenceReady=" + this.physicalSceneTiedGiEvidenceReady()
                 + " rawGiInputSource=\"" + this.rawGiInputSourceLabel() + "\""
                 + " size=" + this.width() + "x" + this.height()
                 + " bytes=" + this.byteCount()
@@ -145,6 +173,7 @@ public record Round6DiffuseGiCpuOutputPayload(
                 + " checksum=" + this.snapshot.outputChecksum()
                 + " visibleSignalGenerated=" + this.snapshot.visibleSignalGenerated()
                 + " visibleSignalNonzeroPixels=" + this.snapshot.visibleSignalNonzeroPixels()
+                + " spatialGiPayload=\"" + this.spatialGiPayloadSummary() + "\""
                 + " outputMarker=" + this.snapshot.outputMarker()
                 + " readinessReason=" + this.previewReadinessReason()
                 + " reason=" + this.reason;

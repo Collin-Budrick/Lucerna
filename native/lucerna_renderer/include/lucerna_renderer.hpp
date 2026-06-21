@@ -654,6 +654,16 @@ struct NativeDirectLightingExecutionTelemetry {
     std::uint64_t last_shadow_mask_output_checksum = 0;
     std::uint64_t last_shadow_mask_nonzero_sample_count = 0;
     std::uint64_t last_shadow_mask_occluded_sample_count = 0;
+    std::uint64_t last_shadow_mask_soft_penumbra_sample_count = 0;
+    std::uint64_t last_shadow_mask_filtered_sample_count = 0;
+    std::uint64_t last_shadow_mask_receiver_confidence_sample_count = 0;
+    std::uint64_t last_shadow_mask_edge_confidence_sample_count = 0;
+    std::uint64_t last_shadow_mask_receiver_depth_coupled_sample_count = 0;
+    std::uint64_t last_shadow_mask_receiver_material_coupled_sample_count = 0;
+    std::uint64_t last_shadow_mask_conservative_not_screen_space_sample_count = 0;
+    std::uint64_t last_shadow_mask_world_space_receiver_coupled_sample_count = 0;
+    std::uint64_t last_shadow_mask_spatially_variant_sample_count = 0;
+    std::uint64_t last_shadow_mask_low_confidence_rejected_sample_count = 0;
     std::uint64_t total_celestial_light_count = 0;
     std::uint64_t total_emissive_light_count = 0;
     std::uint64_t total_shadow_candidate_count = 0;
@@ -679,6 +689,10 @@ struct NativeDirectLightingExecutionTelemetry {
     float last_emissive_spill_max_radius = 0.0F;
     float last_shadow_map_min_light_space_depth = 0.0F;
     float last_shadow_map_max_light_space_depth = 0.0F;
+    float last_shadow_mask_mean_receiver_confidence = 0.0F;
+    float last_shadow_mask_mean_edge_confidence = 0.0F;
+    float last_shadow_mask_mean_spatial_variance = 0.0F;
+    float last_shadow_mask_mean_depth_delta = 0.0F;
     std::uint32_t last_payload_flags = 0;
     bool last_payload_accepted = false;
     bool last_payload_validated = false;
@@ -706,6 +720,8 @@ struct NativeDirectLightingExecutionTelemetry {
     bool last_shadow_mask_cpu_conservative = false;
     bool last_shadow_mask_screen_space_decal_fallback = false;
     bool last_shadow_mask_world_space_decal_fallback = false;
+    bool last_shadow_mask_receiver_world_space_coupled = false;
+    bool last_shadow_mask_spatially_variant = false;
     std::string last_payload_dimension_id;
     std::string last_output_marker;
     std::string last_readiness_reason;
@@ -719,6 +735,7 @@ struct NativeDirectLightingExecutionTelemetry {
     std::string last_shadow_map_hardware_rt_blocker;
     std::string last_shadow_mask_output_marker;
     std::string last_shadow_mask_output_blocker;
+    std::string last_shadow_mask_quality_blocker;
 };
 
 struct NativeRound6DispatchExecutionTelemetry {
@@ -793,6 +810,19 @@ struct NativeRound6DispatchExecutionTelemetry {
     std::uint64_t last_cpu_ray_traversal_material_sample_count = 0;
     std::uint64_t last_cpu_ray_traversal_bounce_sample_count = 0;
     std::uint64_t last_cpu_ray_traversal_checksum = 0;
+    std::uint64_t last_playable_physical_gi_trace_requested_rays = 0;
+    std::uint64_t last_playable_physical_gi_trace_capped_rays = 0;
+    std::uint64_t last_playable_physical_gi_trace_sampled_cells = 0;
+    std::uint64_t last_playable_physical_gi_trace_sampled_cell_limit = 0;
+    std::uint64_t last_playable_physical_gi_trace_cell_stride_x = 0;
+    std::uint64_t last_playable_physical_gi_trace_cell_stride_y = 0;
+    std::uint64_t last_playable_physical_gi_trace_colored_bounce_samples = 0;
+    std::uint64_t last_playable_physical_gi_trace_colored_bounce_hits = 0;
+    std::uint64_t last_playable_physical_gi_trace_emissive_bounce_samples = 0;
+    std::uint64_t last_playable_physical_gi_trace_emissive_bounce_hits = 0;
+    std::uint64_t last_playable_physical_gi_trace_material_coupled_samples = 0;
+    std::uint64_t last_playable_physical_gi_trace_depth_coupled_samples = 0;
+    std::uint64_t last_playable_physical_gi_trace_checksum = 0;
     std::uint64_t last_surface_material_hit_coupled_sample_count = 0;
     std::uint64_t last_geometry_hit_coupled_sample_count = 0;
     std::uint64_t last_contact_shadow_sample_count = 0;
@@ -840,6 +870,10 @@ struct NativeRound6DispatchExecutionTelemetry {
     float last_cpu_ray_traversal_colored_bounce_energy = 0.0F;
     float last_cpu_ray_traversal_mean_occlusion = 0.0F;
     float last_cpu_ray_traversal_mean_shadow_weight = 0.0F;
+    float last_playable_physical_gi_trace_colored_bounce_energy = 0.0F;
+    float last_playable_physical_gi_trace_emissive_bounce_energy = 0.0F;
+    float last_playable_physical_gi_trace_material_coupling = 0.0F;
+    float last_playable_physical_gi_trace_depth_coupling = 0.0F;
     float last_emissive_contribution_energy = 0.0F;
     float last_sun_contribution_energy = 0.0F;
     float last_occlusion_dirty_influence = 0.0F;
@@ -888,6 +922,10 @@ struct NativeRound6DispatchExecutionTelemetry {
     bool last_cpu_ray_traversal_used_uploaded_materials = false;
     bool last_cpu_ray_traversal_used_uploaded_shadow_candidates = false;
     bool last_real_gpu_traversal_executed = false;
+    bool last_playable_physical_gi_trace_mode = false;
+    bool last_playable_physical_gi_trace_budget_capped = false;
+    bool last_playable_physical_gi_trace_recorded = false;
+    bool last_playable_physical_gi_trace_gpu_overclaim_rejected = true;
     bool last_real_shadow_map_executed = false;
     bool last_real_shader_denoise_executed = false;
     bool last_surface_material_hit_coupling_recorded = false;
@@ -914,6 +952,8 @@ struct NativeRound6DispatchExecutionTelemetry {
     std::string last_physical_sample_marker;
     std::string last_surface_material_hit_marker;
     std::string last_emissive_receiver_coupling_marker;
+    std::string last_playable_physical_gi_trace_marker;
+    std::string last_playable_physical_gi_trace_blocker;
     std::string last_contact_shadow_marker;
     std::string last_proof_boundary_marker;
     std::string last_readiness_reason;
