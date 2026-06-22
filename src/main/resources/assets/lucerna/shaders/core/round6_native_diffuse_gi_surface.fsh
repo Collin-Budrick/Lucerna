@@ -6,11 +6,11 @@ in vec2 texCoord;
 
 out vec4 fragColor;
 
-const float FINAL_COMPOSITE_GAIN = 0.08;
-const float SURFACE_PROJECTION_GAIN = 0.16;
-const float MATERIAL_RESPONSE_GAIN = 0.062;
-const float COLORED_BOUNCE_GAIN = 0.115;
-const vec3 MAX_ADDITIVE_PER_DRAW = vec3(0.060, 0.064, 0.068);
+const float FINAL_COMPOSITE_GAIN = 0.105;
+const float SURFACE_PROJECTION_GAIN = 0.245;
+const float MATERIAL_RESPONSE_GAIN = 0.088;
+const float COLORED_BOUNCE_GAIN = 0.185;
+const vec3 MAX_ADDITIVE_PER_DRAW = vec3(0.120, 0.128, 0.140);
 const vec3 MIN_SURFACE_RADIANCE = vec3(0.20, 0.20, 0.20);
 const vec3 LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
 
@@ -162,12 +162,15 @@ float sourceSupportMask(vec2 uv, float signal, vec4 surfaceSample) {
     float down = sampledSignal(localSurfaceSample(uv + vec2(0.0, texel.y * 4.0)));
     float neighborSupport = max(max(left, right), max(up, down));
     float chroma = chromaSpan(surfaceSample.rgb);
-    float sourceDriven = smoothstep(0.018, 0.22, max(signal, neighborSupport * 0.72 + chroma * 0.55));
+    float sourceDriven = smoothstep(0.014, 0.20, max(signal, neighborSupport * 0.74 + chroma * 0.62));
+    float localVariation = abs(signal - neighborSupport) + chroma * 0.44
+            + localGeometryCue(uv, surfaceSample) * 0.24;
+    float sceneGate = smoothstep(0.012, 0.16, localVariation + sourceDriven * 0.10);
     float softEdgeGuard = smoothstep(0.005, 0.045, uv.x)
             * smoothstep(0.005, 0.045, uv.y)
             * (1.0 - smoothstep(0.955, 0.995, uv.x))
             * (1.0 - smoothstep(0.955, 0.995, uv.y));
-    return clamp(mix(0.18, 1.0, sourceDriven) * softEdgeGuard, 0.0, 1.0);
+    return clamp(mix(0.045, 1.0, max(sourceDriven, sceneGate * 0.72)) * softEdgeGuard, 0.0, 1.0);
 }
 
 float surfaceResponseBreakup(vec2 uv, float signal, vec4 surfaceSample) {
@@ -223,8 +226,8 @@ void main() {
             * smoothstep(0.010, 0.095, chromaSpan(sourceTint));
     sourceTint *= mix(
             vec3(1.0),
-            normalize(sourceTint + vec3(0.0001)) * max(luminance(sourceTint), 0.001) * 2.80,
-            clamp(materialMask * 0.18 + coloredMask * 0.42, 0.0, 0.62)
+            normalize(sourceTint + vec3(0.0001)) * max(luminance(sourceTint), 0.001) * 3.45,
+            clamp(materialMask * 0.18 + coloredMask * 0.62, 0.0, 0.78)
     );
     vec3 localLight = max(nativeLighting.rgb, vec3(0.0))
             * FINAL_COMPOSITE_GAIN

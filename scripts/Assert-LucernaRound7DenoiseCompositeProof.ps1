@@ -21,7 +21,8 @@ shader-generated denoise output, while proof overlays, fullscreen blobs, low-res
 and focus-window shortcuts are rejected.
 Use -RequireRealWorldVisualQualityComparisonProof after the controller captures comparable
 baseline, normal-enabled, and playable-physical screenshots from the same scene. This rejects
-the old low-resolution overlay/fixed-blob/fullscreen-wash failure mode and requires the
+the old low-resolution overlay/fixed-blob/fullscreen-wash/menu-chat failure mode, requires
+meaningful baseline-to-enabled and baseline-to-playable screenshot deltas, and requires the
 log to prove normal heavy-workload bypass plus playable physical renderer evidence.
 #>
 param(
@@ -92,6 +93,16 @@ param(
     [double] $MinFinalChangedPixelPercent = 0.5,
 
     [double] $MinFinalMeanAbsLuma = 0.5,
+
+    [double] $MinRealWorldVisualQualityChangedPixelPercent = 20.0,
+
+    [double] $MinRealWorldVisualQualityMeanAbsLuma = 4.0,
+
+    [double] $MinRealWorldVisualQualityFullChangedPixelPercent = 20.0,
+
+    [double] $MinRealWorldVisualQualityFullMeanAbsLuma = 3.0,
+
+    [double] $MinRealWorldVisualQualityActiveTilePercent = 35.0,
 
     [string[]] $DirectSourcePatterns = @(
         "Lucerna direct lighting plan: .*emissive=[1-9][0-9]*.*shadowCandidates=[1-9][0-9]*",
@@ -341,7 +352,13 @@ param(
     [string[]] $RealWorldVisualQualityComparisonProfilePatterns = @(
         "realRendererMilestone1\.visualQualityComparisonProfile=true.*sameSceneBaselineEnabledPlayableRequired=true",
         "realRendererMilestone1\.visualQualityComparisonSequence=.*PhysicalBaseline.*VisualQualityEnabled.*VisualQualityPlayablePhysical",
-        "realRendererMilestone1\.visualQualityRejects=.*fullscreenWash.*fixedLightBlob.*proofOverlays.*focusWindowOnly.*lowResDebugSubstitution.*screenSpaceDecalOnly.*wrongWindow.*menuChatScreenshots"
+        "realRendererMilestone1\.visualQualityRejects=.*fullscreenWash.*fixedLightBlob.*hudHandScreenshots.*rawGiOnlyFallback.*proofOverlays.*focusWindowOnly.*lowResDebugSubstitution.*screenSpaceDecalOnly.*wrongWindow.*menuChatScreenshots",
+        "realRendererMilestone1\.visualQualityDeltaContract=.*baselineToEnabledRequired=true.*baselineToPlayableRequired=true.*minChangedPixelPercent=20\.0.*minMeanAbsLuma=4\.0.*minFullChangedPixelPercent=20\.0.*minFullMeanAbsLuma=3\.0.*minActiveTilePercent=35\.0"
+    ),
+
+    [string[]] $VisualQualityStrictRejectContractPatterns = @(
+        "realRendererMilestone1\.visualQualityRejects=.*fullscreenWash.*fixedLightBlob.*hudHandScreenshots.*rawGiOnlyFallback.*proofOverlays.*focusWindowOnly.*lowResDebugSubstitution.*screenSpaceDecalOnly.*wrongWindow.*menuChatScreenshots",
+        "realRendererMilestone1\.visualQualityArtifactRejectContract=.*hudHandContaminationForbidden=true.*rawGiOnlyFallbackForbiddenWhenShaderDenoiseRequired=true.*fullscreenWashForbidden=true.*fixedLightBlobForbidden=true"
     ),
 
     [string[]] $NormalHeavyWorkloadBypassPatterns = @(
@@ -365,7 +382,15 @@ param(
         "(?:pauseMenuOpen|pause_menu_open|menuOpen|menu_open|screenOpen|screen_open)=true",
         "(?:chatOpen|chat_open|chatScreenOpen|chat_screen_open)=true",
         "(?:screenshotContainsMenu|screenshot_contains_menu|menuScreenshot|menu_screenshot)=true",
-        "(?:screenshotContainsChat|screenshot_contains_chat|chatScreenshot|chat_screenshot)=true"
+        "(?:screenshotContainsChat|screenshot_contains_chat|chatScreenshot|chat_screenshot)=true",
+        "(?:currentScreen|current_screen|activeScreen|active_screen|screenClass|screen_class)=[^`r`n]*(?:PauseScreen|GameMenuScreen|ChatScreen|TitleScreen|DeathScreen|Screen=Pause|Screen=Chat)"
+    ),
+
+    [string[]] $HudHandScreenshotContaminationPatterns = @(
+        "(?:screenshotContainsHud|screenshot_contains_hud|hudScreenshot|hud_screenshot|hudVisibleInScreenshot|hud_visible_in_screenshot)=true",
+        "(?:screenshotContainsHand|screenshot_contains_hand|handScreenshot|hand_screenshot|firstPersonHandVisible|first_person_hand_visible|heldItemVisible|held_item_visible|heldItemRendererVisible|held_item_renderer_visible)=true",
+        "(?:hideGuiBeforeScreenshot|hide_gui_before_screenshot|hideGui|hide_gui|guiHidden|gui_hidden)=(?:false|False)",
+        "(?:hudHidden|hud_hidden|handHidden|hand_hidden|firstPersonHandHidden|first_person_hand_hidden)=(?:false|False)"
     ),
 
     [string[]] $ProofOverlayEvidencePatterns = @(
@@ -373,6 +398,25 @@ param(
         "(?:proofOverlayForbidden|proof_overlay_forbidden)=false",
         "(?:debugOverlay|debug\.overlay)=SHADER_DENOISE_OUTPUT_PROOF",
         "Overlay state: SHADER_DENOISE_OUTPUT_PROOF"
+    ),
+
+    [string[]] $FullscreenWashPatterns = @(
+        "diagnostic-fullscreen",
+        "fullscreen-warm-additive",
+        "(?:fullScreenWash|fullscreenWash|fullscreen_wash|fullscreenBlob|fullscreen_blob|fullscreen_blob_visual)=true",
+        "fullscreen-wash"
+    ),
+
+    [string[]] $FixedLightBlobPatterns = @(
+        "(?:fixed_light_blob|fixedLightBlob|fixedLightBlobVisual|fixed_light_blob_visual)=true",
+        "(?:fixedBlobRejected|fixed_blob_rejected|fixedLightBlobRejected|fixed_light_blob_rejected)=false"
+    ),
+
+    [string[]] $RawGiOnlyDegradedFallbackPatterns = @(
+        "(?:rawGiOnlyFallback|raw_gi_only_fallback|rawGiOnlyComposite|raw_gi_only_composite|rawGiOnlyFinalComposite|raw_gi_only_final_composite)=true",
+        "(?:rawGiVisualSourceConsumed|raw_gi_visual_source_consumed)=true[^`r`n]*(?:shaderGeneratedDenoiseOutputEvidence|shader_generated_denoise_output_evidence|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=false",
+        "(?:sourceIdentity|source_identity)=native-diffuse-gi-rgba8/raw-gi(?:\+native-shadow-map-mask)?[^`r`n]*(?:shaderGeneratedDenoiseOutputEvidence|shader_generated_denoise_output_evidence|shaderGeneratedDenoiseOutput|shader_generated_denoise_output|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=false",
+        "(?:shaderDenoiseBlockerReason|shader_denoise_blocker_reason|shaderDenoiseBlocker|shader_denoise_blocker)=(?:raw_gi_only|raw-gi-only|shader_generated_output_false|real_shader_output_not_ready|cpu_readback_fallback_active)"
     ),
 
     [string[]] $LowResDebugSubstitutionPatterns = @(
@@ -1100,11 +1144,15 @@ function Measure-Round7LogProof {
     $playablePhysicalRendererProfilePresent = Test-AnyRegex $log $PlayablePhysicalRendererProfilePatterns
     $playablePhysicalRendererBudgetPresent = Test-AnyRegex $log $PlayablePhysicalRendererBudgetPatterns
     $realWorldVisualQualityComparisonProfilePresent = Test-AnyRegex $log $RealWorldVisualQualityComparisonProfilePatterns
+    $visualQualityStrictRejectContractPresent = Test-AnyRegex $log $VisualQualityStrictRejectContractPatterns
     $normalHeavyWorkloadBypassPresent = Test-AnyRegex $log $NormalHeavyWorkloadBypassPatterns
     $softReceiverTiedShadowMaskPresent = Test-AnyRegex $log $SoftReceiverTiedShadowMaskPatterns
     $cleanInWorldCaptureContractPresent = Test-AnyRegex $log $CleanInWorldCaptureContractPatterns
     $menuChatScreenshotContaminationPresent = Test-AnyRegex $log $MenuChatScreenshotContaminationPatterns
+    $hudHandScreenshotContaminationPresent = Test-AnyRegex $log $HudHandScreenshotContaminationPatterns
     $proofOverlayEvidencePresent = Test-AnyRegex $log $ProofOverlayEvidencePatterns
+    $fullscreenWashPresent = Test-AnyRegex $log $FullscreenWashPatterns
+    $fixedLightBlobPresent = Test-AnyRegex $log $FixedLightBlobPatterns
     $lowResDebugSubstitutionPresent = Test-AnyRegex $log $LowResDebugSubstitutionPatterns
     $trueDepthGBufferSamplingMarkerPresent = Test-AnyRegex $log $TrueDepthGBufferSamplingPatterns
     $depthGBufferSourcePresent = Test-AnyRegex $log $DepthGBufferSourcePatterns
@@ -1172,6 +1220,11 @@ function Measure-Round7LogProof {
     $shaderDenoiseOutputStateExplicitPresent = $realShaderDenoiseOutputStateExplicitPresent
     $realShaderDenoiseOutputProven = $shaderDenoiseRawGiInputProven -and $shaderDenoiseDispatchPreparedPresent -and $shaderDenoiseOutputImageReadyPresent -and $shaderDenoiseOutputMaterialReadyPresent -and $shaderDenoiseShaderGeneratedOutputTruePresent -and $shaderGeneratedDenoiseOutputEvidenceReadyPresent -and $realShaderDenoiseOutputReadyPresent -and -not $shaderDenoiseCpuReadbackFallbackActivePresent
     $shaderGeneratedDenoiseOutputImageSliceProven = $realShaderDenoiseOutputProven -and $shaderDenoiseOutputConsumedPresent -and $shaderDenoiseFinalCompositeConsumablePresent
+    $rawGiOnlyDegradedFallbackPresent = (Test-AnyRegex $log $RawGiOnlyDegradedFallbackPatterns) -or (
+        $shaderDenoiseRawGiInputProven -and
+        ($shaderDenoiseShaderGeneratedOutputFalsePresent -or $realShaderDenoiseOutputNotReadyPresent -or $shaderDenoiseCpuReadbackFallbackActivePresent) -and
+        -not $shaderGeneratedDenoiseOutputImageSliceProven
+    )
     $shaderDenoiseBoundaryEvidence = Get-Round7ShaderDenoiseBoundaryEvidence `
         -LogText $log `
         -ImageCandidateEvidence $shaderOutputImageCandidateEvidence `
@@ -1256,6 +1309,7 @@ function Measure-Round7LogProof {
             shaderDenoiseOutputConsumedPresent = $shaderDenoiseOutputConsumedPresent
             shaderDenoiseFinalCompositeConsumablePresent = $shaderDenoiseFinalCompositeConsumablePresent
             shaderGeneratedDenoiseOutputImageSliceProven = $shaderGeneratedDenoiseOutputImageSliceProven
+            rawGiOnlyDegradedFallbackPresent = $rawGiOnlyDegradedFallbackPresent
             shaderDenoiseOpenBoundaryPresent = $shaderDenoiseOpenBoundaryPresent
             cpuReadbackDenoiseSourcePresent = $cpuReadbackDenoiseSourcePresent
             shaderDenoiseOutputCandidateOnlySourcePresent = $shaderDenoiseOutputCandidateOnlySourcePresent
@@ -1272,11 +1326,15 @@ function Measure-Round7LogProof {
             playablePhysicalRendererProfilePresent = $playablePhysicalRendererProfilePresent
             playablePhysicalRendererBudgetPresent = $playablePhysicalRendererBudgetPresent
             realWorldVisualQualityComparisonProfilePresent = $realWorldVisualQualityComparisonProfilePresent
+            visualQualityStrictRejectContractPresent = $visualQualityStrictRejectContractPresent
             normalHeavyWorkloadBypassPresent = $normalHeavyWorkloadBypassPresent
             softReceiverTiedShadowMaskPresent = $softReceiverTiedShadowMaskPresent
             cleanInWorldCaptureContractPresent = $cleanInWorldCaptureContractPresent
             menuChatScreenshotContaminationPresent = $menuChatScreenshotContaminationPresent
+            hudHandScreenshotContaminationPresent = $hudHandScreenshotContaminationPresent
             proofOverlayEvidencePresent = $proofOverlayEvidencePresent
+            fullscreenWashPresent = $fullscreenWashPresent
+            fixedLightBlobPresent = $fixedLightBlobPresent
             lowResDebugSubstitutionPresent = $lowResDebugSubstitutionPresent
             trueDepthGBufferSamplingMarkerPresent = $trueDepthGBufferSamplingMarkerPresent
             depthGBufferSourcePresent = $depthGBufferSourcePresent
@@ -1350,6 +1408,11 @@ function Measure-Round7LogProof {
             shaderDenoiseSourceClaimPatterns = @($ShaderDenoiseSourceClaimPatterns)
             shaderDenoiseOutputOpenPatterns = @($ShaderDenoiseOutputOpenPatterns)
             shaderDenoiseOverclaimPatterns = @($ShaderDenoiseOverclaimPatterns)
+            visualQualityStrictRejectContractPatterns = @($VisualQualityStrictRejectContractPatterns)
+            hudHandScreenshotContaminationPatterns = @($HudHandScreenshotContaminationPatterns)
+            fullscreenWashPatterns = @($FullscreenWashPatterns)
+            fixedLightBlobPatterns = @($FixedLightBlobPatterns)
+            rawGiOnlyDegradedFallbackPatterns = @($RawGiOnlyDegradedFallbackPatterns)
         }
     }
 }
@@ -1373,6 +1436,7 @@ $directDelta = if ([string]::IsNullOrWhiteSpace($directResolved)) { $null } else
 $rawDelta = Invoke-DeltaHelper $baselineResolved $rawResolved "raw"
 $denoiseDelta = Invoke-DeltaHelper $rawResolved $denoisedResolved "denoised" $DenoiseAutoRegionSearchHeightPercent
 $finalDelta = Invoke-DeltaHelper $baselineResolved $finalResolved "final"
+$playablePhysicalDelta = if ([string]::IsNullOrWhiteSpace($debugResolved)) { $null } else { Invoke-DeltaHelper $baselineResolved $debugResolved "playable-physical" }
 $rawRoughnessInDenoiseRegion = Measure-ImageRoughness $rawResolved $denoiseDelta.focusRegion
 $denoisedRoughnessInDenoiseRegion = Measure-ImageRoughness $denoisedResolved $denoiseDelta.focusRegion
 $denoiseQuality = Compare-Roughness $rawRoughnessInDenoiseRegion $denoisedRoughnessInDenoiseRegion
@@ -1386,6 +1450,21 @@ $physicalGiEvidenceRequired = [bool]($RequirePhysicalGiEvidence -or $physicalRen
 $tracedGiConsumptionRequired = [bool]($RequireTracedGiConsumption -or $physicalRendererMilestoneProofRequired)
 $shaderDenoiseEvidenceRequired = [bool]($RequireShaderDenoiseEvidence -or $RequireShaderGeneratedDenoiseOutput -or $tracedGiConsumptionRequired -or $physicalRendererMilestoneProofRequired)
 $shaderGeneratedOutputRequiredForProof = [bool]($RequireShaderGeneratedDenoiseOutput -or $tracedGiConsumptionRequired -or $physicalRendererMilestoneProofRequired)
+$realWorldVisualQualityEnabledDeltaPresent = (
+    ([double]$finalDelta.focusRegionMetrics.changedPixelPercent -ge $MinRealWorldVisualQualityChangedPixelPercent) -and
+    ([double]$finalDelta.focusRegionMetrics.meanAbsLuma -ge $MinRealWorldVisualQualityMeanAbsLuma) -and
+    ([double]$finalDelta.fullImage.changedPixelPercent -ge $MinRealWorldVisualQualityFullChangedPixelPercent) -and
+    ([double]$finalDelta.fullImage.meanAbsLuma -ge $MinRealWorldVisualQualityFullMeanAbsLuma) -and
+    ([double]$finalDelta.focusRegionShape.tileMetrics.activeTilePercent -ge $MinRealWorldVisualQualityActiveTilePercent)
+)
+$realWorldVisualQualityPlayableDeltaPresent = (
+    $null -ne $playablePhysicalDelta -and
+    ([double]$playablePhysicalDelta.focusRegionMetrics.changedPixelPercent -ge $MinRealWorldVisualQualityChangedPixelPercent) -and
+    ([double]$playablePhysicalDelta.focusRegionMetrics.meanAbsLuma -ge $MinRealWorldVisualQualityMeanAbsLuma) -and
+    ([double]$playablePhysicalDelta.fullImage.changedPixelPercent -ge $MinRealWorldVisualQualityFullChangedPixelPercent) -and
+    ([double]$playablePhysicalDelta.fullImage.meanAbsLuma -ge $MinRealWorldVisualQualityFullMeanAbsLuma) -and
+    ([double]$playablePhysicalDelta.focusRegionShape.tileMetrics.activeTilePercent -ge $MinRealWorldVisualQualityActiveTilePercent)
+)
 $failures = New-Object System.Collections.Generic.List[string]
 
 foreach ($entry in @(
@@ -1449,6 +1528,18 @@ if ($tracedGiConsumptionRequired -and [string]::IsNullOrWhiteSpace($logResolved)
 }
 if ($physicalRendererMilestoneProofRequired -and [string]::IsNullOrWhiteSpace($logResolved)) {
     $failures.Add("Physical renderer milestone proof requires -LogPath so physical GI, depth/G-buffer, shadow-map, traced lighting, shader-denoise, playable-budget, and contamination rejection markers can be checked.")
+}
+if ($realWorldVisualQualityComparisonProofRequired) {
+    if (-not $realWorldVisualQualityEnabledDeltaPresent) {
+        $failures.Add("Real-world visual quality comparison proof requires a meaningful baseline-to-enabled screenshot delta. actualFocusChanged=$($finalDelta.focusRegionMetrics.changedPixelPercent) expected>=$MinRealWorldVisualQualityChangedPixelPercent actualFocusMeanAbsLuma=$($finalDelta.focusRegionMetrics.meanAbsLuma) expected>=$MinRealWorldVisualQualityMeanAbsLuma actualFullChanged=$($finalDelta.fullImage.changedPixelPercent) expected>=$MinRealWorldVisualQualityFullChangedPixelPercent actualFullMeanAbsLuma=$($finalDelta.fullImage.meanAbsLuma) expected>=$MinRealWorldVisualQualityFullMeanAbsLuma actualActiveTilePercent=$($finalDelta.focusRegionShape.tileMetrics.activeTilePercent) expected>=$MinRealWorldVisualQualityActiveTilePercent")
+    }
+    if (-not $realWorldVisualQualityPlayableDeltaPresent) {
+        if ($null -eq $playablePhysicalDelta) {
+            $failures.Add("Real-world visual quality comparison proof requires a baseline-to-playable-physical screenshot delta; pass the playable-physical screenshot as -DebugImagePath.")
+        } else {
+            $failures.Add("Real-world visual quality comparison proof requires a meaningful baseline-to-playable-physical screenshot delta. actualFocusChanged=$($playablePhysicalDelta.focusRegionMetrics.changedPixelPercent) expected>=$MinRealWorldVisualQualityChangedPixelPercent actualFocusMeanAbsLuma=$($playablePhysicalDelta.focusRegionMetrics.meanAbsLuma) expected>=$MinRealWorldVisualQualityMeanAbsLuma actualFullChanged=$($playablePhysicalDelta.fullImage.changedPixelPercent) expected>=$MinRealWorldVisualQualityFullChangedPixelPercent actualFullMeanAbsLuma=$($playablePhysicalDelta.fullImage.meanAbsLuma) expected>=$MinRealWorldVisualQualityFullMeanAbsLuma actualActiveTilePercent=$($playablePhysicalDelta.focusRegionShape.tileMetrics.activeTilePercent) expected>=$MinRealWorldVisualQualityActiveTilePercent")
+        }
+    }
 }
 if ($logProof) {
     if (-not $logProof.markers.directSourcePresent) {
@@ -1585,6 +1676,9 @@ if ($logProof) {
             if (-not $logProof.markers.shaderGeneratedDenoiseOutputImageSliceProven) {
                 $failures.Add("Shader-generated denoise output image slice is not fully proven: raw GI CPU/readback input, raw diffuse-GI source kind, dispatch, output image, material, shader-generated evidence, real output, consumed source, final composite consumable, CPU fallback false, and no direct-light validation input must all be present.")
             }
+            if ($logProof.markers.rawGiOnlyDegradedFallbackPresent) {
+                $failures.Add("Shader-generated denoise output proof rejects raw-GI-only degraded fallback; final proof must consume the shader-generated/denoised output with CPU/readback fallback inactive.")
+            }
         }
     }
     if ($tracedGiConsumptionRequired) {
@@ -1623,6 +1717,9 @@ if ($logProof) {
         if ($logProof.markers.menuChatScreenshotContaminationPresent) {
             $failures.Add("Full renderer milestone proof rejects menu/chat screenshot contamination markers.")
         }
+        if ($logProof.markers.hudHandScreenshotContaminationPresent) {
+            $failures.Add("Full renderer milestone proof rejects HUD/hand screenshot contamination markers.")
+        }
         if ($logProof.markers.proofOverlayEvidencePresent -or $logProof.markers.proofMarkerPresent) {
             $failures.Add("Full renderer milestone proof rejects proof overlays and proof-marker evidence.")
         }
@@ -1631,6 +1728,9 @@ if ($logProof) {
         }
         if ($logProof.markers.lowResDebugSubstitutionPresent) {
             $failures.Add("Full renderer milestone proof rejects low-resolution debug substitutions and CPU direct texture composites.")
+        }
+        if ($logProof.markers.fullscreenWashPresent -or $logProof.markers.fixedLightBlobPresent) {
+            $failures.Add("Full renderer milestone proof rejects fullscreen wash and fixed-light-blob visual artifacts.")
         }
         if ($logProof.markers.metadataOnlyPreviewPresent -or $logProof.markers.metadataOnlyTracingPresent -or $logProof.markers.depthGBufferMetadataOnlyPresent) {
             $failures.Add("Full renderer milestone proof rejects metadata-only preview, tracing, or depth/G-buffer evidence.")
@@ -1664,6 +1764,9 @@ if ($logProof) {
         if ($logProof.markers.menuChatScreenshotContaminationPresent) {
             $failures.Add("Playable physical renderer milestone proof rejects menu/chat screenshot contamination markers.")
         }
+        if ($logProof.markers.hudHandScreenshotContaminationPresent) {
+            $failures.Add("Playable physical renderer milestone proof rejects HUD/hand screenshot contamination markers.")
+        }
         if ($logProof.markers.proofOverlayEvidencePresent -or $logProof.markers.proofMarkerPresent) {
             $failures.Add("Playable physical renderer milestone proof rejects proof overlays and proof-marker evidence.")
         }
@@ -1672,6 +1775,9 @@ if ($logProof) {
         }
         if ($logProof.markers.lowResDebugSubstitutionPresent) {
             $failures.Add("Playable physical renderer milestone proof rejects fullscreen blobs, low-resolution debug substitutions, and CPU direct texture composites.")
+        }
+        if ($logProof.markers.fullscreenWashPresent -or $logProof.markers.fixedLightBlobPresent) {
+            $failures.Add("Playable physical renderer milestone proof rejects fullscreen wash and fixed-light-blob visual artifacts.")
         }
         if ($logProof.markers.metadataOnlyPreviewPresent -or $logProof.markers.metadataOnlyTracingPresent -or $logProof.markers.depthGBufferMetadataOnlyPresent) {
             $failures.Add("Playable physical renderer milestone proof rejects metadata-only preview, tracing, or depth/G-buffer evidence.")
@@ -1696,6 +1802,9 @@ if ($logProof) {
         if (-not $logProof.markers.realWorldVisualQualityComparisonProfilePresent) {
             $failures.Add("Real-world visual quality comparison proof requires controller markers for the baseline/enabled/playable-physical comparison sequence.")
         }
+        if (-not $logProof.markers.visualQualityStrictRejectContractPresent) {
+            $failures.Add("Real-world visual quality comparison proof requires the strict artifact rejection contract marker for HUD/hand contamination, raw-GI-only fallback, fullscreen wash, and fixed light blobs.")
+        }
         if (-not $logProof.markers.normalHeavyWorkloadBypassPresent) {
             $failures.Add("Real-world visual quality comparison proof requires normal non-proof gameplay bypass evidence: heavyProofWorkload=false plus native lighting/readback/telemetry bypass markers.")
         }
@@ -1711,6 +1820,9 @@ if ($logProof) {
         if ($logProof.markers.menuChatScreenshotContaminationPresent) {
             $failures.Add("Real-world visual quality comparison proof rejects menu/chat screenshot contamination markers.")
         }
+        if ($logProof.markers.hudHandScreenshotContaminationPresent) {
+            $failures.Add("Real-world visual quality comparison proof rejects HUD/hand screenshot contamination markers.")
+        }
         if ($logProof.markers.proofOverlayEvidencePresent -or $logProof.markers.proofMarkerPresent) {
             $failures.Add("Real-world visual quality comparison proof rejects proof overlays and proof-marker evidence.")
         }
@@ -1719,6 +1831,12 @@ if ($logProof) {
         }
         if ($logProof.markers.lowResDebugSubstitutionPresent) {
             $failures.Add("Real-world visual quality comparison proof rejects fullscreen wash, fixed light blobs, screen-space decal-only proof, low-resolution debug substitution, CPU direct texture composites, and 0-1 FPS/full proof workload markers.")
+        }
+        if ($logProof.markers.fullscreenWashPresent) {
+            $failures.Add("Real-world visual quality comparison proof rejects fullscreen wash markers.")
+        }
+        if ($logProof.markers.fixedLightBlobPresent) {
+            $failures.Add("Real-world visual quality comparison proof rejects fixed light blob markers.")
         }
         if ($logProof.markers.metadataOnlyPreviewPresent -or $logProof.markers.metadataOnlyTracingPresent -or $logProof.markers.depthGBufferMetadataOnlyPresent) {
             $failures.Add("Real-world visual quality comparison proof rejects metadata-only preview, tracing, or depth/G-buffer evidence.")
@@ -1741,6 +1859,9 @@ if ($logProof) {
         if (-not $logProof.markers.shaderGeneratedDenoiseOutputImageSliceProven) {
             $failures.Add("Real-world visual quality comparison proof requires shader-generated denoise output consumed by the final composite with CPU/readback fallback inactive.")
         }
+        if ($logProof.markers.rawGiOnlyDegradedFallbackPresent) {
+            $failures.Add("Real-world visual quality comparison proof rejects raw-GI-only degraded fallback when shader-generated/denoised output is required.")
+        }
     }
 }
 
@@ -1762,6 +1883,11 @@ $result = [ordered]@{
         minDenoiseEdgePreservationPercent = $MinDenoiseEdgePreservationPercent
         minFinalChangedPixelPercent = $MinFinalChangedPixelPercent
         minFinalMeanAbsLuma = $MinFinalMeanAbsLuma
+        minRealWorldVisualQualityChangedPixelPercent = $MinRealWorldVisualQualityChangedPixelPercent
+        minRealWorldVisualQualityMeanAbsLuma = $MinRealWorldVisualQualityMeanAbsLuma
+        minRealWorldVisualQualityFullChangedPixelPercent = $MinRealWorldVisualQualityFullChangedPixelPercent
+        minRealWorldVisualQualityFullMeanAbsLuma = $MinRealWorldVisualQualityFullMeanAbsLuma
+        minRealWorldVisualQualityActiveTilePercent = $MinRealWorldVisualQualityActiveTilePercent
         changedPixelThreshold = $ChangedPixelThreshold
         brightPixelThreshold = $BrightPixelThreshold
         focusRegionSelection = if ($DisableAutoFocusRegion) { "fixed" } else { "auto" }
@@ -1804,12 +1930,14 @@ $result = [ordered]@{
         baselineToRawGi = $rawDelta
         rawGiToDenoisedGi = $denoiseDelta
         baselineToFinalComposite = $finalDelta
+        baselineToPlayablePhysical = $playablePhysicalDelta
     }
     selectedFocusRegions = [ordered]@{
         baselineToDirect = if ($directDelta) { $directDelta.focusRegion } else { $null }
         baselineToRawGi = $rawDelta.focusRegion
         rawGiToDenoisedGi = $denoiseDelta.focusRegion
         baselineToFinalComposite = $finalDelta.focusRegion
+        baselineToPlayablePhysical = if ($playablePhysicalDelta) { $playablePhysicalDelta.focusRegion } else { $null }
     }
     logProof = $logProof
     denoiseQuality = $denoiseQuality
@@ -1893,7 +2021,10 @@ $result = [ordered]@{
                 playablePhysicalBudgetPresent = if ($logProof) { [bool]$logProof.markers.playablePhysicalRendererBudgetPresent } else { $null }
                 cleanInWorldCaptureContractPresent = if ($logProof) { [bool]$logProof.markers.cleanInWorldCaptureContractPresent } else { $null }
                 menuChatScreenshotContaminationPresent = if ($logProof) { [bool]$logProof.markers.menuChatScreenshotContaminationPresent } else { $null }
+                hudHandScreenshotContaminationPresent = if ($logProof) { [bool]$logProof.markers.hudHandScreenshotContaminationPresent } else { $null }
                 proofOverlayEvidencePresent = if ($logProof) { [bool]$logProof.markers.proofOverlayEvidencePresent } else { $null }
+                fullscreenWashPresent = if ($logProof) { [bool]$logProof.markers.fullscreenWashPresent } else { $null }
+                fixedLightBlobPresent = if ($logProof) { [bool]$logProof.markers.fixedLightBlobPresent } else { $null }
                 lowResDebugSubstitutionPresent = if ($logProof) { [bool]$logProof.markers.lowResDebugSubstitutionPresent } else { $null }
                 trueDepthGBufferSamplingProven = if ($logProof) { [bool]$logProof.markers.trueDepthGBufferSamplingProven } else { $null }
                 trueDepthGBufferSamplingMarkerPresent = if ($logProof) { [bool]$logProof.markers.trueDepthGBufferSamplingMarkerPresent } else { $null }
@@ -1918,7 +2049,10 @@ $result = [ordered]@{
                     [bool]$logProof.markers.shadowMapOutputConsumedPresent -and
                     [bool]$logProof.markers.fullRendererMilestoneProofPresent -and
                     -not [bool]$logProof.markers.menuChatScreenshotContaminationPresent -and
+                    -not [bool]$logProof.markers.hudHandScreenshotContaminationPresent -and
                     -not [bool]$logProof.markers.proofOverlayEvidencePresent -and
+                    -not [bool]$logProof.markers.fullscreenWashPresent -and
+                    -not [bool]$logProof.markers.fixedLightBlobPresent -and
                     -not [bool]$logProof.markers.lowResDebugSubstitutionPresent -and
                     -not [bool]$logProof.markers.fullRendererOverclaimPresent
                 ) {
@@ -1938,7 +2072,10 @@ $result = [ordered]@{
                     [bool]$logProof.markers.realShadowMapOutputProven -and
                     [bool]$logProof.markers.shadowMapOutputConsumedPresent -and
                     -not [bool]$logProof.markers.menuChatScreenshotContaminationPresent -and
+                    -not [bool]$logProof.markers.hudHandScreenshotContaminationPresent -and
                     -not [bool]$logProof.markers.proofOverlayEvidencePresent -and
+                    -not [bool]$logProof.markers.fullscreenWashPresent -and
+                    -not [bool]$logProof.markers.fixedLightBlobPresent -and
                     -not [bool]$logProof.markers.lowResDebugSubstitutionPresent -and
                     -not [bool]$logProof.markers.fullRendererOverclaimPresent
                 ) {
@@ -1949,11 +2086,36 @@ $result = [ordered]@{
                 realWorldVisualQualityComparison = [ordered]@{
                     required = $realWorldVisualQualityComparisonProofRequired
                     profileMarkerPresent = if ($logProof) { [bool]$logProof.markers.realWorldVisualQualityComparisonProfilePresent } else { $null }
+                    strictRejectContractPresent = if ($logProof) { [bool]$logProof.markers.visualQualityStrictRejectContractPresent } else { $null }
                     normalHeavyWorkloadBypassPresent = if ($logProof) { [bool]$logProof.markers.normalHeavyWorkloadBypassPresent } else { $null }
                     softReceiverTiedShadowMaskPresent = if ($logProof) { [bool]$logProof.markers.softReceiverTiedShadowMaskPresent } else { $null }
                     baselineScreenshotPresent = [bool]$baselineResolved
                     enabledScreenshotPresent = [bool]$finalResolved
                     playablePhysicalScreenshotPresent = [bool]$debugResolved
+                    enabledDeltaPresent = $realWorldVisualQualityEnabledDeltaPresent
+                    playablePhysicalDeltaPresent = $realWorldVisualQualityPlayableDeltaPresent
+                    hudHandScreenshotContaminationPresent = if ($logProof) { [bool]$logProof.markers.hudHandScreenshotContaminationPresent } else { $null }
+                    fullscreenWashPresent = if ($logProof) { [bool]$logProof.markers.fullscreenWashPresent } else { $null }
+                    fixedLightBlobPresent = if ($logProof) { [bool]$logProof.markers.fixedLightBlobPresent } else { $null }
+                    rawGiOnlyDegradedFallbackPresent = if ($logProof) { [bool]$logProof.markers.rawGiOnlyDegradedFallbackPresent } else { $null }
+                    enabledDeltaMetrics = [ordered]@{
+                        focusChangedPixelPercent = $finalDelta.focusRegionMetrics.changedPixelPercent
+                        focusMeanAbsLuma = $finalDelta.focusRegionMetrics.meanAbsLuma
+                        fullChangedPixelPercent = $finalDelta.fullImage.changedPixelPercent
+                        fullMeanAbsLuma = $finalDelta.fullImage.meanAbsLuma
+                        activeTilePercent = $finalDelta.focusRegionShape.tileMetrics.activeTilePercent
+                    }
+                    playablePhysicalDeltaMetrics = if ($playablePhysicalDelta) {
+                        [ordered]@{
+                            focusChangedPixelPercent = $playablePhysicalDelta.focusRegionMetrics.changedPixelPercent
+                            focusMeanAbsLuma = $playablePhysicalDelta.focusRegionMetrics.meanAbsLuma
+                            fullChangedPixelPercent = $playablePhysicalDelta.fullImage.changedPixelPercent
+                            fullMeanAbsLuma = $playablePhysicalDelta.fullImage.meanAbsLuma
+                            activeTilePercent = $playablePhysicalDelta.focusRegionShape.tileMetrics.activeTilePercent
+                        }
+                    } else {
+                        $null
+                    }
                     classification = if (-not $realWorldVisualQualityComparisonProofRequired) {
                         "not_required"
                     } elseif (-not $logProof) {
@@ -1962,7 +2124,10 @@ $result = [ordered]@{
                         [bool]$baselineResolved -and
                         [bool]$finalResolved -and
                         [bool]$debugResolved -and
+                        $realWorldVisualQualityEnabledDeltaPresent -and
+                        $realWorldVisualQualityPlayableDeltaPresent -and
                         [bool]$logProof.markers.realWorldVisualQualityComparisonProfilePresent -and
+                        [bool]$logProof.markers.visualQualityStrictRejectContractPresent -and
                         [bool]$logProof.markers.normalHeavyWorkloadBypassPresent -and
                         [bool]$logProof.markers.playablePhysicalRendererProfilePresent -and
                         [bool]$logProof.markers.playablePhysicalRendererBudgetPresent -and
@@ -1973,7 +2138,11 @@ $result = [ordered]@{
                         [bool]$logProof.markers.tracedGiConsumptionPresent -and
                         [bool]$logProof.markers.shaderGeneratedDenoiseOutputImageSliceProven -and
                         -not [bool]$logProof.markers.menuChatScreenshotContaminationPresent -and
+                        -not [bool]$logProof.markers.hudHandScreenshotContaminationPresent -and
                         -not [bool]$logProof.markers.proofOverlayEvidencePresent -and
+                        -not [bool]$logProof.markers.fullscreenWashPresent -and
+                        -not [bool]$logProof.markers.fixedLightBlobPresent -and
+                        -not [bool]$logProof.markers.rawGiOnlyDegradedFallbackPresent -and
                         -not [bool]$logProof.markers.focusWindowOnlyPresent -and
                         -not [bool]$logProof.markers.lowResDebugSubstitutionPresent
                     ) {
@@ -2041,6 +2210,7 @@ $result = [ordered]@{
                 outputConsumedLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputConsumedPresent } else { $null }
                 finalCompositeConsumableLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseFinalCompositeConsumablePresent } else { $null }
                 shaderGeneratedOutputImageSliceProven = if ($logProof) { [bool]$logProof.markers.shaderGeneratedDenoiseOutputImageSliceProven } else { $null }
+                rawGiOnlyDegradedFallbackPresent = if ($logProof) { [bool]$logProof.markers.rawGiOnlyDegradedFallbackPresent } else { $null }
                 openBoundaryPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOpenBoundaryPresent } else { $null }
                 shaderOutputReadyLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputReadyPresent } else { $null }
                 shaderSourceClaimLogMarkerPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseSourceClaimPresent } else { $null }
@@ -2119,6 +2289,7 @@ $result = [ordered]@{
                 shaderDenoiseOutputOpenPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOutputOpenPresent } else { $null }
                 shaderDenoiseOverclaimPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseOverclaimPresent } else { $null }
                 shaderDenoiseHonestNonOverclaimPresent = if ($logProof) { [bool]$logProof.markers.shaderDenoiseHonestNonOverclaimPresent } else { $null }
+                rawGiOnlyDegradedFallbackPresent = if ($logProof) { [bool]$logProof.markers.rawGiOnlyDegradedFallbackPresent } else { $null }
                 shaderDenoiseSourceIdentity = if ($logProof) { $logProof.shaderDenoiseBoundary.sourceIdentity } else { $null }
                 shaderDenoiseSourceKind = if ($logProof) { $logProof.shaderDenoiseBoundary.sourceKind } else { $null }
                 shaderDenoiseBlockerReason = if ($logProof) { $logProof.shaderDenoiseBoundary.blockerReason } else { $null }
@@ -2134,9 +2305,13 @@ $result = [ordered]@{
                 realGpuTraversalAllowedEvidencePresent = if ($logProof) { [bool]$logProof.markers.realGpuTraversalAllowedEvidencePresent } else { $null }
                 realGpuTraversalOverclaimPresent = if ($logProof) { [bool]$logProof.markers.realGpuTraversalOverclaimPresent } else { $null }
                 fullRendererProofProfilePresent = if ($logProof) { [bool]$logProof.markers.fullRendererProofProfilePresent } else { $null }
+                visualQualityStrictRejectContractPresent = if ($logProof) { [bool]$logProof.markers.visualQualityStrictRejectContractPresent } else { $null }
                 cleanInWorldCaptureContractPresent = if ($logProof) { [bool]$logProof.markers.cleanInWorldCaptureContractPresent } else { $null }
                 menuChatScreenshotContaminationPresent = if ($logProof) { [bool]$logProof.markers.menuChatScreenshotContaminationPresent } else { $null }
+                hudHandScreenshotContaminationPresent = if ($logProof) { [bool]$logProof.markers.hudHandScreenshotContaminationPresent } else { $null }
                 proofOverlayEvidencePresent = if ($logProof) { [bool]$logProof.markers.proofOverlayEvidencePresent } else { $null }
+                fullscreenWashPresent = if ($logProof) { [bool]$logProof.markers.fullscreenWashPresent } else { $null }
+                fixedLightBlobPresent = if ($logProof) { [bool]$logProof.markers.fixedLightBlobPresent } else { $null }
                 lowResDebugSubstitutionPresent = if ($logProof) { [bool]$logProof.markers.lowResDebugSubstitutionPresent } else { $null }
                 depthGBufferMetadataOnlyPresent = if ($logProof) { [bool]$logProof.markers.depthGBufferMetadataOnlyPresent } else { $null }
                 fullRendererOverclaimPresent = if ($logProof) { [bool]$logProof.markers.fullRendererOverclaimPresent } else { $null }
@@ -2186,6 +2361,13 @@ Write-Host "denoise.detail.edgeDetailPreserved=$($denoiseQuality.edgeDetailPrese
 Write-Host "final.focusRegion=$($finalDelta.focusRegion.left),$($finalDelta.focusRegion.top),$($finalDelta.focusRegion.width),$($finalDelta.focusRegion.height)"
 Write-Host "final.focus.changedPixelPercent=$($finalDelta.focusRegionMetrics.changedPixelPercent)"
 Write-Host "final.focus.meanAbsLuma=$($finalDelta.focusRegionMetrics.meanAbsLuma)"
+Write-Host "realWorldVisualQuality.enabledDeltaPresent=$realWorldVisualQualityEnabledDeltaPresent"
+if ($playablePhysicalDelta) {
+    Write-Host "playablePhysical.focusRegion=$($playablePhysicalDelta.focusRegion.left),$($playablePhysicalDelta.focusRegion.top),$($playablePhysicalDelta.focusRegion.width),$($playablePhysicalDelta.focusRegion.height)"
+    Write-Host "playablePhysical.focus.changedPixelPercent=$($playablePhysicalDelta.focusRegionMetrics.changedPixelPercent)"
+    Write-Host "playablePhysical.focus.meanAbsLuma=$($playablePhysicalDelta.focusRegionMetrics.meanAbsLuma)"
+}
+Write-Host "realWorldVisualQuality.playableDeltaPresent=$realWorldVisualQualityPlayableDeltaPresent"
 if ($logProof) {
     Write-Host "directSourcePresent=$($logProof.markers.directSourcePresent)"
     Write-Host "nativeGiSourcePresent=$($logProof.markers.nativeGiSourcePresent)"
@@ -2244,6 +2426,7 @@ if ($logProof) {
     Write-Host "shaderDenoiseOutputConsumedPresent=$($logProof.markers.shaderDenoiseOutputConsumedPresent)"
     Write-Host "shaderDenoiseFinalCompositeConsumablePresent=$($logProof.markers.shaderDenoiseFinalCompositeConsumablePresent)"
     Write-Host "shaderGeneratedDenoiseOutputImageSliceProven=$($logProof.markers.shaderGeneratedDenoiseOutputImageSliceProven)"
+    Write-Host "rawGiOnlyDegradedFallbackPresent=$($logProof.markers.rawGiOnlyDegradedFallbackPresent)"
     Write-Host "shaderDenoiseOpenBoundaryPresent=$($logProof.markers.shaderDenoiseOpenBoundaryPresent)"
     Write-Host "shaderDenoiseOutputReadyPresent=$($logProof.markers.shaderDenoiseOutputReadyPresent)"
     Write-Host "shaderDenoiseSourceClaimPresent=$($logProof.markers.shaderDenoiseSourceClaimPresent)"
@@ -2275,9 +2458,13 @@ if ($logProof) {
     Write-Host "fullRendererProofProfilePresent=$($logProof.markers.fullRendererProofProfilePresent)"
     Write-Host "playablePhysicalRendererProfilePresent=$($logProof.markers.playablePhysicalRendererProfilePresent)"
     Write-Host "playablePhysicalRendererBudgetPresent=$($logProof.markers.playablePhysicalRendererBudgetPresent)"
+    Write-Host "visualQualityStrictRejectContractPresent=$($logProof.markers.visualQualityStrictRejectContractPresent)"
     Write-Host "cleanInWorldCaptureContractPresent=$($logProof.markers.cleanInWorldCaptureContractPresent)"
     Write-Host "menuChatScreenshotContaminationPresent=$($logProof.markers.menuChatScreenshotContaminationPresent)"
+    Write-Host "hudHandScreenshotContaminationPresent=$($logProof.markers.hudHandScreenshotContaminationPresent)"
     Write-Host "proofOverlayEvidencePresent=$($logProof.markers.proofOverlayEvidencePresent)"
+    Write-Host "fullscreenWashPresent=$($logProof.markers.fullscreenWashPresent)"
+    Write-Host "fixedLightBlobPresent=$($logProof.markers.fixedLightBlobPresent)"
     Write-Host "lowResDebugSubstitutionPresent=$($logProof.markers.lowResDebugSubstitutionPresent)"
     Write-Host "trueDepthGBufferSamplingProven=$($logProof.markers.trueDepthGBufferSamplingProven)"
     Write-Host "trueDepthGBufferSamplingMarkerPresent=$($logProof.markers.trueDepthGBufferSamplingMarkerPresent)"

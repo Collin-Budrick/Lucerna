@@ -209,16 +209,23 @@ public record PublicMojangFinalCompositeSubmissionResult(
             return "not-submitted";
         }
         boolean directLight = normalizedReason.contains("native direct-light emissive source is blended")
+                || normalizedReason.contains("directlightvisualsourceconsumed=true")
+                || normalizedReason.contains("direct_light_visual_source_consumed=true")
                 || normalizedReason.contains("native direct-light surface-source")
                 || normalizedReason.contains("directspill")
                 || normalizedReason.contains("direct_spill");
-        boolean genericDenoisedGi = normalizedReason.contains("denoised diffuse-gi")
+        boolean genericDenoisedGi = (normalizedReason.contains("denoised diffuse-gi cpu output is displayable")
+                || normalizedReason.contains("denoised diffuse-gi source texture consumed")
+                || normalizedReason.contains("denoisedgivisualsourceconsumed=true")
+                || normalizedReason.contains("denoised_gi_visual_source_consumed=true"))
                 && !normalizedReason.contains("shader-denoised-diffuse-gi-rgba8");
         boolean cpuDenoiseExplicitlyTrue = normalizedReason.contains("cpudenoisedsourceready=true")
                 || normalizedReason.contains("cpu_denoised_source_ready=true")
                 || normalizedReason.contains("cpudenoisedgi=enabled-ready")
                 || normalizedReason.contains("cpudenoisedgi=ready")
                 || normalizedReason.contains("cpudenoisedreadback=ready")
+                || normalizedReason.contains("denoisedgivisualsourceconsumed=true")
+                || normalizedReason.contains("denoised_gi_visual_source_consumed=true")
                 || normalizedReason.contains("sourcekind=cpu-denoised-readback")
                 || normalizedReason.contains("sourcekind=cpu_denoised_readback");
         boolean shaderDenoisedGi = this.submittedRealShaderDenoiseOutputReady();
@@ -227,6 +234,8 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 || normalizedReason.contains("cpu-denoised-diffuse-gi-rgba8")
                 || genericDenoisedGi);
         boolean rawGi = normalizedReason.contains("raw native diffuse-gi source is blended")
+                || normalizedReason.contains("rawgivisualsourceconsumed=true")
+                || normalizedReason.contains("raw_gi_visual_source_consumed=true")
                 || normalizedReason.contains("round 7 raw_gi native diffuse-gi source additive draw issued")
                 || normalizedReason.contains("rawdrawrepeats=1")
                 || normalizedReason.contains("coloredbouncegi")
@@ -239,6 +248,12 @@ public record PublicMojangFinalCompositeSubmissionResult(
         appendIdentity(identity, directLight, "directSpill");
         appendIdentity(identity, rawGi, "native-diffuse-gi-rgba8");
         appendIdentity(identity, rawGi, "coloredBounceGi");
+        appendIdentity(identity, this.submittedReceiverLocalRawGiPayload(),
+                "receiver-local-raw-gi-payload");
+        appendIdentity(identity, this.submittedChromaRichRawGiPayloadCandidate(),
+                "chroma-rich-raw-gi-candidate");
+        appendIdentity(identity, this.submittedSmoothLobeFallbackRisk(),
+                "smooth-lobe-fallback-risk");
         appendIdentity(identity, contactShadow, "contactShadow");
         appendIdentity(identity, this.submittedNativeShadowMapMask(), "native-shadow-map-mask");
         appendIdentity(identity, this.submittedShadowMapOutputConsumed(), "shadowMapOutputConsumed");
@@ -928,6 +943,49 @@ public record PublicMojangFinalCompositeSubmissionResult(
         return this.submittedRawGiSource() || this.submittedDenoisedGiSource();
     }
 
+    public boolean submittedReceiverLocalRawGiPayload() {
+        String normalizedReason = this.normalizedReason();
+        return this.submitted
+                && (normalizedReason.contains("receiverlocalpayloadready=true")
+                || normalizedReason.contains("receiver_local_payload_ready=true")
+                || normalizedReason.contains("receiverpayloadidentity=receiver-local/chroma-candidate/native-diffuse-gi-rgba8")
+                || normalizedReason.contains("visualpayloadclass=receiver-local-chroma-candidate-payload"));
+    }
+
+    public boolean submittedChromaRichRawGiPayloadCandidate() {
+        String normalizedReason = this.normalizedReason();
+        return this.submitted
+                && (normalizedReason.contains("chromarichpayloadcandidate=true")
+                || normalizedReason.contains("chroma_rich_payload_candidate=true")
+                || normalizedReason.contains("receiverpayloadidentity=receiver-local/chroma-candidate/native-diffuse-gi-rgba8")
+                || normalizedReason.contains("visualpayloadclass=receiver-local-chroma-candidate-payload"));
+    }
+
+    public boolean submittedSmoothLobeFallbackRisk() {
+        String normalizedReason = this.normalizedReason();
+        return this.submitted
+                && (normalizedReason.contains("smoothlobefallbackrisk=true")
+                || normalizedReason.contains("smooth_lobe_fallback_risk=true")
+                || normalizedReason.contains("receiverpayloadidentity=smooth-lobe-fallback-risk/native-diffuse-gi-rgba8")
+                || normalizedReason.contains("visualpayloadclass=smooth-lobe-fallback-risk-payload"));
+    }
+
+    public String receiverPayloadVisualClassLabel() {
+        if (!this.submittedRound7GiSource()) {
+            return "not-present";
+        }
+        if (this.submittedSmoothLobeFallbackRisk()) {
+            return "smooth-lobe-fallback-risk";
+        }
+        if (this.submittedReceiverLocalRawGiPayload() && this.submittedChromaRichRawGiPayloadCandidate()) {
+            return "receiver-local-chroma-candidate";
+        }
+        if (this.submittedRawGiSource()) {
+            return "raw-gi-chroma-unproven";
+        }
+        return "denoised-gi-source-no-raw-receiver-class";
+    }
+
     public String sourceAuthenticityLabel() {
         if (!this.submitted) {
             return "no-submitted-source";
@@ -956,9 +1014,6 @@ public record PublicMojangFinalCompositeSubmissionResult(
         if (this.submittedShaderDenoiseDirectLightValidationInput()) {
             return "rejected:shader-denoise-direct-light-validation-input";
         }
-        if (this.submittedRealShadowMapComposite()) {
-            return "accepted:native-shadow-map-mask/final-composite-consumed";
-        }
         if (this.submittedRealShaderDenoiseOutputReady()) {
             return "accepted:shader-generated-denoise-output/final-composite-consumed";
         }
@@ -983,6 +1038,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
         }
         if (this.submittedRawGiSource()) {
             return "accepted:raw-gi-output";
+        }
+        if (this.submittedRealShadowMapComposite()) {
+            return "accepted:native-shadow-map-mask/final-composite-consumed";
         }
         return "unknown-source";
     }
@@ -1088,6 +1146,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
         if (this.submittedRectangularWashoutRisk()) {
             return "rectangular-washout-risk";
         }
+        if (this.submittedSmoothLobeFallbackRisk()) {
+            return "smooth-lobe-fallback-risk";
+        }
         if (this.submittedDirectLightSource() && this.submittedRawGiSource() && this.submittedDenoisedGiSource()) {
             return "awaiting-controller-final-direct-raw-denoised-geometry-material-aware-surface-delta-and-quality-proof";
         }
@@ -1113,6 +1174,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
         if (this.submittedPreviewOnlyEvidence()) {
             return "not-ready:rejected-preview-evidence/" + this.sourceAuthenticityLabel();
         }
+        if (this.submittedSmoothLobeFallbackRisk()) {
+            return "not-ready:smooth-lobe-fallback-risk;receiver-local-chroma-payload-not-proven";
+        }
         if (this.submittedDirectLightSource() && this.submittedRawGiSource() && this.submittedDenoisedGiSource()) {
             return "ready-for-controller-proof:source-separated-direct-raw-gi-"
                     + this.denoiseSourceClassLabel()
@@ -1134,7 +1198,10 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 && this.drawCallsIssued
                 && this.targetStatus == TargetStatus.READY
                 && this.submittedSourceGatedSurfaceProjection()
-                && !this.submittedPreviewOnlyEvidence();
+                && !this.submittedPreviewOnlyEvidence()
+                && this.submittedReceiverLocalRawGiPayload()
+                && this.submittedChromaRichRawGiPayloadCandidate()
+                && !this.submittedSmoothLobeFallbackRisk();
         return "state=" + this.submissionStateLabel()
                 + ",attempted=" + this.attempted
                 + ",submitted=" + this.submitted
@@ -1180,6 +1247,11 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",surfaceProjectionEvidence=" + this.surfaceProjectionEvidenceLabel()
                 + ",geometryMaterialProjectionReadiness=" + this.geometryMaterialProjectionReadiness()
                 + ",temporalStabilityReadiness=" + this.temporalStabilityReadiness()
+                + ",receiverPayloadVisualClass=" + this.receiverPayloadVisualClassLabel()
+                + ",receiverLocalPayloadReady=" + this.submittedReceiverLocalRawGiPayload()
+                + ",chromaRichPayloadCandidate=" + this.submittedChromaRichRawGiPayloadCandidate()
+                + ",smoothLobeFallbackRisk=" + this.submittedSmoothLobeFallbackRisk()
+                + ",receiverPayloadNoOverclaim=\"receiver/chroma status is Java-side source classification only; gpuTraversalExecuted=false,nativeComputeGiExecuted=false,physicalCorrectnessClaimed=false\""
                 + ",focusWindowOnly=" + this.submittedFocusWindowOnly()
                 + ",metadataOnlyPreview=" + this.submittedMetadataOnlyPreview()
                 + ",proofMarkerSource=" + this.submittedProofMarkerSource()
@@ -1259,6 +1331,10 @@ public record PublicMojangFinalCompositeSubmissionResult(
                 + ",realShaderDenoiseOutputReady=" + readyState(this.submittedRealShaderDenoiseOutputReady())
                 + ",shaderDenoiseOverclaimPresent=" + this.submittedShaderDenoiseOverclaim()
                 + ",previewEvidenceClean=" + readyState(!this.submittedPreviewOnlyEvidence())
+                + ",receiverPayloadVisualClass=" + this.receiverPayloadVisualClassLabel()
+                + ",receiverLocalPayloadReady=" + readyState(this.submittedReceiverLocalRawGiPayload())
+                + ",chromaRichPayloadCandidate=" + readyState(this.submittedChromaRichRawGiPayloadCandidate())
+                + ",smoothLobeFallbackRisk=" + readyState(this.submittedSmoothLobeFallbackRisk())
                 + ",sourceGatedSurfaceProjection=" + readyState(this.submittedSourceGatedSurfaceProjection());
     }
 
@@ -1271,6 +1347,9 @@ public record PublicMojangFinalCompositeSubmissionResult(
         }
         if (this.submittedPreviewOnlyEvidence()) {
             return "not-ready:" + this.sourceAuthenticityLabel();
+        }
+        if (this.submittedSmoothLobeFallbackRisk()) {
+            return "not-ready:smooth-lobe-fallback-risk;receiver-local-chroma-payload-not-proven";
         }
         if (this.submittedDirectLightSource() && this.submittedRawGiSource() && this.submittedDenoisedGiSource()) {
             return "candidate:source-separated-full-target;"

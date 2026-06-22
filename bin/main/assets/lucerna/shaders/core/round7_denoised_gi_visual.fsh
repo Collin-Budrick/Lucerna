@@ -43,7 +43,7 @@ const float CENTER_WEIGHT = 0.50;
 const float NEAR_WEIGHT = 0.092;
 const float DIAGONAL_WEIGHT = 0.030;
 const float WIDE_WEIGHT = 0.010;
-const float SIGNAL_GAIN = 0.18;
+const float SIGNAL_GAIN = 0.42;
 const float SIGNAL_FLOOR = 0.0018;
 const float EDGE_REJECT_BASE = 0.0060;
 const float EDGE_REJECT_SIGNAL_SCALE = 0.036;
@@ -55,7 +55,7 @@ const float EDGE_OUTPUT_DAMPING = 0.58;
 const float HALO_REJECT_STRENGTH = 0.46;
 const float CHECKER_SUPPRESS_STRENGTH = 0.54;
 const float LOW_RES_BLOCK_REJECT_STRENGTH = 0.42;
-const vec3 MAX_ADDITIVE_PER_DRAW = vec3(0.050, 0.056, 0.064);
+const vec3 MAX_ADDITIVE_PER_DRAW = vec3(0.190, 0.210, 0.235);
 
 float diagonalSignalGradient(vec2 uv);
 
@@ -395,11 +395,31 @@ vec3 localSignalBounce(vec2 uv, vec4 center, vec4 denoised, float surfaceMask) {
     float centerGuard = 1.0 - smoothstep(0.16, 0.44, sampleDissimilarity(center, denoised));
     vec3 tint = mix(vec3(luminance(localAverage)), localAverage, 0.50 + chromaSupport * 0.32);
     return tint
-            * (0.032
+            * (0.084
             * confidenceSupport
             * mix(0.45, 1.0, structureSupport)
             * mix(0.55, 1.0, centerGuard)
             * surfaceMask);
+}
+
+vec3 sourceGatedColorLift(vec2 uv, vec4 center, vec4 denoised, vec3 shaped, float surfaceMask) {
+    vec2 texel = safeTexelSize();
+    vec3 axisAverage = (
+            sourceSample(uv + vec2(texel.x * 2.0, 0.0)).rgb
+            + sourceSample(uv + vec2(-texel.x * 2.0, 0.0)).rgb
+            + sourceSample(uv + vec2(0.0, texel.y * 2.0)).rgb
+            + sourceSample(uv + vec2(0.0, -texel.y * 2.0)).rgb) * 0.25;
+    float sourceSupport = smoothstep(0.012, 0.22,
+            max(signalConfidence(center), signalConfidence(denoised))
+            + localSignalGradient(uv) * 0.34);
+    float colorSupport = smoothstep(0.006, 0.13,
+            chromaSpan(center.rgb) + chromaSpan(denoised.rgb) + chromaSpan(axisAverage) * 0.42);
+    float structureGuard = smoothstep(0.018, 0.18,
+            localMaterialStructure(uv, center) + localSignalGradient(uv) * 0.32);
+    vec3 liftTint = mix(vec3(luminance(max(axisAverage, vec3(0.0)))),
+            max(axisAverage + denoised.rgb * 0.45, vec3(0.0)), 0.68 + colorSupport * 0.22);
+    vec3 lifted = shaped + liftTint * (0.118 * sourceSupport * colorSupport * mix(0.42, 1.0, structureGuard) * surfaceMask);
+    return neighborhoodClamp(uv, lifted, 0.20 + structureGuard * 0.18);
 }
 
 vec3 postTonalResponse(vec3 color, float confidence, float surfaceMask) {
@@ -407,7 +427,7 @@ vec3 postTonalResponse(vec3 color, float confidence, float surfaceMask) {
     float hotShoulder = smoothstep(0.028, 0.110, peak);
     vec3 balanced = mix(color, vec3(luminance(color)), hotShoulder * 0.20);
     vec3 compressed = balanced / (vec3(1.0) + balanced * 3.35);
-    float exposure = mix(0.72, 1.0, smoothstep(0.10, 0.80, confidence) * mix(0.55, 1.0, surfaceMask));
+    float exposure = mix(0.78, 1.12, smoothstep(0.08, 0.76, confidence) * mix(0.46, 1.0, surfaceMask));
     return mix(balanced, compressed, 0.62) * exposure;
 }
 
@@ -416,7 +436,7 @@ void main() {
     // payload's own signal and local discontinuities; this is not a fullscreen
     // wash or fixed proof overlay.
     vec4 center = sourceGatedGameplaySample(texCoord);
-    vec4 denoised = mix(denoisedSample(texCoord), center, 0.72);
+    vec4 denoised = mix(denoisedSample(texCoord), center, 0.58);
     float confidence = clamp(max(signalConfidence(center), signalConfidence(denoised)), 0.0, 1.0);
     float surfaceMask = sourceSurfaceMask(texCoord, center, denoised);
     float structureMask = mix(0.26, 0.74, smoothstep(0.018, 0.16, localMaterialStructure(texCoord, center)));
@@ -432,6 +452,7 @@ void main() {
     shaped *= mix(0.58, 1.0, edgeAwareOutputGate(texCoord, center, denoised));
     shaped = suppressCandidateHalo(texCoord, center, denoised, shaped) * 0.82;
     shaped += localSignalBounce(texCoord, center, denoised, surfaceMask) * mix(0.20, 0.82, confidence * surfaceMask);
+    shaped = sourceGatedColorLift(texCoord, center, denoised, shaped, surfaceMask);
     shaped = mix(shaped, neighborhoodClamp(texCoord, shaped, 0.10), checkerArtifact * LOW_RES_BLOCK_REJECT_STRENGTH);
     shaped = mix(shaped, max(center.rgb, vec3(0.0)), plateauReject * (1.0 - structureMask) * 0.36);
     shaped = postTonalResponse(shaped, confidence, surfaceMask);

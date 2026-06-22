@@ -29,16 +29,32 @@ public final class WorldSpaceEmissiveSpillSubmitter {
     private static final double SOURCE_SCAN_DISTANCE_GATE = 15.0;
     private static final int RECEIVER_SCAN_RADIUS = 4;
     private static final int MAX_SOURCE_BLOCKS = 10;
-    private static final int MAX_RECEIVER_QUADS = 72;
-    private static final int MAX_SECONDARY_BOUNCE_QUADS = 42;
-    private static final int SECONDARY_BOUNCE_SCAN_RADIUS = 2;
+    private static final int MAX_RECEIVER_QUADS = 192;
+    private static final int MAX_SECONDARY_BOUNCE_QUADS = 192;
+    private static final int GAMEPLAY_SOURCE_SCAN_RADIUS = 6;
+    private static final int GAMEPLAY_SOURCE_SCAN_Y_RADIUS = 4;
+    private static final int GAMEPLAY_MAX_SOURCE_BLOCKS = 2;
+    private static final int GAMEPLAY_MAX_RECEIVER_QUADS = 28;
+    private static final int GAMEPLAY_MAX_SECONDARY_BOUNCE_QUADS = 20;
+    private static final int GAMEPLAY_REFRESH_TICKS = 45;
+    private static final int VALIDATION_REFRESH_TICKS = 4;
+    private static final double CACHE_REUSE_CAMERA_DISTANCE_SQR = 1.35 * 1.35;
+    private static final int SECONDARY_BOUNCE_SCAN_RADIUS = 3;
     private static final double MAX_RECEIVER_DISTANCE = 4.75;
-    private static final double MAX_SECONDARY_BOUNCE_DISTANCE = 3.20;
+    private static final double MAX_SECONDARY_BOUNCE_DISTANCE = 5.25;
     private static final double FACE_EPSILON = 0.006;
     private static final double FACE_INSET = 0.055;
+    private static final double DIRECT_RECEIVER_GAIN = 1.36;
+    private static final double MATERIAL_RECEIVER_GAIN = 1.22;
+    private static final double SECONDARY_BOUNCE_GAIN = 2.65;
     private static boolean loggedSubmission;
     private static boolean loggedEmptySubmission;
     private static String lastLoggedSubmissionSourceIds = "";
+    private static DrawableGizmoPrimitives cachedPrimitives;
+    private static SpillStats cachedStats;
+    private static Vec3 cachedCameraPosition;
+    private static long cachedGameTime = Long.MIN_VALUE;
+    private static boolean cachedValidationMode;
 
     private WorldSpaceEmissiveSpillSubmitter() {
     }
@@ -64,8 +80,22 @@ public final class WorldSpaceEmissiveSpillSubmitter {
             return;
         }
 
-        DrawableGizmoPrimitives primitives = new DrawableGizmoPrimitives();
-        SpillStats stats = submitNearbySpill(level, camera, primitives);
+        boolean validationMode = visualProofWorkloadActive();
+        DrawableGizmoPrimitives primitives;
+        SpillStats stats;
+        long gameTime = level.getGameTime();
+        if (canReuseCachedSpill(camera.pos, gameTime, validationMode)) {
+            primitives = cachedPrimitives;
+            stats = cachedStats;
+        } else {
+            primitives = new DrawableGizmoPrimitives();
+            stats = submitNearbySpill(level, camera, primitives, validationMode);
+            cachedPrimitives = primitives;
+            cachedStats = stats;
+            cachedCameraPosition = camera.pos;
+            cachedGameTime = gameTime;
+            cachedValidationMode = validationMode;
+        }
         if (stats.receiverQuadCount() + stats.secondaryBounceQuadCount() <= 0) {
             if (!loggedEmptySubmission) {
                 loggedEmptySubmission = true;
@@ -91,13 +121,12 @@ public final class WorldSpaceEmissiveSpillSubmitter {
             lastLoggedSubmissionSourceIds = stats.sourceIds();
             Lucerna.LOGGER.info(
                     "Lucerna world-space emissive spill submitted: worldSpaceEmissiveSpill=true cleanGameplayComposite=true "
-                            + "experimentalVisualStack={} proofMarker=false screenSpaceBlobComposite=false sourceCount={} "
+                            + "experimentalVisualStack={} previewOnly=true screenSpaceBlobComposite=false sourceCount={} "
                             + "receiverQuadCount={} secondaryColoredBounce=true secondaryBounceQuadCount={} coloredPanelReceiverCount={} "
                             + "coloredBounce={} hueShiftedBounce={} coloredBounceSamples={} coloredBounceHits={} "
-                            + "colored_bounce_marker=\"material-tint-world-space-secondary-bounce\" "
                             + "emissiveSourceBlocks=\"{}\" blockMaterialSceneData=true faceNormalData=true "
                             + "sourceColorMaterialData=true sourceReceiverDistanceFalloff=true depthAwareSubmitNode=true "
-                            + "worldSpaceBlockFaceQuads=true materialTintBounce=true sourcePanelReceiverBounce=true "
+                            + "worldSpaceBlockFaceQuads=true materialTintReceiverQuads=true materialTintBounce=true sourcePanelReceiverBounce=true "
                             + "realDepthTexture=false realPathTracedGi=false boundary=world-space-emissive-plus-material-colored-secondary-bounce-preview.",
                     ProofVisualMode.experimentalVisualStackAllowed(),
                     stats.sourceCount(),
@@ -113,20 +142,25 @@ public final class WorldSpaceEmissiveSpillSubmitter {
         }
     }
 
-    private static SpillStats submitNearbySpill(ClientLevel level, CameraRenderState camera, DrawableGizmoPrimitives primitives) {
+    private static SpillStats submitNearbySpill(ClientLevel level, CameraRenderState camera, DrawableGizmoPrimitives primitives, boolean validationMode) {
         Vec3 forward = cameraForward(camera);
         Vec3 scanCenter = camera.pos.add(forward.scale(SOURCE_SCAN_FORWARD_OFFSET));
         BlockPos scanCenterBlock = BlockPos.containing(scanCenter.x, scanCenter.y, scanCenter.z);
-        int minY = Math.max(level.getMinY(), scanCenterBlock.getY() - SOURCE_SCAN_Y_RADIUS);
-        int maxY = Math.min(level.getMaxY() - 1, scanCenterBlock.getY() + SOURCE_SCAN_Y_RADIUS);
-        List<SourceCandidate> sources = new ArrayList<>(MAX_SOURCE_BLOCKS);
+        int sourceScanRadius = validationMode ? SOURCE_SCAN_RADIUS : GAMEPLAY_SOURCE_SCAN_RADIUS;
+        int sourceScanYRadius = validationMode ? SOURCE_SCAN_Y_RADIUS : GAMEPLAY_SOURCE_SCAN_Y_RADIUS;
+        int minY = Math.max(level.getMinY(), scanCenterBlock.getY() - sourceScanYRadius);
+        int maxY = Math.min(level.getMaxY() - 1, scanCenterBlock.getY() + sourceScanYRadius);
+        int maxSourceBlocks = validationMode ? MAX_SOURCE_BLOCKS : GAMEPLAY_MAX_SOURCE_BLOCKS;
+        int maxReceiverQuads = validationMode ? MAX_RECEIVER_QUADS : GAMEPLAY_MAX_RECEIVER_QUADS;
+        int maxSecondaryBounceQuads = validationMode ? MAX_SECONDARY_BOUNCE_QUADS : GAMEPLAY_MAX_SECONDARY_BOUNCE_QUADS;
+        List<SourceCandidate> sources = new ArrayList<>(maxSourceBlocks);
         Map<String, Integer> sourceCountsByBlock = new HashMap<>();
         StringBuilder sourceIds = new StringBuilder();
 
         sourceSearch:
         for (int y = minY; y <= maxY; y++) {
-            for (int z = scanCenterBlock.getZ() - SOURCE_SCAN_RADIUS; z <= scanCenterBlock.getZ() + SOURCE_SCAN_RADIUS; z++) {
-                for (int x = scanCenterBlock.getX() - SOURCE_SCAN_RADIUS; x <= scanCenterBlock.getX() + SOURCE_SCAN_RADIUS; x++) {
+            for (int z = scanCenterBlock.getZ() - sourceScanRadius; z <= scanCenterBlock.getZ() + sourceScanRadius; z++) {
+                for (int x = scanCenterBlock.getX() - sourceScanRadius; x <= scanCenterBlock.getX() + sourceScanRadius; x++) {
                     BlockPos sourcePos = new BlockPos(x, y, z);
                     BlockState sourceState = level.getBlockState(sourcePos);
                     SourceLight sourceLight = sourceLight(sourceState);
@@ -148,7 +182,7 @@ public final class WorldSpaceEmissiveSpillSubmitter {
                     sourceCountsByBlock.put(sourceBlockId, sameBlockCount + 1);
                     sources.add(new SourceCandidate(sourcePos, sourceCenter, sourceLight));
                     appendSourceId(sourceIds, sourceBlockId);
-                    if (sources.size() >= MAX_SOURCE_BLOCKS) {
+                    if (sources.size() >= maxSourceBlocks) {
                         break sourceSearch;
                     }
                 }
@@ -160,16 +194,16 @@ public final class WorldSpaceEmissiveSpillSubmitter {
         int coloredPanelReceiverCount = 0;
         int perSourceBudget = sources.isEmpty()
                 ? 0
-                : Math.max(8, MAX_RECEIVER_QUADS / sources.size());
+                : Math.max(validationMode ? 48 : 14, maxReceiverQuads / sources.size());
         int perSourceSecondaryBudget = sources.isEmpty()
                 ? 0
-                : Math.max(5, MAX_SECONDARY_BOUNCE_QUADS / sources.size());
+                : Math.max(validationMode ? 32 : 10, maxSecondaryBounceQuads / sources.size());
         for (SourceCandidate source : sources) {
-            int remainingBudget = MAX_RECEIVER_QUADS - receiverQuadCount;
+            int remainingBudget = maxReceiverQuads - receiverQuadCount;
             if (remainingBudget <= 0) {
                 break;
             }
-            int remainingSecondaryBudget = MAX_SECONDARY_BOUNCE_QUADS - secondaryBounceQuadCount;
+            int remainingSecondaryBudget = maxSecondaryBounceQuads - secondaryBounceQuadCount;
             SourceSpillStats sourceStats = submitReceiversForSource(
                     level,
                     primitives,
@@ -187,11 +221,43 @@ public final class WorldSpaceEmissiveSpillSubmitter {
 
         return new SpillStats(
                 sources.size(),
-                Math.min(receiverQuadCount, MAX_RECEIVER_QUADS),
-                Math.min(secondaryBounceQuadCount, MAX_SECONDARY_BOUNCE_QUADS),
+                Math.min(receiverQuadCount, maxReceiverQuads),
+                Math.min(secondaryBounceQuadCount, maxSecondaryBounceQuads),
                 coloredPanelReceiverCount,
                 sourceIds.toString()
         );
+    }
+
+    private static boolean canReuseCachedSpill(Vec3 cameraPosition, long gameTime, boolean validationMode) {
+        if (cachedPrimitives == null || cachedStats == null || cachedCameraPosition == null) {
+            return false;
+        }
+        if (cachedValidationMode != validationMode) {
+            return false;
+        }
+        int refreshTicks = validationMode ? VALIDATION_REFRESH_TICKS : GAMEPLAY_REFRESH_TICKS;
+        if (gameTime - cachedGameTime > refreshTicks) {
+            return false;
+        }
+        return cameraPosition.distanceToSqr(cachedCameraPosition) <= CACHE_REUSE_CAMERA_DISTANCE_SQR;
+    }
+
+    private static boolean visualProofWorkloadActive() {
+        Map<String, String> env = System.getenv();
+        return envTruthy(env.get("LUCERNA_CONTROLLER_VALIDATION"))
+                || envTruthy(env.get("LUCERNA_VALIDATION_VISUALS"))
+                || envTruthy(env.get("LUCERNA_CONTROLLER_SCREENSHOT_REQUEST"));
+    }
+
+    private static boolean envTruthy(String value) {
+        if (value == null) {
+            return false;
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        return normalized.equals("1")
+                || normalized.equals("true")
+                || normalized.equals("yes")
+                || normalized.equals("on");
     }
 
     private static SourceSpillStats submitReceiversForSource(
@@ -226,24 +292,31 @@ public final class WorldSpaceEmissiveSpillSubmitter {
                     if (!isReceiverSurface(receiverState)) {
                         continue;
                     }
-
                     Vec3 receiverCenter = Vec3.atCenterOf(receiverPos);
                     double distance = receiverCenter.distanceTo(sourceCenter);
                     if (distance <= 0.75 || distance > MAX_RECEIVER_DISTANCE) {
                         continue;
                     }
 
+                    MaterialTint materialTint = materialTint(receiverState);
                     FaceHit faceHit = bestReceiverFace(level, receiverPos, receiverCenter, sourceCenter, sourcePos, cameraPosition);
+                    if (faceHit == null && materialTint != null) {
+                        faceHit = bestMaterialReceiverFace(receiverCenter, sourceCenter, cameraPosition);
+                    }
                     if (faceHit == null) {
                         continue;
                     }
                     double falloff = Math.max(0.0, 1.0 - (distance / MAX_RECEIVER_DISTANCE));
-                    double strength = sourceLight.intensity() * faceHit.weight() * Math.sqrt(falloff);
-                    if (strength < 0.135) {
+                    double strength = sourceLight.intensity()
+                            * faceHit.weight()
+                            * Math.sqrt(falloff)
+                            * DIRECT_RECEIVER_GAIN
+                            * (materialTint == null ? 1.0 : MATERIAL_RECEIVER_GAIN);
+                    if (strength < 0.090) {
                         continue;
                     }
 
-                    double faceInset = Math.max(0.12, Math.min(0.34, 0.34 - strength * 0.18));
+                    double faceInset = Math.max(0.065, Math.min(0.26, 0.24 - strength * 0.10));
                     primitives.addQuad(
                             faceCorner(receiverPos, faceHit.face(), 0, faceInset),
                             faceCorner(receiverPos, faceHit.face(), 1, faceInset),
@@ -251,9 +324,21 @@ public final class WorldSpaceEmissiveSpillSubmitter {
                             faceCorner(receiverPos, faceHit.face(), 3, faceInset),
                             sourceLight.argb(strength)
                     );
-                    MaterialTint materialTint = materialTint(receiverState);
+                    int submittedForReceiver = 1;
                     if (materialTint != null) {
                         coloredPanelReceivers++;
+                        double materialFaceStrength = Math.min(0.95, strength * materialTint.reflectance() * 0.92 + 0.075);
+                        if (submitted + submittedForReceiver < maxSubmitted && materialFaceStrength >= 0.105) {
+                            double materialFaceInset = Math.max(0.055, Math.min(0.22, 0.19 - materialFaceStrength * 0.07));
+                            primitives.addQuad(
+                                    raisedFaceCorner(receiverPos, faceHit.face(), 0, materialFaceInset),
+                                    raisedFaceCorner(receiverPos, faceHit.face(), 1, materialFaceInset),
+                                    raisedFaceCorner(receiverPos, faceHit.face(), 2, materialFaceInset),
+                                    raisedFaceCorner(receiverPos, faceHit.face(), 3, materialFaceInset),
+                                    materialTint.receiverLight(materialFaceStrength).argb(materialFaceStrength)
+                            );
+                            submittedForReceiver++;
+                        }
                         if (secondarySubmitted < maxSecondarySubmitted) {
                             secondarySubmitted += submitSecondaryBounceReceivers(
                                     level,
@@ -267,7 +352,7 @@ public final class WorldSpaceEmissiveSpillSubmitter {
                             );
                         }
                     }
-                    submitted++;
+                    submitted += submittedForReceiver;
                     if (submitted >= maxSubmitted) {
                         break receiverSearch;
                     }
@@ -323,16 +408,22 @@ public final class WorldSpaceEmissiveSpillSubmitter {
                             cameraPosition
                     );
                     if (faceHit == null) {
+                        faceHit = bestMaterialReceiverFace(receiverCenter, bounceSourceCenter, cameraPosition);
+                    }
+                    if (faceHit == null) {
                         continue;
                     }
 
                     double falloff = Math.max(0.0, 1.0 - (distance / MAX_SECONDARY_BOUNCE_DISTANCE));
-                    double strength = bounceLight.intensity() * faceHit.weight() * Math.sqrt(falloff);
-                    if (strength < 0.030) {
+                    double strength = bounceLight.intensity()
+                            * faceHit.weight()
+                            * Math.sqrt(falloff)
+                            * SECONDARY_BOUNCE_GAIN;
+                    if (strength < 0.025) {
                         continue;
                     }
 
-                    double faceInset = Math.max(0.14, Math.min(0.38, 0.36 - strength * 0.28));
+                    double faceInset = Math.max(0.045, Math.min(0.24, 0.23 - strength * 0.13));
                     primitives.addQuad(
                             faceCorner(receiverPos, faceHit.face(), 0, faceInset),
                             faceCorner(receiverPos, faceHit.face(), 1, faceInset),
@@ -439,6 +530,41 @@ public final class WorldSpaceEmissiveSpillSubmitter {
             }
             if (best == null || weight > best.weight()) {
                 best = new FaceHit(face, weight);
+            }
+        }
+        return best;
+    }
+
+    private static FaceHit bestMaterialReceiverFace(
+            Vec3 receiverCenter,
+            Vec3 sourceCenter,
+            Vec3 cameraPosition
+    ) {
+        Vec3 toSource = sourceCenter.subtract(receiverCenter);
+        Vec3 toSourceUnit = toSource.lengthSqr() <= 0.0001
+                ? new Vec3(0.0, 0.0, 0.0)
+                : toSource.normalize();
+        Vec3 toCamera = cameraPosition.subtract(receiverCenter);
+        Vec3 toCameraUnit = toCamera.lengthSqr() <= 0.0001
+                ? new Vec3(0.0, 0.0, 0.0)
+                : toCamera.normalize();
+        FaceHit best = null;
+        for (Direction face : Direction.values()) {
+            Vec3 normal = faceNormal(face);
+            double cameraVisibility = normal.dot(toCameraUnit);
+            if (cameraVisibility < -0.22) {
+                continue;
+            }
+            double sourceFacing = Math.max(0.0, normal.dot(toSourceUnit));
+            double cameraFacing = Math.max(0.0, cameraVisibility);
+            double sideCatch = Math.max(0.0, 1.0 - Math.abs(normal.dot(toSourceUnit))) * 0.34;
+            double weight = Math.max(sourceFacing, sideCatch) * 0.72 + cameraFacing * 0.28;
+            if (weight < 0.10) {
+                continue;
+            }
+            FaceHit candidate = new FaceHit(face, Math.max(0.22, Math.min(0.88, weight)));
+            if (best == null || candidate.weight() > best.weight()) {
+                best = candidate;
             }
         }
         return best;
@@ -554,6 +680,10 @@ public final class WorldSpaceEmissiveSpillSubmitter {
         };
     }
 
+    private static Vec3 raisedFaceCorner(BlockPos pos, Direction face, int corner, double inset) {
+        return faceCorner(pos, face, corner, inset).add(faceNormal(face).scale(FACE_EPSILON * 1.6));
+    }
+
     private static void appendSourceId(StringBuilder builder, String blockId) {
         if (builder.indexOf(blockId) >= 0) {
             return;
@@ -581,7 +711,7 @@ public final class WorldSpaceEmissiveSpillSubmitter {
 
     private record SourceLight(String blockId, int red, int green, int blue, double intensity) {
         int argb(double strength) {
-            int alpha = clampInt((int) Math.round(20.0 + strength * 86.0), 14, 96);
+            int alpha = clampInt((int) Math.round(30.0 + strength * 128.0), 18, 148);
             return (alpha << 24)
                     | (clampInt(this.red, 0, 255) << 16)
                     | (clampInt(this.green, 0, 255) << 8)
@@ -590,9 +720,14 @@ public final class WorldSpaceEmissiveSpillSubmitter {
     }
 
     private record MaterialTint(String blockId, int red, int green, int blue, double reflectance) {
+        SourceLight receiverLight(double incidentStrength) {
+            double intensity = Math.max(0.0, Math.min(0.88, incidentStrength * this.reflectance * 1.18));
+            return new SourceLight(this.blockId, this.red, this.green, this.blue, intensity);
+        }
+
         SourceLight bounceLight(SourceLight sourceLight, double incidentStrength) {
             double sourceEnergy = sourceLight == null ? 0.45 : sourceLight.intensity();
-            double intensity = Math.max(0.0, Math.min(0.42, incidentStrength * this.reflectance * sourceEnergy));
+            double intensity = Math.max(0.0, Math.min(0.82, incidentStrength * this.reflectance * sourceEnergy * 1.90));
             return new SourceLight(this.blockId, this.red, this.green, this.blue, intensity);
         }
     }

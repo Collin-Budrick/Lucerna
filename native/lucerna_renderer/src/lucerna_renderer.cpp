@@ -135,10 +135,10 @@ constexpr double kRound9ConservativeViewDotThreshold = -0.18;
 constexpr double kRound9ConservativeVerticalSectionLimit = 8.0;
 constexpr float kDirectCpuCelestialScale = 0.02F;
 constexpr float kDirectCpuMinimumSurfaceRadius = 8.0F;
-constexpr float kDirectCpuEmissiveSurfaceScale = 118.0F;
-constexpr float kDirectCpuEmissiveScreenScale = 46.0F;
-constexpr float kDirectCpuEmissiveAlphaFloor = 0.34F;
-constexpr float kDirectCpuEmissiveAlphaGain = 0.66F;
+constexpr float kDirectCpuEmissiveSurfaceScale = 176.0F;
+constexpr float kDirectCpuEmissiveScreenScale = 58.0F;
+constexpr float kDirectCpuEmissiveAlphaFloor = 0.42F;
+constexpr float kDirectCpuEmissiveAlphaGain = 0.82F;
 constexpr std::size_t kLightingPayloadCategoryDirect = 0;
 constexpr std::size_t kLightingPayloadCategoryGi = 1;
 constexpr std::size_t kLightingPayloadCategoryPost = 2;
@@ -565,6 +565,15 @@ std::int32_t strided_int_or_zero(
 void mix_checksum(std::uint64_t& checksum, std::uint64_t value) {
     checksum ^= value;
     checksum *= 1099511628211ULL;
+}
+
+std::uint64_t java_positive_checksum(std::uint64_t checksum) {
+    constexpr std::uint64_t kJavaPositiveLongMax = 9223372036854775807ULL;
+    if (checksum == 0) {
+        return 0;
+    }
+    const std::uint64_t java_safe_checksum = checksum & kJavaPositiveLongMax;
+    return java_safe_checksum == 0 ? 1 : java_safe_checksum;
 }
 
 float deterministic_unit_interval(std::uint64_t seed) {
@@ -1086,12 +1095,12 @@ ConservativeDirectionalShadowMapResult build_conservative_directional_shadow_map
         }
         const float shadow_strength = world_space_receiver_coupled
                 ? std::clamp(
-                        (0.08F + std::min(depth_delta, 1.75F) * 0.24F)
-                                * (0.34F + receiver_confidence * 0.44F)
-                                * (0.74F + edge_confidence * 0.20F)
-                                * (0.72F + receiver_material_coupling * 0.28F),
+                        (0.12F + std::min(depth_delta, 2.25F) * 0.32F)
+                                * (0.42F + receiver_confidence * 0.50F)
+                                * (0.78F + edge_confidence * 0.24F)
+                                * (0.78F + receiver_material_coupling * 0.34F),
                         0.0F,
-                        0.68F)
+                        0.86F)
                 : 0.0F;
         receiver_confidence_sum += receiver_confidence;
         edge_confidence_sum += edge_confidence;
@@ -1104,12 +1113,12 @@ ConservativeDirectionalShadowMapResult build_conservative_directional_shadow_map
 
         const auto splat_radius = static_cast<std::int32_t>(shadow_strength > 0.0F
                 ? std::clamp(
-                        0.85F + receiver_confidence * 0.95F
-                                + std::min(std::max(depth_delta, 0.0F), 1.5F) * 0.18F
+                        1.05F + receiver_confidence * 1.10F
+                                + std::min(std::max(depth_delta, 0.0F), 1.8F) * 0.24F
                                 + std::clamp(depth_stddev, 0.0F, 0.75F) * 0.32F,
                         1.0F,
                         std::min(
-                                2.0F,
+                                3.0F,
                                 static_cast<float>(kNativeDirectionalShadowMaskMaxPenumbraRadius)))
                 : 0.0F);
         const float radius_scale = static_cast<float>(std::max(splat_radius, 1));
@@ -1146,13 +1155,13 @@ ConservativeDirectionalShadowMapResult build_conservative_directional_shadow_map
                                 0.0F,
                                 1.0F)
                         : 0.0F;
-                const float red = std::clamp(shadow_strength * soft_weight, 0.0F, 1.0F);
+                const float red = std::clamp(shadow_strength * soft_weight * 1.18F, 0.0F, 1.0F);
                 const float green = receiver_channel * std::clamp(0.22F + soft_weight * 0.64F, 0.0F, 1.0F);
                 const float blue = edge_channel * std::clamp(0.18F + soft_weight * 0.68F, 0.0F, 1.0F);
                 const float alpha = std::clamp(
-                        std::max(red, green * 0.46F)
-                                * (0.58F + receiver_confidence * 0.30F)
-                                * (0.72F + receiver_depth_coupling * 0.28F),
+                        std::max(red, green * 0.52F)
+                                * (0.66F + receiver_confidence * 0.34F)
+                                * (0.76F + receiver_depth_coupling * 0.34F),
                         0.0F,
                         1.0F);
                 const auto pixel_index = static_cast<std::size_t>(
@@ -4430,18 +4439,26 @@ std::vector<std::uint8_t> Renderer::diffuse_gi_cpu_output_preview_rgba8() {
         const auto pixel_y = pixel / preview_width;
         const float u = static_cast<float>(pixel_x) * inverse_width;
         const float v = static_cast<float>(pixel_y) * inverse_height;
-        const float checker = 0.82F
-                + static_cast<float>((pixel_x + (pixel_y * 5) + execution.last_dispatch_generation) % 17) * 0.010F;
-        const float left_panel = 1.0F - std::clamp(std::abs(u - 0.18F) / 0.26F, 0.0F, 1.0F);
-        const float center_panel = 1.0F - std::clamp(std::abs(u - 0.50F) / 0.24F, 0.0F, 1.0F);
-        const float right_panel = 1.0F - std::clamp(std::abs(u - 0.82F) / 0.26F, 0.0F, 1.0F);
+        const float phase = static_cast<float>(execution.last_dispatch_generation % 97ULL) / 96.0F;
+        const float left_lobe = smooth_step(0.0F, 1.0F, 1.0F - std::clamp(
+                std::sqrt(((u - 0.28F) * (u - 0.28F)) + ((v - 0.56F) * (v - 0.56F))) / 0.66F,
+                0.0F,
+                1.0F));
+        const float center_lobe = smooth_step(0.0F, 1.0F, 1.0F - std::clamp(
+                std::sqrt(((u - 0.52F) * (u - 0.52F)) + ((v - 0.50F) * (v - 0.50F))) / 0.72F,
+                0.0F,
+                1.0F));
+        const float right_lobe = smooth_step(0.0F, 1.0F, 1.0F - std::clamp(
+                std::sqrt(((u - 0.74F) * (u - 0.74F)) + ((v - 0.58F) * (v - 0.58F))) / 0.68F,
+                0.0F,
+                1.0F));
         const float lower_surface = 1.0F - smooth_step(0.30F, 0.88F, v);
         const float wall_surface = smooth_step(0.12F, 0.34F, v) * (1.0F - smooth_step(0.78F, 0.98F, v));
         const float spill_falloff = std::clamp(0.42F + lower_surface * 0.36F + wall_surface * 0.34F, 0.0F, 1.35F);
-        const float colored_energy = base_signal * checker * spill_falloff * 72.0F;
-        const float red = std::min(255.0F, colored_energy * (0.025F + right_panel * 1.95F + center_panel * 0.035F));
-        const float green = std::min(255.0F, colored_energy * (0.025F + center_panel * 2.05F + right_panel * 0.025F));
-        const float blue = std::min(255.0F, colored_energy * (0.030F + left_panel * 2.00F + center_panel * 0.020F));
+        const float colored_energy = base_signal * (0.92F + phase * 0.05F) * spill_falloff * 72.0F;
+        const float red = std::min(255.0F, colored_energy * (0.080F + right_lobe * 1.08F + center_lobe * 0.16F));
+        const float green = std::min(255.0F, colored_energy * (0.080F + center_lobe * 1.12F + right_lobe * 0.12F));
+        const float blue = std::min(255.0F, colored_energy * (0.085F + left_lobe * 1.04F + center_lobe * 0.10F));
         rgba8[offset] = static_cast<std::uint8_t>(std::clamp(red, 0.0F, 255.0F));
         rgba8[offset + 1] = static_cast<std::uint8_t>(std::clamp(green, 0.0F, 255.0F));
         rgba8[offset + 2] = static_cast<std::uint8_t>(std::clamp(blue, 0.0F, 255.0F));
@@ -4720,6 +4737,15 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
     if (pixel_count == 0 || expected_components != raw_rgba8.size()) {
         return false;
     }
+    const bool scene_linked_raw_gi_input =
+            gi_execution.last_cpu_output_generated
+            && gi_execution.last_scene_inputs_recorded
+            && gi_execution.last_cpu_output_pixel_count == pixel_count
+            && (gi_execution.last_cpu_output_nonzero
+                    || gi_execution.last_cpu_output_energy > 0.0F
+                    || gi_execution.last_output_write_energy > 0.0F
+                    || gi_execution.last_cpu_output_checksum != 0
+                    || gi_execution.last_visible_signal_checksum != 0);
     denoise_execution.last_shader_denoise_raw_diffuse_gi_input_ready = true;
     denoise_execution.last_shader_denoise_direct_light_validation_input_active = false;
     denoise_execution.last_shader_denoise_physical_gi_input_evidence = false;
@@ -4739,6 +4765,8 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
     };
 
     std::uint64_t checksum = 1469598103934665603ULL;
+    std::uint64_t raw_rgb_energy = 0;
+    std::uint64_t denoised_rgb_energy = 0;
     std::uint64_t changed_pixels = 0;
     std::uint64_t total_abs_delta = 0;
     std::uint64_t edge_preserved_neighbors = 0;
@@ -4828,6 +4856,7 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
             for (std::size_t channel = 0; channel < 3; channel++) {
                 const auto smoothed = channel_sum[channel] / weight_sum;
                 const auto raw = static_cast<std::uint32_t>(raw_rgba8[offset + channel]);
+                raw_rgb_energy += raw;
                 const auto blended = ((raw * 2U) + (smoothed * 3U) + 2U) / 5U;
                 const float channel_weight = channel == 0 ? 0.82F : (channel == 1 ? 1.0F : 0.58F);
                 const auto lifted = static_cast<std::uint32_t>(std::round(std::clamp(
@@ -4836,6 +4865,7 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
                         255.0F)));
                 const auto clamped = static_cast<std::uint8_t>(std::min<std::uint32_t>(lifted, 255U));
                 denoised_diffuse_gi_cpu_output_rgba8_[offset + channel] = clamped;
+                denoised_rgb_energy += clamped;
                 const auto delta = raw > clamped ? raw - clamped : clamped - raw;
                 total_abs_delta += delta;
                 pixel_changed = pixel_changed || delta != 0;
@@ -4932,11 +4962,38 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
     const auto temporal_flicker_score = has_previous_cpu_history
             ? std::min<std::uint64_t>(20000ULL, temporal_unstable_ratio + temporal_delta_score)
             : 0;
+    const auto telemetry_checksum = java_positive_checksum(checksum);
+    const auto telemetry_previous_denoised_checksum = java_positive_checksum(previous_denoised_checksum);
+    const bool denoised_payload_has_signal = telemetry_checksum != 0 && denoised_rgb_energy > 0;
+    const bool raw_gi_has_scene_linked_signal = scene_linked_raw_gi_input && raw_rgb_energy > 0;
+    if (!raw_gi_has_scene_linked_signal || !denoised_payload_has_signal) {
+        denoised_diffuse_gi_cpu_output_rgba8_.clear();
+        denoise_execution.last_shader_denoise_raw_diffuse_gi_input_ready = raw_gi_has_scene_linked_signal;
+        denoise_execution.last_raw_gi_input_ready = raw_gi_has_scene_linked_signal;
+        denoise_execution.last_cpu_denoised_readback_ready = false;
+        denoise_execution.last_cpu_denoised_source_present = false;
+        denoise_execution.last_metadata_only_path = true;
+        denoise_execution.last_cpu_fallback_quality_metrics = false;
+        denoise_execution.last_denoised_output_marker = raw_gi_has_scene_linked_signal
+                ? "denoised_diffuse_gi_cpu_rgba8_rejected_zero_output_signal"
+                : "denoised_diffuse_gi_cpu_rgba8_rejected_raw_gi_not_scene_linked_or_zero_signal";
+        denoise_execution.last_cpu_readback_candidate_payload_marker =
+                "cpu_readback_candidate_payload=missing;raw_gi_scene_linked_signal_required=true";
+        denoise_execution.last_shader_denoise_output_image_blocker = raw_gi_has_scene_linked_signal
+                ? "cpu-denoised-output-energy-or-checksum-zero"
+                : "raw-diffuse-gi-scene-linked-energy-or-checksum-missing";
+        denoise_execution.last_shader_denoise_output_blocker_reason =
+                denoise_execution.last_shader_denoise_output_image_blocker;
+        denoise_execution.last_readiness_reason = raw_gi_has_scene_linked_signal
+                ? "native CPU denoised output rejected because output checksum or energy is zero"
+                : "native CPU denoise rejected because raw diffuse GI input is not scene-linked and nonzero";
+        return false;
+    }
 
     denoise_execution.last_denoised_output_pixels = pixel_count;
-    denoise_execution.last_previous_denoised_output_checksum = previous_denoised_checksum;
-    denoise_execution.last_current_denoised_output_checksum = checksum;
-    denoise_execution.last_denoised_output_checksum = checksum;
+    denoise_execution.last_previous_denoised_output_checksum = telemetry_previous_denoised_checksum;
+    denoise_execution.last_current_denoised_output_checksum = telemetry_checksum;
+    denoise_execution.last_denoised_output_checksum = telemetry_checksum;
     denoise_execution.last_denoised_output_changed_pixels = changed_pixels;
     denoise_execution.last_denoised_output_mean_abs_delta =
             pixel_count == 0 ? 0 : total_abs_delta / pixel_count;
@@ -4997,19 +5054,35 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
     denoise_execution.last_shader_denoise_output_image_candidate_pixels = pixel_count;
     denoise_execution.last_shader_denoise_output_image_candidate_bytes =
             denoised_diffuse_gi_cpu_output_rgba8_.size();
-    denoise_execution.last_shader_denoise_output_image_candidate_checksum = checksum;
+    denoise_execution.last_shader_denoise_output_image_candidate_checksum = telemetry_checksum;
     denoise_execution.last_cpu_readback_candidate_payload_width = width;
     denoise_execution.last_cpu_readback_candidate_payload_height = height;
     denoise_execution.last_cpu_readback_candidate_payload_pixels = pixel_count;
     denoise_execution.last_cpu_readback_candidate_payload_bytes =
             denoised_diffuse_gi_cpu_output_rgba8_.size();
-    denoise_execution.last_cpu_readback_candidate_payload_checksum = checksum;
+    denoise_execution.last_cpu_readback_candidate_payload_checksum = telemetry_checksum;
     denoise_execution.last_cpu_readback_candidate_payload_ready =
             denoise_execution.last_shader_denoise_output_image_candidate_concrete;
     denoise_execution.last_cpu_readback_candidate_payload_cpu_staged = true;
     denoise_execution.last_cpu_readback_candidate_payload_non_gpu = true;
     denoise_execution.last_shader_denoise_output_attempt_generation =
             denoise_execution.last_dispatch_generation;
+    denoise_execution.last_accepted = true;
+    denoise_execution.last_ready = true;
+    denoise_execution.last_denoised_output_intent = true;
+    denoise_execution.last_shader_denoise_dispatch_intent =
+            denoise_execution.last_shader_denoise_dispatch_intent
+            || denoise_execution.last_denoised_output_intent;
+    denoise_execution.last_shader_denoise_dispatch_prepared =
+            denoise_execution.last_shader_denoise_dispatch_prepared
+            || (denoise_execution.last_shader_denoise_dispatch_intent
+                    && denoise_execution.last_raw_gi_input_ready
+                    && denoise_execution.last_shader_denoise_raw_diffuse_gi_input_ready
+                    && denoise_execution.last_cpu_denoised_readback_ready);
+    denoise_execution.last_shader_denoise_input_ready =
+            denoise_execution.last_shader_denoise_input_ready
+            || (denoise_execution.last_raw_gi_input_ready
+                    && denoise_execution.last_shader_denoise_raw_diffuse_gi_input_ready);
     denoise_execution.last_public_mojang_shader_visual_output_generation = 0;
     denoise_execution.last_public_mojang_shader_visual_output_attempted = false;
     denoise_execution.last_public_mojang_shader_visual_output_submitted = false;
@@ -5022,15 +5095,15 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
     denoise_execution.last_shader_denoise_output_prerequisites_ready = false;
     denoise_execution.last_shader_denoise_output_missing_prerequisite_count = 4;
     denoise_execution.last_shader_denoise_handoff_marker =
-            "cpu_denoised_readback_ready_for_public_mojang_material_handoff";
+            "cpu_denoised_readback_ready_for_public_mojang_material_handoff_non_gpu";
     denoise_execution.last_shader_denoise_output_readiness_marker =
-            "shader_output_image_missing_material_missing_cpu_readback_ready";
+            "native_cpu_readback_denoised_payload_ready_shader_output_image_still_missing";
     denoise_execution.last_shader_denoise_output_image_candidate_marker =
             "cpu_staged_shader_output_image_candidate_ready_non_gpu_non_real";
     denoise_execution.last_shader_denoise_output_candidate_source_marker =
             "shader_output_candidate_source=native_cpu_readback_rgba8";
     denoise_execution.last_cpu_readback_candidate_payload_marker =
-            "cpu_readback_candidate_payload=ready;source=native_cpu_denoised_rgba8;gpu_shader_generated=false";
+            "cpu_readback_candidate_payload=ready;source=native_cpu_denoised_rgba8;scene_linked_raw_gi=true;nonzero_checksum=true;nonzero_energy=true;gpu_shader_generated=false";
     denoise_execution.last_public_mojang_shader_visual_output_marker =
             "public_mojang_shader_visual_output=not_submitted_by_native;java_public_mojang_pass_proof_required";
     denoise_execution.last_real_shader_generated_visual_output_marker =
@@ -5044,7 +5117,7 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
     denoise_execution.last_shader_denoise_output_blocker_reason =
             "real_shader_output_ready_false_cpu_staged_candidate_not_gpu_shader_generated";
     denoise_execution.last_shader_denoise_output_attempt_marker =
-            "shader_denoise_output_attempt=cpu_candidate_staged;dispatch_intent_recorded=true;shader_dispatch_executed=false";
+            "shader_denoise_output_attempt=cpu_readback_payload_accepted;dispatch_prepared_for_handoff=true;shader_dispatch_executed=false";
     denoise_execution.last_shader_denoise_no_overclaim_marker =
             "shader_denoise_no_overclaim=true;shader_generated_output=false;real_shader_output_ready=false";
     denoise_execution.last_shader_denoise_generation_marker =
@@ -5077,7 +5150,7 @@ bool Renderer::generate_denoised_diffuse_gi_cpu_output_rgba8() {
                 "ghosting_risk_medium_cpu_history_mixed";
     }
     denoise_execution.last_quality_marker =
-            "cpu_fallback_quality_metrics=true;real_shader_output=false;roughness_noise_reduction_estimate=neighbor_luma_delta";
+            "cpu_fallback_quality_metrics=true;real_shader_output=false;native_compute_denoise=false;gpu_traversal=false;roughness_noise_reduction_estimate=neighbor_luma_delta";
     return true;
 }
 
@@ -7629,10 +7702,10 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
                     continue;
                 }
 
-                const float material_lift = 0.84F
-                        + material_response * 0.42F
-                        + material_opacity * 0.34F
-                        + emissive_voxel_ratio * 0.18F;
+                const float material_lift = 1.02F
+                        + material_response * 0.58F
+                        + material_opacity * 0.42F
+                        + emissive_voxel_ratio * 0.34F;
                 const float spill_rgb_energy = light_energy
                         * spill_response
                         * material_lift
@@ -7653,12 +7726,12 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
                         kDirectEmissiveLightDataStride,
                         kDirectEmissiveColorBlueOffset) * spill_rgb_energy;
                 const float lobe_radius = std::clamp(
-                        1.8F
-                                + falloff * 6.0F
-                                + std::min(surface_weight, 3.0F) * 0.75F
-                                + material_response * 1.8F,
-                        1.5F,
-                        8.0F);
+                        2.4F
+                                + falloff * 7.5F
+                                + std::min(surface_weight, 3.0F) * 0.90F
+                                + material_response * 2.4F,
+                        2.0F,
+                        10.0F);
                 const auto radius_pixels = static_cast<std::int32_t>(std::ceil(lobe_radius));
                 const auto min_x = std::max<std::int32_t>(0, center_x - radius_pixels);
                 const auto max_x = std::min<std::int32_t>(
@@ -7701,13 +7774,13 @@ std::uint64_t Renderer::track_direct_lighting_execution_scaffold() {
                                 0.72F,
                                 1.08F);
                         direct_lighting_cpu_output_[offset] = std::min(
-                                96.0F,
+                                144.0F,
                                 direct_lighting_cpu_output_[offset] + red * lobe * shape);
                         direct_lighting_cpu_output_[offset + 1] = std::min(
-                                96.0F,
+                                144.0F,
                                 direct_lighting_cpu_output_[offset + 1] + green * lobe * shape);
                         direct_lighting_cpu_output_[offset + 2] = std::min(
-                                96.0F,
+                                144.0F,
                                 direct_lighting_cpu_output_[offset + 2] + blue * lobe * shape);
                         const float alpha = kDirectCpuEmissiveAlphaFloor
                                 + spill_response
@@ -8326,10 +8399,10 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                             0.0F,
                             20.0F);
                     const float emissive_signal = std::clamp(
-                            (payload_emissive_energy * 0.018F)
-                                    + (static_cast<float>(emissive_count) * 2.10F),
+                            (payload_emissive_energy * 0.030F)
+                                    + (static_cast<float>(emissive_count) * 4.25F),
                             0.0F,
-                            40.0F);
+                            72.0F);
                     float emissive_red = 0.0F;
                     float emissive_green = 0.0F;
                     float emissive_blue = 0.0F;
@@ -8523,15 +8596,15 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                             0.0F,
                             6.0F);
                     const float preview_base = std::clamp(
-                            (normalized_signal * 0.12F)
-                                    + (execution.last_visible_signal_max_sample * 0.18F)
-                                    + (base_signal * 0.24F)
-                                    + (sky_signal * 0.34F)
-                                    + (cache_signal * 0.34F)
-                                    + (emissive_signal * 0.52F)
-                                    + (dirty_activity * 4.0F),
+                            (normalized_signal * 0.15F)
+                                    + (execution.last_visible_signal_max_sample * 0.22F)
+                                    + (base_signal * 0.30F)
+                                    + (sky_signal * 0.36F)
+                                    + (cache_signal * 0.40F)
+                                    + (emissive_signal * 0.74F)
+                                    + (dirty_activity * 5.5F),
                             0.01F,
-                            92.0F);
+                            128.0F);
                     const bool scene_driven_output = execution.last_scene_inputs_recorded
                             && (execution.last_ray_count != 0
                                     || execution.last_sample_count != 0
@@ -8602,7 +8675,13 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                             + (cache_response > 0.0F ? 0.10F : 0.0F),
                                     0.0F,
                                     1.0F)
-                            : 0.0F;
+                            : std::clamp(
+                                    (rgb_saturation(emissive_red, emissive_green, emissive_blue) * 0.38F)
+                                            + (palette_diversity * 0.24F)
+                                            + (material_response * 0.22F)
+                                            + (emissive_voxel_ratio * 0.18F),
+                                    0.0F,
+                                    0.78F);
                     const bool traversal_has_surfaces = section_count != 0
                             && !last_direct_lighting_payload_packet_.section_snapshot_metadata.empty();
                     const bool traversal_has_emissives = emissive_count != 0
@@ -8960,26 +9039,26 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                         const auto pixel_y = pixel / preview_width;
                         const float u = static_cast<float>(pixel_x) * inverse_width;
                         const float v = static_cast<float>(pixel_y) * inverse_height;
-                        const float cache_cell = static_cast<float>(
-                                ((pixel_x / 24) + ((pixel_y / 18) * 3) + (scene_seed % 17ULL)) % 9)
-                                / 8.0F;
-                        const float low_frequency_noise = 0.92F
-                                + static_cast<float>(
-                                        (pixel_x + (pixel_y * 7) + (scene_seed % 13ULL)) % 13)
-                                        * 0.012F
-                                + (scene_phase * 0.018F);
+                        const float cache_cell = std::clamp(
+                                0.35F + cache_tint * 0.26F + dirty_activity * 0.18F + scene_phase * 0.08F,
+                                0.0F,
+                                1.0F);
+                        const float low_frequency_noise = 0.96F + scene_phase * 0.035F;
                         const float sky_gradient = std::max(0.0F, 1.0F - v);
                         const float view_surface_response = broad_surface_response(u, v);
                         const float cache_gradient = (0.55F + (cache_tint * 0.35F)) * (0.75F + cache_cell * 0.25F);
-                        const float cache_band = 0.72F
-                                + static_cast<float>(
-                                        ((pixel_x / 11) ^ (pixel_y / 7) ^ execution.last_cache_read_count) % 17)
-                                        * 0.018F;
+                        const float cache_band = std::clamp(
+                                0.90F + cache_tint * 0.06F + dirty_activity * 0.04F,
+                                0.84F,
+                                1.0F);
                         const float section_band = section_count == 0
                                 ? 0.0F
-                                : static_cast<float>(
-                                        ((pixel_x / 19) + (pixel_y / 13) + section_count + (scene_seed % 5ULL)) % 5)
-                                        * 0.08F;
+                                : std::clamp(
+                                        (static_cast<float>(section_count) / 32.0F) * 0.16F
+                                                + dirty_activity * 0.06F
+                                                + scene_phase * 0.03F,
+                                        0.0F,
+                                        0.24F);
                         float surface_projection = section_count == 0 ? 0.18F : 0.34F + section_band;
                         float receiver_depth_proxy = 0.5F;
                         float receiver_depth_weight = 0.0F;
@@ -9002,15 +9081,23 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                     section_index,
                                     kDirectSectionSnapshotMetadataStride,
                                     2);
-                            const auto section_u_hash = (static_cast<std::int64_t>(section_x) * 17)
-                                    + (static_cast<std::int64_t>(section_z) * 31);
-                            const auto section_v_hash = (static_cast<std::int64_t>(section_y) * 13)
-                                    + (static_cast<std::int64_t>(section_z) * 7);
-                            const float section_u = static_cast<float>(std::llabs(section_u_hash) % 127) / 126.0F;
-                            const float section_v = 1.0F
-                                    - (static_cast<float>(std::llabs(section_v_hash) % 89) / 88.0F);
+                            const float section_center_x = static_cast<float>(section_x) * 16.0F + 8.0F;
                             const float section_center_y = static_cast<float>(section_y) * 16.0F + 8.0F;
                             const float section_center_z = static_cast<float>(section_z) * 16.0F + 8.0F;
+                            const float section_u = scene_bounds.initialized
+                                    ? project_native_gi_axis(
+                                            (section_center_x + section_center_z) * 0.5F,
+                                            (scene_bounds.min_x + scene_bounds.min_z) * 0.5F,
+                                            (scene_bounds.max_x + scene_bounds.max_z) * 0.5F,
+                                            0.5F)
+                                    : 0.5F;
+                            const float section_v = scene_bounds.initialized
+                                    ? 1.0F - project_native_gi_axis(
+                                            (section_center_y * 0.70F) + (section_center_z * 0.30F),
+                                            (scene_bounds.min_y * 0.70F) + (scene_bounds.min_z * 0.30F),
+                                            (scene_bounds.max_y * 0.70F) + (scene_bounds.max_z * 0.30F),
+                                            0.5F)
+                                    : 0.5F;
                             const float occupied = static_cast<float>(non_negative_u64(strided_int_or_zero(
                                     last_direct_lighting_payload_packet_.section_snapshot_metadata,
                                     section_index,
@@ -9069,10 +9156,20 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                     candidate_index,
                                     kDirectShadowCandidateRayStride,
                                     kDirectShadowRayOriginZOffset);
-                            const float candidate_u = static_cast<float>(
-                                    std::abs(static_cast<std::int32_t>(origin_x + origin_z)) % 113) / 112.0F;
-                            const float candidate_v = 1.0F - (static_cast<float>(
-                                    std::abs(static_cast<std::int32_t>(origin_y)) % 79) / 78.0F);
+                            const float candidate_u = scene_bounds.initialized
+                                    ? project_native_gi_axis(
+                                            (origin_x + origin_z) * 0.5F,
+                                            (scene_bounds.min_x + scene_bounds.min_z) * 0.5F,
+                                            (scene_bounds.max_x + scene_bounds.max_z) * 0.5F,
+                                            0.5F)
+                                    : 0.5F;
+                            const float candidate_v = scene_bounds.initialized
+                                    ? 1.0F - project_native_gi_axis(
+                                            (origin_y * 0.70F) + (origin_z * 0.30F),
+                                            (scene_bounds.min_y * 0.70F) + (scene_bounds.min_z * 0.30F),
+                                            (scene_bounds.max_y * 0.70F) + (scene_bounds.max_z * 0.30F),
+                                            0.5F)
+                                    : 0.5F;
                             const float delta_u = u - candidate_u;
                             const float delta_v = v - candidate_v;
                             const float distance = std::sqrt(delta_u * delta_u + delta_v * delta_v);
@@ -9141,50 +9238,58 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                                 : 0.66F),
                                 0.0F,
                                 1.0F);
-                        const float broad_projection_signal = std::clamp(
-                                (preview_base * (0.62F + surface_projection * 0.52F))
-                                        + (emissive_signal * (0.58F + surface_projection * 0.42F))
-                                        + (cache_signal * (0.32F + cache_gradient * 0.34F))
-                                        + (sky_signal * (0.18F + sky_gradient * 0.26F))
-                                        + (dirty_activity * 5.0F * surface_projection),
-                                4.0F,
-                                96.0F);
-                        const float scene_surface_signal = std::clamp(
-                                (preview_base * 0.38F)
-                                        + (emissive_signal * (0.72F + world_surface_mask * 0.70F))
-                                        + (cache_signal * (0.42F + cache_tint * 0.35F))
-                                        + (ray_tint * 26.0F)
-                                        + (candidate_surface_signal * 38.0F)
-                                        + (dirty_activity * 6.0F),
+                        const float receiver_local_base = std::clamp(
+                                (receiver_material_coupling * 0.28F)
+                                        + (receiver_depth_coupling * 0.26F)
+                                        + (std::clamp(candidate_surface_signal, 0.0F, 0.72F) * 0.24F)
+                                        + (world_surface_mask * 0.14F)
+                                        + (material_albedo_saturation * 0.08F),
                                 0.0F,
-                                118.0F);
+                                1.0F);
+                        const float broad_projection_signal = std::clamp(
+                                (preview_base * (0.34F + receiver_local_base * 0.34F))
+                                        + (emissive_signal * (0.28F + receiver_local_base * 0.36F))
+                                        + (cache_signal * (0.22F + cache_gradient * 0.18F))
+                                        + (sky_signal * (0.12F + sky_gradient * 0.18F))
+                                        + (dirty_activity * 3.0F * receiver_local_base),
+                                2.0F,
+                                68.0F);
+                        const float scene_surface_signal = std::clamp(
+                                (preview_base * 0.24F)
+                                        + (emissive_signal * (0.38F + receiver_local_base * 0.48F))
+                                        + (cache_signal * (0.30F + cache_tint * 0.22F))
+                                        + (ray_tint * 16.0F)
+                                        + (candidate_surface_signal * 34.0F)
+                                        + (dirty_activity * 4.0F * (0.42F + receiver_local_base)),
+                                0.0F,
+                                82.0F);
                         const float world_surface_lift = scene_surface_signal
                                 * (0.42F + world_surface_mask * 0.92F);
-                        float red = (preview_base * (0.34F + cache_gradient * 0.20F))
-                                + (sky_signal * (0.15F + sky_gradient * 0.14F))
-                                + (broad_projection_signal * (0.36F + emissive_red * 0.52F));
-                        float green = (preview_base * (0.39F + ray_tint * 0.20F))
-                                + (sky_signal * (0.22F + sky_gradient * 0.20F))
-                                + (broad_projection_signal * (0.38F + emissive_green * 0.50F));
-                        float blue = (preview_base * (0.26F + sky_gradient * 0.26F))
-                                + (sky_signal * (0.35F + sky_gradient * 0.34F))
-                                + (broad_projection_signal * (0.22F + emissive_blue * 0.46F));
+                        float red = (preview_base * (0.22F + cache_gradient * 0.12F))
+                                + (sky_signal * (0.10F + sky_gradient * 0.10F))
+                                + (broad_projection_signal * (0.22F + emissive_red * 0.36F));
+                        float green = (preview_base * (0.25F + ray_tint * 0.12F))
+                                + (sky_signal * (0.14F + sky_gradient * 0.14F))
+                                + (broad_projection_signal * (0.24F + emissive_green * 0.34F));
+                        float blue = (preview_base * (0.18F + sky_gradient * 0.18F))
+                                + (sky_signal * (0.24F + sky_gradient * 0.24F))
+                                + (broad_projection_signal * (0.16F + emissive_blue * 0.30F));
                         const float scene_surface_lift = std::clamp(
                                 view_surface_response
-                                        * ((preview_base * 0.34F)
-                                                + (broad_projection_signal * 0.54F)
-                                                + (emissive_signal * 0.58F)
-                                                + (cache_signal * 0.30F)
-                                                + (sky_signal * 0.18F)
-                                                + (ray_tint * 18.0F)),
+                                        * ((preview_base * 0.18F)
+                                                + (broad_projection_signal * 0.32F)
+                                                + (emissive_signal * (0.28F + receiver_local_base * 0.24F))
+                                                + (cache_signal * 0.20F)
+                                                + (sky_signal * 0.12F)
+                                                + (ray_tint * 11.0F)),
                                 0.0F,
-                                72.0F);
-                        red += scene_surface_lift * (0.58F + emissive_red * 0.46F);
-                        green += scene_surface_lift * (0.64F + emissive_green * 0.44F);
-                        blue += scene_surface_lift * (0.34F + emissive_blue * 0.36F);
-                        red += world_surface_lift * (0.66F + emissive_red * 0.56F);
-                        green += world_surface_lift * (0.72F + emissive_green * 0.52F);
-                        blue += world_surface_lift * (0.44F + emissive_blue * 0.42F);
+                                48.0F);
+                        red += scene_surface_lift * (0.38F + emissive_red * 0.34F);
+                        green += scene_surface_lift * (0.42F + emissive_green * 0.32F);
+                        blue += scene_surface_lift * (0.24F + emissive_blue * 0.28F);
+                        red += world_surface_lift * (0.42F + emissive_red * 0.42F);
+                        green += world_surface_lift * (0.46F + emissive_green * 0.40F);
+                        blue += world_surface_lift * (0.30F + emissive_blue * 0.34F);
                         for (std::size_t light_index = 0; light_index < emissive_count; light_index++) {
                             const auto block_x = strided_int_or_zero(
                                     last_direct_lighting_payload_packet_.emissive_light_metadata,
@@ -9201,8 +9306,23 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                     light_index,
                                     kDirectEmissiveLightMetadataStride,
                                     kDirectEmissiveBlockZOffset);
-                            const float light_u = static_cast<float>((std::abs(block_x + block_z) % 97)) / 96.0F;
-                            const float light_v = 1.0F - (static_cast<float>(std::abs(block_y) % 65) / 64.0F);
+                            const float light_x = static_cast<float>(block_x) + 0.5F;
+                            const float light_y = static_cast<float>(block_y) + 0.5F;
+                            const float light_z = static_cast<float>(block_z) + 0.5F;
+                            const float light_u = scene_bounds.initialized
+                                    ? project_native_gi_axis(
+                                            (light_x + light_z) * 0.5F,
+                                            (scene_bounds.min_x + scene_bounds.min_z) * 0.5F,
+                                            (scene_bounds.max_x + scene_bounds.max_z) * 0.5F,
+                                            0.5F)
+                                    : 0.5F;
+                            const float light_v = scene_bounds.initialized
+                                    ? 1.0F - project_native_gi_axis(
+                                            (light_y * 0.70F) + (light_z * 0.30F),
+                                            (scene_bounds.min_y * 0.70F) + (scene_bounds.min_z * 0.30F),
+                                            (scene_bounds.max_y * 0.70F) + (scene_bounds.max_z * 0.30F),
+                                            0.5F)
+                                    : 0.5F;
                             const float delta_u = u - light_u;
                             const float delta_v = v - light_v;
                             const float radius = std::clamp(
@@ -9210,15 +9330,22 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                             last_direct_lighting_payload_packet_.emissive_light_data,
                                             light_index,
                                             kDirectEmissiveLightDataStride,
-                                            kDirectEmissiveInfluenceRadiusOffset) / 32.0F,
-                                    0.34F,
-                                    0.96F);
+                                            kDirectEmissiveInfluenceRadiusOffset) / 46.0F,
+                                    0.20F,
+                                    0.70F);
                             const float distance = std::sqrt(delta_u * delta_u + delta_v * delta_v);
                             const float falloff = std::max(0.0F, 1.0F - (distance / radius));
-                            const float shoulder = std::max(0.0F, 1.0F - (distance / (radius * 2.35F)));
-                            const float bounce = ((falloff * falloff) + (shoulder * 0.42F))
+                            const float shoulder = std::max(0.0F, 1.0F - (distance / (radius * 1.55F)));
+                            const float receiver_locality = std::clamp(
+                                    (world_surface_mask * 0.24F)
+                                            + (receiver_depth_coupling * 0.26F)
+                                            + (receiver_material_coupling * 0.22F)
+                                            + std::clamp(candidate_surface_signal, 0.0F, 0.42F) * 0.28F,
+                                    0.0F,
+                                    1.0F);
+                            const float bounce = ((falloff * falloff * 1.12F) + (shoulder * 0.14F))
                                     * (0.70F + cache_tint * 0.30F)
-                                    * (0.72F + world_surface_mask * 0.58F);
+                                    * (0.58F + world_surface_mask * 0.36F + receiver_locality * 0.34F);
                             if (bounce <= 0.0F) {
                                 continue;
                             }
@@ -9230,8 +9357,8 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                             kDirectEmissiveLightDataStride,
                                             kDirectEmissiveIntensityOffset));
                             const float strength = std::min(
-                                    84.0F,
-                                    intensity * bounce * (0.92F + ray_tint * 0.62F + surface_projection * 0.24F));
+                                    48.0F,
+                                    intensity * bounce * (0.82F + ray_tint * 0.42F + receiver_locality * 0.38F));
                             red += strided_float_or_zero(
                                     last_direct_lighting_payload_packet_.emissive_light_data,
                                     light_index,
@@ -9289,9 +9416,12 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                     light_index,
                                     kDirectEmissiveLightDataStride,
                                     kDirectEmissiveInfluenceRadiusOffset);
-                            const float radius = std::clamp(radius_blocks / 72.0F, 0.06F, 0.38F);
+                            const float radius = std::clamp(radius_blocks / 72.0F, 0.075F, 0.42F);
                             const float lobe = native_gi_lobe(u, v, light_u, light_v, radius)
-                                    * (0.70F + material_response * 0.46F);
+                                    * (0.74F
+                                            + material_response * 0.42F
+                                            + receiver_depth_coupling * 0.26F
+                                            + receiver_material_coupling * 0.20F);
                             if (lobe <= 0.0F) {
                                 continue;
                             }
@@ -9310,10 +9440,10 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                     : 0.42F;
                             const float source_receiver_coupling = std::clamp(
                                     lobe
-                                            * (0.42F + source_receiver_depth_match * 0.34F)
-                                            * (0.62F
-                                                    + receiver_material_coupling * 0.24F
-                                                    + receiver_depth_coupling * 0.14F),
+                                            * (0.48F + source_receiver_depth_match * 0.42F)
+                                            * (0.70F
+                                                    + receiver_material_coupling * 0.32F
+                                                    + receiver_depth_coupling * 0.22F),
                                     0.0F,
                                     1.0F);
                             spatial_lobe = std::max(spatial_lobe, lobe);
@@ -9328,11 +9458,11 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                             kDirectEmissiveLightDataStride,
                                             kDirectEmissiveIntensityOffset));
                             const float energy = std::min(
-                                    104.0F,
+                                    92.0F,
                                     intensity
                                             * lobe
-                                            * (18.0F + cache_response * 2.5F)
-                                            * (0.82F + source_receiver_coupling * 0.26F));
+                                            * (18.0F + cache_response * 2.2F + emissive_signal * 0.075F)
+                                            * (0.74F + source_receiver_coupling * 0.48F));
                             emissive_receiver_energy += energy * source_receiver_coupling;
                             physical_emissive_red += strided_float_or_zero(
                                     last_direct_lighting_payload_packet_.emissive_light_data,
@@ -9407,11 +9537,12 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                 * (0.55F + material_response * 0.45F)
                                 * (1.0F - translucent_ratio * 0.22F);
                         const float physical_surface = std::clamp(
-                                (section_lobe * (18.0F + cache_response * 2.0F))
-                                        + (candidate_surface_signal * 30.0F)
-                                        + (physical_cache * 0.74F),
+                                (section_lobe * (24.0F + cache_response * 2.8F))
+                                        + (candidate_surface_signal * 42.0F)
+                                        + (physical_cache * 0.92F)
+                                        + (emissive_signal * world_surface_mask * 0.22F),
                                 0.0F,
-                                72.0F);
+                                104.0F);
                         const float occlusion_dirty_sample_influence = std::clamp(
                                 (opaque_ratio * 0.58F)
                                         + (dirty_activity * 0.36F)
@@ -9451,17 +9582,18 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                         * physical_hit_response
                                         * (0.72F + material_response * 0.34F),
                                 0.0F,
-                                46.0F);
+                                34.0F);
                         const float physical_emissive_energy = physical_emissive_red
                                 + physical_emissive_green
                                 + physical_emissive_blue;
                         const float colored_bounce_spatial = std::clamp(
                                 (world_surface_mask * 0.30F)
                                         + (surface_projection * 0.14F)
-                                        + (section_lobe * 0.34F)
-                                        + (candidate_surface_signal * 0.30F)
-                                        + (spatial_lobe * 0.20F)
-                                        + (receiver_depth_coupling * 0.18F),
+                                        + (section_lobe * 0.44F)
+                                        + (candidate_surface_signal * 0.38F)
+                                        + (spatial_lobe * 0.16F)
+                                        + (receiver_depth_coupling * 0.22F)
+                                        + (receiver_material_coupling * 0.18F),
                                 0.0F,
                                 1.0F);
                         const float colored_bounce_cache_confidence = std::clamp(
@@ -9485,106 +9617,147 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                         + (receiver_depth_coupling * 0.18F),
                                 0.0F,
                                 1.0F);
-                        const float colored_bounce_source_red = physical_emissive_red
-                                + physical_surface * (0.32F + emissive_red * 0.24F)
-                                + physical_sky * 0.34F;
-                        const float colored_bounce_source_green = physical_emissive_green
-                                + physical_surface * (0.34F + emissive_green * 0.24F)
-                                + physical_sky * 0.36F;
-                        const float colored_bounce_source_blue = physical_emissive_blue
-                                + physical_surface * (0.22F + emissive_blue * 0.20F)
-                                + physical_sky * 0.46F;
+                        const float emissive_source_tint_red = physical_emissive_energy > 0.01F
+                                ? std::clamp(physical_emissive_red / physical_emissive_energy, 0.0F, 1.0F)
+                                : emissive_red;
+                        const float emissive_source_tint_green = physical_emissive_energy > 0.01F
+                                ? std::clamp(physical_emissive_green / physical_emissive_energy, 0.0F, 1.0F)
+                                : emissive_green;
+                        const float emissive_source_tint_blue = physical_emissive_energy > 0.01F
+                                ? std::clamp(physical_emissive_blue / physical_emissive_energy, 0.0F, 1.0F)
+                                : emissive_blue;
+                        const float receiver_detail_response = std::clamp(
+                                (section_lobe * 0.36F)
+                                        + (std::clamp(candidate_surface_signal, 0.0F, 0.72F) * 0.28F)
+                                        + (receiver_material_coupling * 0.20F)
+                                        + (receiver_depth_coupling * 0.18F)
+                                        + (occlusion_dirty_sample_influence * 0.12F)
+                                        + (material_albedo_saturation * 0.10F),
+                                0.0F,
+                                1.0F);
+                        const float scene_linked_chroma_lift = std::clamp(
+                                1.0F
+                                        + material_albedo_saturation * 0.46F
+                                        + palette_diversity * 0.18F
+                                        + emissive_bounce_coupling * 0.22F
+                                        + colored_bounce_spatial * 0.22F
+                                        + receiver_detail_response * 0.16F,
+                                1.0F,
+                                1.74F);
+                        const float colored_bounce_source_red = physical_emissive_red * 1.18F
+                                + physical_surface * (0.38F + emissive_red * 0.36F + material_albedo_red * 0.24F)
+                                + physical_sky * (0.22F + material_albedo_red * 0.18F)
+                                + emissive_receiver_energy * emissive_source_tint_red * 0.16F;
+                        const float colored_bounce_source_green = physical_emissive_green * 1.18F
+                                + physical_surface * (0.40F + emissive_green * 0.34F + material_albedo_green * 0.24F)
+                                + physical_sky * (0.24F + material_albedo_green * 0.18F)
+                                + emissive_receiver_energy * emissive_source_tint_green * 0.16F;
+                        const float colored_bounce_source_blue = physical_emissive_blue * 1.18F
+                                + physical_surface * (0.28F + emissive_blue * 0.32F + material_albedo_blue * 0.22F)
+                                + physical_sky * (0.30F + material_albedo_blue * 0.16F)
+                                + emissive_receiver_energy * emissive_source_tint_blue * 0.16F;
                         const float colored_bounce_source_energy = colored_bounce_source_red
                                 + colored_bounce_source_green
                                 + colored_bounce_source_blue;
-                        const float colored_bounce_intensity = material_albedo.available
-                                ? std::clamp(
-                                        (coupled_bounce * 0.44F
-                                                + physical_emissive_energy * 0.055F
-                                                + emissive_receiver_energy * 0.035F
-                                                + physical_surface * 0.12F
-                                                + physical_cache * 0.32F)
-                                                * colored_material_strength
-                                                * colored_bounce_spatial
-                                                * colored_bounce_cache_confidence
-                                                * colored_bounce_normal_weight
-                                                * (0.74F + emissive_bounce_coupling * 0.34F),
-                                        0.0F,
-                                        42.0F)
-                                : 0.0F;
+                        const float colored_bounce_intensity = std::clamp(
+                                (coupled_bounce * 0.58F
+                                        + physical_emissive_energy * 0.075F
+                                        + emissive_receiver_energy * 0.060F
+                                        + physical_surface * 0.18F
+                                        + physical_cache * 0.38F)
+                                        * colored_material_strength
+                                        * colored_bounce_spatial
+                                        * colored_bounce_cache_confidence
+                                        * colored_bounce_normal_weight
+                                        * (0.88F + emissive_bounce_coupling * 0.58F)
+                                        * scene_linked_chroma_lift,
+                                0.0F,
+                                58.0F);
                         const float colored_source_scale = std::clamp(
-                                colored_bounce_source_energy / 96.0F,
-                                0.28F,
-                                1.36F);
+                                colored_bounce_source_energy / 82.0F,
+                                0.36F,
+                                1.38F);
                         const float colored_bounce_red = colored_bounce_intensity
-                                * material_albedo_red
-                                * (0.62F + emissive_red * 0.32F)
+                                * (material_albedo_red * 0.82F + emissive_source_tint_red * 0.28F)
+                                * (0.68F + emissive_red * 0.46F)
                                 * colored_source_scale;
                         const float colored_bounce_green = colored_bounce_intensity
-                                * material_albedo_green
-                                * (0.62F + emissive_green * 0.32F)
+                                * (material_albedo_green * 0.82F + emissive_source_tint_green * 0.28F)
+                                * (0.68F + emissive_green * 0.44F)
                                 * colored_source_scale;
                         const float colored_bounce_blue = colored_bounce_intensity
-                                * material_albedo_blue
-                                * (0.62F + emissive_blue * 0.32F)
+                                * (material_albedo_blue * 0.82F + emissive_source_tint_blue * 0.28F)
+                                * (0.62F + emissive_blue * 0.42F)
                                 * colored_source_scale;
-                        red = (red * 0.30F)
-                                + physical_emissive_red
-                                + physical_surface * (0.48F + emissive_red * 0.42F)
-                                + physical_sky * 0.48F
-                                + coupled_bounce * (0.50F + emissive_red * 0.28F)
+                        red = (red * 0.22F)
+                                + physical_emissive_red * 1.12F
+                                + physical_surface * (0.34F + emissive_red * 0.38F + material_albedo_red * 0.18F)
+                                + physical_sky * (0.24F + material_albedo_red * 0.10F)
+                                + coupled_bounce * (0.36F + emissive_red * 0.30F)
                                 + colored_bounce_red;
-                        green = (green * 0.30F)
-                                + physical_emissive_green
-                                + physical_surface * (0.52F + emissive_green * 0.42F)
-                                + physical_sky * 0.58F
-                                + coupled_bounce * (0.56F + emissive_green * 0.26F)
+                        green = (green * 0.22F)
+                                + physical_emissive_green * 1.12F
+                                + physical_surface * (0.38F + emissive_green * 0.36F + material_albedo_green * 0.18F)
+                                + physical_sky * (0.28F + material_albedo_green * 0.10F)
+                                + coupled_bounce * (0.40F + emissive_green * 0.28F)
                                 + colored_bounce_green;
-                        blue = (blue * 0.30F)
-                                + physical_emissive_blue
-                                + physical_surface * (0.34F + emissive_blue * 0.34F)
-                                + physical_sky * 0.72F
-                                + coupled_bounce * (0.38F + emissive_blue * 0.24F)
+                        blue = (blue * 0.22F)
+                                + physical_emissive_blue * 1.12F
+                                + physical_surface * (0.23F + emissive_blue * 0.34F + material_albedo_blue * 0.16F)
+                                + physical_sky * (0.34F + material_albedo_blue * 0.08F)
+                                + coupled_bounce * (0.26F + emissive_blue * 0.26F)
                                 + colored_bounce_blue;
-                        red = std::min(192.0F, red * low_frequency_noise * cache_band);
-                        green = std::min(192.0F, green * low_frequency_noise * cache_band);
-                        blue = std::min(192.0F, blue * low_frequency_noise * cache_band);
-                        const float contact_grid_u = (u * 18.0F)
-                                + static_cast<float>((scene_seed + section_count) % 11ULL) * 0.071F;
-                        const float contact_grid_v = (v * 14.0F)
-                                + static_cast<float>((scene_seed + shadow_count) % 13ULL) * 0.053F;
-                        const float contact_local_u = contact_grid_u - std::floor(contact_grid_u);
-                        const float contact_local_v = contact_grid_v - std::floor(contact_grid_v);
-                        const float contact_edge_distance = std::min(
-                                std::min(contact_local_u, 1.0F - contact_local_u),
-                                std::min(contact_local_v, 1.0F - contact_local_v));
-                        const float contact_corner_distance = std::min(
-                                std::min(
-                                        std::sqrt(
-                                                (contact_local_u * contact_local_u)
-                                                + (contact_local_v * contact_local_v)),
-                                        std::sqrt(
-                                                ((1.0F - contact_local_u) * (1.0F - contact_local_u))
-                                                + (contact_local_v * contact_local_v))),
-                                std::min(
-                                        std::sqrt(
-                                                (contact_local_u * contact_local_u)
-                                                + ((1.0F - contact_local_v) * (1.0F - contact_local_v))),
-                                        std::sqrt(
-                                                ((1.0F - contact_local_u) * (1.0F - contact_local_u))
-                                                + ((1.0F - contact_local_v) * (1.0F - contact_local_v)))));
-                        const float contact_edge_response = smooth_unit_response(
-                                1.0F - (contact_edge_distance / 0.16F));
-                        const float contact_corner_response = smooth_unit_response(
-                                1.0F - (contact_corner_distance / 0.24F));
-                        const float contact_overhang_response = smooth_unit_response((v - 0.34F) / 0.42F)
+                        const float preview_chroma_luma = red * 0.299F + green * 0.587F + blue * 0.114F;
+                        const float preview_chroma_gain = std::clamp(
+                                1.0F
+                                        + (colored_bounce_intensity / 210.0F)
+                                        + material_albedo_saturation * 0.34F
+                                        + emissive_bounce_coupling * 0.16F
+                                        + receiver_detail_response * 0.18F,
+                                1.0F,
+                                1.54F);
+                        red = std::max(0.0F, preview_chroma_luma + (red - preview_chroma_luma) * preview_chroma_gain);
+                        green = std::max(
+                                0.0F,
+                                preview_chroma_luma + (green - preview_chroma_luma) * preview_chroma_gain);
+                        blue = std::max(
+                                0.0F,
+                                preview_chroma_luma + (blue - preview_chroma_luma) * preview_chroma_gain);
+                        const float receiver_detail_contrast = std::clamp(
+                                0.86F + receiver_detail_response * 0.22F + material_albedo_saturation * 0.08F,
+                                0.82F,
+                                1.16F);
+                        const float receiver_tone_limit = 74.0F
+                                + receiver_detail_response * 42.0F
+                                + colored_bounce_spatial * 18.0F
+                                + material_albedo_saturation * 16.0F;
+                        auto compress_receiver_channel = [receiver_tone_limit](float value) {
+                            const float positive = std::max(0.0F, value);
+                            return (positive * receiver_tone_limit) / (positive + receiver_tone_limit);
+                        };
+                        red = compress_receiver_channel(red * low_frequency_noise * cache_band * receiver_detail_contrast);
+                        green = compress_receiver_channel(green * low_frequency_noise * cache_band * receiver_detail_contrast);
+                        blue = compress_receiver_channel(blue * low_frequency_noise * cache_band * receiver_detail_contrast);
+                        const float contact_receiver_response = smooth_unit_response(
+                                (section_lobe * 2.4F)
+                                        + (candidate_surface_signal * 1.30F)
+                                        + (receiver_depth_coupling * 0.72F)
+                                        + (receiver_material_coupling * 0.46F)
+                                        - 0.18F);
+                        const float contact_edge_response = contact_receiver_response
+                                * smooth_unit_response(world_surface_mask);
+                        const float contact_corner_response = contact_receiver_response
+                                * smooth_unit_response(
+                                        receiver_depth_coupling + receiver_material_coupling - 0.22F);
+                        const float contact_overhang_response = smooth_unit_response((v - 0.30F) / 0.42F)
                                 * smooth_unit_response(surface_projection / 1.35F)
-                                * (0.42F + std::clamp(candidate_surface_signal, 0.0F, 0.58F));
+                                * (0.54F + std::clamp(candidate_surface_signal, 0.0F, 0.76F));
                         const float contact_occupancy_response = std::clamp(
-                                (opaque_ratio * 0.50F)
-                                        + (material_response * 0.26F)
-                                        + (section_lobe * 0.34F)
-                                        + (candidate_surface_signal * 0.38F),
+                                (opaque_ratio * 0.58F)
+                                        + (material_response * 0.34F)
+                                        + (section_lobe * 0.44F)
+                                        + (candidate_surface_signal * 0.48F)
+                                        + (receiver_depth_coupling * 0.22F),
                                 0.0F,
                                 1.0F);
                         const bool contact_shadow_sample = world_surface_mask >= 0.24F
@@ -9596,12 +9769,13 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                 ? std::clamp(
                                         world_surface_mask
                                                 * contact_occupancy_response
-                                                * ((contact_edge_response * 0.11F)
-                                                        + (contact_corner_response * 0.16F)
-                                                        + (contact_overhang_response * 0.12F)
-                                                        + (occlusion_dirty_sample_influence * 0.07F)),
+                                                * ((contact_edge_response * 0.16F)
+                                                        + (contact_corner_response * 0.24F)
+                                                        + (contact_overhang_response * 0.20F)
+                                                        + (occlusion_dirty_sample_influence * 0.12F)
+                                                        + (receiver_depth_coupling * 0.10F)),
                                         0.0F,
-                                        0.38F)
+                                        0.58F)
                                 : 0.0F;
                         if (contact_shadow_sample) {
                             contact_shadow_samples++;
@@ -9616,7 +9790,7 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                                     contact_shadow_checksum,
                                     static_cast<std::uint64_t>(contact_occupancy_response * 1000.0F));
                         }
-                        if (contact_shadow_darkening > 0.018F) {
+                        if (contact_shadow_darkening > 0.012F) {
                             contact_shadow_occluded_samples++;
                             const float contact_shadow_visibility = 1.0F - contact_shadow_darkening;
                             red *= contact_shadow_visibility;
@@ -10287,11 +10461,11 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                 && (!colored_bounce_recorded || material_coupled_bounce_recorded)
                 && output_energy_checksum_recorded;
         execution.last_physical_scene_marker = execution.last_physical_scene_linked
-                ? "native_diffuse_gi_scene_receiver_material_depth_emissive_bounce_cpu_preview_metrics_present"
+                ? "native_diffuse_gi_receiver_local_material_depth_chroma_detail_cpu_preview_metrics_present"
                 : "native_diffuse_gi_scene_link_incomplete_do_not_treat_as_physical_gi";
         execution.last_proof_boundary_marker =
                 execution.last_physical_scene_linked
-                ? "native_gi_cpu_preview_receiver_depth_material_emissive_coupled_metrics_not_final_physically_correct_gi_or_path_tracing"
+                ? "native_gi_cpu_preview_receiver_local_bounded_chroma_detail_not_final_physically_correct_gi_or_path_tracing"
                 : "native_gi_metadata_or_partial_preview_rejected_for_visual_gi_completion";
         if (execution.last_cpu_output_nonzero
                 && execution.last_scene_inputs_recorded
@@ -10315,7 +10489,7 @@ std::uint64_t Renderer::track_round6_dispatch_execution_scaffold(
                 && geometry_hit_coupling_recorded
                 && output_energy_checksum_recorded) {
             execution.last_readiness_reason =
-                    "diffuse_gi_colored_emissive_receiver_material_depth_coupled_samples_recorded_not_final_physical_gi";
+                    "diffuse_gi_receiver_local_bounded_chroma_detail_samples_recorded_not_final_physical_gi";
         } else if (execution.last_cpu_output_nonzero
                 && execution.last_scene_inputs_recorded
                 && cache_inputs_recorded
@@ -10494,6 +10668,9 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
     const bool direct_light_validation_input_ready = direct_execution.last_cpu_output_generated
             && direct_execution.last_output_pixel_count > 0
             && (direct_execution.last_output_checksum != 0 || direct_execution.last_output_energy > 0.0F);
+    const bool cpu_readback_denoise_prerequisites_ready = denoise_stage.enabled_this_packet
+            && raw_diffuse_gi_input_ready
+            && execution.last_raw_gi_input_available;
     const bool real_traced_input_ready = traced_input_evidence.consumption_evidence
             && traced_input_evidence.final_gi_source_consumed
             && !traced_input_evidence.metadata_only;
@@ -10710,7 +10887,9 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
         return 0;
     }
 
-    if (!denoise_stage.ready_for_native_execution_this_packet && !validated_placeholder_metadata) {
+    if (!denoise_stage.ready_for_native_execution_this_packet
+            && !validated_placeholder_metadata
+            && !cpu_readback_denoise_prerequisites_ready) {
         execution.skipped++;
         execution.last_output_marker = "denoise_not_ready_noop";
         execution.last_readiness_reason = denoise_stage.last_readiness_reason.empty()
@@ -10795,13 +10974,13 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
                     : "shader_denoise_inputs_pending_dispatch_intent_recorded_output_pending_real_shader_output_false";
     execution.last_shader_denoise_handoff_marker = denoised_output_generated
             ? (execution.last_shader_denoise_output_material_ready
-                    ? "cpu_readback_material_handoff_ready_shader_output_image_missing"
-                    : "cpu_readback_ready_waiting_for_composite_material_handoff")
+                    ? "cpu_readback_material_handoff_ready_shader_output_image_missing_non_gpu"
+                    : "cpu_readback_ready_waiting_for_composite_material_handoff_non_gpu")
             : execution.last_shader_denoise_handoff_marker;
     execution.last_shader_denoise_output_readiness_marker = denoised_output_generated
             ? (execution.last_shader_denoise_output_material_ready
-                    ? "shader_output_image_missing_material_handoff_ready_cpu_staged_candidate_available"
-                    : "shader_output_image_missing_material_handoff_pending_cpu_staged_candidate_available")
+                    ? "native_cpu_readback_denoised_payload_ready_material_handoff_ready_shader_output_image_still_missing"
+                    : "native_cpu_readback_denoised_payload_ready_material_handoff_pending_shader_output_image_still_missing")
             : execution.last_shader_denoise_output_readiness_marker;
     execution.last_shader_denoise_output_image_candidate_marker = denoised_output_generated
             ? "cpu_staged_shader_output_image_candidate_ready_non_gpu_non_real"
@@ -10810,7 +10989,7 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
             ? "shader_output_candidate_source=native_cpu_readback_rgba8"
             : execution.last_shader_denoise_output_candidate_source_marker;
     execution.last_cpu_readback_candidate_payload_marker = denoised_output_generated
-            ? "cpu_readback_candidate_payload=ready;source=native_cpu_denoised_rgba8;public_mojang_visual_submission=unproven"
+            ? "cpu_readback_candidate_payload=ready;source=native_cpu_denoised_rgba8;scene_linked_raw_gi=true;nonzero_checksum=true;nonzero_energy=true;public_mojang_visual_submission=unproven;gpu_shader_generated=false"
             : execution.last_cpu_readback_candidate_payload_marker;
     execution.last_public_mojang_shader_visual_output_marker = denoised_output_generated
             ? (execution.last_shader_denoise_output_material_ready
@@ -10832,7 +11011,7 @@ std::uint64_t Renderer::track_denoise_execution_scaffold() {
             ? "real_shader_output_ready_false_cpu_staged_candidate_not_gpu_shader_generated"
             : execution.last_shader_denoise_output_blocker_reason;
     execution.last_shader_denoise_output_attempt_marker = denoised_output_generated
-            ? "shader_denoise_output_attempt=cpu_candidate_staged;dispatch_intent_recorded=true;shader_dispatch_executed=false"
+            ? "shader_denoise_output_attempt=cpu_readback_payload_accepted;dispatch_prepared_for_handoff=true;shader_dispatch_executed=false"
             : "shader_denoise_output_attempt=metadata_accepted_no_candidate";
     execution.last_shader_denoise_no_overclaim_marker =
             "shader_denoise_no_overclaim=true;shader_generated_output=false;real_shader_output_ready=false";

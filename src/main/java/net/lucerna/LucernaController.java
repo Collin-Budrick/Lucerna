@@ -258,8 +258,9 @@ public final class LucernaController {
                 && this.nativeBridge.isAvailable();
     }
 
-    public boolean isWorldSpaceVisualPreviewActive() {
-        if (this.isRendererActive()) {
+public boolean isWorldSpaceVisualPreviewActive() {
+        if (this.isRendererActive()
+                && ProofVisualMode.javaWorldSpaceVisualFallbackAllowed()) {
             return true;
         }
         return ProofVisualMode.javaWorldSpaceVisualFallbackAllowed()
@@ -369,7 +370,7 @@ public final class LucernaController {
             FinalCompositeModeStatus modeStatus = FinalCompositeModeStatus.fromConfigMode(this.getConfig().compositeMode());
             boolean shaderOutputProofRequested = (modeStatus.denoisedGiVisualMode()
                     || modeStatus.finalCompositeVisualMode())
-                    && shaderGeneratedDenoiseOutputProofRequested();
+                    && shaderDenoiseOutputRenderPathRequested();
             Round6DiffuseGiCpuOutputPayload diffuseGiPayload =
                     this.round7RawGiCpuInputPayload(giPreviewState, shaderOutputProofRequested);
             this.logRound6DiffuseGiPreviewStatusIfChanged(giPreviewState, diffuseGiPayload);
@@ -412,6 +413,11 @@ public final class LucernaController {
                     diffuseGiPayload
             );
             this.logRealRendererMilestone1IfChanged(finalCompositeSubmission, modeStatus);
+            LucernaClient.capturePendingControllerScreenshotAfterLucernaComposite(
+                    finalCompositeSubmission != null
+                            && finalCompositeSubmission.submitted()
+                            && finalCompositeSubmission.drawCallsIssued()
+            );
             return this.frameHooks.attachFramePass(finalCompositeRequest);
         } finally {
             this.frameHooks.endFrame();
@@ -441,7 +447,7 @@ public final class LucernaController {
                     giPreviewState
             );
         }
-        if (modeStatus.denoisedGiVisualMode() && shaderGeneratedDenoiseOutputProofRequested()) {
+        if (modeStatus.denoisedGiVisualMode() && shaderDenoiseOutputRenderPathRequested()) {
             if (giPreviewState == null || !giPreviewState.rawGiInputReady(diffuseGiPayload)) {
                 String rawGiInputEvidence = giPreviewState == null
                         ? "rawGiInputReady=false,round7.rawGiInputReady=false,rawGiInputSource=\"missing Round 6 diffuse GI preview state\",round7.rawGiInputSource=\"missing Round 6 diffuse GI preview state\",rawGiInputBlocker=\"Round 6 diffuse GI preview state is missing\""
@@ -499,7 +505,7 @@ public final class LucernaController {
         if (modeStatus.finalCompositeVisualMode()
                 && shadowMapOutputPayload != null
                 && shadowMapOutputPayload.readyForPreviewDraw()) {
-            if (shaderGeneratedDenoiseOutputProofRequested()) {
+            if (shaderDenoiseOutputRenderPathRequested()) {
                 return RenderThreadPreviewTargetFactory.submitRealRendererMilestone1FullCompositePublicDraw(
                         target,
                         shadowMapOutputPayload.copyToByteBuffer(),
@@ -599,6 +605,16 @@ public final class LucernaController {
                 || envTruthy("LUCERNA_REQUIRE_SHADER_DENOISE_OUTPUT_CONSUMED")
                 || envHasText("LUCERNA_ROUND7_SHADER_DENOISE_ARTIFACT_ROLE")
                 || envHasText("LUCERNA_ROUND7_SHADER_DENOISE_SCENE_KIND");
+    }
+
+    private static boolean shaderDenoiseOutputRenderPathRequested() {
+        return shaderGeneratedDenoiseOutputProofRequested()
+                || visualQualityShaderDenoiseOutputRequested();
+    }
+
+    private static boolean visualQualityShaderDenoiseOutputRequested() {
+        return envValue("LUCERNA_REAL_RENDERER_MILESTONE1_ARTIFACT_ROLE", "")
+                .startsWith("real-renderer-milestone1-visual-quality-");
     }
 
     private static boolean realRendererMilestone1ProofRequested() {

@@ -8,6 +8,11 @@ public record Round7RawGiVisualSource(
         String evidenceLabel,
         String shaderLabel,
         boolean sourceReady,
+        boolean receiverLocalPayloadReady,
+        boolean chromaRichPayloadCandidate,
+        boolean smoothLobeFallbackRisk,
+        String receiverPayloadIdentity,
+        String visualPayloadClassLabel,
         String reason
 ) {
     private static final String MODE_KEY = "ROUND7_RAW_GI";
@@ -20,6 +25,8 @@ public record Round7RawGiVisualSource(
         sourceLabel = normalize(sourceLabel, SOURCE_LABEL);
         evidenceLabel = normalize(evidenceLabel, EVIDENCE_LABEL);
         shaderLabel = normalize(shaderLabel, SHADER_LABEL);
+        receiverPayloadIdentity = normalize(receiverPayloadIdentity, "raw-gi-payload-unavailable");
+        visualPayloadClassLabel = normalize(visualPayloadClassLabel, "raw-gi-visual-payload-unclassified");
         if (reason == null || reason.isBlank()) {
             reason = sourceReady
                     ? "Round 7 RAW_GI source is ready for visual draw"
@@ -53,7 +60,48 @@ public record Round7RawGiVisualSource(
                 EVIDENCE_LABEL,
                 SHADER_LABEL,
                 true,
+                receiverLocalPayloadReady(payload),
+                chromaRichPayloadCandidate(payload),
+                smoothLobeFallbackRisk(payload),
+                receiverPayloadIdentity(payload),
+                visualPayloadClassLabel(payload),
                 "Round 7 RAW_GI visual mode can draw the native diffuse-GI RGBA8 payload as a raw source view; "
+                        + receiverPayloadStatusSummary(payload)
+                        + "; "
+                        + payload.spatialGiPayloadSummary()
+        );
+    }
+
+    public static Round7RawGiVisualSource fromPayloadOnly(
+            Round6DiffuseGiCpuOutputPayload payload,
+            String selectionContext
+    ) {
+        String context = normalize(selectionContext, "final-composite source selection");
+        if (payload == null) {
+            return unavailable("Round 7 RAW_GI visual mode is unavailable for " + context
+                    + " because native diffuse-GI RGBA8 payload is missing");
+        }
+        if (!payload.rawGiInputReady()) {
+            return unavailable("Round 7 RAW_GI visual mode is unavailable for " + context
+                    + " because native diffuse-GI RGBA8 payload is not displayable: "
+                    + payload.debugSummary());
+        }
+        return new Round7RawGiVisualSource(
+                MODE_KEY,
+                SOURCE_LABEL,
+                EVIDENCE_LABEL,
+                SHADER_LABEL,
+                true,
+                receiverLocalPayloadReady(payload),
+                chromaRichPayloadCandidate(payload),
+                smoothLobeFallbackRisk(payload),
+                receiverPayloadIdentity(payload),
+                visualPayloadClassLabel(payload),
+                "Round 7 RAW_GI visual mode selected a native scene-tied diffuse-GI RGBA8 payload for "
+                        + context
+                        + " without claiming preview-state or shader-denoise readiness; "
+                        + receiverPayloadStatusSummary(payload)
+                        + "; "
                         + payload.spatialGiPayloadSummary()
         );
     }
@@ -65,6 +113,11 @@ public record Round7RawGiVisualSource(
                 EVIDENCE_LABEL,
                 SHADER_LABEL,
                 false,
+                false,
+                false,
+                false,
+                "raw-gi-payload-unavailable",
+                "raw-gi-visual-payload-unavailable",
                 reason
         );
     }
@@ -77,6 +130,12 @@ public record Round7RawGiVisualSource(
                 + ",sourceIdentity=" + this.sourceIdentity()
                 + ",sourceClass=" + this.sourceClassLabel()
                 + ",spatialPayloadIdentity=" + this.spatialPayloadIdentitySummary()
+                + ",receiverPayloadIdentity=" + this.receiverPayloadIdentity
+                + ",visualPayloadClass=" + this.visualPayloadClassLabel
+                + ",receiverLocalPayloadReady=" + this.receiverLocalPayloadReady
+                + ",chromaRichPayloadCandidate=" + this.chromaRichPayloadCandidate
+                + ",smoothLobeFallbackRisk=" + this.smoothLobeFallbackRisk
+                + ",receiverPayloadStatus=\"" + this.receiverPayloadStatusBoundary() + "\""
                 + ",sourceAuthenticity=\"" + this.sourceAuthenticityBoundary() + "\""
                 + ",projectionBoundary=\"" + this.surfaceProjectionBoundary() + "\""
                 + ",qualityReadiness=\"" + this.qualityReadinessBoundary() + "\""
@@ -101,6 +160,16 @@ public record Round7RawGiVisualSource(
                 + ",gpuTraversalExecuted=false"
                 + ",nativeComputeGiExecuted=false"
                 + ",nativeComputeDenoiseExecuted=false";
+    }
+
+    public String receiverPayloadStatusBoundary() {
+        return this.visualPayloadClassLabel
+                + ";receiver-local=" + this.receiverLocalPayloadReady
+                + ";chroma-rich-candidate=" + this.chromaRichPayloadCandidate
+                + ";smooth-lobe-fallback-risk=" + this.smoothLobeFallbackRisk
+                + ";gpuTraversalExecuted=false"
+                + ";nativeComputeGiExecuted=false"
+                + ";physical-correctness=not-claimed";
     }
 
     public String sourceAuthenticityBoundary() {
@@ -128,5 +197,61 @@ public record Round7RawGiVisualSource(
             return fallback;
         }
         return value.trim();
+    }
+
+    private static boolean receiverLocalPayloadReady(Round6DiffuseGiCpuOutputPayload payload) {
+        return payload != null
+                && payload.rawGiInputReady()
+                && payload.spatiallyVaryingGiPayloadReady()
+                && payload.physicalSceneTiedGiEvidenceReady();
+    }
+
+    private static boolean chromaRichPayloadCandidate(Round6DiffuseGiCpuOutputPayload payload) {
+        return payload != null
+                && payload.rawGiInputReady()
+                && payload.spatiallyVaryingGiPayloadReady()
+                && payload.peakChannel() > 0;
+    }
+
+    private static boolean smoothLobeFallbackRisk(Round6DiffuseGiCpuOutputPayload payload) {
+        return payload == null
+                || !payload.rawGiInputReady()
+                || !payload.spatiallyVaryingGiPayloadReady()
+                || !payload.physicalSceneTiedGiEvidenceReady();
+    }
+
+    private static String receiverPayloadIdentity(Round6DiffuseGiCpuOutputPayload payload) {
+        if (payload == null || !payload.rawGiInputReady()) {
+            return "raw-gi-payload-unavailable";
+        }
+        if (receiverLocalPayloadReady(payload) && chromaRichPayloadCandidate(payload)) {
+            return "receiver-local/chroma-candidate/native-diffuse-gi-rgba8";
+        }
+        if (smoothLobeFallbackRisk(payload)) {
+            return "smooth-lobe-fallback-risk/native-diffuse-gi-rgba8";
+        }
+        return "raw-gi-chroma-unproven/native-diffuse-gi-rgba8";
+    }
+
+    private static String visualPayloadClassLabel(Round6DiffuseGiCpuOutputPayload payload) {
+        if (payload == null || !payload.rawGiInputReady()) {
+            return "raw-gi-visual-payload-unavailable";
+        }
+        if (receiverLocalPayloadReady(payload) && chromaRichPayloadCandidate(payload)) {
+            return "receiver-local-chroma-candidate-payload";
+        }
+        if (smoothLobeFallbackRisk(payload)) {
+            return "smooth-lobe-fallback-risk-payload";
+        }
+        return "raw-gi-payload-chroma-unproven";
+    }
+
+    private static String receiverPayloadStatusSummary(Round6DiffuseGiCpuOutputPayload payload) {
+        return "receiverPayloadIdentity=" + receiverPayloadIdentity(payload)
+                + ",visualPayloadClass=" + visualPayloadClassLabel(payload)
+                + ",receiverLocalPayloadReady=" + receiverLocalPayloadReady(payload)
+                + ",chromaRichPayloadCandidate=" + chromaRichPayloadCandidate(payload)
+                + ",smoothLobeFallbackRisk=" + smoothLobeFallbackRisk(payload)
+                + ",gpuTraversalExecuted=false,nativeComputeGiExecuted=false,physicalCorrectnessClaimed=false";
     }
 }

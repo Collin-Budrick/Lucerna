@@ -36,10 +36,11 @@ uniform float LucernaShadowCompositeEnabled;
 uniform float LucernaDepthBindingReady;
 uniform float LucernaNormalBindingReady;
 
-const float MAX_SHADOW_ALPHA = 0.62;
-const float SOFT_SHADOW_RADIUS = 1.35;
+const float MAX_SHADOW_ALPHA = 0.70;
+const float SOFT_SHADOW_RADIUS = 1.55;
 const float MIN_DEPTH_AWARE_PAYLOAD_COVERAGE = 0.030;
 const float MIN_DEPTH_AWARE_RECEIVER_STRUCTURE = 0.018;
+const float CONTACT_RECEIVER_DARKENING = 1.36;
 const vec3 LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
 
 vec2 texelSize(sampler2D source) {
@@ -256,6 +257,9 @@ void main() {
     float softFalloffShape = mix(0.84, 1.08, smoothstep(0.04, 0.48,
             max(receiverSupport, edgeConfidence)));
     float receiverLocality = depthReceiverLocalityGate(texCoord, mask, centerDepth);
+    float contactDarkening = mix(0.78, CONTACT_RECEIVER_DARKENING,
+            smoothstep(0.06, 0.46, max(receiverSupport, edgeConfidence))
+            * smoothstep(0.04, 0.52, coverage));
 
     float alpha = coverageGate
             * receiverGate
@@ -264,6 +268,7 @@ void main() {
             * lightingGate
             * softFalloffShape
             * receiverLocality
+            * contactDarkening
             * borderGuard(texCoord)
             * MAX_SHADOW_ALPHA;
 

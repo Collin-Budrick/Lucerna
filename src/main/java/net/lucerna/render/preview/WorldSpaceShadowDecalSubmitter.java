@@ -89,6 +89,7 @@ public final class WorldSpaceShadowDecalSubmitter {
                     "Lucerna world-space shadow receivers submitted: "
                             + "worldSpaceShadowDecal=true geometryTiedWorldSpaceShadowReceivers=true "
                             + "actualBlockCasterPositions=true actualBlockReceiverPositions=true "
+                            + "previewWorldSpaceShadowReceiverGeometry=true previewOnlyShadowReceiverDecals=true "
                             + "realWorldSpaceShadow=true worldSpaceShadowGeometry=true worldSpaceShadowCaster=true "
                             + "worldSpaceShadowReceiver=true shadowReceiverWorldSpace=true shadowOccluderWorldSpace=true "
                             + "sunDirectionApproximation=true approximateSunRayDirection=\"{},{},{}\" "
@@ -316,7 +317,7 @@ public final class WorldSpaceShadowDecalSubmitter {
     }
 
     private static int shadowArgb(double faceWeight, double distanceWeight) {
-        int alpha = clampInt((int) Math.round(10.0 + faceWeight * 18.0 + distanceWeight * 20.0), 8, 46);
+        int alpha = clampInt((int) Math.round(18.0 + faceWeight * 26.0 + distanceWeight * 30.0), 18, 72);
         return (alpha << 24) | SHADOW_RGB;
     }
 

@@ -746,8 +746,10 @@ function Get-RealRendererMilestone1CaptureIntent {
     $visualQualityComparisonPatterns = @(
         "realRendererMilestone1\.visualQualityComparisonProfile=true.*sameSceneBaselineEnabledPlayableRequired=true",
         "realRendererMilestone1\.visualQualityComparisonSequence=.*PhysicalBaseline.*VisualQualityEnabled.*VisualQualityPlayablePhysical",
-        "realRendererMilestone1\.visualQualityRejects=.*fullscreenWash.*fixedLightBlob.*proofOverlays.*focusWindowOnly.*lowResDebugSubstitution.*screenSpaceDecalOnly.*wrongWindow.*menuChatScreenshots",
-        "realRendererMilestone1\.cleanCaptureContract=.*inWorldOnly.*menuClosedRequired=true.*chatClosedRequired=true.*wrongWindowScreenshotForbidden=true.*blankScreenshotForbidden=true"
+        "realRendererMilestone1\.visualQualityRejects=.*fullscreenWash.*fixedLightBlob.*hudHandScreenshots.*rawGiOnlyFallback.*proofOverlays.*focusWindowOnly.*lowResDebugSubstitution.*screenSpaceDecalOnly.*wrongWindow.*menuChatScreenshots",
+        "realRendererMilestone1\.visualQualityArtifactRejectContract=.*hudHandContaminationForbidden=true.*rawGiOnlyFallbackForbiddenWhenShaderDenoiseRequired=true.*fullscreenWashForbidden=true.*fixedLightBlobForbidden=true",
+        "realRendererMilestone1\.visualQualityDeltaContract=.*baselineToEnabledRequired=true.*baselineToPlayableRequired=true.*minChangedPixelPercent=20\.0.*minMeanAbsLuma=4\.0.*minFullChangedPixelPercent=20\.0.*minFullMeanAbsLuma=3\.0.*minActiveTilePercent=35\.0",
+        "realRendererMilestone1\.cleanCaptureContract=.*inWorldOnly.*menuClosedRequired=true.*chatClosedRequired=true.*hudHiddenRequired=true.*handHiddenRequired=true.*wrongWindowScreenshotForbidden=true.*blankScreenshotForbidden=true"
     )
     $normalHeavyWorkloadBypassPatterns = @(
         "(?:Lucerna playable renderer path active: .*heavyProofWorkload=false|realRendererMilestone1\.visualQualityEnabled=true.*heavyProofWorkload=false)",
@@ -2213,6 +2215,12 @@ function Invoke-RealRendererMilestone1SceneAction {
         throw "Unsupported Real Renderer Milestone 1 scene action: $SceneAction"
     }
 
+    $sceneCommandSetupAllowed = $env:LUCERNA_ALLOW_SCENE_COMMAND_SETUP -match '^(?i:1|true|yes|on)$'
+    if (-not $sceneCommandSetupAllowed) {
+        Add-LucernaControllerMarker $MarkerPath "realRendererMilestone1.sceneCommandSetupSkipped=true manualCameraPositioning=true commandDrivenSceneSetup=false allowSceneCommandSetupEnv=LUCERNA_ALLOW_SCENE_COMMAND_SETUP"
+        return
+    }
+
     Send-MinecraftChatCommand "/gamerule sendCommandFeedback false"
     Send-MinecraftChatCommand "/gamerule doDaylightCycle false"
     Send-MinecraftChatCommand "/gamerule doWeatherCycle false"
@@ -2255,7 +2263,7 @@ function Invoke-RealRendererMilestone1SceneAction {
     Send-MinecraftChatCommand "/time set 6000"
     Send-MinecraftChatCommand "/tp @s 0 181.55 -30 0 6"
     Start-Sleep -Seconds 3
-    Add-LucernaControllerMarker $MarkerPath "realRendererMilestone1.scene=depth-gbuffer-shadowmap-traced-denoise dryScene=true dayTime=true timeOfDay=6000 weather=clear sameCamera=true yaw=0 pitch=6 camera=0,181.55,-30 visualQualityDryForeground=$visualQualityScene depthGBufferSurfaces=smooth_stone,concrete,glass,water,copper emissiveSources=minecraft:glowstone,minecraft:sea_lantern,minecraft:redstone_lamp shadowCasters=oak_log,spruce_log,oak_leaves,spruce_leaves realRendererMilestone1.fullProofRequirements=physicalGi,trueDepthGBufferSampling,realShadowMapOutput,tracedLightingConsumption,shaderGeneratedDenoise realRendererMilestone1.partialSlices=shadowMapSlice,depthShadowSlice realRendererMilestone1.depthShadowSliceRequirements=trueDepthGBufferSampling,realShadowMapOutput,shadowMapConsumption,tracedLightingOpenAllowed,shaderDenoiseOpenAllowed realRendererMilestone1.rejects=screenSpaceShadowDecals,lowResDirectTextureFinalProof,focusWindowProofMarker,metadataOnly,shaderDenoiseOverclaim,proofOverlays,menuChatScreenshots,wrongWindow,blankScreenshot"
+    Add-LucernaControllerMarker $MarkerPath "realRendererMilestone1.scene=depth-gbuffer-shadowmap-traced-denoise dryScene=true dayTime=true timeOfDay=6000 weather=clear sameCamera=true yaw=0 pitch=6 camera=0,181.55,-30 visualQualityDryForeground=$visualQualityScene depthGBufferSurfaces=smooth_stone,concrete,glass,water,copper emissiveSources=minecraft:glowstone,minecraft:sea_lantern,minecraft:redstone_lamp shadowCasters=oak_log,spruce_log,oak_leaves,spruce_leaves realRendererMilestone1.fullProofRequirements=physicalGi,trueDepthGBufferSampling,realShadowMapOutput,tracedLightingConsumption,shaderGeneratedDenoise realRendererMilestone1.partialSlices=shadowMapSlice,depthShadowSlice realRendererMilestone1.depthShadowSliceRequirements=trueDepthGBufferSampling,realShadowMapOutput,shadowMapConsumption,tracedLightingOpenAllowed,shaderDenoiseOpenAllowed realRendererMilestone1.rejects=screenSpaceShadowDecals,lowResDirectTextureFinalProof,focusWindowProofMarker,metadataOnly,shaderDenoiseOverclaim,proofOverlays,menuChatScreenshots,wrongWindow,blankScreenshot realRendererMilestone1.visualQualityDeltaContract=baselineToEnabledRequired=true,baselineToPlayableRequired=true,minChangedPixelPercent=20.0,minMeanAbsLuma=4.0,minFullChangedPixelPercent=20.0,minFullMeanAbsLuma=3.0,minActiveTilePercent=35.0"
 }
 
 function Invoke-Round9SceneAction {
@@ -2643,6 +2651,396 @@ namespace LucernaVisualProof {
     return Get-Item -LiteralPath $DestinationPath
 }
 
+function Measure-LucernaSplitScreenDelta {
+    param(
+        [string] $ScreenshotPath,
+        [string] $OutputJsonPath,
+        [double] $ChangedLumaThreshold = 8.0
+    )
+
+    Add-Type -AssemblyName System.Drawing
+    $image = [System.Drawing.Bitmap]::FromFile($ScreenshotPath)
+    try {
+        $halfWidth = [int][Math]::Floor($image.Width / 2)
+        if ($halfWidth -lt 1 -or $image.Height -lt 1) {
+            throw "Split-screen delta requires a non-empty image. path=$ScreenshotPath"
+        }
+
+        $samples = 0L
+        $changed = 0L
+        $sumAbsLuma = 0.0
+        $sumRgbDistance = 0.0
+        $maxAbsLuma = 0.0
+        $sumLeftLuma = 0.0
+        $sumRightLuma = 0.0
+        $sumLeftLumaSquared = 0.0
+        $sumRightLumaSquared = 0.0
+        $sumLeftSaturation = 0.0
+        $sumRightSaturation = 0.0
+        $sumChangedSaturationLift = 0.0
+        $changedSaturationLiftSamples = 0L
+        $changedColorfulPixels = 0L
+        $changedColorfulSaturationLiftThreshold = 0.035
+        $changedColorfulShaderSaturationThreshold = 0.18
+        $changedColorfulRgbDistanceThreshold = $ChangedLumaThreshold * 1.8
+        $rightOverexposed = 0L
+        $rightDarkened = 0L
+        $rightFlatLumaThreshold = 12.0
+        $rightLowSaturationThreshold = 0.16
+        $rightOverexposedPixelThresholdPercent = 4.0
+        $rightMeanLumaOverexposedThreshold = 210.0
+        $rightSaturationRatioThreshold = 0.72
+        $rightGlobalDarkeningLumaDeltaThreshold = -18.0
+        $rightGlobalDarkeningPixelLumaThreshold = 12.0
+        $rightGlobalDarkeningPixelThresholdPercent = 55.0
+        $brightLobeLumaDeltaThreshold = 45.0
+        $brightLobeShaderLumaThreshold = 200.0
+        $brightLobePixelThresholdPercent = 18.0
+        $brightLobeSmoothGradientThreshold = 10.0
+        $brightLobeSmoothPixelRatioThreshold = 0.68
+        $receiverLocalDetailGradientThreshold = 14.0
+        $receiverLocalColorDetailPixelThresholdPercent = 8.0
+        $worldSpaceDetailGradientThreshold = 14.0
+        $worldSpaceShadowLumaDeltaThreshold = 8.0
+        $worldSpaceGlobalLumaOnlyGradientThreshold = 6.0
+        $worldSpaceGlobalLumaOnlySaturationDeltaThreshold = 0.025
+        $brightLobePixels = 0L
+        $brightLobeSmoothPixels = 0L
+        $sumBrightLobeGradient = 0.0
+        $changedDetailPixels = 0L
+        $receiverLocalColorDetailPixels = 0L
+        $sumReceiverLocalColorDetailGradient = 0.0
+        $worldSpaceLocalizedColorDetailPixels = 0L
+        $sumWorldSpaceLocalizedColorDetailGradient = 0.0
+        $worldSpaceLocalizedShadowDetailPixels = 0L
+        $sumWorldSpaceLocalizedShadowDetailGradient = 0.0
+        $worldSpaceLocalizedContributionPixels = 0L
+        $sumWorldSpaceLocalizedContributionGradient = 0.0
+        $worldSpaceGlobalLumaOnlyPixels = 0L
+        $sumWorldSpaceGlobalLumaOnlyDelta = 0.0
+        $farRightContourBandPercent = 16.0
+        $farRightContourBandWidth = [int][Math]::Max(1, [Math]::Ceiling($halfWidth * ($farRightContourBandPercent / 100.0)))
+        $farRightContourStartX = [Math]::Max(0, $halfWidth - $farRightContourBandWidth)
+        $farRightContourLumaGradientThreshold = 20.0
+        $farRightContourPixelThresholdPercent = 10.0
+        $farRightContourMeanGradientThreshold = 8.0
+        $farRightContourConcentrationRatioThreshold = 1.75
+        $farRightContourMeanGradientRatioThreshold = 1.35
+        $farRightContourSamples = 0L
+        $farRightContourHighContrast = 0L
+        $sumFarRightContourGradient = 0.0
+        $interiorContourSamples = 0L
+        $interiorContourHighContrast = 0L
+        $sumInteriorContourGradient = 0.0
+        for ($y = 0; $y -lt $image.Height; $y++) {
+            for ($x = 0; $x -lt $halfWidth; $x++) {
+                $left = $image.GetPixel($x, $y)
+                $right = $image.GetPixel($x + $halfWidth, $y)
+                $leftLuma = 0.2126 * $left.R + 0.7152 * $left.G + 0.0722 * $left.B
+                $rightLuma = 0.2126 * $right.R + 0.7152 * $right.G + 0.0722 * $right.B
+                $leftMax = [Math]::Max($left.R, [Math]::Max($left.G, $left.B))
+                $leftMin = [Math]::Min($left.R, [Math]::Min($left.G, $left.B))
+                $rightMax = [Math]::Max($right.R, [Math]::Max($right.G, $right.B))
+                $rightMin = [Math]::Min($right.R, [Math]::Min($right.G, $right.B))
+                $leftSaturation = if ($leftMax -gt 0) { ($leftMax - $leftMin) / [double]$leftMax } else { 0.0 }
+                $rightSaturation = if ($rightMax -gt 0) { ($rightMax - $rightMin) / [double]$rightMax } else { 0.0 }
+                $saturationLift = $rightSaturation - $leftSaturation
+                $absLuma = [Math]::Abs($rightLuma - $leftLuma)
+                $rgbDistance = [Math]::Sqrt(
+                    [Math]::Pow($right.R - $left.R, 2.0) +
+                    [Math]::Pow($right.G - $left.G, 2.0) +
+                    [Math]::Pow($right.B - $left.B, 2.0)
+                )
+                $pixelChanged = ($absLuma -ge $ChangedLumaThreshold -or $rgbDistance -ge ($ChangedLumaThreshold * 1.8))
+                $pixelHasUsefulColor = (
+                    $saturationLift -ge $changedColorfulSaturationLiftThreshold -and
+                    $rightSaturation -ge $changedColorfulShaderSaturationThreshold -and
+                    $rgbDistance -ge $changedColorfulRgbDistanceThreshold
+                )
+                if ($rightLuma -ge 245.0 -or ($right.R -ge 250 -and $right.G -ge 250 -and $right.B -ge 250)) {
+                    $rightOverexposed++
+                }
+                if (($rightLuma - $leftLuma) -le (-1.0 * $rightGlobalDarkeningPixelLumaThreshold)) {
+                    $rightDarkened++
+                }
+                if ($pixelChanged) {
+                    $changed++
+                    $sumChangedSaturationLift += $saturationLift
+                    $changedSaturationLiftSamples++
+                    if ($pixelHasUsefulColor) {
+                        $changedColorfulPixels++
+                    }
+                }
+                $rightContourGradient = 0.0
+                if ($x -gt 0) {
+                    $rightPrevious = $image.GetPixel($x + $halfWidth - 1, $y)
+                    $rightPreviousLuma = 0.2126 * $rightPrevious.R + 0.7152 * $rightPrevious.G + 0.0722 * $rightPrevious.B
+                    $rightContourGradient = [Math]::Max($rightContourGradient, [Math]::Abs($rightLuma - $rightPreviousLuma))
+                }
+                if ($y -gt 0) {
+                    $rightAbove = $image.GetPixel($x + $halfWidth, $y - 1)
+                    $rightAboveLuma = 0.2126 * $rightAbove.R + 0.7152 * $rightAbove.G + 0.0722 * $rightAbove.B
+                    $rightContourGradient = [Math]::Max($rightContourGradient, [Math]::Abs($rightLuma - $rightAboveLuma))
+                }
+                if ($x -gt 0 -or $y -gt 0) {
+                    if ($x -ge $farRightContourStartX) {
+                        $farRightContourSamples++
+                        $sumFarRightContourGradient += $rightContourGradient
+                        if ($rightContourGradient -ge $farRightContourLumaGradientThreshold) {
+                            $farRightContourHighContrast++
+                        }
+                    } else {
+                        $interiorContourSamples++
+                        $sumInteriorContourGradient += $rightContourGradient
+                        if ($rightContourGradient -ge $farRightContourLumaGradientThreshold) {
+                            $interiorContourHighContrast++
+                        }
+                    }
+                }
+                if (($rightLuma - $leftLuma) -ge $brightLobeLumaDeltaThreshold -and $rightLuma -ge $brightLobeShaderLumaThreshold) {
+                    $brightLobePixels++
+                    $sumBrightLobeGradient += $rightContourGradient
+                    if ($rightContourGradient -le $brightLobeSmoothGradientThreshold) {
+                        $brightLobeSmoothPixels++
+                    }
+                }
+                if ($pixelChanged -and $rightContourGradient -ge $receiverLocalDetailGradientThreshold) {
+                    $changedDetailPixels++
+                    if ($pixelHasUsefulColor) {
+                        $receiverLocalColorDetailPixels++
+                        $sumReceiverLocalColorDetailGradient += $rightContourGradient
+                    }
+                }
+                if ($pixelChanged) {
+                    $isWorldSpaceLocalizedColorDetail = (
+                        $pixelHasUsefulColor -and
+                        $rightContourGradient -ge $worldSpaceDetailGradientThreshold
+                    )
+                    $isWorldSpaceLocalizedShadowDetail = (
+                        ($rightLuma - $leftLuma) -le (-1.0 * $worldSpaceShadowLumaDeltaThreshold) -and
+                        $rightContourGradient -ge $worldSpaceDetailGradientThreshold
+                    )
+                    if ($isWorldSpaceLocalizedColorDetail) {
+                        $worldSpaceLocalizedColorDetailPixels++
+                        $sumWorldSpaceLocalizedColorDetailGradient += $rightContourGradient
+                    }
+                    if ($isWorldSpaceLocalizedShadowDetail) {
+                        $worldSpaceLocalizedShadowDetailPixels++
+                        $sumWorldSpaceLocalizedShadowDetailGradient += $rightContourGradient
+                    }
+                    if ($isWorldSpaceLocalizedColorDetail -or $isWorldSpaceLocalizedShadowDetail) {
+                        $worldSpaceLocalizedContributionPixels++
+                        $sumWorldSpaceLocalizedContributionGradient += $rightContourGradient
+                    } elseif (
+                        $absLuma -ge $ChangedLumaThreshold -and
+                        $rightContourGradient -le $worldSpaceGlobalLumaOnlyGradientThreshold -and
+                        [Math]::Abs($saturationLift) -le $worldSpaceGlobalLumaOnlySaturationDeltaThreshold
+                    ) {
+                        $worldSpaceGlobalLumaOnlyPixels++
+                        $sumWorldSpaceGlobalLumaOnlyDelta += ($rightLuma - $leftLuma)
+                    }
+                }
+                $samples++
+                $sumAbsLuma += $absLuma
+                $sumRgbDistance += $rgbDistance
+                $maxAbsLuma = [Math]::Max($maxAbsLuma, $absLuma)
+                $sumLeftLuma += $leftLuma
+                $sumRightLuma += $rightLuma
+                $sumLeftLumaSquared += $leftLuma * $leftLuma
+                $sumRightLumaSquared += $rightLuma * $rightLuma
+                $sumLeftSaturation += $leftSaturation
+                $sumRightSaturation += $rightSaturation
+            }
+        }
+
+        $leftMeanLuma = if ($samples -gt 0) { $sumLeftLuma / $samples } else { 0.0 }
+        $rightMeanLuma = if ($samples -gt 0) { $sumRightLuma / $samples } else { 0.0 }
+        $leftLumaVariance = if ($samples -gt 0) { [Math]::Max(0.0, ($sumLeftLumaSquared / $samples) - ($leftMeanLuma * $leftMeanLuma)) } else { 0.0 }
+        $rightLumaVariance = if ($samples -gt 0) { [Math]::Max(0.0, ($sumRightLumaSquared / $samples) - ($rightMeanLuma * $rightMeanLuma)) } else { 0.0 }
+        $leftLumaStdDev = [Math]::Sqrt($leftLumaVariance)
+        $rightLumaStdDev = [Math]::Sqrt($rightLumaVariance)
+        $leftMeanSaturation = if ($samples -gt 0) { $sumLeftSaturation / $samples } else { 0.0 }
+        $rightMeanSaturation = if ($samples -gt 0) { $sumRightSaturation / $samples } else { 0.0 }
+        $rightOverexposedPixelPercent = if ($samples -gt 0) { ($rightOverexposed * 100.0) / $samples } else { 0.0 }
+        $rightDarkenedPixelPercent = if ($samples -gt 0) { ($rightDarkened * 100.0) / $samples } else { 0.0 }
+        $meanChangedSaturationLift = if ($changedSaturationLiftSamples -gt 0) { $sumChangedSaturationLift / $changedSaturationLiftSamples } else { 0.0 }
+        $changedColorfulPixelPercent = if ($samples -gt 0) { ($changedColorfulPixels * 100.0) / $samples } else { 0.0 }
+        $brightLobePixelPercent = if ($samples -gt 0) { ($brightLobePixels * 100.0) / $samples } else { 0.0 }
+        $brightLobeSmoothPixelRatio = if ($brightLobePixels -gt 0) { $brightLobeSmoothPixels / ([double]$brightLobePixels) } else { 0.0 }
+        $brightLobeMeanGradient = if ($brightLobePixels -gt 0) { $sumBrightLobeGradient / $brightLobePixels } else { 0.0 }
+        $changedDetailPixelPercent = if ($samples -gt 0) { ($changedDetailPixels * 100.0) / $samples } else { 0.0 }
+        $changedDetailCoverageRatio = if ($changed -gt 0) { $changedDetailPixels / ([double]$changed) } else { 0.0 }
+        $receiverLocalColorDetailPixelPercent = if ($samples -gt 0) { ($receiverLocalColorDetailPixels * 100.0) / $samples } else { 0.0 }
+        $receiverLocalColorDetailCoverageRatio = if ($changed -gt 0) { $receiverLocalColorDetailPixels / ([double]$changed) } else { 0.0 }
+        $receiverLocalColorDetailMeanGradient = if ($receiverLocalColorDetailPixels -gt 0) { $sumReceiverLocalColorDetailGradient / $receiverLocalColorDetailPixels } else { 0.0 }
+        $worldSpaceLocalizedColorDetailPixelPercent = if ($samples -gt 0) { ($worldSpaceLocalizedColorDetailPixels * 100.0) / $samples } else { 0.0 }
+        $worldSpaceLocalizedColorDetailCoverageRatio = if ($changed -gt 0) { $worldSpaceLocalizedColorDetailPixels / ([double]$changed) } else { 0.0 }
+        $worldSpaceLocalizedColorDetailMeanGradient = if ($worldSpaceLocalizedColorDetailPixels -gt 0) { $sumWorldSpaceLocalizedColorDetailGradient / $worldSpaceLocalizedColorDetailPixels } else { 0.0 }
+        $worldSpaceLocalizedShadowDetailPixelPercent = if ($samples -gt 0) { ($worldSpaceLocalizedShadowDetailPixels * 100.0) / $samples } else { 0.0 }
+        $worldSpaceLocalizedShadowDetailCoverageRatio = if ($changed -gt 0) { $worldSpaceLocalizedShadowDetailPixels / ([double]$changed) } else { 0.0 }
+        $worldSpaceLocalizedShadowDetailMeanGradient = if ($worldSpaceLocalizedShadowDetailPixels -gt 0) { $sumWorldSpaceLocalizedShadowDetailGradient / $worldSpaceLocalizedShadowDetailPixels } else { 0.0 }
+        $worldSpaceLocalizedContributionPixelPercent = if ($samples -gt 0) { ($worldSpaceLocalizedContributionPixels * 100.0) / $samples } else { 0.0 }
+        $worldSpaceLocalizedContributionCoverageRatio = if ($changed -gt 0) { $worldSpaceLocalizedContributionPixels / ([double]$changed) } else { 0.0 }
+        $worldSpaceLocalizedContributionMeanGradient = if ($worldSpaceLocalizedContributionPixels -gt 0) { $sumWorldSpaceLocalizedContributionGradient / $worldSpaceLocalizedContributionPixels } else { 0.0 }
+        $worldSpaceGlobalLumaOnlyPixelPercent = if ($samples -gt 0) { ($worldSpaceGlobalLumaOnlyPixels * 100.0) / $samples } else { 0.0 }
+        $worldSpaceGlobalLumaOnlyCoverageRatio = if ($changed -gt 0) { $worldSpaceGlobalLumaOnlyPixels / ([double]$changed) } else { 0.0 }
+        $worldSpaceGlobalLumaOnlyMeanDelta = if ($worldSpaceGlobalLumaOnlyPixels -gt 0) { $sumWorldSpaceGlobalLumaOnlyDelta / $worldSpaceGlobalLumaOnlyPixels } else { 0.0 }
+        $worldSpaceLocalizedToGlobalLumaOnlyRatio = if ($worldSpaceGlobalLumaOnlyPixelPercent -gt 0.000001) {
+            $worldSpaceLocalizedContributionPixelPercent / $worldSpaceGlobalLumaOnlyPixelPercent
+        } elseif ($worldSpaceLocalizedContributionPixelPercent -gt 0.0) {
+            999.0
+        } else {
+            0.0
+        }
+        $saturationRatio = if ($leftMeanSaturation -gt 0.000001) { $rightMeanSaturation / $leftMeanSaturation } else { 0.0 }
+        $lumaStdDevRatio = if ($leftLumaStdDev -gt 0.000001) { $rightLumaStdDev / $leftLumaStdDev } else { 0.0 }
+        $farRightContourPixelPercent = if ($farRightContourSamples -gt 0) { ($farRightContourHighContrast * 100.0) / $farRightContourSamples } else { 0.0 }
+        $interiorContourPixelPercent = if ($interiorContourSamples -gt 0) { ($interiorContourHighContrast * 100.0) / $interiorContourSamples } else { 0.0 }
+        $farRightContourMeanGradient = if ($farRightContourSamples -gt 0) { $sumFarRightContourGradient / $farRightContourSamples } else { 0.0 }
+        $interiorContourMeanGradient = if ($interiorContourSamples -gt 0) { $sumInteriorContourGradient / $interiorContourSamples } else { 0.0 }
+        $farRightContourConcentrationRatio = if ($interiorContourPixelPercent -gt 0.000001) {
+            $farRightContourPixelPercent / $interiorContourPixelPercent
+        } elseif ($farRightContourPixelPercent -gt 0.0) {
+            999.0
+        } else {
+            0.0
+        }
+        $farRightContourMeanGradientRatio = if ($interiorContourMeanGradient -gt 0.000001) {
+            $farRightContourMeanGradient / $interiorContourMeanGradient
+        } elseif ($farRightContourMeanGradient -gt 0.0) {
+            999.0
+        } else {
+            0.0
+        }
+        $washedOutGuardTriggered = (
+            $rightOverexposedPixelPercent -ge $rightOverexposedPixelThresholdPercent -or
+            $rightMeanLuma -ge $rightMeanLumaOverexposedThreshold -or
+            $rightLumaStdDev -le $rightFlatLumaThreshold -or
+            $rightMeanSaturation -le $rightLowSaturationThreshold -or
+            $saturationRatio -le $rightSaturationRatioThreshold
+        )
+        $globalDarkeningGuardTriggered = (
+            ($rightMeanLuma - $leftMeanLuma) -le $rightGlobalDarkeningLumaDeltaThreshold -and
+            $rightDarkenedPixelPercent -ge $rightGlobalDarkeningPixelThresholdPercent
+        )
+        $farRightContourGuardTriggered = (
+            $farRightContourPixelPercent -ge $farRightContourPixelThresholdPercent -and
+            $farRightContourMeanGradient -ge $farRightContourMeanGradientThreshold -and
+            (
+                $farRightContourConcentrationRatio -ge $farRightContourConcentrationRatioThreshold -or
+                $farRightContourMeanGradientRatio -ge $farRightContourMeanGradientRatioThreshold
+            )
+        )
+        $smoothLobeOverexposureLikely = (
+            $brightLobePixelPercent -ge $brightLobePixelThresholdPercent -and
+            $brightLobeSmoothPixelRatio -ge $brightLobeSmoothPixelRatioThreshold -and
+            $brightLobeMeanGradient -le $brightLobeSmoothGradientThreshold
+        )
+        $receiverLocalColorDetailLikely = (
+            $receiverLocalColorDetailPixelPercent -ge $receiverLocalColorDetailPixelThresholdPercent -and
+            $receiverLocalColorDetailMeanGradient -ge $receiverLocalDetailGradientThreshold
+        )
+
+        $result = [ordered]@{
+            screenshot = $ScreenshotPath
+            comparison = "left-half-base-vs-right-half-lucerna"
+            width = $image.Width
+            height = $image.Height
+            halfWidth = $halfWidth
+            samples = $samples
+            changedPixelPercent = if ($samples -gt 0) { [Math]::Round(($changed * 100.0) / $samples, 4) } else { 0.0 }
+            meanAbsLuma = if ($samples -gt 0) { [Math]::Round($sumAbsLuma / $samples, 4) } else { 0.0 }
+            meanRgbDistance = if ($samples -gt 0) { [Math]::Round($sumRgbDistance / $samples, 4) } else { 0.0 }
+            maxAbsLuma = [Math]::Round($maxAbsLuma, 4)
+            changedLumaThreshold = $ChangedLumaThreshold
+            leftMeanLuma = [Math]::Round($leftMeanLuma, 4)
+            shaderMeanLuma = [Math]::Round($rightMeanLuma, 4)
+            shaderMeanLumaDelta = [Math]::Round($rightMeanLuma - $leftMeanLuma, 4)
+            shaderGlobalDarkeningPixelPercent = [Math]::Round($rightDarkenedPixelPercent, 4)
+            shaderGlobalDarkeningGuardTriggered = [bool]$globalDarkeningGuardTriggered
+            leftLumaStdDev = [Math]::Round($leftLumaStdDev, 4)
+            shaderLumaStdDev = [Math]::Round($rightLumaStdDev, 4)
+            shaderLumaStdDevRatio = [Math]::Round($lumaStdDevRatio, 4)
+            leftMeanSaturation = [Math]::Round($leftMeanSaturation, 4)
+            shaderMeanSaturation = [Math]::Round($rightMeanSaturation, 4)
+            shaderSaturationLift = [Math]::Round($rightMeanSaturation - $leftMeanSaturation, 4)
+            shaderSaturationRatio = [Math]::Round($saturationRatio, 4)
+            shaderChangedMeanSaturationLift = [Math]::Round($meanChangedSaturationLift, 4)
+            shaderChangedColorfulPixelPercent = [Math]::Round($changedColorfulPixelPercent, 4)
+            shaderBrightLobePixelPercent = [Math]::Round($brightLobePixelPercent, 4)
+            shaderBrightLobeMeanGradient = [Math]::Round($brightLobeMeanGradient, 4)
+            shaderBrightLobeSmoothPixelRatio = [Math]::Round($brightLobeSmoothPixelRatio, 4)
+            shaderSmoothLobeOverexposureLikely = [bool]$smoothLobeOverexposureLikely
+            shaderChangedDetailPixelPercent = [Math]::Round($changedDetailPixelPercent, 4)
+            shaderChangedDetailCoverageRatio = [Math]::Round($changedDetailCoverageRatio, 4)
+            shaderReceiverLocalColorDetailPixelPercent = [Math]::Round($receiverLocalColorDetailPixelPercent, 4)
+            shaderReceiverLocalColorDetailCoverageRatio = [Math]::Round($receiverLocalColorDetailCoverageRatio, 4)
+            shaderReceiverLocalColorDetailMeanGradient = [Math]::Round($receiverLocalColorDetailMeanGradient, 4)
+            shaderReceiverLocalColorDetailLikely = [bool]$receiverLocalColorDetailLikely
+            shaderWorldSpaceLocalizedColorDetailPixelPercent = [Math]::Round($worldSpaceLocalizedColorDetailPixelPercent, 4)
+            shaderWorldSpaceLocalizedColorDetailCoverageRatio = [Math]::Round($worldSpaceLocalizedColorDetailCoverageRatio, 4)
+            shaderWorldSpaceLocalizedColorDetailMeanGradient = [Math]::Round($worldSpaceLocalizedColorDetailMeanGradient, 4)
+            shaderWorldSpaceLocalizedShadowDetailPixelPercent = [Math]::Round($worldSpaceLocalizedShadowDetailPixelPercent, 4)
+            shaderWorldSpaceLocalizedShadowDetailCoverageRatio = [Math]::Round($worldSpaceLocalizedShadowDetailCoverageRatio, 4)
+            shaderWorldSpaceLocalizedShadowDetailMeanGradient = [Math]::Round($worldSpaceLocalizedShadowDetailMeanGradient, 4)
+            shaderWorldSpaceLocalizedContributionPixelPercent = [Math]::Round($worldSpaceLocalizedContributionPixelPercent, 4)
+            shaderWorldSpaceLocalizedContributionCoverageRatio = [Math]::Round($worldSpaceLocalizedContributionCoverageRatio, 4)
+            shaderWorldSpaceLocalizedContributionMeanGradient = [Math]::Round($worldSpaceLocalizedContributionMeanGradient, 4)
+            shaderWorldSpaceGlobalLumaOnlyPixelPercent = [Math]::Round($worldSpaceGlobalLumaOnlyPixelPercent, 4)
+            shaderWorldSpaceGlobalLumaOnlyCoverageRatio = [Math]::Round($worldSpaceGlobalLumaOnlyCoverageRatio, 4)
+            shaderWorldSpaceGlobalLumaOnlyMeanDelta = [Math]::Round($worldSpaceGlobalLumaOnlyMeanDelta, 4)
+            shaderWorldSpaceLocalizedToGlobalLumaOnlyRatio = [Math]::Round($worldSpaceLocalizedToGlobalLumaOnlyRatio, 4)
+            shaderOverexposedPixelPercent = [Math]::Round($rightOverexposedPixelPercent, 4)
+            shaderWashedOutOrFlatGuardTriggered = [bool]$washedOutGuardTriggered
+            shaderFarRightContourPixelPercent = [Math]::Round($farRightContourPixelPercent, 4)
+            shaderInteriorContourPixelPercent = [Math]::Round($interiorContourPixelPercent, 4)
+            shaderFarRightContourMeanGradient = [Math]::Round($farRightContourMeanGradient, 4)
+            shaderInteriorContourMeanGradient = [Math]::Round($interiorContourMeanGradient, 4)
+            shaderFarRightContourConcentrationRatio = [Math]::Round($farRightContourConcentrationRatio, 4)
+            shaderFarRightContourMeanGradientRatio = [Math]::Round($farRightContourMeanGradientRatio, 4)
+            shaderFarRightContourResidueGuardTriggered = [bool]$farRightContourGuardTriggered
+            qualityGuard = [ordered]@{
+                washedOutOrFlatShaderHalf = [bool]$washedOutGuardTriggered
+                globalDarkeningShaderHalf = [bool]$globalDarkeningGuardTriggered
+                farRightContourResidue = [bool]$farRightContourGuardTriggered
+                shaderFlatLumaStdDevThreshold = $rightFlatLumaThreshold
+                shaderLowSaturationThreshold = $rightLowSaturationThreshold
+                shaderOverexposedPixelThresholdPercent = $rightOverexposedPixelThresholdPercent
+                shaderMeanLumaOverexposedThreshold = $rightMeanLumaOverexposedThreshold
+                shaderSaturationRatioThreshold = $rightSaturationRatioThreshold
+                shaderChangedColorfulSaturationLiftThreshold = $changedColorfulSaturationLiftThreshold
+                shaderChangedColorfulSaturationThreshold = $changedColorfulShaderSaturationThreshold
+                shaderChangedColorfulRgbDistanceThreshold = $changedColorfulRgbDistanceThreshold
+                shaderBrightLobeLumaDeltaThreshold = $brightLobeLumaDeltaThreshold
+                shaderBrightLobeLumaThreshold = $brightLobeShaderLumaThreshold
+                shaderBrightLobePixelThresholdPercent = $brightLobePixelThresholdPercent
+                shaderBrightLobeSmoothGradientThreshold = $brightLobeSmoothGradientThreshold
+                shaderBrightLobeSmoothPixelRatioThreshold = $brightLobeSmoothPixelRatioThreshold
+                shaderReceiverLocalDetailGradientThreshold = $receiverLocalDetailGradientThreshold
+                shaderReceiverLocalColorDetailPixelThresholdPercent = $receiverLocalColorDetailPixelThresholdPercent
+                shaderWorldSpaceDetailGradientThreshold = $worldSpaceDetailGradientThreshold
+                shaderWorldSpaceShadowLumaDeltaThreshold = $worldSpaceShadowLumaDeltaThreshold
+                shaderWorldSpaceGlobalLumaOnlyGradientThreshold = $worldSpaceGlobalLumaOnlyGradientThreshold
+                shaderWorldSpaceGlobalLumaOnlySaturationDeltaThreshold = $worldSpaceGlobalLumaOnlySaturationDeltaThreshold
+                shaderGlobalDarkeningMeanLumaDeltaThreshold = $rightGlobalDarkeningLumaDeltaThreshold
+                shaderGlobalDarkeningPixelLumaThreshold = $rightGlobalDarkeningPixelLumaThreshold
+                shaderGlobalDarkeningPixelThresholdPercent = $rightGlobalDarkeningPixelThresholdPercent
+                shaderFarRightContourBandPercent = $farRightContourBandPercent
+                shaderFarRightContourBandWidthPixels = $farRightContourBandWidth
+                shaderFarRightContourLumaGradientThreshold = $farRightContourLumaGradientThreshold
+                shaderFarRightContourPixelThresholdPercent = $farRightContourPixelThresholdPercent
+                shaderFarRightContourMeanGradientThreshold = $farRightContourMeanGradientThreshold
+                shaderFarRightContourConcentrationRatioThreshold = $farRightContourConcentrationRatioThreshold
+                shaderFarRightContourMeanGradientRatioThreshold = $farRightContourMeanGradientRatioThreshold
+            }
+        }
+        $result | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $OutputJsonPath -Encoding UTF8
+        return [pscustomobject]$result
+    } finally {
+        $image.Dispose()
+    }
+}
+
 function Copy-FreshLatestLog {
     param(
         [string] $Root,
@@ -2993,6 +3391,14 @@ try {
         $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_STRICT_PROOF"] = if ($realRendererMilestone1VisualQualityEnabledIntent) { "false" } else { "true" }
         $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_VISUAL_QUALITY_COMPARISON"] = if ($realRendererMilestone1VisualQualityIntent) { "true" } else { "false" }
         $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_REQUIRE_BASELINE_ENABLED_PLAYABLE_SCREENSHOTS"] = if ($realRendererMilestone1VisualQualityIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_REQUIRE_MEANINGFUL_VISUAL_DELTA"] = if ($realRendererMilestone1VisualQualityIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_SPLIT_SCREEN_VISUAL_PROOF"] = if ($realRendererMilestone1VisualQualityEnabledIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_AUTO_AFTER_SCENE"] = if ($realRendererMilestone1VisualQualityEnabledIntent) { "true" } else { "false" }
+        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_VISUAL_DELTA_MIN_CHANGED_PIXEL_PERCENT"] = "20.0"
+        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_VISUAL_DELTA_MIN_MEAN_ABS_LUMA"] = "4.0"
+        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_VISUAL_DELTA_MIN_FULL_CHANGED_PIXEL_PERCENT"] = "20.0"
+        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_VISUAL_DELTA_MIN_FULL_MEAN_ABS_LUMA"] = "3.0"
+        $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_VISUAL_DELTA_MIN_ACTIVE_TILE_PERCENT"] = "35.0"
         $psi.Environment["LUCERNA_REAL_RENDERER_MILESTONE1_PLAYABLE_PHYSICAL_PROOF"] = if ($realRendererMilestone1PlayablePhysicalIntent) { "true" } else { "false" }
         $psi.Environment["LUCERNA_REQUIRE_PLAYABLE_PHYSICAL_RENDERER_BUDGET"] = if ($realRendererMilestone1PlayablePhysicalIntent) { "true" } else { "false" }
         $psi.Environment["LUCERNA_REJECT_HEAVY_PROOF_WORKLOAD_FOR_PLAYABLE_PHYSICAL"] = if ($realRendererMilestone1PlayablePhysicalIntent) { "true" } else { "false" }
@@ -3092,7 +3498,13 @@ try {
     }
     if ($ScreenshotSource -eq "InClient" -and $ValidationProfile -ne "VisualLightingMilestone1") {
         $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_REQUEST"] = "true"
-        $screenshotDelayTicks = if ($ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7ShaderDenoiseOutput" -or ($ValidationProfile -eq "Round11Restir" -and $round11CaptureIntent -and [string]$round11CaptureIntent.sceneKind -eq "round11-restir-temporal")) { "1400" } else { "180" }
+        $screenshotDelayTicks = if ($ValidationProfile -eq "Round7CompositeStability" -or $ValidationProfile -eq "Round7ShaderDenoiseOutput" -or ($ValidationProfile -eq "Round11Restir" -and $round11CaptureIntent -and [string]$round11CaptureIntent.sceneKind -eq "round11-restir-temporal")) {
+            "1400"
+        } elseif ($ValidationProfile -eq "RealRendererMilestone1" -and $Mode -eq "VisualQualityEnabled") {
+            "900"
+        } else {
+            "180"
+        }
         $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_DELAY_TICKS"] = $screenshotDelayTicks
         $psi.Environment["LUCERNA_CONTROLLER_SCREENSHOT_TRIGGER_FILE"] = $controllerScreenshotTriggerFile
     }
@@ -3420,6 +3832,33 @@ try {
             "menu_screenshot=true",
             "chatScreenshot=true",
             "chat_screenshot=true",
+            "screenshotContainsHud=true",
+            "screenshot_contains_hud=true",
+            "hudScreenshot=true",
+            "hud_screenshot=true",
+            "hudVisibleInScreenshot=true",
+            "hud_visible_in_screenshot=true",
+            "screenshotContainsHand=true",
+            "screenshot_contains_hand=true",
+            "handScreenshot=true",
+            "hand_screenshot=true",
+            "firstPersonHandVisible=true",
+            "first_person_hand_visible=true",
+            "heldItemVisible=true",
+            "held_item_visible=true",
+            "heldItemRendererVisible=true",
+            "held_item_renderer_visible=true",
+            "hideGuiBeforeScreenshot=false",
+            "hide_gui_before_screenshot=false",
+            "hideGui=false",
+            "hide_gui=false",
+            "guiHidden=false",
+            "gui_hidden=false",
+            "hudHidden=false",
+            "hud_hidden=false",
+            "handHidden=false",
+            "hand_hidden=false",
+            "(?:currentScreen|current_screen|activeScreen|active_screen|screenClass|screen_class)=[^`r`n]*(?:PauseScreen|GameMenuScreen|ChatScreen|TitleScreen|DeathScreen|Screen=Pause|Screen=Chat)",
             "round6-diffuse-gi-focus-window-additive",
             "final-composite-direct-light-focus-window-additive",
             "sourceIdentity=native-direct-light-rgba8",
@@ -3536,7 +3975,11 @@ try {
                 "fullscreenBlob=true",
                 "fullscreen_blob_visual=true",
                 "fixed_light_blob=true",
-                "fixedLightBlob=true"
+                "fixedLightBlob=true",
+                "(?:rawGiOnlyFallback|raw_gi_only_fallback|rawGiOnlyComposite|raw_gi_only_composite|rawGiOnlyFinalComposite|raw_gi_only_final_composite)=true",
+                "(?:rawGiVisualSourceConsumed|raw_gi_visual_source_consumed)=true[^`r`n]*(?:shaderGeneratedDenoiseOutputEvidence|shader_generated_denoise_output_evidence|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=false",
+                "(?:sourceIdentity|source_identity)=native-diffuse-gi-rgba8/raw-gi(?:\+native-shadow-map-mask)?[^`r`n]*(?:shaderGeneratedDenoiseOutputEvidence|shader_generated_denoise_output_evidence|shaderGeneratedDenoiseOutput|shader_generated_denoise_output|realShaderDenoiseOutputReady|real_shader_denoise_output_ready)=false",
+                "(?:shaderDenoiseBlockerReason|shader_denoise_blocker_reason|shaderDenoiseBlocker|shader_denoise_blocker)=(?:raw_gi_only|raw-gi-only|shader_generated_output_false|real_shader_output_not_ready|cpu_readback_fallback_active)"
             )
         }
         $realRendererForbiddenPatterns + @($PhysicalLightingForbiddenLogPattern)
@@ -3695,19 +4138,21 @@ try {
         }
     }
     if ($ValidationProfile -eq "RealRendererMilestone1" -and $realRendererMilestone1CaptureIntent -and [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-full-proof") {
-        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.fullRendererProofProfile=true inClientScreenshotRequired=true sodiumIrisVulkanRequired=true sameInWorldRunRequired=true physicalGiRequired=true realShadowMapOutputRequired=true shadowMapConsumptionRequired=true trueDepthGBufferSamplingRequired=true tracedLightingConsumptionRequired=true shaderGeneratedDenoiseOutputRequired=true proofOverlayForbidden=true focusWindowOnlyForbidden=true lowResDebugSubstitutionForbidden=true metadataOnlyEvidenceForbidden=true overclaimForbidden=true menuScreenshotForbidden=true chatScreenshotForbidden=true"
-        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.cleanCaptureContract=inWorldOnly menuClosedRequired=true chatClosedRequired=true pauseMenuAvoidance=true proofOverlaysForbidden=true wrongWindowScreenshotForbidden=true blankScreenshotForbidden=true noWindowFallback=true"
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.fullRendererProofProfile=true inClientScreenshotRequired=true sodiumIrisVulkanRequired=true sameInWorldRunRequired=true physicalGiRequired=true realShadowMapOutputRequired=true shadowMapConsumptionRequired=true trueDepthGBufferSamplingRequired=true tracedLightingConsumptionRequired=true shaderGeneratedDenoiseOutputRequired=true proofOverlayForbidden=true focusWindowOnlyForbidden=true lowResDebugSubstitutionForbidden=true metadataOnlyEvidenceForbidden=true overclaimForbidden=true menuScreenshotForbidden=true chatScreenshotForbidden=true hudScreenshotForbidden=true handScreenshotForbidden=true"
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.cleanCaptureContract=inWorldOnly menuClosedRequired=true chatClosedRequired=true hudHiddenRequired=true handHiddenRequired=true pauseMenuAvoidance=true proofOverlaysForbidden=true wrongWindowScreenshotForbidden=true blankScreenshotForbidden=true noWindowFallback=true"
     }
     if ($ValidationProfile -eq "RealRendererMilestone1" -and $realRendererMilestone1CaptureIntent -and ([string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-playable-physical" -or [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-visual-quality-playable-physical")) {
-        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.fullRendererProofProfile=true realRendererMilestone1.playablePhysicalProfile=true inClientScreenshotRequired=true sodiumIrisVulkanRequired=true sameInWorldRunRequired=true physicalGiRequired=true realShadowMapOutputRequired=true shadowMapConsumptionRequired=true trueDepthGBufferSamplingRequired=true tracedLightingConsumptionRequired=true shaderGeneratedDenoiseOutputRequired=true proofOverlayForbidden=true fullscreenBlobForbidden=true focusWindowOnlyForbidden=true lowResDebugSubstitutionForbidden=true metadataOnlyEvidenceForbidden=true overclaimForbidden=true menuScreenshotForbidden=true chatScreenshotForbidden=true"
-        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.cleanCaptureContract=inWorldOnly menuClosedRequired=true chatClosedRequired=true pauseMenuAvoidance=true proofOverlaysForbidden=true wrongWindowScreenshotForbidden=true blankScreenshotForbidden=true noWindowFallback=true"
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.fullRendererProofProfile=true realRendererMilestone1.playablePhysicalProfile=true inClientScreenshotRequired=true sodiumIrisVulkanRequired=true sameInWorldRunRequired=true physicalGiRequired=true realShadowMapOutputRequired=true shadowMapConsumptionRequired=true trueDepthGBufferSamplingRequired=true tracedLightingConsumptionRequired=true shaderGeneratedDenoiseOutputRequired=true proofOverlayForbidden=true fullscreenBlobForbidden=true focusWindowOnlyForbidden=true lowResDebugSubstitutionForbidden=true metadataOnlyEvidenceForbidden=true overclaimForbidden=true menuScreenshotForbidden=true chatScreenshotForbidden=true hudScreenshotForbidden=true handScreenshotForbidden=true"
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.cleanCaptureContract=inWorldOnly menuClosedRequired=true chatClosedRequired=true hudHiddenRequired=true handHiddenRequired=true pauseMenuAvoidance=true proofOverlaysForbidden=true wrongWindowScreenshotForbidden=true blankScreenshotForbidden=true noWindowFallback=true"
         Add-LucernaControllerMarker $markerLog "realRendererMilestone1.playableBudgetRequired=true playablePhysicalBudgetRequired=true proofTelemetryBudget=playable heavyProofWorkload=false fullProofWorkload=false lowCostPhysicalRendererBudget=active"
     }
     if ($ValidationProfile -eq "RealRendererMilestone1" -and $realRendererMilestone1CaptureIntent -and [string]$realRendererMilestone1CaptureIntent.artifactRole -like "real-renderer-milestone1-visual-quality-*") {
         Add-LucernaControllerMarker $markerLog "realRendererMilestone1.visualQualityComparisonProfile=true sameSceneBaselineEnabledPlayableRequired=true inClientScreenshotsRequired=true comparableBaselineEnabledPlayableScreenshotsRequired=true"
         Add-LucernaControllerMarker $markerLog "realRendererMilestone1.visualQualityComparisonSequence=PhysicalBaseline,VisualQualityEnabled,VisualQualityPlayablePhysical"
-        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.visualQualityRejects=fullscreenWash,fixedLightBlob,proofOverlays,focusWindowOnly,lowResDebugSubstitution,screenSpaceDecalOnly,oneFpsProofWorkload,wrongWindow,menuChatScreenshots"
-        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.cleanCaptureContract=inWorldOnly menuClosedRequired=true chatClosedRequired=true pauseMenuAvoidance=true proofOverlaysForbidden=true wrongWindowScreenshotForbidden=true blankScreenshotForbidden=true noWindowFallback=true"
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.visualQualityRejects=fullscreenWash,fixedLightBlob,hudHandScreenshots,rawGiOnlyFallback,proofOverlays,focusWindowOnly,lowResDebugSubstitution,screenSpaceDecalOnly,oneFpsProofWorkload,wrongWindow,menuChatScreenshots"
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.visualQualityArtifactRejectContract=hudHandContaminationForbidden=true,rawGiOnlyFallbackForbiddenWhenShaderDenoiseRequired=true,fullscreenWashForbidden=true,fixedLightBlobForbidden=true"
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.visualQualityDeltaContract=baselineToEnabledRequired=true,baselineToPlayableRequired=true,minChangedPixelPercent=20.0,minMeanAbsLuma=4.0,minFullChangedPixelPercent=20.0,minFullMeanAbsLuma=3.0,minActiveTilePercent=35.0"
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.cleanCaptureContract=inWorldOnly menuClosedRequired=true chatClosedRequired=true hudHiddenRequired=true handHiddenRequired=true pauseMenuAvoidance=true proofOverlaysForbidden=true wrongWindowScreenshotForbidden=true blankScreenshotForbidden=true noWindowFallback=true"
         if ([string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-visual-quality-baseline") {
             Add-LucernaControllerMarker $markerLog "realRendererMilestone1.visualQualityBaseline=true rendererEnabled=false sameCameraBaseline=true"
         }
@@ -3821,7 +4266,12 @@ try {
         Start-Sleep -Seconds 2
         Clear-MinecraftChat
     }
-    if ($ValidationProfile -eq "RealRendererMilestone1") {
+    $controllerSceneSetupOwnsInClientCapture = (
+        $ScreenshotSource -eq "InClient" -and
+        $ValidationProfile -eq "RealRendererMilestone1" -and
+        [bool]$SetupScene
+    )
+    if ($ValidationProfile -eq "RealRendererMilestone1" -and -not $controllerSceneSetupOwnsInClientCapture) {
         Send-MinecraftChatCommand "/time set 6000"
         Send-MinecraftChatCommand "/weather clear"
         Add-LucernaControllerMarker $markerLog "realRendererMilestone1.forceDaytimeBeforeScreenshot=true timeOfDay=6000 weather=clear"
@@ -3841,6 +4291,8 @@ try {
         Ensure-MinecraftGameplayFocus
         Add-LucernaControllerMarker $markerLog "round7.shaderDenoiseOutput.preScreenshotGameplayCommand=false commandFeedbackLateMutationSkipped=true chatCleared=true pauseMenuAvoidance=true"
         Start-Sleep -Seconds 1
+    } elseif ($controllerSceneSetupOwnsInClientCapture) {
+        Add-LucernaControllerMarker $markerLog "realRendererMilestone1.controllerSceneSetupOwnsCapture=true commandFeedback=false duplicatePowerShellChatCommandsSkipped=true focusWindowSkippedForInClientCapture=true"
     } else {
         Ensure-MinecraftGameplayFocus
     }
@@ -3863,7 +4315,8 @@ try {
     $hideHudForRealRendererMilestone1 = (
         $ValidationProfile -eq "RealRendererMilestone1" -and
         $realRendererMilestone1CaptureIntent -and
-        [bool]$realRendererMilestone1CaptureIntent.hideHudForScreenshot
+        [bool]$realRendererMilestone1CaptureIntent.hideHudForScreenshot -and
+        -not $controllerSceneSetupOwnsInClientCapture
     )
     if ($ValidationProfile -eq "Round7EmissiveGiSurface" -and [bool]$round7SurfaceCaptureIntent.hideHudForScreenshot) {
         Add-LucernaControllerMarker $markerLog "round7.emissiveGiSurface.captureRole=$($round7SurfaceCaptureIntent.artifactRole) hideGuiBeforeScreenshot=true fixedWorldSurfaceRegion=true commandFeedback=false chatCleared=true"
@@ -3950,10 +4403,12 @@ try {
                 $repeatMarkerPrefix = if ($ValidationProfile -eq "Round11Restir") { "round11.stability.temporal" } else { "round7.stability.temporal" }
                 Add-LucernaControllerMarker $markerLog "$repeatMarkerPrefix.repeatCapture index=$($captureIndex + 1) count=$effectiveCaptureCount label=$captureLabelSafe intervalSeconds=$TemporalCaptureIntervalSeconds sceneState=$repeatSceneState"
             }
-            Ensure-MinecraftGameplayFocus
-            # Normalize the client back into gameplay immediately before F2 capture.
-            # This prevents stale pause/menu focus from contaminating in-client proof screenshots.
-            Start-Sleep -Milliseconds 900
+            if (-not $controllerSceneSetupOwnsInClientCapture) {
+                Ensure-MinecraftGameplayFocus
+                # Normalize the client back into gameplay immediately before F2 capture.
+                # This prevents stale pause/menu focus from contaminating in-client proof screenshots.
+                Start-Sleep -Milliseconds 900
+            }
             $captureStartedAt = Get-Date
             $elapsedFromPreviousStartMs = if ($previousCaptureStartedAt) {
                 [Math]::Round(($captureStartedAt - $previousCaptureStartedAt).TotalMilliseconds, 3)
@@ -3967,7 +4422,7 @@ try {
                 $screenshot = Save-MinecraftWindowScreenshot $captureArchivePath
                 $capturedScreenshotSource = "window"
             } elseif ($ScreenshotSource -eq "InClient") {
-                $screenshotDeadline = (Get-Date).AddSeconds(100)
+                $screenshotDeadline = (Get-Date).AddSeconds($(if ($ValidationProfile -eq "RealRendererMilestone1" -and $Mode -eq "VisualQualityEnabled") { 150 } else { 100 }))
                 if ($temporalRepeatEnabled -and $captureIndex -gt 0) {
                     Send-MinecraftKeys "{F2}"
                     $screenshot = Wait-NewScreenshot $screenshotDir $existingScreenshotNames $beforeScreenshot $screenshotDeadline -RequireNewAfter
@@ -4009,6 +4464,23 @@ try {
     }
 
     $logPath = Copy-FreshLatestLog $root $validationDir $scenario $stamp $markerLog
+    $splitScreenDelta = $null
+    $splitScreenDeltaJson = ""
+    $splitScreenVisualQualityProof = (
+        $ValidationProfile -eq "RealRendererMilestone1" -and
+        $realRendererMilestone1CaptureIntent -and
+        [string]$realRendererMilestone1CaptureIntent.artifactRole -eq "real-renderer-milestone1-visual-quality-enabled"
+    )
+    if ($splitScreenVisualQualityProof -and $capturedScreenshotPaths.Count -gt 0) {
+        $splitScreenDeltaJson = Join-Path $validationDir "$scenario-$stamp-split-screen-delta.json"
+        $splitScreenDelta = Measure-LucernaSplitScreenDelta $capturedScreenshotPaths[0] $splitScreenDeltaJson
+        $splitMarker = "realRendererMilestone1.splitScreenVisualProof=true splitScreenBaseSide=left splitScreenShaderSide=right splitScreen.changedPixelPercent=$($splitScreenDelta.changedPixelPercent) splitScreen.meanAbsLuma=$($splitScreenDelta.meanAbsLuma) splitScreen.meanRgbDistance=$($splitScreenDelta.meanRgbDistance) splitScreen.shaderMeanLuma=$($splitScreenDelta.shaderMeanLuma) splitScreen.shaderMeanLumaDelta=$($splitScreenDelta.shaderMeanLumaDelta) splitScreen.shaderGlobalDarkeningPixelPercent=$($splitScreenDelta.shaderGlobalDarkeningPixelPercent) splitScreen.shaderGlobalDarkeningGuardTriggered=$($splitScreenDelta.shaderGlobalDarkeningGuardTriggered) splitScreen.shaderLumaStdDev=$($splitScreenDelta.shaderLumaStdDev) splitScreen.shaderLumaStdDevRatio=$($splitScreenDelta.shaderLumaStdDevRatio) splitScreen.shaderMeanSaturation=$($splitScreenDelta.shaderMeanSaturation) splitScreen.shaderSaturationLift=$($splitScreenDelta.shaderSaturationLift) splitScreen.shaderSaturationRatio=$($splitScreenDelta.shaderSaturationRatio) splitScreen.shaderChangedMeanSaturationLift=$($splitScreenDelta.shaderChangedMeanSaturationLift) splitScreen.shaderChangedColorfulPixelPercent=$($splitScreenDelta.shaderChangedColorfulPixelPercent) splitScreen.shaderOverexposedPixelPercent=$($splitScreenDelta.shaderOverexposedPixelPercent) splitScreen.shaderWashedOutOrFlatGuardTriggered=$($splitScreenDelta.shaderWashedOutOrFlatGuardTriggered) splitScreen.shaderFarRightContourPixelPercent=$($splitScreenDelta.shaderFarRightContourPixelPercent) splitScreen.shaderInteriorContourPixelPercent=$($splitScreenDelta.shaderInteriorContourPixelPercent) splitScreen.shaderFarRightContourMeanGradient=$($splitScreenDelta.shaderFarRightContourMeanGradient) splitScreen.shaderInteriorContourMeanGradient=$($splitScreenDelta.shaderInteriorContourMeanGradient) splitScreen.shaderFarRightContourConcentrationRatio=$($splitScreenDelta.shaderFarRightContourConcentrationRatio) splitScreen.shaderFarRightContourMeanGradientRatio=$($splitScreenDelta.shaderFarRightContourMeanGradientRatio) splitScreen.shaderFarRightContourResidueGuardTriggered=$($splitScreenDelta.shaderFarRightContourResidueGuardTriggered) splitScreen.deltaJson=$splitScreenDeltaJson"
+        $splitMarker += " splitScreen.shaderBrightLobePixelPercent=$($splitScreenDelta.shaderBrightLobePixelPercent) splitScreen.shaderBrightLobeMeanGradient=$($splitScreenDelta.shaderBrightLobeMeanGradient) splitScreen.shaderBrightLobeSmoothPixelRatio=$($splitScreenDelta.shaderBrightLobeSmoothPixelRatio) splitScreen.shaderSmoothLobeOverexposureLikely=$($splitScreenDelta.shaderSmoothLobeOverexposureLikely) splitScreen.shaderChangedDetailPixelPercent=$($splitScreenDelta.shaderChangedDetailPixelPercent) splitScreen.shaderChangedDetailCoverageRatio=$($splitScreenDelta.shaderChangedDetailCoverageRatio) splitScreen.shaderReceiverLocalColorDetailPixelPercent=$($splitScreenDelta.shaderReceiverLocalColorDetailPixelPercent) splitScreen.shaderReceiverLocalColorDetailCoverageRatio=$($splitScreenDelta.shaderReceiverLocalColorDetailCoverageRatio) splitScreen.shaderReceiverLocalColorDetailMeanGradient=$($splitScreenDelta.shaderReceiverLocalColorDetailMeanGradient) splitScreen.shaderReceiverLocalColorDetailLikely=$($splitScreenDelta.shaderReceiverLocalColorDetailLikely)"
+        $splitMarker += " splitScreen.shaderWorldSpaceLocalizedColorDetailPixelPercent=$($splitScreenDelta.shaderWorldSpaceLocalizedColorDetailPixelPercent) splitScreen.shaderWorldSpaceLocalizedColorDetailCoverageRatio=$($splitScreenDelta.shaderWorldSpaceLocalizedColorDetailCoverageRatio) splitScreen.shaderWorldSpaceLocalizedColorDetailMeanGradient=$($splitScreenDelta.shaderWorldSpaceLocalizedColorDetailMeanGradient) splitScreen.shaderWorldSpaceLocalizedShadowDetailPixelPercent=$($splitScreenDelta.shaderWorldSpaceLocalizedShadowDetailPixelPercent) splitScreen.shaderWorldSpaceLocalizedShadowDetailCoverageRatio=$($splitScreenDelta.shaderWorldSpaceLocalizedShadowDetailCoverageRatio) splitScreen.shaderWorldSpaceLocalizedShadowDetailMeanGradient=$($splitScreenDelta.shaderWorldSpaceLocalizedShadowDetailMeanGradient) splitScreen.shaderWorldSpaceLocalizedContributionPixelPercent=$($splitScreenDelta.shaderWorldSpaceLocalizedContributionPixelPercent) splitScreen.shaderWorldSpaceLocalizedContributionCoverageRatio=$($splitScreenDelta.shaderWorldSpaceLocalizedContributionCoverageRatio) splitScreen.shaderWorldSpaceLocalizedContributionMeanGradient=$($splitScreenDelta.shaderWorldSpaceLocalizedContributionMeanGradient) splitScreen.shaderWorldSpaceGlobalLumaOnlyPixelPercent=$($splitScreenDelta.shaderWorldSpaceGlobalLumaOnlyPixelPercent) splitScreen.shaderWorldSpaceGlobalLumaOnlyCoverageRatio=$($splitScreenDelta.shaderWorldSpaceGlobalLumaOnlyCoverageRatio) splitScreen.shaderWorldSpaceGlobalLumaOnlyMeanDelta=$($splitScreenDelta.shaderWorldSpaceGlobalLumaOnlyMeanDelta) splitScreen.shaderWorldSpaceLocalizedToGlobalLumaOnlyRatio=$($splitScreenDelta.shaderWorldSpaceLocalizedToGlobalLumaOnlyRatio)"
+        if (-not [string]::IsNullOrWhiteSpace($logPath)) {
+            Add-Content -LiteralPath $logPath -Value ("[Lucerna controller proof] " + $splitMarker)
+        }
+    }
     $captureManifest = [ordered]@{
         validationProfile = $ValidationProfile
         mode = $Mode
@@ -4041,6 +4513,8 @@ try {
                 source = $capturedScreenshotSources[$index]
             }
         })
+        splitScreenDelta = $splitScreenDelta
+        splitScreenDeltaJson = $splitScreenDeltaJson
         latestLog = $logPath
     }
     if (-not [string]::IsNullOrWhiteSpace($CaptureManifestJsonPath)) {
@@ -4053,6 +4527,58 @@ try {
     Write-Host "screenshot=$archivePath"
     Write-Host "screenshotSource=$($capturedScreenshotSources[0])"
     Write-Host "captureManifestJson=$CaptureManifestJsonPath"
+    if ($splitScreenVisualQualityProof) {
+        Write-Host "splitScreenVisualProof=true"
+        Write-Host "splitScreenBaseSide=left"
+        Write-Host "splitScreenShaderSide=right"
+        Write-Host "splitScreenDeltaJson=$splitScreenDeltaJson"
+        Write-Host "splitScreen.changedPixelPercent=$($splitScreenDelta.changedPixelPercent)"
+        Write-Host "splitScreen.meanAbsLuma=$($splitScreenDelta.meanAbsLuma)"
+        Write-Host "splitScreen.meanRgbDistance=$($splitScreenDelta.meanRgbDistance)"
+        Write-Host "splitScreen.shaderMeanLuma=$($splitScreenDelta.shaderMeanLuma)"
+        Write-Host "splitScreen.shaderMeanLumaDelta=$($splitScreenDelta.shaderMeanLumaDelta)"
+        Write-Host "splitScreen.shaderGlobalDarkeningPixelPercent=$($splitScreenDelta.shaderGlobalDarkeningPixelPercent)"
+        Write-Host "splitScreen.shaderGlobalDarkeningGuardTriggered=$($splitScreenDelta.shaderGlobalDarkeningGuardTriggered)"
+        Write-Host "splitScreen.shaderLumaStdDev=$($splitScreenDelta.shaderLumaStdDev)"
+        Write-Host "splitScreen.shaderLumaStdDevRatio=$($splitScreenDelta.shaderLumaStdDevRatio)"
+        Write-Host "splitScreen.shaderMeanSaturation=$($splitScreenDelta.shaderMeanSaturation)"
+        Write-Host "splitScreen.shaderSaturationLift=$($splitScreenDelta.shaderSaturationLift)"
+        Write-Host "splitScreen.shaderSaturationRatio=$($splitScreenDelta.shaderSaturationRatio)"
+        Write-Host "splitScreen.shaderChangedMeanSaturationLift=$($splitScreenDelta.shaderChangedMeanSaturationLift)"
+        Write-Host "splitScreen.shaderChangedColorfulPixelPercent=$($splitScreenDelta.shaderChangedColorfulPixelPercent)"
+        Write-Host "splitScreen.shaderBrightLobePixelPercent=$($splitScreenDelta.shaderBrightLobePixelPercent)"
+        Write-Host "splitScreen.shaderBrightLobeMeanGradient=$($splitScreenDelta.shaderBrightLobeMeanGradient)"
+        Write-Host "splitScreen.shaderBrightLobeSmoothPixelRatio=$($splitScreenDelta.shaderBrightLobeSmoothPixelRatio)"
+        Write-Host "splitScreen.shaderSmoothLobeOverexposureLikely=$($splitScreenDelta.shaderSmoothLobeOverexposureLikely)"
+        Write-Host "splitScreen.shaderChangedDetailPixelPercent=$($splitScreenDelta.shaderChangedDetailPixelPercent)"
+        Write-Host "splitScreen.shaderChangedDetailCoverageRatio=$($splitScreenDelta.shaderChangedDetailCoverageRatio)"
+        Write-Host "splitScreen.shaderReceiverLocalColorDetailPixelPercent=$($splitScreenDelta.shaderReceiverLocalColorDetailPixelPercent)"
+        Write-Host "splitScreen.shaderReceiverLocalColorDetailCoverageRatio=$($splitScreenDelta.shaderReceiverLocalColorDetailCoverageRatio)"
+        Write-Host "splitScreen.shaderReceiverLocalColorDetailMeanGradient=$($splitScreenDelta.shaderReceiverLocalColorDetailMeanGradient)"
+        Write-Host "splitScreen.shaderReceiverLocalColorDetailLikely=$($splitScreenDelta.shaderReceiverLocalColorDetailLikely)"
+        Write-Host "splitScreen.shaderWorldSpaceLocalizedColorDetailPixelPercent=$($splitScreenDelta.shaderWorldSpaceLocalizedColorDetailPixelPercent)"
+        Write-Host "splitScreen.shaderWorldSpaceLocalizedColorDetailCoverageRatio=$($splitScreenDelta.shaderWorldSpaceLocalizedColorDetailCoverageRatio)"
+        Write-Host "splitScreen.shaderWorldSpaceLocalizedColorDetailMeanGradient=$($splitScreenDelta.shaderWorldSpaceLocalizedColorDetailMeanGradient)"
+        Write-Host "splitScreen.shaderWorldSpaceLocalizedShadowDetailPixelPercent=$($splitScreenDelta.shaderWorldSpaceLocalizedShadowDetailPixelPercent)"
+        Write-Host "splitScreen.shaderWorldSpaceLocalizedShadowDetailCoverageRatio=$($splitScreenDelta.shaderWorldSpaceLocalizedShadowDetailCoverageRatio)"
+        Write-Host "splitScreen.shaderWorldSpaceLocalizedShadowDetailMeanGradient=$($splitScreenDelta.shaderWorldSpaceLocalizedShadowDetailMeanGradient)"
+        Write-Host "splitScreen.shaderWorldSpaceLocalizedContributionPixelPercent=$($splitScreenDelta.shaderWorldSpaceLocalizedContributionPixelPercent)"
+        Write-Host "splitScreen.shaderWorldSpaceLocalizedContributionCoverageRatio=$($splitScreenDelta.shaderWorldSpaceLocalizedContributionCoverageRatio)"
+        Write-Host "splitScreen.shaderWorldSpaceLocalizedContributionMeanGradient=$($splitScreenDelta.shaderWorldSpaceLocalizedContributionMeanGradient)"
+        Write-Host "splitScreen.shaderWorldSpaceGlobalLumaOnlyPixelPercent=$($splitScreenDelta.shaderWorldSpaceGlobalLumaOnlyPixelPercent)"
+        Write-Host "splitScreen.shaderWorldSpaceGlobalLumaOnlyCoverageRatio=$($splitScreenDelta.shaderWorldSpaceGlobalLumaOnlyCoverageRatio)"
+        Write-Host "splitScreen.shaderWorldSpaceGlobalLumaOnlyMeanDelta=$($splitScreenDelta.shaderWorldSpaceGlobalLumaOnlyMeanDelta)"
+        Write-Host "splitScreen.shaderWorldSpaceLocalizedToGlobalLumaOnlyRatio=$($splitScreenDelta.shaderWorldSpaceLocalizedToGlobalLumaOnlyRatio)"
+        Write-Host "splitScreen.shaderOverexposedPixelPercent=$($splitScreenDelta.shaderOverexposedPixelPercent)"
+        Write-Host "splitScreen.shaderWashedOutOrFlatGuardTriggered=$($splitScreenDelta.shaderWashedOutOrFlatGuardTriggered)"
+        Write-Host "splitScreen.shaderFarRightContourPixelPercent=$($splitScreenDelta.shaderFarRightContourPixelPercent)"
+        Write-Host "splitScreen.shaderInteriorContourPixelPercent=$($splitScreenDelta.shaderInteriorContourPixelPercent)"
+        Write-Host "splitScreen.shaderFarRightContourMeanGradient=$($splitScreenDelta.shaderFarRightContourMeanGradient)"
+        Write-Host "splitScreen.shaderInteriorContourMeanGradient=$($splitScreenDelta.shaderInteriorContourMeanGradient)"
+        Write-Host "splitScreen.shaderFarRightContourConcentrationRatio=$($splitScreenDelta.shaderFarRightContourConcentrationRatio)"
+        Write-Host "splitScreen.shaderFarRightContourMeanGradientRatio=$($splitScreenDelta.shaderFarRightContourMeanGradientRatio)"
+        Write-Host "splitScreen.shaderFarRightContourResidueGuardTriggered=$($splitScreenDelta.shaderFarRightContourResidueGuardTriggered)"
+    }
     if ($temporalRepeatEnabled) {
         Write-Host "temporalCaptureCount=$effectiveCaptureCount"
         Write-Host "temporalCaptureIntervalSeconds=$TemporalCaptureIntervalSeconds"
@@ -4161,7 +4687,9 @@ try {
         Write-Host "realRendererMilestone1.visualQualityComparisonSequence=PhysicalBaseline,VisualQualityEnabled,VisualQualityPlayablePhysical"
         Write-Host "realRendererMilestone1.visualQualityEnabled=$realRendererMilestone1VisualQualityEnabled"
         Write-Host "realRendererMilestone1.visualQualityPlayablePhysical=$realRendererMilestone1VisualQualityPlayablePhysical"
-        Write-Host "realRendererMilestone1.visualQualityRejects=fullscreenWash,fixedLightBlob,proofOverlays,focusWindowOnly,lowResDebugSubstitution,screenSpaceDecalOnly,wrongWindow,menuChatScreenshots"
+        Write-Host "realRendererMilestone1.visualQualityRejects=fullscreenWash,fixedLightBlob,hudHandScreenshots,rawGiOnlyFallback,proofOverlays,focusWindowOnly,lowResDebugSubstitution,screenSpaceDecalOnly,wrongWindow,menuChatScreenshots"
+        Write-Host "realRendererMilestone1.visualQualityArtifactRejectContract=hudHandContaminationForbidden=true,rawGiOnlyFallbackForbiddenWhenShaderDenoiseRequired=true,fullscreenWashForbidden=true,fixedLightBlobForbidden=true"
+        Write-Host "realRendererMilestone1.visualQualityDeltaContract=baselineToEnabledRequired=true,baselineToPlayableRequired=true,minChangedPixelPercent=20.0,minMeanAbsLuma=4.0,minFullChangedPixelPercent=20.0,minFullMeanAbsLuma=3.0,minActiveTilePercent=35.0"
         Write-Host "realRendererMilestone1PlayablePhysicalBudgetRequired=$realRendererMilestone1PlayablePhysical"
         Write-Host "realRendererMilestone1RejectHeavyProofWorkloadForPlayablePhysical=$realRendererMilestone1PlayablePhysical"
         Write-Host "realRendererMilestone1TrueDepthGBufferRequired=$($realRendererMilestone1FullProof -or $realRendererMilestone1DepthShadowSlice -or $realRendererMilestone1PlayablePhysical)"

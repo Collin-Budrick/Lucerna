@@ -49,7 +49,7 @@ const float CENTER_WEIGHT = 1.62;
 const float AXIS_WEIGHT = 0.22;
 const float DIAGONAL_WEIGHT = 0.105;
 const float WIDE_WEIGHT = 0.040;
-const float RAW_CONTRAST_RESTORE = 0.55;
+const float RAW_CONTRAST_RESTORE = 0.46;
 const float EDGE_CENTER_RESTORE = 0.68;
 const float MATERIAL_PROXY_REJECT = 0.74;
 const float HALO_SUPPRESS = 0.42;
@@ -273,6 +273,17 @@ vec3 preserveRawLocalContrast(vec2 uv, vec4 centerRaw, vec3 filteredRgb) {
     return max(mix(filteredRgb, contrastRgb, structure * support), vec3(0.0));
 }
 
+vec3 sourceGatedOutputLift(vec2 uv, vec4 centerRaw, vec3 denoisedRgb, float signalGate, float surfaceGate) {
+    vec3 localMean = localRawMean(uv, centerRaw);
+    float confidenceSupport = smoothstep(0.010, 0.20, confidence(centerRaw));
+    float colorSupport = smoothstep(0.006, 0.13,
+            localRawChromaRange(uv, centerRaw) + chromaDistance(centerRaw.rgb, localMean) * 0.48);
+    float structureGuard = localMaterialDepthProxy(uv, centerRaw);
+    vec3 tint = mix(vec3(luminance(localMean)), max(localMean, vec3(0.0)), 0.58 + colorSupport * 0.24);
+    vec3 lifted = denoisedRgb + tint * (0.30 * confidenceSupport * colorSupport * signalGate * surfaceGate);
+    return clampToRawNeighborhood(uv, centerRaw, lifted, 0.30 + structureGuard * 0.22);
+}
+
 vec4 denoiseDiffuse(vec2 uv, vec4 centerRaw) {
     // Source-gated denoise marker: the pass only smooths samples that agree
     // with the raw-diffuse-gi-rgba8 signal proxy, preserving payload edges and
@@ -322,6 +333,7 @@ void main() {
     float plateauReject = lowResolutionPlateauReject(uv, centerRaw);
     haloSuppressed = mix(haloSuppressed, max(centerRaw.rgb, vec3(0.0)),
             plateauReject * (1.0 - proxyBoundary * 0.70) * 0.48);
+    haloSuppressed = sourceGatedOutputLift(uv, centerRaw, haloSuppressed, signalGate, surfaceGate);
     float outputAlpha = clamp(max(filtered.a, confidence(centerRaw))
             * signalGate
             * surfaceGate

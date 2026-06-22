@@ -13,9 +13,10 @@ in vec2 texCoord;
 
 out vec4 fragColor;
 
-const float MAX_SHADOW_ALPHA = 0.62;
-const float SOFT_SHADOW_RADIUS = 1.25;
+const float MAX_SHADOW_ALPHA = 0.70;
+const float SOFT_SHADOW_RADIUS = 1.45;
 const float MIN_PAYLOAD_COVERAGE = 0.030;
+const float CONTACT_RECEIVER_DARKENING = 1.34;
 
 vec2 clampUv(vec2 uv) {
     return clamp(uv, vec2(0.0), vec2(1.0));
@@ -166,11 +167,15 @@ void main() {
             max(receiver, max(edgeConfidence * 0.55, structureGate * 0.70)));
     float coverageGate = smoothstep(MIN_PAYLOAD_COVERAGE, 0.72, coverage * validity);
     float receiverLocality = receiverLocalityGate(texCoord, mask, centerDepth);
+    float contactDarkening = mix(0.78, CONTACT_RECEIVER_DARKENING,
+            smoothstep(0.06, 0.46, max(receiver, edgeConfidence))
+            * smoothstep(0.04, 0.52, coverage));
 
     float alpha = coverageGate
             * receiverGate
             * depthGate
             * receiverLocality
+            * contactDarkening
             * borderGuard(texCoord)
             * MAX_SHADOW_ALPHA;
 

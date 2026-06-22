@@ -27,6 +27,9 @@ const float LUCERNA_MAX_DIRECT_RADIANCE = 4.0;
 const float LUCERNA_MAX_DIFFUSE_RADIANCE = 2.0;
 const float LOW_RES_BLOCK_REJECT = 0.62;
 const float TEXTURE_DETAIL_RESTORE = 0.38;
+const float SOURCE_GATED_GI_VISUAL_GAIN = 2.15;
+const float CONTACT_SHADOW_VISUAL_GAIN = 1.70;
+const float DENOISED_SOFTENING_GAIN = 0.16;
 const vec3 LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
 
 vec3 boundedRadiance(vec3 value, float limit) {
@@ -156,13 +159,36 @@ float sceneSurfaceMask(vec2 uv, vec4 albedoOpacity, vec4 directLighting, vec4 de
     return clamp(opacityMask * signalMask * antiWashout * softEdgeGuard, 0.0, 1.0);
 }
 
+float sourceGatedGiMask(vec2 uv, vec4 albedoOpacity, vec4 directLighting, vec4 denoisedDiffuse) {
+    float giSignal = lightingSignal(denoisedDiffuse);
+    float directSignal = lightingSignal(directLighting);
+    float giStructure = lightingStructure(uv, LucernaDenoisedDiffuse, denoisedDiffuse);
+    float directStructure = lightingStructure(uv, LucernaDirectLighting, directLighting);
+    float colorCue = smoothstep(0.008, 0.105,
+            chromaSpan(denoisedDiffuse.rgb) + chromaSpan(albedoOpacity.rgb) * 0.38);
+    float signalCue = smoothstep(0.008, 0.28, giSignal + giStructure * 0.62);
+    float sourceAnchor = smoothstep(0.012, 0.34,
+            max(directSignal, directStructure * 0.72) + giSignal * 0.48);
+    float materialAnchor = smoothstep(0.015, 0.22, albedoStructure(uv, albedoOpacity.rgb));
+    float flatWashReject = mix(0.22, 1.0,
+            smoothstep(0.012, 0.12, giStructure + materialAnchor + colorCue * 0.56));
+    return clamp(signalCue * max(sourceAnchor, materialAnchor * 0.62)
+            * mix(0.70, 1.0, colorCue)
+            * flatWashReject, 0.0, 1.0);
+}
+
 float contactShadowMask(vec2 uv, vec4 albedoOpacity, vec4 directLighting, vec4 denoisedDiffuse) {
     float materialEdge = albedoStructure(uv, albedoOpacity.rgb);
     float directSignal = lightingStructure(uv, LucernaDirectLighting, directLighting);
     float giSignal = lightingStructure(uv, LucernaDenoisedDiffuse, denoisedDiffuse);
-    float occlusionCue = smoothstep(0.030, 0.22, materialEdge + giSignal * 0.28)
-            * (1.0 - smoothstep(0.24, 0.86, directSignal));
-    return clamp(occlusionCue * smoothstep(0.18, 0.84, albedoOpacity.a), 0.0, 0.34);
+    float sourceLocality = sourceGatedGiMask(uv, albedoOpacity, directLighting, denoisedDiffuse);
+    float occlusionCue = smoothstep(0.022, 0.20, materialEdge + giSignal * 0.34 + sourceLocality * 0.16)
+            * (1.0 - smoothstep(0.22, 0.82, directSignal));
+    float contactCore = smoothstep(0.040, 0.24, materialEdge)
+            * smoothstep(0.012, 0.20, max(giSignal, sourceLocality));
+    return clamp((occlusionCue + contactCore * 0.26)
+            * smoothstep(0.16, 0.82, albedoOpacity.a)
+            * CONTACT_SHADOW_VISUAL_GAIN, 0.0, 0.56);
 }
 
 void main() {
@@ -184,17 +210,31 @@ void main() {
     float blockReject = lowResolutionBlockReject(texCoord, directLighting, denoisedDiffuse)
             * (1.0 - smoothstep(0.035, 0.22, receiverDetail));
     float receiverLocalMask = surfaceMask * mix(1.0, 1.0 - LOW_RES_BLOCK_REJECT, blockReject);
+    float sourceGiMask = sourceGatedGiMask(texCoord, albedoOpacity, directLighting, denoisedDiffuse)
+            * receiverLocalMask;
     vec3 directSpill = boundedRadiance(directLighting.rgb, LUCERNA_MAX_DIRECT_RADIANCE)
         * max(LucernaDirectCompositeGain, 0.0)
         * directVisibility;
     vec3 coloredBounceGi = boundedRadiance(denoisedDiffuse.rgb, LUCERNA_MAX_DIFFUSE_RADIANCE)
         * max(LucernaDiffuseCompositeGain, 0.0);
-    vec3 visualDenoiseContribution = coloredBounceGi * mix(vec3(1.0), normalize(albedo + vec3(0.0001)) * 1.25, 0.34);
+    vec3 giTint = mix(vec3(luminance(coloredBounceGi)), coloredBounceGi,
+            0.64 + smoothstep(0.010, 0.16, chromaSpan(coloredBounceGi)) * 0.28);
+    vec3 receiverTint = mix(vec3(1.0), normalize(albedo + vec3(0.0001)) * 1.35,
+            0.36 + smoothstep(0.020, 0.24, receiverDetail) * 0.14);
+    vec3 visualDenoiseContribution = giTint
+            * receiverTint
+            * SOURCE_GATED_GI_VISUAL_GAIN
+            * mix(0.18, 1.0, sourceGiMask);
 
     vec3 litColor = baseColor * (1.0 - contactShadow * receiverLocalMask)
             + (directSpill + visualDenoiseContribution) * albedo * receiverLocalMask;
     vec3 localMean = localWorldMean(texCoord, baseColor);
     vec3 localDetail = baseColor - localMean;
+    float smoothDenoiseMask = sourceGiMask
+            * (1.0 - smoothstep(0.050, 0.28, receiverDetail))
+            * (1.0 - blockReject * 0.70);
+    litColor = mix(litColor, mix(litColor, localMean + visualDenoiseContribution * albedo, 0.42),
+            DENOISED_SOFTENING_GAIN * smoothDenoiseMask);
     litColor += localDetail * (TEXTURE_DETAIL_RESTORE
             * smoothstep(0.020, 0.20, receiverDetail)
             * receiverLocalMask);
@@ -202,7 +242,9 @@ void main() {
     vec3 localMax = localWorldMax(texCoord, baseColor);
     vec3 localRange = max(localMax - localMin, vec3(0.010));
     vec3 lowerBound = max(localMin - localRange * 0.30, vec3(0.0));
-    vec3 upperBound = min(max(localMax, baseColor) + localRange * (0.80 + receiverLocalMask) + vec3(0.045), vec3(1.0));
+    vec3 upperBound = min(max(localMax, baseColor)
+            + localRange * (0.80 + receiverLocalMask)
+            + vec3(0.045 + sourceGiMask * 0.080), vec3(1.0));
     litColor = clamp(litColor, lowerBound, upperBound);
     vec3 finalColor = mix(baseColor, clamp(litColor, vec3(0.0), vec3(1.0)), enabled);
 

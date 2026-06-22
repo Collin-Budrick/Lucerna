@@ -217,6 +217,26 @@ public final class PublicMojangPreviewDrawScaffolds {
                     .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
                     .build()
     );
+    private static final RenderPipeline NATIVE_SHADOW_MAP_FINAL_COMPOSITE_SPLIT_TRANSLUCENT_PIPELINE = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.POST_PROCESSING_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "pipeline/native_shadow_map_final_composite_split_translucent"
+                    ))
+                    .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
+                    .withFragmentShader(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "composite/native_shadow_mask_composite_split"
+                    ))
+                    .withBindGroupLayout(BindGroupLayouts.IN_SAMPLER)
+                    .withColorTargetState(new ColorTargetState(
+                            Optional.of(BlendFunction.TRANSLUCENT),
+                            GpuFormat.RGBA8_UNORM,
+                            ColorTargetState.WRITE_COLOR
+                    ))
+                    .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+                    .build()
+    );
     private static final RenderPipeline NATIVE_DEPTH_AWARE_SHADOW_MAP_FINAL_COMPOSITE_TRANSLUCENT_PIPELINE = RenderPipelines.register(
             RenderPipeline.builder(RenderPipelines.POST_PROCESSING_SNIPPET)
                     .withLocation(Identifier.fromNamespaceAndPath(
@@ -227,6 +247,26 @@ public final class PublicMojangPreviewDrawScaffolds {
                     .withFragmentShader(Identifier.fromNamespaceAndPath(
                             "lucerna",
                             "composite/depth_aware_shadow_mask_composite"
+                    ))
+                    .withBindGroupLayout(BindGroupLayouts.SAMPLER0_SAMPLER1)
+                    .withColorTargetState(new ColorTargetState(
+                            Optional.of(BlendFunction.TRANSLUCENT),
+                            GpuFormat.RGBA8_UNORM,
+                            ColorTargetState.WRITE_COLOR
+                    ))
+                    .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+                    .build()
+    );
+    private static final RenderPipeline NATIVE_DEPTH_AWARE_SHADOW_MAP_FINAL_COMPOSITE_SPLIT_TRANSLUCENT_PIPELINE = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.POST_PROCESSING_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "pipeline/native_depth_aware_shadow_map_final_composite_split_translucent"
+                    ))
+                    .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
+                    .withFragmentShader(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "composite/depth_aware_shadow_mask_composite_split"
                     ))
                     .withBindGroupLayout(BindGroupLayouts.SAMPLER0_SAMPLER1)
                     .withColorTargetState(new ColorTargetState(
@@ -412,8 +452,56 @@ public final class PublicMojangPreviewDrawScaffolds {
                     .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
                     .build()
     );
+    private static final RenderPipeline ROUND7_SHADER_DENOISE_OUTPUT_SPLIT_ADDITIVE_PIPELINE = RenderPipelines.register(
+            RenderPipeline.builder(RenderPipelines.POST_PROCESSING_SNIPPET)
+                    .withLocation(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "pipeline/round7_shader_denoise_output_split_additive_final_composite"
+                    ))
+                    .withVertexShader(Identifier.withDefaultNamespace("core/screenquad"))
+                    .withFragmentShader(Identifier.fromNamespaceAndPath(
+                            "lucerna",
+                            "core/round7_denoised_gi_visual_split"
+                    ))
+                    .withBindGroupLayout(BindGroupLayouts.IN_SAMPLER)
+                    .withColorTargetState(new ColorTargetState(
+                            Optional.of(BlendFunction.ADDITIVE),
+                            GpuFormat.RGBA8_UNORM,
+                            ColorTargetState.WRITE_COLOR
+                    ))
+                    .withPrimitiveTopology(PrimitiveTopology.TRIANGLES)
+                    .build()
+    );
 
     private PublicMojangPreviewDrawScaffolds() {
+    }
+
+    private static boolean splitScreenVisualProofEnabled() {
+        return Boolean.parseBoolean(System.getenv().getOrDefault("LUCERNA_SPLIT_SCREEN_VISUAL_PROOF", "false"));
+    }
+
+    private static RenderPipeline nativeShadowMapFinalCompositePipeline() {
+        return splitScreenVisualProofEnabled()
+                ? NATIVE_SHADOW_MAP_FINAL_COMPOSITE_SPLIT_TRANSLUCENT_PIPELINE
+                : NATIVE_SHADOW_MAP_FINAL_COMPOSITE_TRANSLUCENT_PIPELINE;
+    }
+
+    private static RenderPipeline nativeDepthAwareShadowMapFinalCompositePipeline() {
+        return splitScreenVisualProofEnabled()
+                ? NATIVE_DEPTH_AWARE_SHADOW_MAP_FINAL_COMPOSITE_SPLIT_TRANSLUCENT_PIPELINE
+                : NATIVE_DEPTH_AWARE_SHADOW_MAP_FINAL_COMPOSITE_TRANSLUCENT_PIPELINE;
+    }
+
+    private static RenderPipeline shaderDenoiseOutputFinalCompositePipeline() {
+        return splitScreenVisualProofEnabled()
+                ? ROUND7_SHADER_DENOISE_OUTPUT_SPLIT_ADDITIVE_PIPELINE
+                : ROUND7_SHADER_DENOISE_OUTPUT_ADDITIVE_PIPELINE;
+    }
+
+    private static String shaderDenoiseOutputFinalCompositeColorTargetState() {
+        return splitScreenVisualProofEnabled()
+                ? ADDITIVE_RGBA8_COLOR_TARGET_STATE
+                : ADDITIVE_RGBA8_COLOR_TARGET_STATE;
     }
 
     public static PublicMojangPreviewDrawScaffold describeFullscreenDirectLightPreviewDraw(
@@ -654,7 +742,7 @@ public final class PublicMojangPreviewDrawScaffolds {
             );
         }
 
-        renderPass.setPipeline(NATIVE_SHADOW_MAP_FINAL_COMPOSITE_TRANSLUCENT_PIPELINE);
+        renderPass.setPipeline(nativeShadowMapFinalCompositePipeline());
         RenderSystem.bindDefaultUniforms(renderPass);
         renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, shadowMapMaskView, shadowMapMaskSampler);
         renderPass.draw(
@@ -716,7 +804,7 @@ public final class PublicMojangPreviewDrawScaffolds {
             );
         }
 
-        renderPass.setPipeline(NATIVE_DEPTH_AWARE_SHADOW_MAP_FINAL_COMPOSITE_TRANSLUCENT_PIPELINE);
+        renderPass.setPipeline(nativeDepthAwareShadowMapFinalCompositePipeline());
         RenderSystem.bindDefaultUniforms(renderPass);
         renderPass.bindTexture(SAMPLER0_BINDING, shadowMapMaskView, shadowMapMaskSampler);
         renderPass.bindTexture(SAMPLER1_BINDING, currentDepthView, currentDepthSampler);
@@ -962,7 +1050,7 @@ public final class PublicMojangPreviewDrawScaffolds {
         }
 
         return PublicMojangPreviewDrawScaffold.prepared(
-                ROUND7_SHADER_DENOISE_OUTPUT_ADDITIVE_PIPELINE,
+                shaderDenoiseOutputFinalCompositePipeline(),
                 DIRECT_LIGHT_SOURCE_BINDING,
                 ROUND7_SHADER_DENOISE_OUTPUT_FULLSCREEN_MODE,
                 FULLSCREEN_TRIANGLE_FIRST_VERTEX,
@@ -973,7 +1061,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                         + ROUND7_DENOISED_GI_VISUAL_SHADER
                         + "," + SHADER_DENOISE_OUTPUT_SOURCE_IDENTITY
                         + "," + SHADER_DENOISE_OUTPUT_SUBMISSION_BOUNDARY
-                        + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
+                        + "," + shaderDenoiseOutputFinalCompositeColorTargetState()
         );
     }
 
@@ -1039,7 +1127,7 @@ public final class PublicMojangPreviewDrawScaffolds {
             );
         }
 
-        renderPass.setPipeline(ROUND7_SHADER_DENOISE_OUTPUT_ADDITIVE_PIPELINE);
+        renderPass.setPipeline(shaderDenoiseOutputFinalCompositePipeline());
         RenderSystem.bindDefaultUniforms(renderPass);
         renderPass.bindTexture(DIRECT_LIGHT_SOURCE_BINDING, sourceView, sourceSampler);
         renderPass.draw(
@@ -1049,7 +1137,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                 FIRST_INSTANCE
         );
         return PublicMojangPreviewDrawScaffold.issued(
-                ROUND7_SHADER_DENOISE_OUTPUT_ADDITIVE_PIPELINE,
+                shaderDenoiseOutputFinalCompositePipeline(),
                 DIRECT_LIGHT_SOURCE_BINDING,
                 ROUND7_SHADER_DENOISE_OUTPUT_FULLSCREEN_MODE,
                 FULLSCREEN_TRIANGLE_FIRST_VERTEX,
@@ -1060,7 +1148,7 @@ public final class PublicMojangPreviewDrawScaffolds {
                         + ROUND7_DENOISED_GI_VISUAL_SHADER
                         + "," + SHADER_DENOISE_OUTPUT_SOURCE_IDENTITY
                         + "," + SHADER_DENOISE_OUTPUT_SUBMISSION_BOUNDARY
-                        + "," + ADDITIVE_RGBA8_COLOR_TARGET_STATE
+                        + "," + shaderDenoiseOutputFinalCompositeColorTargetState()
         );
     }
 

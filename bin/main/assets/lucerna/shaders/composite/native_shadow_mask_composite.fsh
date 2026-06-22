@@ -28,11 +28,12 @@ in vec2 texCoord;
 
 out vec4 fragColor;
 
-const float MAX_SHADOW_ALPHA = 0.58;
+const float MAX_SHADOW_ALPHA = 0.68;
 const float EDGE_SAMPLE_RADIUS = 1.5;
 const float SOFT_SHADOW_RADIUS = 1.25;
 const float MIN_PAYLOAD_COVERAGE_FOR_CONSUMPTION = 0.035;
 const float MIN_RECEIVER_STRUCTURE_FOR_CONSUMPTION = 0.010;
+const float CONTACT_RECEIVER_DARKENING = 1.22;
 
 vec4 maskSample(vec2 uv) {
     return texture(InSampler, clamp(uv, vec2(0.0), vec2(1.0)));
@@ -163,12 +164,16 @@ float conservativeShadowAlpha(vec2 uv, vec4 payload) {
             max(receiverSupport, edgeConfidence)));
     float edgeSafe = borderGuard(uv);
     float receiverLocality = receiverLocalityGate(uv, payload);
+    float contactDarkening = mix(0.78, CONTACT_RECEIVER_DARKENING,
+            smoothstep(0.05, 0.42, max(receiverSupport, edgeConfidence))
+            * smoothstep(0.035, 0.50, coverage));
 
     return clamp(coverageGate
             * max(receiverGate, structuredReceiverGate)
             * contactSupport
             * softFalloffShape
             * receiverLocality
+            * contactDarkening
             * edgeSafe
             * MAX_SHADOW_ALPHA, 0.0, MAX_SHADOW_ALPHA);
 }

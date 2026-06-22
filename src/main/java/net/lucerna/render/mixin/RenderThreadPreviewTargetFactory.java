@@ -646,9 +646,29 @@ public final class RenderThreadPreviewTargetFactory {
             );
         }
 
+        Round6DiffuseGiCpuOutputPayload rawGiPayload = LucernaController.getInstance().round6DiffuseGiCpuOutputPayload();
+        Round7RawGiVisualSource rawGiSource = Round7RawGiVisualSource.fromPayloadOnly(
+                rawGiPayload,
+                "native shadow-map final composite source upgrade"
+        );
+        ByteBuffer rawGiBuffer = null;
+        DirectLightPreviewTextureUploadResult rawGiUpload = null;
+        if (rawGiSource.sourceReady()) {
+            rawGiBuffer = rawGiPayload.copyToByteBuffer();
+            rawGiUpload = ROUND6_DIFFUSE_GI_FINAL_COMPOSITE_TEXTURE_UPLOADER.upload(
+                    RenderSystem.getDevice(),
+                    commandEncoder,
+                    rawGiBuffer,
+                    rawGiPayload.width(),
+                    rawGiPayload.height()
+            );
+        }
+        boolean rawGiUploadAvailable = rawGiUpload != null && rawGiUpload.availableForDraw();
+
         GpuTextureView depthView = target.depthTarget() instanceof GpuTextureView view ? view : null;
         boolean depthTextureSampleBindingReady = finalCompositeDepthSampleBindingReady(target, depthView);
         PublicMojangPreviewDrawScaffold drawScaffold;
+        PublicMojangPreviewDrawScaffold rawGiDrawScaffold = null;
         try (RenderPass renderPass = createFullTargetRenderPass(
                 commandEncoder,
                 () -> depthTextureSampleBindingReady
@@ -675,9 +695,17 @@ public final class RenderThreadPreviewTargetFactory {
                         realShadowMapOutputReady
                 );
             }
+            if (rawGiUploadAvailable) {
+                rawGiDrawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenRound7RawGiVisualDraw(
+                        renderPass,
+                        rawGiUpload.textureView(),
+                        rawGiUpload.sampler()
+                );
+            }
         }
         commandEncoder.submit();
         Reference.reachabilityFence(shadowMaskBuffer);
+        Reference.reachabilityFence(rawGiBuffer);
         if (!drawScaffold.drawCallsIssued()) {
             return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
                     true,
@@ -693,13 +721,22 @@ public final class RenderThreadPreviewTargetFactory {
                             + drawScaffold.summary()
             );
         }
+        boolean rawGiConsumed = rawGiDrawScaffold != null && rawGiDrawScaffold.drawCallsIssued();
         return PublicMojangFinalCompositeSubmissionResult.submitted(
-                drawScaffold.drawCallsIssued(),
+                drawScaffold.drawCallsIssued() || rawGiConsumed,
                 target.attachmentMetadata().javaOpaque(),
                 PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
                 "public Mojang native shadow-map final-composite occlusion render pass submitted; "
                         + "nativeShadowMapComposite=true,shadowMapOutputConsumed=true,screenSpaceShadowDecal=false,"
                         + "lowResolutionDirectTextureDraw=false,realShadowMapOutputReady=true,"
+                        + "rawGiVisualSourceConsumed=" + rawGiConsumed
+                        + ",raw native diffuse-GI source is "
+                        + (rawGiConsumed ? "blended" : "not blended")
+                        + ",sourceSelection=shadow-map-plus-scene-coupled-raw-gi-when-available"
+                        + (rawGiConsumed
+                        ? ",sourceKind=native-diffuse-gi-rgba8,sourceIdentity=native-diffuse-gi-rgba8/raw-gi+native-shadow-map-mask"
+                        : ",rawGiSourceMissingOrUploadUnavailable=true")
+                        + ",cpuDenoisedReadbackSource=false,realShaderDenoiseOutputReady=false,"
                         + "depthAwareShadowMaskComposite=" + depthTextureSampleBindingReady
                         + ",shaderPassDepthSamplingEvidence=" + depthTextureSampleBindingReady
                         + ",depthSamplingPassOutputsReady=" + depthTextureSampleBindingReady
@@ -738,6 +775,12 @@ public final class RenderThreadPreviewTargetFactory {
                         + upload.summary()
                         + "; draw scaffold: "
                         + drawScaffold.summary()
+                        + "; raw source: "
+                        + rawGiSource.summary()
+                        + "; raw upload: "
+                        + (rawGiUpload == null ? "not-attempted" : rawGiUpload.summary())
+                        + "; raw draw scaffold: "
+                        + (rawGiDrawScaffold == null ? "not-attempted" : rawGiDrawScaffold.summary())
         );
     }
 
@@ -1844,30 +1887,7 @@ public final class RenderThreadPreviewTargetFactory {
                             + denoisedGiSource.summary()
             );
         }
-        if (denoisedGiPayload == null) {
-            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
-                    true,
-                    target.attachmentMetadata().javaOpaque(),
-                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
-                    "public Mojang Round 7 FINAL_COMPOSITE visual mode skipped because denoised diffuse-GI RGBA8 CPU payload is unavailable; raw source: "
-                            + rawGiSource.summary()
-                            + "; denoised source: "
-                            + denoisedGiSource.summary()
-            );
-        }
-        if (!denoisedGiPayload.readyForPreviewDraw()) {
-            return PublicMojangFinalCompositeSubmissionResult.notSubmitted(
-                    true,
-                    target.attachmentMetadata().javaOpaque(),
-                    PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
-                    "public Mojang Round 7 FINAL_COMPOSITE visual mode skipped because denoised diffuse-GI RGBA8 CPU payload is not displayable: "
-                            + denoisedGiPayload.debugSummary()
-                            + "; raw source: "
-                            + rawGiSource.summary()
-                            + "; denoised source: "
-                            + denoisedGiSource.summary()
-            );
-        }
+        boolean denoisedSourceReady = denoisedGiPayload != null && denoisedGiPayload.readyForPreviewDraw();
 
         ByteBuffer rawSourceBuffer = null;
         DirectLightPreviewTextureUploadResult rawUpload = null;
@@ -1896,15 +1916,60 @@ public final class RenderThreadPreviewTargetFactory {
             );
         }
 
-        ByteBuffer denoisedSourceBuffer = denoisedGiPayload.copyToByteBuffer();
-        DirectLightPreviewTextureUploadResult denoisedUpload = ROUND7_DENOISED_GI_TEXTURE_UPLOADER.upload(
-                RenderSystem.getDevice(),
-                commandEncoder,
-                denoisedSourceBuffer,
-                denoisedGiPayload.width(),
-                denoisedGiPayload.height()
-        );
-        if (!denoisedUpload.availableForDraw()) {
+        ByteBuffer denoisedSourceBuffer = null;
+        DirectLightPreviewTextureUploadResult denoisedUpload = null;
+        if (denoisedSourceReady) {
+            denoisedSourceBuffer = denoisedGiPayload.copyToByteBuffer();
+            denoisedUpload = ROUND7_DENOISED_GI_TEXTURE_UPLOADER.upload(
+                    RenderSystem.getDevice(),
+                    commandEncoder,
+                    denoisedSourceBuffer,
+                    denoisedGiPayload.width(),
+                    denoisedGiPayload.height()
+            );
+        }
+
+        boolean rawUploadAvailable = rawUpload != null && rawUpload.availableForDraw();
+        boolean directUploadAvailable = directUpload != null && directUpload.availableForDraw();
+        boolean denoisedUploadAvailable = denoisedUpload != null && denoisedUpload.availableForDraw();
+
+        boolean shaderOutputAttempted = rawUploadAvailable;
+        ShaderDenoiseOutputRenderTarget.StatusSnapshot shaderOutputTargetStatus = null;
+        PublicMojangPreviewDrawScaffold shaderOutputGenerationDrawScaffold = null;
+        String shaderOutputAvailabilityReason = rawUploadAvailable
+                ? "owned shader denoise output generation not attempted"
+                : "owned shader denoise output skipped because raw diffuse-GI upload is unavailable";
+        if (rawUploadAvailable) {
+            shaderOutputTargetStatus = ensureShaderDenoiseOutputRenderTarget(target);
+            if (shaderOutputTargetStatus.availableForRenderPass() && shaderOutputTargetStatus.availableForSampling()) {
+                try (RenderPass outputRenderPass = createFullTargetRenderPass(
+                        commandEncoder,
+                        () -> "lucerna public Round 7 FINAL_COMPOSITE shader-denoise owned-output pass",
+                        shaderOutputTargetStatus.textureView(),
+                        target
+                )) {
+                    outputRenderPass.disableScissor();
+                    shaderOutputGenerationDrawScaffold = PublicMojangPreviewDrawScaffolds
+                            .issueFullscreenRound7ShaderDenoiseOutputGenerationDraw(
+                                    outputRenderPass,
+                                    rawUpload.textureView(),
+                                    rawUpload.sampler()
+                            );
+                }
+                shaderOutputAvailabilityReason =
+                        "owned shader denoise output target was available for raw diffuse-GI fragment generation";
+            } else {
+                shaderOutputAvailabilityReason =
+                        "owned shader denoise output target unavailable: " + shaderOutputTargetStatus.compactSummary();
+            }
+        }
+        boolean shaderOutputGenerationIssued = shaderOutputGenerationDrawScaffold != null
+                && shaderOutputGenerationDrawScaffold.drawCallsIssued();
+        boolean shaderGeneratedDenoisedUploadAvailable = shaderOutputGenerationIssued
+                && shaderOutputTargetStatus != null
+                && shaderOutputTargetStatus.availableForSampling();
+        boolean anyDenoisedVisualSourceAvailable = shaderGeneratedDenoisedUploadAvailable || denoisedUploadAvailable;
+        if (!rawUploadAvailable && !anyDenoisedVisualSourceAvailable) {
             Reference.reachabilityFence(rawSourceBuffer);
             Reference.reachabilityFence(directSourceBuffer);
             Reference.reachabilityFence(denoisedSourceBuffer);
@@ -1912,23 +1977,29 @@ public final class RenderThreadPreviewTargetFactory {
                     true,
                     target.attachmentMetadata().javaOpaque(),
                     PublicMojangFinalCompositeSubmissionResult.TargetStatus.JAVA_OPAQUE_OBJECTS_PRESENT,
-                    "public Mojang Round 7 FINAL_COMPOSITE visual mode skipped because denoised diffuse-GI source texture upload was unavailable: "
-                            + denoisedUpload.summary()
-                            + "; raw upload: "
-                            + (rawUpload == null ? "not-attempted" : rawUpload.summary())
+                    "public Mojang Round 7 FINAL_COMPOSITE visual mode skipped because no scene-coupled GI source texture is drawable; "
+                            + "directSourceOnlyRejectedAsLowResSubstitution="
+                            + directUploadAvailable
+                            + ",lowResolutionDirectTextureDraw=false,rawGiVisualSourceConsumed=false,denoisedGiVisualSourceConsumed=false"
                             + "; raw source: "
                             + rawGiSource.summary()
+                            + "; raw upload: "
+                            + (rawUpload == null ? "not-attempted" : rawUpload.summary())
                             + "; denoised source: "
                             + denoisedGiSource.summary()
+                            + "; denoised upload: "
+                            + (denoisedUpload == null ? "not-attempted" : denoisedUpload.summary())
+                            + "; direct upload: "
+                            + (directUpload == null ? "not-attempted" : directUpload.summary())
+                            + "; shader denoise output: "
+                            + shaderOutputAvailabilityReason
             );
         }
-
-        boolean rawUploadAvailable = rawUpload != null && rawUpload.availableForDraw();
-        boolean directUploadAvailable = directUpload != null && directUpload.availableForDraw();
         boolean diagnosticVisibleDrawEnabled = finalCompositeDiagnosticDrawEnabled();
         boolean diagnosticClearEnabled = finalCompositeDiagnosticClearEnabled();
         boolean diagnosticTracyBlitEnabled = finalCompositeDiagnosticTracyBlitEnabled();
         PublicMojangPreviewDrawScaffold drawScaffold;
+        PublicMojangPreviewDrawScaffold rawFallbackDrawScaffold = null;
         PublicMojangPreviewDrawScaffold directDrawScaffold = null;
         PublicMojangPreviewDrawScaffold diagnosticDrawScaffold = null;
         PublicMojangPreviewDrawScaffold diagnosticTracyBlitScaffold = null;
@@ -1939,14 +2010,34 @@ public final class RenderThreadPreviewTargetFactory {
                 target
         )) {
             renderPass.disableScissor();
-            drawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenRound7FinalCompositeVisualDraw(
-                    renderPass,
-                    rawUploadAvailable ? rawUpload.textureView() : null,
-                    rawUploadAvailable ? rawUpload.sampler() : null,
-                    denoisedUpload.textureView(),
-                    denoisedUpload.sampler()
-            );
-            if (directUploadAvailable) {
+            if (shaderGeneratedDenoisedUploadAvailable) {
+                drawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenRound7FinalCompositeVisualDraw(
+                        renderPass,
+                        rawUpload.textureView(),
+                        rawUpload.sampler(),
+                        shaderOutputTargetStatus.textureView(),
+                        shaderOutputTargetStatus.sampler()
+                );
+            } else if (denoisedUploadAvailable) {
+                drawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenRound7FinalCompositeVisualDraw(
+                        renderPass,
+                        rawUploadAvailable ? rawUpload.textureView() : null,
+                        rawUploadAvailable ? rawUpload.sampler() : null,
+                        denoisedUpload.textureView(),
+                        denoisedUpload.sampler()
+                );
+            } else {
+                drawScaffold = PublicMojangPreviewDrawScaffold.unavailable(
+                        "public Mojang Round 7 FINAL_COMPOSITE combined denoised draw skipped because shader-generated and CPU denoised diffuse-GI sources are unavailable; raw GI fallback remains eligible; "
+                                + shaderOutputAvailabilityReason
+                );
+                rawFallbackDrawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenRound7RawGiVisualDraw(
+                        renderPass,
+                        rawUpload.textureView(),
+                        rawUpload.sampler()
+                );
+            }
+            if (directUploadAvailable && denoisedUploadAvailable) {
                 directDrawScaffold = PublicMojangPreviewDrawScaffolds.issueFullscreenDirectLightFinalCompositeDraw(
                         renderPass,
                         directUpload.textureView(),
@@ -1959,8 +2050,8 @@ public final class RenderThreadPreviewTargetFactory {
             if (diagnosticTracyBlitEnabled) {
                 diagnosticTracyBlitScaffold = PublicMojangPreviewDrawScaffolds.issueTracyBlitDiagnosticDraw(
                         renderPass,
-                        denoisedUpload.textureView(),
-                        denoisedUpload.sampler()
+                        denoisedUploadAvailable ? denoisedUpload.textureView() : rawUpload.textureView(),
+                        denoisedUploadAvailable ? denoisedUpload.sampler() : rawUpload.sampler()
                 );
             }
         }
@@ -1973,28 +2064,109 @@ public final class RenderThreadPreviewTargetFactory {
         Reference.reachabilityFence(rawSourceBuffer);
         Reference.reachabilityFence(directSourceBuffer);
         Reference.reachabilityFence(denoisedSourceBuffer);
-        boolean finalBlendComplete = directUploadAvailable && rawUploadAvailable;
+        boolean rawFallbackDrawIssued = rawFallbackDrawScaffold != null && rawFallbackDrawScaffold.drawCallsIssued();
+        boolean combinedDrawIssued = drawScaffold.drawCallsIssued();
+        boolean shaderDenoisedConsumed = shaderGeneratedDenoisedUploadAvailable && combinedDrawIssued;
+        boolean cpuDenoisedConsumed = !shaderDenoisedConsumed && denoisedUploadAvailable && combinedDrawIssued;
+        boolean denoisedConsumed = shaderDenoisedConsumed || cpuDenoisedConsumed;
+        boolean rawConsumed = rawUploadAvailable && (denoisedConsumed || rawFallbackDrawIssued);
+        boolean directConsumed = directUploadAvailable
+                && directDrawScaffold != null
+                && directDrawScaffold.drawCallsIssued()
+                && (rawConsumed || denoisedConsumed);
+        boolean finalBlendComplete = rawConsumed && denoisedConsumed;
+        boolean shaderOutputTextureAllocated = shaderOutputTargetStatus != null
+                && shaderOutputTargetStatus.availableForRenderPass()
+                && shaderOutputTargetStatus.availableForSampling();
+        ShaderGeneratedDenoiseOutputStatus shaderOutputStatus = shaderOutputTextureAllocated
+                ? ShaderGeneratedDenoiseOutputStatus.ownedFragmentOutput(
+                shaderOutputGenerationIssued,
+                shaderGeneratedDenoisedUploadAvailable,
+                shaderDenoisedConsumed,
+                rawUploadAvailable,
+                false,
+                shaderOutputAvailabilityReason
+        )
+                : ShaderGeneratedDenoiseOutputStatus.reported(
+                shaderOutputAttempted,
+                false,
+                false,
+                false,
+                false,
+                true,
+                true,
+                shaderOutputAvailabilityReason
+        );
         return PublicMojangFinalCompositeSubmissionResult.submitted(
-                drawScaffold.drawCallsIssued()
+                combinedDrawIssued
+                        || rawFallbackDrawIssued
                         || (directDrawScaffold != null && directDrawScaffold.drawCallsIssued())
                         || (diagnosticDrawScaffold != null && diagnosticDrawScaffold.drawCallsIssued())
                         || (diagnosticTracyBlitScaffold != null && diagnosticTracyBlitScaffold.drawCallsIssued()),
                 target.attachmentMetadata().javaOpaque(),
                 PublicMojangFinalCompositeSubmissionResult.TargetStatus.READY,
+                PublicMojangFinalCompositeSubmissionResult.ShaderOutputImageCandidate.none(),
+                shaderOutputStatus,
                 "public Mojang Round 7 FINAL_COMPOSITE visual render pass submitted; "
                         + "mode=FINAL_LUCERNA_COMPOSITE,mode=round7-final-composite"
-                        + ",evidence=round7.composite.final.direct_raw_denoised"
+                        + ",evidence=round7.composite.final.scene_coupled_source_selection"
                         + ",finalBlendComplete="
                         + finalBlendComplete
-                        + ",readiness=\"denoised diffuse-GI CPU output is displayable"
-                        + (rawUploadAvailable ? " and raw native diffuse-GI source is blended" : " and raw native diffuse-GI source is unavailable")
-                        + (directUploadAvailable ? " and native direct-light emissive source is blended" : " and native direct-light emissive source is unavailable")
-                        + "; "
-                        + denoisedGiPayload.readinessBoundarySummary()
+                        + ",rawGiVisualSourceConsumed=" + rawConsumed
+                        + ",denoisedGiVisualSourceConsumed=" + denoisedConsumed
+                        + ",shaderDenoisedGiVisualSourceConsumed=" + shaderDenoisedConsumed
+                        + ",cpuDenoisedGiVisualSourceConsumed=" + cpuDenoisedConsumed
+                        + ",directLightVisualSourceConsumed=" + directConsumed
+                        + ",raw native diffuse-GI source is "
+                        + (rawConsumed ? "blended" : "unavailable")
+                        + ",shader-generated denoise output is "
+                        + (shaderDenoisedConsumed ? "owned texture generated and blended" : "unavailable")
+                        + ",denoised diffuse-GI CPU output is "
+                        + (cpuDenoisedConsumed ? "displayable and blended" : "not selected")
+                        + ",native direct-light emissive source is "
+                        + (directConsumed ? "blended" : "not selected")
+                        + ",sourceSelection="
+                        + (shaderDenoisedConsumed
+                        ? "shader-generated-denoised-primary"
+                        : (cpuDenoisedConsumed ? "cpu-denoised-primary-shader-output-unavailable" : "raw-gi-primary-denoised-missing"))
+                        + ",sourceKind=native-diffuse-gi-rgba8"
+                        + (shaderDenoisedConsumed ? ",sourceKind=shader-generated-denoised-gi" : "")
+                        + (cpuDenoisedConsumed ? ",sourceKind=cpu-denoised-readback" : "")
+                        + ",sourceIdentity="
+                        + (shaderDenoisedConsumed
+                        ? "native-diffuse-gi-rgba8/raw-gi+shader-denoised-diffuse-gi-rgba8/public-mojang-fragment-color-attachment"
+                        : (cpuDenoisedConsumed
+                        ? "native-diffuse-gi-rgba8/raw-gi+cpu-denoised-readback"
+                        : "native-diffuse-gi-rgba8/raw-gi"))
+                        + ",sourceBoundary=full-target-source-gated-scene-surface-projection"
+                        + ",surfaceProjection=source-gated-scene-shaped-full-target"
+                        + ",metadataOnly=false,proofMarker=false,focusWindowOnly=false"
+                        + ",temporaryDirectLightSubstitution=false,rectangularWashout=false"
+                        + ",lowResolutionDirectTextureDraw=false"
+                        + ",shaderDenoiseInputMode=strict-raw-diffuse-gi"
+                        + ",shaderDenoiseInputKind=raw-diffuse-gi-rgba8"
+                        + ",directLightValidationInput=false,diagnosticDirectLightValidationFallback=false"
+                        + ",realShaderDenoiseOutputReady=" + shaderDenoisedConsumed
+                        + ",shaderGeneratedDenoiseOutputEvidence=" + shaderDenoisedConsumed
+                        + ",shaderDenoiseOutputConsumedByFinalComposite=" + shaderDenoisedConsumed
+                        + ",shaderDenoiseFinalCompositeConsumable=" + shaderDenoisedConsumed
+                        + ",shaderDenoiseOverclaimPresent=false"
+                        + ","
+                        + shaderOutputStatus.compactBoundarySummary()
+                        + ",readiness=\"selected strongest available scene-coupled source without direct-only low-res substitution"
+                        + "; shader output: "
+                        + shaderOutputAvailabilityReason
+                        + (shaderDenoisedConsumed
+                        ? "; CPU denoised payload not selected because owned shader output was available"
+                        : (denoisedGiPayload == null
+                        ? "; denoised payload missing"
+                        : "; denoised payload boundary: " + denoisedGiPayload.readinessBoundarySummary()))
                         + "\",raw source: "
                         + rawGiSource.summary()
                         + "; denoised source: "
-                        + denoisedGiSource.summary()
+                        + (shaderDenoisedConsumed
+                        ? "not-selected; owned shader-generated denoise output was consumed instead"
+                        : denoisedGiSource.summary())
                         + "; direct native source payload: "
                         + (directSourcePayload == null ? "missing-or-no-candidate-evidence" : directSourcePayload.debugSummary())
                         + "; direct upload: "
@@ -2008,11 +2180,23 @@ public final class RenderThreadPreviewTargetFactory {
                         + "; raw upload: "
                         + (rawUpload == null ? "not-attempted" : rawUpload.summary())
                         + "; denoised diffuse-GI CPU source payload: "
-                        + denoisedGiPayload.debugSummary()
+                        + (shaderDenoisedConsumed
+                        ? "not-selected; owned shader-generated denoise output was consumed instead"
+                        : (denoisedGiPayload == null ? "missing" : denoisedGiPayload.debugSummary()))
                         + "; denoised upload: "
-                        + denoisedUpload.summary()
+                        + (shaderDenoisedConsumed
+                        ? "not-selected; owned shader-generated denoise output was consumed instead"
+                        : (denoisedUpload == null ? "not-attempted" : denoisedUpload.summary()))
+                        + "; shader denoise output target: "
+                        + (shaderOutputTargetStatus == null ? "not-attempted" : shaderOutputTargetStatus.compactSummary())
+                        + "; shader output generation draw scaffold: "
+                        + (shaderOutputGenerationDrawScaffold == null
+                        ? "not-attempted"
+                        : compactDetail("shaderOutputGenerationDraw", shaderOutputGenerationDrawScaffold.summary()))
                         + "; draw scaffold: "
                         + drawScaffold.summary()
+                        + "; raw fallback draw scaffold: "
+                        + (rawFallbackDrawScaffold == null ? "not-attempted" : rawFallbackDrawScaffold.summary())
                         + "; direct draw scaffold: "
                         + (directDrawScaffold == null ? "not-attempted" : directDrawScaffold.summary())
                         + "; diagnostic visible draw: "

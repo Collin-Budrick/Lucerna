@@ -66,7 +66,7 @@ uniform float LucernaHistoryBlend;
 
 const vec3 LUMA_WEIGHTS = vec3(0.2126, 0.7152, 0.0722);
 const float CHECKER_ARTIFACT_REJECT = 0.54;
-const float EDGE_AWARE_NEIGHBORHOOD_SLACK = 0.16;
+const float EDGE_AWARE_NEIGHBORHOOD_SLACK = 0.18;
 
 vec3 localRawMean(vec2 uv, vec4 centerRaw);
 
@@ -324,7 +324,18 @@ vec3 preserveRawLocalContrast(vec2 uv, vec4 centerRaw, vec3 denoisedRgb) {
     vec3 rawDetail = centerRgb - localRawMean(uv, centerRaw);
     float structure = smoothstep(0.002, 0.055, localRawLumaRange(uv, centerRaw));
     float support = smoothstep(0.001, 0.030, max(confidenceAt(uv), luminance(centerRgb)));
-    return max(denoisedRgb + rawDetail * (0.32 * structure * support), vec3(0.0));
+    return max(denoisedRgb + rawDetail * (0.26 * structure * support), vec3(0.0));
+}
+
+vec3 sourceGatedOutputLift(vec2 uv, vec4 centerRaw, vec3 denoisedRgb, float confidence, float variance) {
+    vec3 localMean = localRawMean(uv, centerRaw);
+    float colorSupport = smoothstep(0.006, 0.13,
+            localRawChromaRange(uv, centerRaw) + length(max(centerRaw.rgb - localMean, vec3(0.0))) * 0.38);
+    float confidenceSupport = smoothstep(0.012, 0.26, max(confidence, luminance(centerRaw.rgb) * 18.0));
+    float varianceGuard = 1.0 / (1.0 + max(variance, 0.0) * 2.4);
+    vec3 tint = mix(vec3(luminance(localMean)), max(localMean, vec3(0.0)), 0.58 + colorSupport * 0.24);
+    vec3 lifted = denoisedRgb + tint * (0.28 * confidenceSupport * colorSupport * varianceGuard);
+    return clampToRawNeighborhood(uv, centerRaw, lifted, 0.30);
 }
 
 float historyAcceptance(vec2 uv, float centerDepth, vec3 centerNormal) {
@@ -384,6 +395,7 @@ void main() {
             plateauReject * (1.0 - historyGate * 0.45) * 0.50);
     float confidence = confidenceAt(texCoord);
     float variance = varianceAt(texCoord);
+    denoisedRgb = sourceGatedOutputLift(texCoord, centerRaw, denoisedRgb, confidence, variance);
     float varianceReject = smoothstep(0.025, 0.42, variance);
     float geometryGuidance = min(min(clamp(LucernaDepthBindingReady, 0.0, 1.0),
             clamp(LucernaNormalBindingReady, 0.0, 1.0)), clamp(LucernaMaterialBindingReady, 0.0, 1.0));

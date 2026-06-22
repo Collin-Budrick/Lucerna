@@ -8,6 +8,7 @@ import net.lucerna.world.hooks.LucernaWorldEventHooks;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
 
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -15,12 +16,16 @@ import java.util.List;
 public final class LucernaClient implements ClientModInitializer {
     private static final boolean CONTROLLER_SCREENSHOT_REQUESTED =
             Boolean.parseBoolean(System.getenv().getOrDefault("LUCERNA_CONTROLLER_SCREENSHOT_REQUEST", "false"));
+    private static final boolean CONTROLLER_SCREENSHOT_AUTO_AFTER_SCENE =
+            Boolean.parseBoolean(System.getenv().getOrDefault("LUCERNA_CONTROLLER_SCREENSHOT_AUTO_AFTER_SCENE", "false"));
     private static final int CONTROLLER_SCREENSHOT_DELAY_TICKS =
             parseControllerScreenshotDelayTicks();
     private static final Path CONTROLLER_SCREENSHOT_TRIGGER_FILE =
             parseControllerScreenshotTriggerFile();
     private static final String CONTROLLER_SCREENSHOT_SCENE_SETUP =
             System.getenv().getOrDefault("LUCERNA_CONTROLLER_SCREENSHOT_SCENE_SETUP", "").trim();
+    private static final boolean CONTROLLER_SCENE_COMMAND_SETUP_ALLOWED =
+            Boolean.parseBoolean(System.getenv().getOrDefault("LUCERNA_ALLOW_SCENE_COMMAND_SETUP", "false"));
 
     private static int controllerScreenshotReadyTicks;
     private static int controllerScreenshotGameplayTicks;
@@ -28,6 +33,8 @@ public final class LucernaClient implements ClientModInitializer {
     private static int controllerScreenshotSceneCommandCooldown;
     private static int controllerScreenshotSceneSettleTicks;
     private static boolean controllerScreenshotSceneSetupComplete;
+    private static boolean controllerScreenshotPendingCapture;
+    private static Boolean controllerScreenshotPreviousHideGui;
     private static boolean controllerScreenshotCaptured;
 
     @Override
@@ -49,10 +56,12 @@ public final class LucernaClient implements ClientModInitializer {
     }
 
     private static void captureControllerScreenshotIfRequested(Minecraft client) {
-        if (!CONTROLLER_SCREENSHOT_REQUESTED || controllerScreenshotCaptured) {
+        if (!CONTROLLER_SCREENSHOT_REQUESTED || controllerScreenshotCaptured || controllerScreenshotPendingCapture) {
             return;
         }
-        if (CONTROLLER_SCREENSHOT_TRIGGER_FILE != null && !Files.exists(CONTROLLER_SCREENSHOT_TRIGGER_FILE)) {
+        if (CONTROLLER_SCREENSHOT_TRIGGER_FILE != null
+                && !CONTROLLER_SCREENSHOT_AUTO_AFTER_SCENE
+                && !Files.exists(CONTROLLER_SCREENSHOT_TRIGGER_FILE)) {
             return;
         }
         clearControllerScreenshotChat(client);
@@ -82,18 +91,72 @@ public final class LucernaClient implements ClientModInitializer {
         }
 
         controllerScreenshotGameplayTicks++;
-        if (controllerScreenshotGameplayTicks < 10) {
+        if (controllerScreenshotGameplayTicks < 40) {
+            return;
+        }
+
+        clearControllerScreenshotChat(client);
+        controllerScreenshotPendingCapture = true;
+        controllerScreenshotPreviousHideGui = setHideGuiForControllerScreenshot(client, true);
+        Lucerna.LOGGER.info(
+                "Lucerna controller in-client screenshot queued: delayTicks={} playerReady=true screenOpen=false gameplayTicks={} menuScreenshotRejected=true capturePhase=endMain hideGuiPreArmed={}.",
+                CONTROLLER_SCREENSHOT_DELAY_TICKS,
+                controllerScreenshotGameplayTicks,
+                controllerScreenshotPreviousHideGui != null
+        );
+    }
+
+    static void capturePendingControllerScreenshotAfterLucernaComposite(boolean lucernaCompositeSubmitted) {
+        capturePendingControllerScreenshotFromMainTarget(Minecraft.getInstance(), lucernaCompositeSubmitted);
+    }
+
+    private static void capturePendingControllerScreenshotFromMainTarget(Minecraft client, boolean lucernaCompositeSubmitted) {
+        if (!controllerScreenshotPendingCapture || controllerScreenshotCaptured) {
+            return;
+        }
+        if (client.level == null || client.player == null || client.gui.screen() != null) {
+            restoreControllerScreenshotHideGui(client);
+            controllerScreenshotPendingCapture = false;
+            controllerScreenshotGameplayTicks = 0;
             return;
         }
 
         controllerScreenshotCaptured = true;
+        controllerScreenshotPendingCapture = false;
         clearControllerScreenshotChat(client);
         Lucerna.LOGGER.info(
-                "Lucerna controller in-client screenshot requested: delayTicks={} playerReady=true screenOpen=false gameplayTicks={} menuScreenshotRejected=true.",
-                CONTROLLER_SCREENSHOT_DELAY_TICKS,
-                controllerScreenshotGameplayTicks
+                "Lucerna controller in-client screenshot requested: capturePhase=afterLucernaComposite playerReady=true screenOpen=false gameplayTicks={} mainRenderTargetBeforeHud=true lucernaCompositeSubmitted={} menuScreenshotRejected=true.",
+                controllerScreenshotGameplayTicks,
+                lucernaCompositeSubmitted
         );
-        Screenshot.grab(client, false);
+        try {
+            Screenshot.grab(client, false);
+        } finally {
+            restoreControllerScreenshotHideGui(client);
+        }
+    }
+
+    private static void restoreControllerScreenshotHideGui(Minecraft client) {
+        if (controllerScreenshotPreviousHideGui != null) {
+            setHideGuiForControllerScreenshot(client, controllerScreenshotPreviousHideGui);
+            controllerScreenshotPreviousHideGui = null;
+        }
+    }
+
+    private static Boolean setHideGuiForControllerScreenshot(Minecraft client, boolean value) {
+        for (String fieldName : List.of("hideGui", "field_1842", "Y")) {
+            try {
+                Field field = client.options.getClass().getDeclaredField(fieldName);
+                field.setAccessible(true);
+                boolean previousValue = field.getBoolean(client.options);
+                field.setBoolean(client.options, value);
+                return previousValue;
+            } catch (ReflectiveOperationException ignored) {
+                // Try the next namespace candidate; the active dev/runtime mappings vary here.
+            }
+        }
+        Lucerna.LOGGER.warn("Lucerna controller screenshot could not force hideGui; no known Options field matched.");
+        return null;
     }
 
     private static void clearControllerScreenshotChat(Minecraft client) {
@@ -134,7 +197,7 @@ public final class LucernaClient implements ClientModInitializer {
         }
 
         controllerScreenshotSceneSettleTicks++;
-        if (controllerScreenshotSceneSettleTicks < 10) {
+        if (controllerScreenshotSceneSettleTicks < 80) {
             return false;
         }
 
@@ -149,6 +212,9 @@ public final class LucernaClient implements ClientModInitializer {
     }
 
     private static List<String> controllerScreenshotSceneCommands() {
+        if (!CONTROLLER_SCENE_COMMAND_SETUP_ALLOWED) {
+            return List.of();
+        }
         if ("real-renderer-milestone1".equals(CONTROLLER_SCREENSHOT_SCENE_SETUP)) {
             return List.of(
                     "gamerule sendCommandFeedback false",
@@ -161,30 +227,57 @@ public final class LucernaClient implements ClientModInitializer {
                     "time set 6000",
                     "effect clear @s",
                     "kill @e[type=!player,distance=..96]",
-                    "fill -16 180 -34 16 191 -2 minecraft:air",
-                    "fill -16 179 -34 16 179 -2 minecraft:smooth_stone",
-                    "fill -16 180 -2 16 188 -2 minecraft:smooth_stone",
-                    "fill -14 180 -3 -8 185 -3 minecraft:red_concrete",
-                    "fill -7 180 -3 -1 185 -3 minecraft:blue_concrete",
-                    "fill 1 180 -3 7 185 -3 minecraft:lime_concrete",
-                    "fill 8 180 -3 14 185 -3 minecraft:yellow_concrete",
-                    "setblock -11 183 -5 minecraft:glowstone",
-                    "setblock 0 183 -5 minecraft:sea_lantern",
-                    "setblock 11 183 -5 minecraft:redstone_lamp[lit=true]",
-                    "fill -5 180 -14 -5 186 -14 minecraft:oak_log",
-                    "fill 5 180 -14 5 186 -14 minecraft:spruce_log",
-                    "fill -9 185 -20 -1 188 -12 minecraft:oak_leaves",
-                    "fill 1 185 -20 9 188 -12 minecraft:spruce_leaves",
-                    "fill -13 180 -25 -7 183 -25 minecraft:air",
-                    "fill 7 180 -25 13 181 -25 minecraft:air",
-                    "fill -13 179 -25 -7 179 -25 minecraft:smooth_stone",
-                    "fill 7 179 -25 13 179 -25 minecraft:smooth_stone",
-                    "fill -2 180 -18 2 183 -18 minecraft:copper_block",
-                    "setblock -7 180 -11 minecraft:cobblestone_wall",
-                    "setblock 7 180 -11 minecraft:cobblestone_wall",
+                    "fill -18 180 -40 18 193 -4 minecraft:air",
+                    "fill -16 179 -38 16 179 -6 minecraft:smooth_stone",
+                    "fill -16 180 -7 16 187 -7 minecraft:light_gray_concrete",
+                    "fill -17 180 -36 -17 184 -8 minecraft:smooth_stone",
+                    "fill 17 180 -36 17 184 -8 minecraft:smooth_stone",
+                    "fill -15 179 -30 -3 179 -18 minecraft:white_concrete",
+                    "fill 3 179 -30 15 179 -18 minecraft:white_concrete",
+                    "fill -15 180 -18 -3 183 -18 minecraft:white_concrete",
+                    "fill 3 180 -18 15 183 -18 minecraft:white_concrete",
+                    "fill -15 180 -10 -11 184 -10 minecraft:red_concrete",
+                    "fill -10 180 -10 -6 184 -10 minecraft:orange_concrete",
+                    "fill -5 180 -10 -2 184 -10 minecraft:magenta_concrete",
+                    "fill 2 180 -10 5 184 -10 minecraft:cyan_concrete",
+                    "fill 6 180 -10 10 184 -10 minecraft:lime_concrete",
+                    "fill 11 180 -10 15 184 -10 minecraft:yellow_concrete",
+                    "fill -16 180 -29 -16 184 -21 minecraft:blue_concrete",
+                    "fill 16 180 -29 16 184 -21 minecraft:red_concrete",
+                    "fill -2 180 -27 -2 183 -20 minecraft:cyan_concrete",
+                    "fill 2 180 -27 2 183 -20 minecraft:orange_concrete",
+                    "setblock -13 181 -20 minecraft:redstone_lamp[lit=true]",
+                    "setblock -8 181 -20 minecraft:glowstone",
+                    "setblock -4 181 -20 minecraft:sea_lantern",
+                    "setblock 4 181 -20 minecraft:sea_lantern",
+                    "setblock 8 181 -20 minecraft:glowstone",
+                    "setblock 13 181 -20 minecraft:redstone_lamp[lit=true]",
+                    "setblock -12 180 -24 minecraft:redstone_lamp[lit=true]",
+                    "setblock -6 180 -24 minecraft:sea_lantern",
+                    "setblock 6 180 -24 minecraft:sea_lantern",
+                    "setblock 12 180 -24 minecraft:redstone_lamp[lit=true]",
+                    "fill -14 180 -23 -12 181 -21 minecraft:orange_concrete",
+                    "fill 12 180 -23 14 181 -21 minecraft:cyan_concrete",
+                    "fill -8 180 -28 -5 181 -26 minecraft:magenta_concrete",
+                    "fill 5 180 -28 8 181 -26 minecraft:lime_concrete",
+                    "fill -7 180 -23 -5 180 -21 minecraft:yellow_concrete",
+                    "fill 5 180 -23 7 180 -21 minecraft:blue_concrete",
+                    "fill -7 180 -25 -5 181 -23 minecraft:magenta_concrete",
+                    "fill 5 180 -25 7 181 -23 minecraft:lime_concrete",
+                    "fill -5 180 -22 -3 181 -20 minecraft:cyan_concrete",
+                    "fill 3 180 -22 5 181 -20 minecraft:orange_concrete",
+                    "fill -12 180 -27 -12 183 -27 minecraft:polished_deepslate",
+                    "fill 12 180 -27 12 183 -27 minecraft:polished_deepslate",
+                    "fill -5 180 -26 -4 182 -26 minecraft:dark_oak_fence",
+                    "fill 4 180 -26 5 182 -26 minecraft:dark_oak_fence",
+                    "setblock -10 180 -22 minecraft:cobblestone_wall",
+                    "setblock 10 180 -22 minecraft:cobblestone_wall",
+                    "fill -15 180 -33 -13 182 -33 minecraft:copper_block",
+                    "fill 13 180 -33 15 182 -33 minecraft:copper_block",
+                    "fill -1 180 -34 1 184 -28 minecraft:air",
                     "weather clear",
                     "time set 6000",
-                    "tp @s 0 181.55 -30 0 6"
+                    "tp @s 0 182.05 -36 0 7"
             );
         }
         return List.of();
